@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
-# Load API_KEY from .env
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-API_KEY=$(grep '^API_KEY=' "$SCRIPT_DIR/../.env" | cut -d'=' -f2)
+source <(grep -E '^(API_KEY|BASE_URL)=' "$SCRIPT_DIR/../.env")
 BASE_URL="${BASE_URL:-http://localhost:3000}"
+BASE_URL="${BASE_URL%/}"
 
 # Build a realistic Retell event_message payload
 EVENT_MESSAGE=$(cat <<'INNER'
@@ -34,7 +34,7 @@ INNER
 # Wrap in Retell's event_message envelope
 BODY=$(jq -n --arg msg "$EVENT_MESSAGE" '{ event_message: $msg }')
 
-echo "=== POST /email-notification ==="
+echo "=== POST /email-notification === ($BASE_URL)"
 echo "WARNING: This will send a real email to sam@servicecallsaver.com"
 echo ""
 read -p "Continue? (y/N) " confirm

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
-# Load API_KEY from .env
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-API_KEY=$(grep '^API_KEY=' "$SCRIPT_DIR/../.env" | cut -d'=' -f2)
+source <(grep -E '^(API_KEY|BASE_URL)=' "$SCRIPT_DIR/../.env")
 BASE_URL="${BASE_URL:-http://localhost:3000}"
+BASE_URL="${BASE_URL%/}"
 
-echo "=== Fetching available slots... ==="
+echo "=== Fetching available slots... === ($BASE_URL)"
 SLOTS_RESPONSE=$(curl -s -X POST "$BASE_URL/deckscience/get-slots" \
   -H "x-api-key: $API_KEY" \
   -H "Content-Type: application/json")
