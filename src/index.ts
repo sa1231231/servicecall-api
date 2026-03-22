@@ -8,11 +8,23 @@ import { emailNotificationRouter } from "./routes/email-notification.js";
 
 const app = express();
 
-// Each route group applies its own middleware:
-// - /stripe uses express.raw() for signature verification
-// - /retell uses express.json() with rawBody capture for HMAC
-// - /deckscience uses express.json()
-// - /email-notification uses express.json()
+app.use((req, res, next) => {
+  const start = Date.now();
+  console.log(`--> ${req.method} ${req.originalUrl}`, {
+    ip: req.ip,
+    headers: {
+      "content-type": req.headers["content-type"],
+      "user-agent": req.headers["user-agent"],
+    },
+    query: Object.keys(req.query).length ? req.query : undefined,
+  });
+
+  res.on("finish", () => {
+    console.log(`<-- ${req.method} ${req.originalUrl} ${res.statusCode} (${Date.now() - start}ms)`);
+  });
+
+  next();
+});
 
 app.use("/health", healthRouter);
 // app.use("/stripe", stripeRouter);
