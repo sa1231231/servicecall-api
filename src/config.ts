@@ -9,10 +9,10 @@ function requireEnv(key: string): string {
 }
 
 export const config = {
-  // STRIPE_SIGNING_SECRET: requireEnv("STRIPE_SIGNING_SECRET"),
-  // STRIPE_API_KEY: requireEnv("STRIPE_API_KEY"),
-  // RETELL_SIGNATURE_KEY: requireEnv("RETELL_SIGNATURE_KEY"),
+  STRIPE_SIGNING_SECRET: process.env.STRIPE_SIGNING_SECRET ?? "",
+  STRIPE_API_KEY: process.env.STRIPE_API_KEY ?? "",
+  RETELL_SIGNATURE_KEY: process.env.RETELL_SIGNATURE_KEY ?? "",
   GHL_API_KEY: requireEnv("GHL_API_KEY"),
-  // RESEND_API_KEY: requireEnv("RESEND_API_KEY"),
+  RESEND_API_KEY: process.env.RESEND_API_KEY ?? "",
   PORT: process.env.PORT || "3000",
 };
