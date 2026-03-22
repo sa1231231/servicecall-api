@@ -2,7 +2,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source <(grep -E '^(API_KEY|BASE_URL)=' "$SCRIPT_DIR/../.env")
+API_KEY=$(grep '^API_KEY=' "$SCRIPT_DIR/../.env" | cut -d'=' -f2-)
+BASE_URL=$(grep '^BASE_URL=' "$SCRIPT_DIR/../.env" | cut -d'=' -f2-)
 BASE_URL="${BASE_URL:-http://localhost:3000}"
 BASE_URL="${BASE_URL%/}"
 
