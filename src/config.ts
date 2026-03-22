@@ -14,5 +14,6 @@ export const config = {
   RETELL_SIGNATURE_KEY: process.env.RETELL_SIGNATURE_KEY ?? "",
   GHL_API_KEY: requireEnv("GHL_API_KEY"),
   RESEND_API_KEY: process.env.RESEND_API_KEY ?? "",
+  API_KEY: requireEnv("API_KEY"),
   PORT: process.env.PORT || "3000",
 };

@@ -27,6 +27,17 @@ app.use((req, res, next) => {
 });
 
 app.use("/health", healthRouter);
+
+app.use((req, res, next) => {
+  const key = req.headers["x-api-key"];
+  if (key !== config.API_KEY) {
+    console.log(`[auth] rejected request to ${req.originalUrl}`);
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+});
+
 // app.use("/stripe", stripeRouter);
 // app.use("/retell", retellRouter);
 app.use("/deckscience", deckscienceRouter);
