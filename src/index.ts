@@ -4,7 +4,7 @@ import { healthRouter } from "./routes/health.js";
 import { stripeRouter } from "./routes/stripe/index.js";
 import { retellRouter } from "./routes/retell/index.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
-import { emailNotificationRouter } from "./routes/email-notification.js";
+
 
 const app = express();
 
@@ -39,9 +39,9 @@ app.use((req, res, next) => {
 });
 
 // app.use("/stripe", stripeRouter);
-// app.use("/retell", retellRouter);
+app.use("/retell", retellRouter);
 app.use("/deckscience", deckscienceRouter);
-app.use("/email-notification", emailNotificationRouter);
+
 
 app.listen(Number(config.PORT), () => {
   console.log(`ServiceCall API listening on port ${config.PORT}`);

@@ -13,7 +13,19 @@ export const config = {
   STRIPE_API_KEY: process.env.STRIPE_API_KEY ?? "",
   RETELL_SIGNATURE_KEY: process.env.RETELL_SIGNATURE_KEY ?? "",
   GHL_API_KEY: requireEnv("GHL_API_KEY"),
-  RESEND_API_KEY: process.env.RESEND_API_KEY ?? "",
+
   API_KEY: requireEnv("API_KEY"),
   PORT: process.env.PORT || "3000",
+
+  // Twilio SMS
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID ?? "",
+  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN ?? "",
+  TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER ?? "",
+
+  // SMTP Email
+  SMTP_HOST: process.env.SMTP_HOST ?? "",
+  SMTP_PORT: process.env.SMTP_PORT ?? "465",
+  SMTP_USER: process.env.SMTP_USER ?? "",
+  SMTP_PASS: process.env.SMTP_PASS ?? "",
+  SMTP_FROM: process.env.SMTP_FROM ?? "notifications@servicecallsaver.com",
 };
