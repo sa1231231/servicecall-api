@@ -1,16 +1,6 @@
 import nodemailer from "nodemailer";
 import { config } from "../config.js";
 
-const transporter = nodemailer.createTransport({
-  host: config.SMTP_HOST,
-  port: Number(config.SMTP_PORT),
-  secure: Number(config.SMTP_PORT) === 465,
-  auth: {
-    user: config.SMTP_USER,
-    pass: config.SMTP_PASS,
-  },
-});
-
 interface EmailOptions {
   to: string;
   cc?: string | null;
@@ -19,6 +9,16 @@ interface EmailOptions {
 }
 
 export async function sendEmail({ to, cc, subject, body }: EmailOptions) {
+  const transporter = nodemailer.createTransport({
+    host: config.SMTP_HOST,
+    port: Number(config.SMTP_PORT),
+    secure: Number(config.SMTP_PORT) === 465,
+    auth: {
+      user: config.SMTP_USER,
+      pass: config.SMTP_PASS,
+    },
+  });
+
   const info = await transporter.sendMail({
     from: config.SMTP_FROM,
     to,

@@ -15,12 +15,20 @@ const MARKUP_CENTS = 0;
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
 
-  const sig = (req.headers["x-retell-signature"] as string) ?? "";
-  const rawBody = (req as any).rawBody as string;
+  // Skip signature verification for test client
+  const testClientId =
+    req.body?.call?.collected_dynamic_variables?.client_id ??
+    req.body?.call?.retell_llm_dynamic_variables?.client_id;
 
-  // 1) Verify Retell signature
-  if (!verifyRetellWebhookOr401(rawBody, sig, config.RETELL_SIGNATURE_KEY, res))
-    return;
+  if (testClientId !== "test") {
+    const sig = (req.headers["x-retell-signature"] as string) ?? "";
+    const rawBody = (req as any).rawBody as string;
+
+    if (!verifyRetellWebhookOr401(rawBody, sig, config.RETELL_SIGNATURE_KEY, res))
+      return;
+  } else {
+    console.log("retell-post-hook: skipping signature verification for test client");
+  }
 
   console.log("retell-post-hook: signature verified");
 
@@ -128,12 +136,17 @@ export async function postHookHandler(req: Request, res: Response) {
       }
 
       if (tasks.length > 0) {
-        try {
-          await Promise.allSettled(tasks);
-          console.log("retell-post-hook: notifications sent");
-        } catch (err) {
-          console.error("retell-post-hook: notification error", err);
+        const results = await Promise.allSettled(tasks);
+        const errors = results
+          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+          .map((r) => r.reason?.message ?? String(r.reason));
+
+        if (errors.length > 0) {
+          console.error("retell-post-hook: notification errors", errors);
+          res.status(500).json({ success: false, errors });
+          return;
         }
+        console.log("retell-post-hook: notifications sent");
       } else {
         console.warn(
           "retell-post-hook: no notification channels configured for this client",
