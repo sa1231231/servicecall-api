@@ -1,0 +1,14 @@
+import "dotenv/config";
+export declare const config: {
+    STRIPE_SIGNING_SECRET: string;
+    STRIPE_API_KEY: string;
+    RETELL_SIGNATURE_KEY: string;
+    GHL_API_KEY: string;
+    API_KEY: string;
+    PORT: string;
+    TWILIO_ACCOUNT_SID: string;
+    TWILIO_AUTH_TOKEN: string;
+    TWILIO_PHONE_NUMBER: string;
+    RESEND_API_KEY: string;
+    EMAIL_FROM: string;
+};
