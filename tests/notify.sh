@@ -19,7 +19,7 @@ curl -s -X POST "$BASE_URL/retell/post-hook" \
       "from_number": "+13017872841",
       "collected_dynamic_variables": {
         "client_id": "test",
-        "call_type": "emergency",
+        "is_emergency": "true",
         "full_name": "John Smith",
         "phone_number": "619-555-1234",
         "address": "1252 Main Street",
@@ -41,7 +41,7 @@ curl -s -X POST "$BASE_URL/retell/post-hook" \
       "from_number": "+13017872841",
       "collected_dynamic_variables": {
         "client_id": "test",
-        "call_type": "service_quote",
+        "is_emergency": "false",
         "full_name": "Jane Doe",
         "phone_number": "858-555-9876",
         "address": "742 Evergreen Terrace",

@@ -57,7 +57,8 @@ export async function postHookHandler(req: Request, res: Response) {
   const collectedVars = call?.collected_dynamic_variables ?? {};
 
   const clientId = collectedVars?.client_id ?? dynamicVars?.client_id ?? null;
-  const callType = collectedVars?.call_type ?? dynamicVars?.call_type ?? "";
+  const isEmergencyRaw = collectedVars?.is_emergency ?? dynamicVars?.is_emergency ?? "false";
+  const isEmergency = String(isEmergencyRaw).toLowerCase() === "true";
   const fullName = collectedVars?.full_name ?? dynamicVars?.full_name ?? "";
   const rawPhone =
     collectedVars?.phone_number ?? dynamicVars?.phone_number ?? "";
@@ -73,8 +74,7 @@ export async function postHookHandler(req: Request, res: Response) {
   const timePreference =
     collectedVars?.time_preference ?? dynamicVars?.time_preference ?? "";
 
-  const isEmergency = String(callType).toLowerCase().includes("emergency");
-  const label = isEmergency ? "🚨 EMERGENCY CALL" : "📋 SERVICE QUOTE REQUEST";
+  const label = isEmergency ? "EMERGENCY CALL" : "SERVICE QUOTE REQUEST";
 
   let message = `${label}\n\nName: ${fullName}\nPhone: ${phoneNumber}\nAddress: ${address}\nProblem: ${problemDescription}`;
   if (!isEmergency && timePreference) {
@@ -85,7 +85,6 @@ export async function postHookHandler(req: Request, res: Response) {
 
   console.log("retell-post-hook: extracted notification data", {
     client_id: clientId,
-    call_type: callType,
     is_emergency: isEmergency,
     full_name: fullName,
     phone_number: phoneNumber,
