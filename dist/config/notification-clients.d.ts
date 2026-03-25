@@ -10,6 +10,7 @@ export interface Field {
 export interface ClientNotificationConfig {
     client_id: string;
     name: string;
+    agent_ids: string[];
     dispatch_numbers: string[];
     dispatch_email: string | null;
     dispatch_cc: string | null;
@@ -20,3 +21,4 @@ export interface ClientNotificationConfig {
     phone_fallback_to_caller?: boolean;
 }
 export declare const notificationClients: Record<string, ClientNotificationConfig>;
+export declare const agentIdToClient: Record<string, ClientNotificationConfig>;

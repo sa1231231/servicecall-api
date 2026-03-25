@@ -15,14 +15,15 @@ curl -s -X POST "$BASE_URL/retell/post-hook" \
     "event": "call_ended",
     "call": {
       "call_id": "test-call-001",
-      "agent_id": "test-agent-001",
+      "agent_id": "agent_c61bdb14aa746b303648c5346d",
       "from_number": "+13017872841",
       "collected_dynamic_variables": {
         "client_id": "test",
         "is_emergency": "true",
         "full_name": "John Smith",
         "phone_number": "619-555-1234",
-        "address": "1252 Main Street",
+        "street_address": "1252 Main Street",
+        "city": "San Diego",
         "problem_description": "Pipe burst under kitchen sink"
       }
     }
@@ -37,16 +38,18 @@ curl -s -X POST "$BASE_URL/retell/post-hook" \
     "event": "call_ended",
     "call": {
       "call_id": "test-call-002",
-      "agent_id": "test-agent-001",
+      "agent_id": "agent_c61bdb14aa746b303648c5346d",
       "from_number": "+13017872841",
       "collected_dynamic_variables": {
         "client_id": "test",
         "is_emergency": "false",
         "full_name": "Jane Doe",
         "phone_number": "858-555-9876",
-        "address": "742 Evergreen Terrace",
+        "street_address": "742 Evergreen Terrace",
+        "city": "Springfield",
         "problem_description": "Cracked foundation near garage",
-        "time_preference": "Weekday mornings"
+        "preferred_time": "Morning",
+        "preferred_day": "Weekday"
       }
     }
   }' | jq . 2>/dev/null || echo "(no JSON response)"

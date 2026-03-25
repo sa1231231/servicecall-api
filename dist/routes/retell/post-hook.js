@@ -2,7 +2,7 @@ import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { sendEmail } from "../../lib/notify-email.js";
-import { notificationClients } from "../../config/notification-clients.js";
+import { notificationClients, agentIdToClient } from "../../config/notification-clients.js";
 export async function postHookHandler(req, res) {
     console.log("retell-post-hook: received request");
     // Skip signature verification for test client
@@ -37,26 +37,18 @@ export async function postHookHandler(req, res) {
     // ── Notification Logic ──────────────────────────────────────────────
     const dynamicVars = call?.retell_llm_dynamic_variables ?? {};
     const collectedVars = call?.collected_dynamic_variables ?? {};
-    const metadata = call?.metadata ?? {};
     const allVars = { ...dynamicVars, ...collectedVars };
-    console.log("retell-post-hook: variable sources", {
-        dynamic_vars: dynamicVars,
-        collected_vars: collectedVars,
-        metadata,
-        call_keys: Object.keys(call),
-    });
-    const clientId = allVars.client_id ?? metadata?.client_id ?? null;
-    if (!clientId) {
-        console.warn("retell-post-hook: no client_id found, skipping notifications");
-        res.status(200).json({ success: true });
-        return;
-    }
-    const clientConfig = notificationClients[clientId];
+    // Look up client by agent_id first, then fall back to client_id from vars
+    const agentId = call?.agent_id ?? null;
+    const clientId = allVars.client_id ?? null;
+    const clientConfig = (agentId ? agentIdToClient[agentId] : null) ??
+        (clientId ? notificationClients[clientId] : null);
     if (!clientConfig) {
-        console.warn(`retell-post-hook: no config for client_id="${clientId}", skipping notifications`);
+        console.warn(`retell-post-hook: no config for agent_id="${agentId}" or client_id="${clientId}", skipping notifications`);
         res.status(200).json({ success: true });
         return;
     }
+    console.log(`retell-post-hook: matched client "${clientConfig.name}" (agent_id=${agentId}, client_id=${clientId})`);
     // Resolve message type
     const typeKey = clientConfig.resolve_type(allVars);
     const messageType = clientConfig.message_types[typeKey] ??
