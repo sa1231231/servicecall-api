@@ -27,6 +27,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/health", healthRouter);
+app.use("/retell", retellRouter);
 
 app.use((req, res, next) => {
   const key = req.headers["x-api-key"];
@@ -39,7 +40,6 @@ app.use((req, res, next) => {
 });
 
 // app.use("/stripe", stripeRouter);
-app.use("/retell", retellRouter);
 app.use("/deckscience", deckscienceRouter);
 
 
