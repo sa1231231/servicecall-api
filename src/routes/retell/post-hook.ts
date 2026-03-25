@@ -24,8 +24,6 @@ export async function postHookHandler(req: Request, res: Response) {
   }
 
   console.log("retell-post-hook: signature verified");
-  console.log("retell-post-hook: raw payload", JSON.stringify(req.body, null, 2));
-
   // 2) Parse payload
   const body = req.body;
   const eventType = body?.event ?? null;
@@ -49,9 +47,17 @@ export async function postHookHandler(req: Request, res: Response) {
 
   const dynamicVars = call?.retell_llm_dynamic_variables ?? {};
   const collectedVars = call?.collected_dynamic_variables ?? {};
+  const metadata = call?.metadata ?? {};
   const allVars: Record<string, string> = { ...dynamicVars, ...collectedVars };
 
-  const clientId = allVars.client_id ?? null;
+  console.log("retell-post-hook: variable sources", {
+    dynamic_vars: dynamicVars,
+    collected_vars: collectedVars,
+    metadata,
+    call_keys: Object.keys(call),
+  });
+
+  const clientId = allVars.client_id ?? metadata?.client_id ?? null;
 
   if (!clientId) {
     console.warn(

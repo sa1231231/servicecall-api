@@ -18,7 +18,6 @@ export async function postHookHandler(req, res) {
         console.log("retell-post-hook: skipping signature verification for test client");
     }
     console.log("retell-post-hook: signature verified");
-    console.log("retell-post-hook: raw payload", JSON.stringify(req.body, null, 2));
     // 2) Parse payload
     const body = req.body;
     const eventType = body?.event ?? null;
@@ -38,8 +37,15 @@ export async function postHookHandler(req, res) {
     // ── Notification Logic ──────────────────────────────────────────────
     const dynamicVars = call?.retell_llm_dynamic_variables ?? {};
     const collectedVars = call?.collected_dynamic_variables ?? {};
+    const metadata = call?.metadata ?? {};
     const allVars = { ...dynamicVars, ...collectedVars };
-    const clientId = allVars.client_id ?? null;
+    console.log("retell-post-hook: variable sources", {
+        dynamic_vars: dynamicVars,
+        collected_vars: collectedVars,
+        metadata,
+        call_keys: Object.keys(call),
+    });
+    const clientId = allVars.client_id ?? metadata?.client_id ?? null;
     if (!clientId) {
         console.warn("retell-post-hook: no client_id found, skipping notifications");
         res.status(200).json({ success: true });
