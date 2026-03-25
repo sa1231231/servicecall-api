@@ -24,6 +24,7 @@ export async function postHookHandler(req: Request, res: Response) {
   }
 
   console.log("retell-post-hook: signature verified");
+  console.log("retell-post-hook: raw payload", JSON.stringify(req.body, null, 2));
 
   // 2) Parse payload
   const body = req.body;

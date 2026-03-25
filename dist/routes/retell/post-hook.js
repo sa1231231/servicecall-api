@@ -18,6 +18,7 @@ export async function postHookHandler(req, res) {
         console.log("retell-post-hook: skipping signature verification for test client");
     }
     console.log("retell-post-hook: signature verified");
+    console.log("retell-post-hook: raw payload", JSON.stringify(req.body, null, 2));
     // 2) Parse payload
     const body = req.body;
     const eventType = body?.event ?? null;
