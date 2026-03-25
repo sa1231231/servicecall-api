@@ -1,5 +1,7 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { config } from "../config.js";
+
+const resend = new Resend(config.RESEND_API_KEY);
 
 interface EmailOptions {
   to: string;
@@ -9,23 +11,18 @@ interface EmailOptions {
 }
 
 export async function sendEmail({ to, cc, subject, body }: EmailOptions) {
-  const transporter = nodemailer.createTransport({
-    host: config.SMTP_HOST,
-    port: Number(config.SMTP_PORT),
-    secure: Number(config.SMTP_PORT) === 465,
-    auth: {
-      user: config.SMTP_USER,
-      pass: config.SMTP_PASS,
-    },
-  });
-
-  const info = await transporter.sendMail({
-    from: config.SMTP_FROM,
+  const { data, error } = await resend.emails.send({
+    from: config.EMAIL_FROM,
     to,
     cc: cc ?? undefined,
     subject,
     text: body,
   });
-  console.log(`notify-email: sent to ${to}, messageId=${info.messageId}`);
-  return info;
+
+  if (error) {
+    throw new Error(`Resend error: ${error.message}`);
+  }
+
+  console.log(`notify-email: sent to ${to}, id=${data?.id}`);
+  return data;
 }

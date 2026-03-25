@@ -22,10 +22,7 @@ export const config = {
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN ?? "",
   TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER ?? "",
 
-  // SMTP Email
-  SMTP_HOST: process.env.SMTP_HOST ?? "",
-  SMTP_PORT: process.env.SMTP_PORT ?? "465",
-  SMTP_USER: process.env.SMTP_USER ?? "",
-  SMTP_PASS: process.env.SMTP_PASS ?? "",
-  SMTP_FROM: process.env.SMTP_FROM ?? "notifications@servicecallsaver.com",
+  // Email (Resend)
+  RESEND_API_KEY: process.env.RESEND_API_KEY ?? "",
+  EMAIL_FROM: process.env.EMAIL_FROM ?? "notifications@servicecallsaver.com",
 };
