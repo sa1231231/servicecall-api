@@ -1,12 +1,13 @@
+export interface Field {
+  key: string;
+  label: string;
+}
+
 export interface MessageType {
   label: string;
   subject_template: string;
   additional_text?: string;
-}
-
-export interface Field {
-  key: string;
-  label: string;
+  fields: Field[];
 }
 
 export interface ClientNotificationConfig {
@@ -19,7 +20,6 @@ export interface ClientNotificationConfig {
   resolve_type: (vars: Record<string, string>) => string;
   message_types: Record<string, MessageType>;
   default_message_type: string;
-  fields: Field[];
   phone_fallback_to_caller?: boolean;
 }
 
@@ -38,24 +38,33 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     message_types: {
       emergency: {
         label: "EMERGENCY CALL",
-        subject_template: "EMERGENCY: {{full_name}} — {{street_address}}, {{city}}",
+        subject_template:
+          "EMERGENCY: {{full_name}} — {{street_address}}, {{city}}",
         additional_text: "Caller expects contact within 10 minutes.",
+        fields: [
+          { key: "full_name", label: "Name" },
+          { key: "phone_number", label: "Phone" },
+          { key: "street_address", label: "Address" },
+          { key: "city", label: "City" },
+          { key: "problem_description", label: "Problem" },
+        ],
       },
       service_request: {
         label: "New Service Request",
-        subject_template: "Service Request: {{full_name}} — {{street_address}}, {{city}}",
+        subject_template:
+          "Service Request: {{full_name}} — {{street_address}}, {{city}}",
+        fields: [
+          { key: "full_name", label: "Name" },
+          { key: "phone_number", label: "Phone" },
+          { key: "street_address", label: "Address" },
+          { key: "city", label: "City" },
+          { key: "problem_description", label: "Problem" },
+          { key: "preferred_time", label: "Preferred Time" },
+          { key: "preferred_day", label: "Preferred Day" },
+        ],
       },
     },
     default_message_type: "service_request",
-    fields: [
-      { key: "full_name", label: "Name" },
-      { key: "phone_number", label: "Phone" },
-      { key: "street_address", label: "Address" },
-      { key: "city", label: "City" },
-      { key: "problem_description", label: "Problem" },
-      { key: "preferred_time", label: "Preferred Time" },
-      { key: "preferred_day", label: "Preferred Day" },
-    ],
     phone_fallback_to_caller: true,
   },
   test: {
@@ -72,24 +81,32 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     message_types: {
       emergency: {
         label: "EMERGENCY CALL",
-        subject_template: "EMERGENCY: {{full_name}} — {{street_address}}, {{city}}",
+        subject_template:
+          "EMERGENCY: {{full_name}} — {{street_address}}, {{city}}",
         additional_text: "Caller expects contact within 10 minutes.",
+        fields: [
+          { key: "full_name", label: "Name" },
+          { key: "phone_number", label: "Phone" },
+          { key: "street_address", label: "Address" },
+          { key: "problem_description", label: "Problem" },
+        ],
       },
       service_request: {
         label: "New Service Request",
-        subject_template: "Service Request: {{full_name}} — {{street_address}}, {{city}}",
+        subject_template:
+          "Service Request: {{full_name}} — {{street_address}}, {{city}}",
+        fields: [
+          { key: "full_name", label: "Name" },
+          { key: "phone_number", label: "Phone" },
+          { key: "street_address", label: "Address" },
+          { key: "city", label: "City" },
+          { key: "problem_description", label: "Problem" },
+          { key: "preferred_time", label: "Preferred Time" },
+          { key: "preferred_day", label: "Preferred Day" },
+        ],
       },
     },
     default_message_type: "service_request",
-    fields: [
-      { key: "full_name", label: "Name" },
-      { key: "phone_number", label: "Phone" },
-      { key: "street_address", label: "Address" },
-      { key: "city", label: "City" },
-      { key: "problem_description", label: "Problem" },
-      { key: "preferred_time", label: "Preferred Time" },
-      { key: "preferred_day", label: "Preferred Day" },
-    ],
     phone_fallback_to_caller: true,
   },
 };

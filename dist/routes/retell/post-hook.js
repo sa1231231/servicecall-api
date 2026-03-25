@@ -60,7 +60,7 @@ export async function postHookHandler(req, res) {
     }
     // Extract field values
     const fieldValues = {};
-    for (const field of clientConfig.fields) {
+    for (const field of messageType.fields) {
         let value = allVars[field.key] ?? "";
         if (clientConfig.phone_fallback_to_caller &&
             field.key === "phone_number" &&
@@ -75,7 +75,7 @@ export async function postHookHandler(req, res) {
         fields: fieldValues,
     });
     // Build field lines
-    const fieldLines = clientConfig.fields
+    const fieldLines = messageType.fields
         .map((f) => `${f.label}: ${fieldValues[f.key]}`)
         .filter((line) => !line.endsWith(": "))
         .join("\n");
