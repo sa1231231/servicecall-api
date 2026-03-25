@@ -101,6 +101,17 @@ export async function postHookHandler(req: Request, res: Response) {
     fields: fieldValues,
   });
 
+  // Skip notification if no meaningful data was collected (phone_number excluded — it defaults to caller)
+  const meaningfulFields = messageType.fields.filter(
+    (f) => f.key !== "phone_number" && fieldValues[f.key] && fieldValues[f.key] !== "Not Mentioned"
+  );
+
+  if (meaningfulFields.length === 0) {
+    console.warn("retell-post-hook: empty call — no data collected, skipping notifications");
+    res.status(200).json({ success: true, outcome: "skipped_empty_call" });
+    return;
+  }
+
   // Build field lines
   const fieldLines = messageType.fields
     .map((f) => `${f.label}: ${fieldValues[f.key]}`)

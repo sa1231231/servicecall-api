@@ -44,7 +44,7 @@ export const notificationClients = {
     test: {
         client_id: "test",
         name: "Test Client",
-        agent_ids: ["agent_c61bdb14aa746b303648c5346d"],
+        agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
         dispatch_numbers: ["+13017872841"],
         dispatch_email: "samasra93@gmail.com",
         dispatch_cc: null,
