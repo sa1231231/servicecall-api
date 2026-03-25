@@ -4,13 +4,6 @@ import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { sendEmail } from "../../lib/notify-email.js";
 import { notificationClients } from "../../config/notification-clients.js";
-import {
-  msToIso,
-  roundTo1Decimal,
-  roundUpToTenthCent,
-} from "../../lib/utils.js";
-
-const MARKUP_CENTS = 0;
 
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
@@ -55,139 +48,131 @@ export async function postHookHandler(req: Request, res: Response) {
 
   const dynamicVars = call?.retell_llm_dynamic_variables ?? {};
   const collectedVars = call?.collected_dynamic_variables ?? {};
+  const allVars: Record<string, string> = { ...dynamicVars, ...collectedVars };
 
-  const clientId = collectedVars?.client_id ?? dynamicVars?.client_id ?? null;
-  const isEmergencyRaw = collectedVars?.is_emergency ?? dynamicVars?.is_emergency ?? "false";
-  const isEmergency = String(isEmergencyRaw).toLowerCase() === "true";
-  const fullName = collectedVars?.full_name ?? dynamicVars?.full_name ?? "";
-  const rawPhone =
-    collectedVars?.phone_number ?? dynamicVars?.phone_number ?? "";
-  const phoneNumber =
-    rawPhone && rawPhone !== "Not Mentioned"
-      ? rawPhone
-      : (call?.from_number ?? "");
-  const address = collectedVars?.address ?? dynamicVars?.address ?? "";
-  const problemDescription =
-    collectedVars?.problem_description ??
-    dynamicVars?.problem_description ??
-    "";
-  const timePreference =
-    collectedVars?.time_preference ?? dynamicVars?.time_preference ?? "";
-
-  const label = isEmergency ? "EMERGENCY CALL" : "SERVICE QUOTE REQUEST";
-
-  let message = `${label}\n\nName: ${fullName}\nPhone: ${phoneNumber}\nAddress: ${address}\nProblem: ${problemDescription}`;
-  if (!isEmergency && timePreference) {
-    message += `\nTime Preference: ${timePreference}`;
-  }
-
-  const emailSubject = `${label} — ${fullName} — ${address}`;
-
-  console.log("retell-post-hook: extracted notification data", {
-    client_id: clientId,
-    is_emergency: isEmergency,
-    full_name: fullName,
-    phone_number: phoneNumber,
-    address,
-    problem_description: problemDescription,
-    time_preference: timePreference,
-  });
+  const clientId = allVars.client_id ?? null;
 
   if (!clientId) {
     console.warn(
       "retell-post-hook: no client_id found, skipping notifications",
     );
-  } else {
-    const clientConfig = notificationClients[clientId];
-
-    if (!clientConfig) {
-      console.warn(
-        `retell-post-hook: no config for client_id="${clientId}", skipping notifications`,
-      );
-    } else {
-      console.log(
-        `retell-post-hook: sending notifications for client "${clientConfig.name}"`,
-      );
-
-      const tasks: Promise<unknown>[] = [];
-
-      if (clientConfig.dispatch_numbers.length > 0) {
-        tasks.push(sendSmsToAll(clientConfig.dispatch_numbers, message));
-      } else {
-        console.log(
-          "retell-post-hook: no dispatch numbers configured, skipping SMS",
-        );
-      }
-
-      if (clientConfig.dispatch_email) {
-        tasks.push(
-          sendEmail({
-            to: clientConfig.dispatch_email,
-            cc: clientConfig.dispatch_cc,
-            subject: emailSubject,
-            body: message,
-          }),
-        );
-      } else {
-        console.log(
-          "retell-post-hook: no dispatch email configured, skipping email",
-        );
-      }
-
-      if (tasks.length > 0) {
-        const results = await Promise.allSettled(tasks);
-        const errors = results
-          .filter((r): r is PromiseRejectedResult => r.status === "rejected")
-          .map((r) => r.reason?.message ?? String(r.reason));
-
-        if (errors.length > 0) {
-          console.error("retell-post-hook: notification errors", errors);
-          res.status(500).json({ success: false, errors });
-          return;
-        }
-        console.log("retell-post-hook: notifications sent");
-      } else {
-        console.warn(
-          "retell-post-hook: no notification channels configured for this client",
-        );
-      }
-    }
+    res.status(200).json({ success: true });
+    return;
   }
 
-  // // ── Billing / Cost Logic (kept separate for future use) ─────────────
+  const clientConfig = notificationClients[clientId];
 
-  // const callId = call?.call_id ?? null;
-  // const agentId = call?.agent_id ?? null;
-  // const combinedCostRaw = call?.call_cost?.combined_cost;
+  if (!clientConfig) {
+    console.warn(
+      `retell-post-hook: no config for client_id="${clientId}", skipping notifications`,
+    );
+    res.status(200).json({ success: true });
+    return;
+  }
 
-  // if (callId && agentId && typeof combinedCostRaw === "number" && Number.isFinite(combinedCostRaw)) {
-  //   const durationMs = call?.duration_ms ?? null;
-  //   const durationSeconds =
-  //     typeof durationMs === "number"
-  //       ? Math.max(0, Math.round(durationMs / 1000))
-  //       : typeof call?.call_cost?.total_duration_seconds === "number"
-  //         ? call.call_cost.total_duration_seconds
-  //         : 0;
+  // Resolve message type
+  const typeKey = clientConfig.resolve_type(allVars);
+  const messageType =
+    clientConfig.message_types[typeKey] ??
+    clientConfig.message_types[clientConfig.default_message_type];
 
-  //   const startedAtIso = msToIso(call?.start_timestamp);
-  //   const endedAtIso = msToIso(call?.end_timestamp);
+  if (!messageType) {
+    console.error(
+      `retell-post-hook: no message type found for key="${typeKey}" or default="${clientConfig.default_message_type}"`,
+    );
+    res.status(500).json({ success: false, message: "No message type configured." });
+    return;
+  }
 
-  //   const baseCost = roundUpToTenthCent(combinedCostRaw);
-  //   const totalCostRaw = baseCost + MARKUP_CENTS;
-  //   const totalCost = roundTo1Decimal(roundUpToTenthCent(totalCostRaw));
+  // Extract field values
+  const fieldValues: Record<string, string> = {};
+  for (const field of clientConfig.fields) {
+    let value = allVars[field.key] ?? "";
+    if (
+      clientConfig.phone_fallback_to_caller &&
+      field.key === "phone_number" &&
+      (!value || value === "Not Mentioned")
+    ) {
+      value = call?.from_number ?? "";
+    }
+    fieldValues[field.key] = value;
+  }
 
-  //   console.log("retell-post-hook: billing data", {
-  //     call_id: callId,
-  //     agent_id: agentId,
-  //     combined_cost_raw: combinedCostRaw,
-  //     base_cost_cents: baseCost,
-  //     markup_cents: MARKUP_CENTS,
-  //     total_charge_cents: totalCost,
-  //     duration_seconds: durationSeconds,
-  //     started_at: startedAtIso,
-  //     ended_at: endedAtIso,
-  //   });
-  // }
+  console.log("retell-post-hook: extracted notification data", {
+    client_id: clientId,
+    message_type: typeKey,
+    fields: fieldValues,
+  });
+
+  // Build field lines
+  const fieldLines = clientConfig.fields
+    .map((f) => `${f.label}: ${fieldValues[f.key]}`)
+    .filter((line) => !line.endsWith(": "))
+    .join("\n");
+
+  // Build message bodies
+  const bodyCore = `${messageType.label}\n\n${fieldLines}`;
+  const urgentSuffix = messageType.additional_text
+    ? `\n\n${messageType.additional_text}`
+    : "";
+
+  const smsMessage = `${bodyCore}${urgentSuffix}\n\n— Service Call Saver`;
+  const emailBody = `${bodyCore}${urgentSuffix}\n\n—\nSent by Service Call Saver\nservicecallsaver.com`;
+  const emailSubject = renderTemplate(messageType.subject_template, fieldValues);
+
+  console.log(
+    `retell-post-hook: sending notifications for client "${clientConfig.name}"`,
+  );
+
+  const tasks: Promise<unknown>[] = [];
+
+  if (clientConfig.dispatch_numbers.length > 0) {
+    tasks.push(sendSmsToAll(clientConfig.dispatch_numbers, smsMessage));
+  } else {
+    console.log(
+      "retell-post-hook: no dispatch numbers configured, skipping SMS",
+    );
+  }
+
+  if (clientConfig.dispatch_email) {
+    tasks.push(
+      sendEmail({
+        to: clientConfig.dispatch_email,
+        cc: clientConfig.dispatch_cc,
+        subject: emailSubject,
+        body: emailBody,
+      }),
+    );
+  } else {
+    console.log(
+      "retell-post-hook: no dispatch email configured, skipping email",
+    );
+  }
+
+  if (tasks.length > 0) {
+    const results = await Promise.allSettled(tasks);
+    const errors = results
+      .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+      .map((r) => r.reason?.message ?? String(r.reason));
+
+    if (errors.length > 0) {
+      console.error("retell-post-hook: notification errors", errors);
+      res.status(500).json({ success: false, errors });
+      return;
+    }
+    console.log("retell-post-hook: notifications sent");
+  } else {
+    console.warn(
+      "retell-post-hook: no notification channels configured for this client",
+    );
+  }
 
   res.status(200).json({ success: true });
+}
+
+function renderTemplate(
+  template: string,
+  values: Record<string, string>,
+): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] ?? "");
 }
