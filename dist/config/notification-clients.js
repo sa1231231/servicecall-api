@@ -1,6 +1,5 @@
 export const notificationClients = {
     "pro-v": {
-        client_id: "pro-v",
         name: "Pro V Contracting",
         agent_ids: [],
         dispatch_numbers: ["+19517608403", "+16193007267"],
@@ -42,7 +41,6 @@ export const notificationClients = {
         phone_fallback_to_caller: true,
     },
     test: {
-        client_id: "test",
         name: "Test Client",
         agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
         dispatch_numbers: ["+13017872841"],

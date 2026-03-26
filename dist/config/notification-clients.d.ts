@@ -9,7 +9,6 @@ export interface MessageType {
     fields: Field[];
 }
 export interface ClientNotificationConfig {
-    client_id: string;
     name: string;
     agent_ids: string[];
     dispatch_numbers: string[];
