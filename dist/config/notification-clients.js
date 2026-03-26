@@ -1,7 +1,7 @@
 export const notificationClients = {
     "pro-v": {
         name: "Pro V Contracting",
-        agent_ids: [],
+        agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
         dispatch_numbers: ["+19517608403", "+16193007267"],
         dispatch_email: "info@provcontracting.com",
         dispatch_cc: "dispatch@provcontracting.com",
@@ -12,7 +12,7 @@ export const notificationClients = {
         },
         message_types: {
             emergency: {
-                label: "EMERGENCY CALL",
+                label: "TEST - EMERGENCY CALL",
                 subject_template: "EMERGENCY: {{full_name}} — {{street_address}}, {{city}}",
                 additional_text: "Caller expects contact within 10 minutes.",
                 fields: [
@@ -24,7 +24,7 @@ export const notificationClients = {
                 ],
             },
             service_request: {
-                label: "New Service Request",
+                label: "TEST - New Service Request",
                 subject_template: "Service Request: {{full_name}} — {{street_address}}, {{city}}",
                 fields: [
                     { key: "full_name", label: "Name" },
@@ -82,7 +82,7 @@ export const notificationClients = {
     },
     test_prod: {
         name: "Test Client (Prod)",
-        agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
+        agent_ids: [],
         dispatch_numbers: ["+13017872841"],
         dispatch_email: "samasra93@gmail.com",
         dispatch_cc: null,
