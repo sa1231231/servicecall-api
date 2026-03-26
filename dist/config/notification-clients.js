@@ -42,6 +42,46 @@ export const notificationClients = {
     },
     test: {
         name: "Test Client",
+        agent_ids: [],
+        dispatch_numbers: ["+13017872841"],
+        dispatch_email: "samasra93@gmail.com",
+        dispatch_cc: null,
+        resolve_type: (vars) => {
+            if (vars.is_emergency === "true")
+                return "emergency";
+            return "service_request";
+        },
+        message_types: {
+            emergency: {
+                label: "EMERGENCY CALL",
+                subject_template: "EMERGENCY: {{full_name}} — {{street_address}}, {{city}}",
+                additional_text: "Caller expects contact within 10 minutes.",
+                fields: [
+                    { key: "full_name", label: "Name" },
+                    { key: "phone_number", label: "Phone" },
+                    { key: "street_address", label: "Address" },
+                    { key: "problem_description", label: "Problem" },
+                ],
+            },
+            service_request: {
+                label: "New Service Request",
+                subject_template: "Service Request: {{full_name}} — {{street_address}}, {{city}}",
+                fields: [
+                    { key: "full_name", label: "Name" },
+                    { key: "phone_number", label: "Phone" },
+                    { key: "street_address", label: "Address" },
+                    { key: "city", label: "City" },
+                    { key: "problem_description", label: "Problem" },
+                    { key: "preferred_time", label: "Preferred Time" },
+                    { key: "preferred_day", label: "Preferred Day" },
+                ],
+            },
+        },
+        default_message_type: "service_request",
+        phone_fallback_to_caller: true,
+    },
+    test_prod: {
+        name: "Test Client (Prod)",
         agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
         dispatch_numbers: ["+13017872841"],
         dispatch_email: "samasra93@gmail.com",
