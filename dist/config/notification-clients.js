@@ -4,7 +4,7 @@ export const notificationClients = {
         agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
         dispatch_numbers: ["+19517608403", "+16193007267"],
         dispatch_email: "info@provcontracting.com",
-        dispatch_cc: "dispatch@provcontracting.com",
+        dispatch_cc: null, // removed — dispatch@provcontracting.com mailbox doesn't exist, was causing delivery_delayed
         resolve_type: (vars) => {
             if (vars.is_emergency === "true")
                 return "emergency";

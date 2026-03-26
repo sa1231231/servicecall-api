@@ -12,6 +12,14 @@ export async function sendEmail({ to, cc, subject, body }) {
     if (error) {
         throw new Error(`Resend error: ${error.message}`);
     }
-    console.log(`notify-email: sent to ${to}, id=${data?.id}`);
+    const resendId = data?.id ?? "unknown";
+    console.log(`notify-email: sent | to=${to}${cc ? ` | cc=${cc}` : ""} | subject="${subject}" | resend_id=${resendId}`);
+    return data;
+}
+export async function getEmailStatus(emailId) {
+    const { data, error } = await resend.emails.get(emailId);
+    if (error) {
+        throw new Error(`Resend error: ${error.message}`);
+    }
     return data;
 }

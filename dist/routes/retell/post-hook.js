@@ -1,7 +1,7 @@
 import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
-import { sendEmail } from "../../lib/notify-email.js";
+import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
 import { agentIdToClient } from "../../config/notification-clients.js";
 export async function postHookHandler(req, res) {
     console.log("retell-post-hook: received request");
@@ -93,6 +93,7 @@ export async function postHookHandler(req, res) {
     const emailSubject = renderTemplate(messageType.subject_template, fieldValues);
     console.log(`retell-post-hook: sending notifications for client "${clientConfig.name}"`);
     const tasks = [];
+    let emailResendId = null;
     if (clientConfig.dispatch_numbers.length > 0) {
         tasks.push(sendSmsToAll(clientConfig.dispatch_numbers, smsMessage));
     }
@@ -100,12 +101,16 @@ export async function postHookHandler(req, res) {
         console.log("retell-post-hook: no dispatch numbers configured, skipping SMS");
     }
     if (clientConfig.dispatch_email) {
-        tasks.push(sendEmail({
+        const emailTask = sendEmail({
             to: clientConfig.dispatch_email,
             cc: clientConfig.dispatch_cc,
             subject: emailSubject,
             body: emailBody,
-        }));
+        }).then((data) => {
+            emailResendId = data?.id ?? null;
+            return data;
+        });
+        tasks.push(emailTask);
     }
     else {
         console.log("retell-post-hook: no dispatch email configured, skipping email");
@@ -120,12 +125,43 @@ export async function postHookHandler(req, res) {
             res.status(500).json({ success: false, errors });
             return;
         }
-        console.log("retell-post-hook: notifications sent");
+        // Summary log
+        const smsCount = clientConfig.dispatch_numbers.length;
+        const emailCount = clientConfig.dispatch_email ? 1 : 0;
+        const callId = call?.call_id ?? "unknown";
+        console.log(`retell-post-hook: notification summary | client="${clientConfig.name}" | call_id=${callId} | sms=${smsCount}/${smsCount} sent | email=${emailCount}/${emailCount} sent`);
+        // Fire-and-forget: check email delivery status after a delay
+        if (emailResendId) {
+            checkEmailDelivery(emailResendId, clientConfig.name).catch(() => { });
+        }
     }
     else {
         console.warn("retell-post-hook: no notification channels configured for this client");
     }
     res.status(200).json({ success: true });
+}
+const EMAIL_CHECK_DELAY_MS = 5_000;
+const EMAIL_PROBLEM_STATUSES = new Set([
+    "bounced",
+    "complained",
+    "failed",
+    "delivery_delayed",
+]);
+async function checkEmailDelivery(resendId, clientName) {
+    await new Promise((r) => setTimeout(r, EMAIL_CHECK_DELAY_MS));
+    try {
+        const status = await getEmailStatus(resendId);
+        const lastEvent = status?.last_event ?? "unknown";
+        if (EMAIL_PROBLEM_STATUSES.has(lastEvent)) {
+            console.error(`retell-post-hook: EMAIL DELIVERY PROBLEM | client="${clientName}" | resend_id=${resendId} | status=${lastEvent} | to=${status?.to} | cc=${status?.cc}`);
+        }
+        else {
+            console.log(`retell-post-hook: email status OK | client="${clientName}" | resend_id=${resendId} | status=${lastEvent}`);
+        }
+    }
+    catch (err) {
+        console.error(`retell-post-hook: failed to check email status | resend_id=${resendId} | error=${err.message}`);
+    }
 }
 function renderTemplate(template, values) {
     return template.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] ?? "");
