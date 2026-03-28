@@ -126,7 +126,7 @@ export async function postHookHandler(req: Request, res: Response) {
     .join("\n");
 
   // Build message bodies
-  const bodyCore = `${messageType.label}\n\n${fieldLines}`;
+  const bodyCore = `Hi ${clientConfig.name}, you have a new call!\n\n${messageType.label}\n\n${fieldLines}`;
   const urgentSuffix = messageType.additional_text
     ? `\n\n${messageType.additional_text}`
     : "";
