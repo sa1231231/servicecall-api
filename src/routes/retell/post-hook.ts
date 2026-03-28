@@ -108,8 +108,21 @@ export async function postHookHandler(req: Request, res: Response) {
 
   // Build field lines
   const fieldLines = messageType.fields
-    .map((f) => `${f.label}: ${fieldValues[f.key]}`)
+    .filter((f) => {
+      if (f.show_when) {
+        const dep = fieldValues[f.show_when.field] ?? "";
+        const allowed = Array.isArray(f.show_when.equals) ? f.show_when.equals : [f.show_when.equals];
+        if (!allowed.includes(dep)) return false;
+      }
+      return true;
+    })
+    .map((f) => {
+      let val = fieldValues[f.key];
+      if (f.format === "yes_no") val = val === "true" ? "Yes" : "No";
+      return `${f.label}: ${val}`;
+    })
     .filter((line) => !line.endsWith(": "))
+    .filter((line) => !clientConfig.hide_not_mentioned || !line.endsWith("Not Mentioned"))
     .join("\n");
 
   // Build message bodies
