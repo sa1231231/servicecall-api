@@ -38,7 +38,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     },
     message_types: {
       emergency: {
-        label: "TEST - EMERGENCY CALL",
+        label: "EMERGENCY CALL",
         subject_template:
           "EMERGENCY: {{full_name}} — {{street_address}}, {{city}}",
         additional_text: "Caller expects contact within 10 minutes.",
@@ -51,7 +51,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
         ],
       },
       service_request: {
-        label: "TEST - New Service Request",
+        label: "New Service Request",
         subject_template:
           "Service Request: {{full_name}} — {{street_address}}, {{city}}",
         fields: [
@@ -114,13 +114,13 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     agent_ids: ["agent_a7155fa14c995df72b2144b88a"],
     dispatch_numbers: ["+13017872841"],
     dispatch_email: "samasra93@gmail.com",
-    // dispatch_numbers: ["+18152073809", "+15748708959"],
+    // dispatch_numbers: ["+18152073809", "+15748708959", "+13017872841"],
     // dispatch_email: "Dispatch@JAFleet.com",
     dispatch_cc: null,
     resolve_type: () => "mobile_emergency",
     message_types: {
       mobile_emergency: {
-        label: "EMERGENCY REPAIR CALL",
+        label: "TEST - EMERGENCY REPAIR CALL",
         subject_template:
           "Emergency: {{company_name}} — {{breakdown_location}}",
         fields: [
