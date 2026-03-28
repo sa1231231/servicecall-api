@@ -8,15 +8,16 @@ interface EmailOptions {
   cc?: string | null;
   subject: string;
   body: string;
+  html?: string;
 }
 
-export async function sendEmail({ to, cc, subject, body }: EmailOptions) {
+export async function sendEmail({ to, cc, subject, body, html }: EmailOptions) {
   const { data, error } = await resend.emails.send({
     from: config.EMAIL_FROM,
     to,
     cc: cc ?? undefined,
     subject,
-    text: body,
+    ...(html ? { html } : { text: body }),
   });
 
   if (error) {

@@ -106,8 +106,8 @@ export async function postHookHandler(req: Request, res: Response) {
     return;
   }
 
-  // Build field lines
-  const fieldLines = messageType.fields
+  // Filter visible fields
+  const visibleFields = messageType.fields
     .filter((f) => {
       if (f.show_when) {
         const dep = fieldValues[f.show_when.field] ?? "";
@@ -119,20 +119,31 @@ export async function postHookHandler(req: Request, res: Response) {
     .map((f) => {
       let val = fieldValues[f.key];
       if (f.format === "yes_no") val = val === "true" ? "Yes" : "No";
-      return `${f.label}: ${val}`;
+      return { label: f.label, value: val };
     })
-    .filter((line) => !line.endsWith(": "))
-    .filter((line) => !clientConfig.hide_not_mentioned || !line.endsWith("Not Mentioned"))
-    .join("\n");
+    .filter((f) => f.value)
+    .filter((f) => !clientConfig.hide_not_mentioned || f.value !== "Not Mentioned");
+
+  // Build plain-text field lines (for SMS)
+  const fieldLines = visibleFields.map((f) => `${f.label}: ${f.value}`).join("\n");
+
+  // Build HTML field lines (for email)
+  const fieldLinesHtml = visibleFields
+    .map((f) => `<strong>${f.label}:</strong> ${f.value}`)
+    .join("<br>");
 
   // Build message bodies
-  const bodyCore = `Hi ${clientConfig.name}, you have a new call!\n\n${messageType.label}\n\n${fieldLines}`;
+  const greeting = `Hi ${clientConfig.name}, you have a new call!`;
   const urgentSuffix = messageType.additional_text
     ? `\n\n${messageType.additional_text}`
     : "";
+  const urgentSuffixHtml = messageType.additional_text
+    ? `<br><br>${messageType.additional_text}`
+    : "";
 
-  const smsMessage = `${bodyCore}${urgentSuffix}\n\n— Service Call Saver`;
-  const emailBody = `${bodyCore}${urgentSuffix}\n\n—\nSent by Service Call Saver\nservicecallsaver.com`;
+  const smsMessage = `${greeting}\n\n${messageType.label}\n\n${fieldLines}${urgentSuffix}\n\n— Service Call Saver`;
+  const emailBody = `${greeting}\n\n${messageType.label}\n\n${fieldLines}${urgentSuffix}\n\n—\nSent by Service Call Saver\nservicecallsaver.com`;
+  const emailHtml = `<p>${greeting}</p><p><strong>${messageType.label}</strong></p><p>${fieldLinesHtml}</p>${urgentSuffixHtml}<br><br><p>—<br>Sent by Service Call Saver<br>servicecallsaver.com</p>`;
   const emailSubject = renderTemplate(messageType.subject_template, fieldValues);
 
   console.log(
@@ -156,6 +167,7 @@ export async function postHookHandler(req: Request, res: Response) {
       cc: clientConfig.dispatch_cc,
       subject: emailSubject,
       body: emailBody,
+      html: emailHtml,
     }).then((data) => {
       emailResendId = data?.id ?? null;
       return data;
