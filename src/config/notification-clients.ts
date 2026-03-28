@@ -108,7 +108,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   },
   "j-a": {
     name: "J&A Towing",
-    agent_ids: [],
+    agent_ids: ["agent_a7155fa14c995df72b2144b88a"],
     dispatch_numbers: ["+13017872841"],
     dispatch_email: "samasra93@gmail.com",
     // dispatch_numbers: ["+18152073809", "+15748708959"],
