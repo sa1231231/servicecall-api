@@ -120,7 +120,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     resolve_type: () => "mobile_emergency",
     message_types: {
       mobile_emergency: {
-        label: "Mobile Emergency Call",
+        label: "EMERGENCY REPAIR CALL",
         subject_template:
           "Emergency: {{company_name}} — {{breakdown_location}}",
         fields: [
@@ -137,8 +137,17 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
           { key: "vehicle_type", label: "Vehicle Type" },
           { key: "vehicle_manufacturer", label: "Vehicle Make" },
           { key: "vehicle_color", label: "Vehicle Color" },
-          { key: "is_loaded", label: "Is it Loaded?", show_when: { field: "load_weight_collected", equals: "true" }, format: "yes_no" },
-          { key: "load_weight", label: "Load Weight", show_when: { field: "load_weight_collected", equals: "true" } },
+          {
+            key: "is_loaded",
+            label: "Is it Loaded?",
+            show_when: { field: "load_weight_collected", equals: "true" },
+            format: "yes_no",
+          },
+          {
+            key: "load_weight",
+            label: "Load Weight",
+            show_when: { field: "load_weight_collected", equals: "true" },
+          },
           { key: "whos_paying", label: "Who's Paying" },
           { key: "payment_method", label: "Payment Method" },
         ],
