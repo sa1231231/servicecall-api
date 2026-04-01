@@ -27,7 +27,7 @@ export interface ClientNotificationConfig {
 
 export const notificationClients: Record<string, ClientNotificationConfig> = {
   "pro-v": {
-    name: "Pro V Contracting",
+    name: "Pro V",
     agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
     dispatch_numbers: ["+19517608403", "+16193007267"],
     dispatch_email: "info@provcontracting.com",
@@ -110,7 +110,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     phone_fallback_to_caller: true,
   },
   "j-a": {
-    name: "J&A Towing",
+    name: "J&A Fleet Maintenance",
     agent_ids: ["agent_a7155fa14c995df72b2144b88a"],
     dispatch_numbers: ["+18152073809", "+15748708959", "+13017872841"],
     dispatch_email: "Dispatch@JAFleet.com",
