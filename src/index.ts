@@ -1,12 +1,30 @@
 import express from "express";
+import rateLimit from "express-rate-limit";
 import { config } from "./config.js";
 import { healthRouter } from "./routes/health.js";
 import { stripeRouter } from "./routes/stripe/index.js";
 import { retellRouter } from "./routes/retell/index.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
 
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
+// Lenient limiter for Retell webhooks — they may burst multiple calls
+const webhookLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
 
 const app = express();
+app.use(globalLimiter);
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -27,7 +45,7 @@ app.use((req, res, next) => {
 });
 
 app.use("/health", healthRouter);
-app.use("/retell", retellRouter);
+app.use("/retell", webhookLimiter, retellRouter);
 
 app.use((req, res, next) => {
   const key = req.headers["x-api-key"];

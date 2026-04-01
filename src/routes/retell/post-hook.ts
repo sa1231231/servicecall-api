@@ -4,6 +4,7 @@ import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
 import { agentIdToClient } from "../../config/notification-clients.js";
+import { escapeHtml } from "../../lib/escape-html.js";
 
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
@@ -127,9 +128,9 @@ export async function postHookHandler(req: Request, res: Response) {
   // Build plain-text field lines (for SMS)
   const fieldLines = visibleFields.map((f) => `${f.label}: ${f.value}`).join("\n");
 
-  // Build HTML field lines (for email)
+  // Build HTML field lines (for email) — escape user-provided values
   const fieldLinesHtml = visibleFields
-    .map((f) => `<strong>${f.label}:</strong> ${f.value}`)
+    .map((f) => `<strong>${escapeHtml(f.label)}:</strong> ${escapeHtml(f.value)}`)
     .join("<br>");
 
   // Build message bodies
@@ -138,12 +139,12 @@ export async function postHookHandler(req: Request, res: Response) {
     ? `\n\n${messageType.additional_text}`
     : "";
   const urgentSuffixHtml = messageType.additional_text
-    ? `<br><br>${messageType.additional_text}`
+    ? `<br><br>${escapeHtml(messageType.additional_text)}`
     : "";
 
   const smsMessage = `${greeting}\n\n${messageType.label}\n\n${fieldLines}${urgentSuffix}\n\n— Service Call Saver`;
   const emailBody = `${greeting}\n\n${messageType.label}\n\n${fieldLines}${urgentSuffix}\n\n—\nSent by Service Call Saver\nservicecallsaver.com`;
-  const emailHtml = `<p>${greeting}</p><p><strong>${messageType.label}</strong></p><p>${fieldLinesHtml}</p>${urgentSuffixHtml}<br><br><p>—<br>Sent by Service Call Saver<br>servicecallsaver.com</p>`;
+  const emailHtml = `<p>${escapeHtml(greeting)}</p><p><strong>${escapeHtml(messageType.label)}</strong></p><p>${fieldLinesHtml}</p>${urgentSuffixHtml}<br><br><p>—<br>Sent by Service Call Saver<br>servicecallsaver.com</p>`;
   const emailSubject = renderTemplate(messageType.subject_template, fieldValues);
 
   console.log(
