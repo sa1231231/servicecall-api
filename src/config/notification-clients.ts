@@ -16,7 +16,7 @@ export interface ClientNotificationConfig {
   name: string;
   agent_ids: string[];
   dispatch_numbers: string[];
-  dispatch_email: string | null;
+  dispatch_email: string[] | null;
   dispatch_cc: string | null;
   resolve_type: (vars: Record<string, string>) => string;
   message_types: Record<string, MessageType>;
@@ -29,8 +29,8 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   "pro-v": {
     name: "Pro V",
     agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
-    dispatch_numbers: ["+19517608403", "+16193007267"],
-    dispatch_email: "info@provcontracting.com",
+    dispatch_numbers: ["+19517608403", "+16193007267", "+13017872841"],
+    dispatch_email: ["info@provcontracting.com", "samasra93@gmail.com"],
     dispatch_cc: null, // removed — dispatch@provcontracting.com mailbox doesn't exist, was causing delivery_delayed
     resolve_type: (vars) => {
       if (vars.is_emergency === "true") return "emergency";
@@ -72,7 +72,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     name: "Test Client",
     agent_ids: [],
     dispatch_numbers: ["+13017872841"],
-    dispatch_email: "samasra93@gmail.com",
+    dispatch_email: ["samasra93@gmail.com"],
     dispatch_cc: null,
     resolve_type: (vars) => {
       if (vars.is_emergency === "true") return "emergency";
@@ -113,7 +113,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     name: "J&A Fleet Maintenance",
     agent_ids: ["agent_a7155fa14c995df72b2144b88a"],
     dispatch_numbers: ["+18152073809", "+15748708959", "+13017872841"],
-    dispatch_email: "Dispatch@JAFleet.com",
+    dispatch_email: ["Dispatch@JAFleet.com", "samasra93@gmail.com"],
     dispatch_cc: null,
     resolve_type: () => "mobile_emergency",
     message_types: {
@@ -159,7 +159,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     name: "Test Client (Prod)",
     agent_ids: [],
     dispatch_numbers: ["+13017872841"],
-    dispatch_email: "samasra93@gmail.com",
+    dispatch_email: ["samasra93@gmail.com"],
     dispatch_cc: null,
     resolve_type: (vars) => {
       if (vars.is_emergency === "true") return "emergency";

@@ -151,7 +151,7 @@ export async function postHookHandler(req: Request, res: Response) {
   );
 
   const tasks: Promise<unknown>[] = [];
-  let emailResendId: string | null = null;
+  const emailResendIds: string[] = [];
 
   if (clientConfig.dispatch_numbers.length > 0) {
     tasks.push(sendSmsToAll(clientConfig.dispatch_numbers, smsMessage));
@@ -161,18 +161,20 @@ export async function postHookHandler(req: Request, res: Response) {
     );
   }
 
-  if (clientConfig.dispatch_email) {
-    const emailTask = sendEmail({
-      to: clientConfig.dispatch_email,
-      cc: clientConfig.dispatch_cc,
-      subject: emailSubject,
-      body: emailBody,
-      html: emailHtml,
-    }).then((data) => {
-      emailResendId = data?.id ?? null;
-      return data;
-    });
-    tasks.push(emailTask);
+  if (clientConfig.dispatch_email && clientConfig.dispatch_email.length > 0) {
+    for (const email of clientConfig.dispatch_email) {
+      const emailTask = sendEmail({
+        to: email,
+        cc: clientConfig.dispatch_cc,
+        subject: emailSubject,
+        body: emailBody,
+        html: emailHtml,
+      }).then((data) => {
+        if (data?.id) emailResendIds.push(data.id);
+        return data;
+      });
+      tasks.push(emailTask);
+    }
   } else {
     console.log(
       "retell-post-hook: no dispatch email configured, skipping email",
@@ -193,15 +195,15 @@ export async function postHookHandler(req: Request, res: Response) {
 
     // Summary log
     const smsCount = clientConfig.dispatch_numbers.length;
-    const emailCount = clientConfig.dispatch_email ? 1 : 0;
+    const emailCount = clientConfig.dispatch_email?.length ?? 0;
     const callId = call?.call_id ?? "unknown";
     console.log(
       `retell-post-hook: notification summary | client="${clientConfig.name}" | call_id=${callId} | sms=${smsCount}/${smsCount} sent | email=${emailCount}/${emailCount} sent`,
     );
 
     // Fire-and-forget: check email delivery status after a delay
-    if (emailResendId) {
-      checkEmailDelivery(emailResendId, clientConfig.name).catch(() => {});
+    for (const resendId of emailResendIds) {
+      checkEmailDelivery(resendId, clientConfig.name).catch(() => {});
     }
   } else {
     console.warn(
