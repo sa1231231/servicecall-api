@@ -157,7 +157,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   },
   "rapid-care": {
     name: "Rapid Care Truck Repair",
-    agent_ids: [],
+    agent_ids: ["agent_22cb78c4ce16e8a470ed6bce8d"],
     dispatch_numbers: ["+18152073809", "+15748708959", "+13017872841"],
     dispatch_email: ["Dispatch@JAFleet.com", "samasra93@gmail.com"],
     dispatch_cc: null,
