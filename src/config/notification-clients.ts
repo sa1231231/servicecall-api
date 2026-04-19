@@ -118,7 +118,53 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     resolve_type: () => "mobile_emergency",
     message_types: {
       mobile_emergency: {
-        label: "TEST - EMERGENCY REPAIR CALL",
+        label: "EMERGENCY REPAIR CALL",
+        subject_template:
+          "Emergency: {{company_name}} — {{breakdown_location}}",
+        fields: [
+          { key: "company_name", label: "Company" },
+          { key: "full_name", label: "Name" },
+          { key: "phone_number", label: "Phone" },
+          { key: "phone_number_extension", label: "Phone Ext" },
+          { key: "truck_number", label: "Truck #" },
+          { key: "driver_name", label: "Driver Name" },
+          { key: "driver_phone", label: "Driver Phone" },
+          { key: "driver_phone_extension", label: "Driver Phone Ext" },
+          { key: "breakdown_location", label: "Breakdown Location" },
+          { key: "problem_description", label: "Problem" },
+          { key: "vehicle_type", label: "Vehicle Type" },
+          { key: "vehicle_manufacturer", label: "Vehicle Make" },
+          { key: "vehicle_color", label: "Vehicle Color" },
+          {
+            key: "is_loaded",
+            label: "Is it Loaded?",
+            show_when: { field: "load_weight_collected", equals: "true" },
+            format: "yes_no",
+          },
+          {
+            key: "load_weight",
+            label: "Load Weight",
+            show_when: { field: "load_weight_collected", equals: "true" },
+          },
+          { key: "whos_paying", label: "Who's Paying" },
+          { key: "payment_method", label: "Payment Method" },
+        ],
+      },
+    },
+    default_message_type: "mobile_emergency",
+    phone_fallback_to_caller: true,
+    hide_not_mentioned: true,
+  },
+  "rapid-care": {
+    name: "Rapid Care Truck Repair",
+    agent_ids: [],
+    dispatch_numbers: ["+18152073809", "+15748708959", "+13017872841"],
+    dispatch_email: ["Dispatch@JAFleet.com", "samasra93@gmail.com"],
+    dispatch_cc: null,
+    resolve_type: () => "mobile_emergency",
+    message_types: {
+      mobile_emergency: {
+        label: "EMERGENCY REPAIR CALL",
         subject_template:
           "Emergency: {{company_name}} — {{breakdown_location}}",
         fields: [
