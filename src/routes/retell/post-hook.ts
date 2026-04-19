@@ -3,7 +3,7 @@ import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
-import { agentIdToClient } from "../../config/notification-clients.js";
+import { agentIdToClient, ownerConfig } from "../../config/notification-clients.js";
 import { escapeHtml } from "../../lib/escape-html.js";
 
 export async function postHookHandler(req: Request, res: Response) {
@@ -147,6 +147,38 @@ export async function postHookHandler(req: Request, res: Response) {
   const emailHtml = `<p>${escapeHtml(greeting)}</p><p><strong>${escapeHtml(messageType.label)}</strong></p><p>${fieldLinesHtml}</p>${urgentSuffixHtml}<br><br><p>—<br>Sent by Service Call Saver<br>servicecallsaver.com</p>`;
   const emailSubject = renderTemplate(messageType.subject_template, fieldValues);
 
+  // ── Shadow Dry-Run ─────────────────────────────────────────────────
+  if (clientConfig.shadow_mode) {
+    const dryRunSummary =
+      `[SHADOW DRY-RUN] client="${clientConfig.name}"\n\n` +
+      `Original dispatch numbers: ${JSON.stringify(clientConfig.dispatch_numbers)}\n` +
+      `Original dispatch emails:  ${JSON.stringify(clientConfig.dispatch_email)}\n\n` +
+      `--- SMS PREVIEW ---\n${smsMessage}\n\n` +
+      `--- EMAIL PREVIEW ---\nSubject: ${emailSubject}\n\n${emailBody}`;
+
+    console.log(`retell-post-hook: ${dryRunSummary}`);
+
+    // Send the dry-run preview to owner so they can see exact formatting
+    const shadowTasks: Promise<unknown>[] = [
+      sendSmsToAll([ownerConfig.phone], `[SHADOW DRY-RUN] ${clientConfig.name}\n\n--- SMS that would be sent ---\n\n${smsMessage}`),
+      sendEmail({
+        to: ownerConfig.email,
+        subject: `[SHADOW DRY-RUN] ${emailSubject}`,
+        body: dryRunSummary,
+        html: `<p><strong>[SHADOW DRY-RUN]</strong> for client "${escapeHtml(clientConfig.name)}"</p>` +
+          `<p>Original dispatch numbers: ${escapeHtml(JSON.stringify(clientConfig.dispatch_numbers))}<br>` +
+          `Original dispatch emails: ${escapeHtml(JSON.stringify(clientConfig.dispatch_email))}</p>` +
+          `<hr><p><strong>SMS Preview:</strong></p><pre>${escapeHtml(smsMessage)}</pre>` +
+          `<hr><p><strong>Email Preview (as client would see it):</strong></p>` +
+          `<p>Subject: ${escapeHtml(emailSubject)}</p>${emailHtml}`,
+      }),
+    ];
+
+    await Promise.allSettled(shadowTasks);
+    res.status(200).json({ success: true, outcome: "shadow_dry_run" });
+    return;
+  }
+
   console.log(
     `retell-post-hook: sending notifications for client "${clientConfig.name}"`,
   );
@@ -223,7 +255,7 @@ const EMAIL_PROBLEM_STATUSES = new Set([
   "delivery_delayed",
 ]);
 
-const ALERT_EMAIL = "samasra93@gmail.com";
+const ALERT_EMAIL = ownerConfig.email;
 
 async function checkEmailDelivery(resendId: string, clientName: string) {
   await new Promise((r) => setTimeout(r, EMAIL_CHECK_DELAY_MS));

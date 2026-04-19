@@ -1,3 +1,8 @@
+export const ownerConfig = {
+  phone: "+13017872841",
+  email: "samasra93@gmail.com",
+} as const;
+
 export interface Field {
   key: string;
   label: string;
@@ -23,14 +28,15 @@ export interface ClientNotificationConfig {
   default_message_type: string;
   phone_fallback_to_caller?: boolean;
   hide_not_mentioned?: boolean;
+  shadow_mode?: boolean;
 }
 
 export const notificationClients: Record<string, ClientNotificationConfig> = {
   "pro-v": {
     name: "Pro V",
     agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
-    dispatch_numbers: ["+19517608403", "+16193007267", "+13017872841"],
-    dispatch_email: ["info@provcontracting.com", "samasra93@gmail.com"],
+    dispatch_numbers: ["+19517608403", "+16193007267", ownerConfig.phone],
+    dispatch_email: ["info@provcontracting.com", ownerConfig.email],
     dispatch_cc: null, // removed — dispatch@provcontracting.com mailbox doesn't exist, was causing delivery_delayed
     resolve_type: (vars) => {
       if (vars.is_emergency === "true") return "emergency";
@@ -67,12 +73,13 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     },
     default_message_type: "service_request",
     phone_fallback_to_caller: true,
+    shadow_mode: true,
   },
   test: {
     name: "Test Client",
     agent_ids: [],
-    dispatch_numbers: ["+13017872841"],
-    dispatch_email: ["samasra93@gmail.com"],
+    dispatch_numbers: [ownerConfig.phone],
+    dispatch_email: [ownerConfig.email],
     dispatch_cc: null,
     resolve_type: (vars) => {
       if (vars.is_emergency === "true") return "emergency";
@@ -108,12 +115,13 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     },
     default_message_type: "service_request",
     phone_fallback_to_caller: true,
+    shadow_mode: true,
   },
   "j-a": {
     name: "J&A Fleet Maintenance",
     agent_ids: ["agent_a7155fa14c995df72b2144b88a"],
-    dispatch_numbers: ["+18152073809", "+15748708959", "+13017872841"],
-    dispatch_email: ["Dispatch@JAFleet.com", "samasra93@gmail.com"],
+    dispatch_numbers: ["+18152073809", "+15748708959", ownerConfig.phone],
+    dispatch_email: ["Dispatch@JAFleet.com", ownerConfig.email],
     dispatch_cc: null,
     resolve_type: () => "mobile_emergency",
     message_types: {
@@ -154,12 +162,13 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     default_message_type: "mobile_emergency",
     phone_fallback_to_caller: true,
     hide_not_mentioned: true,
+    shadow_mode: true,
   },
   "rapid-care": {
     name: "Rapid Care Truck Repair",
     agent_ids: ["agent_22cb78c4ce16e8a470ed6bce8d"],
-    dispatch_numbers: ["+18152073809", "+15748708959", "+13017872841"],
-    dispatch_email: ["Dispatch@JAFleet.com", "samasra93@gmail.com"],
+    dispatch_numbers: ["+18152073809", "+15748708959", ownerConfig.phone],
+    dispatch_email: ["Dispatch@JAFleet.com", ownerConfig.email],
     dispatch_cc: null,
     resolve_type: () => "mobile_emergency",
     message_types: {
@@ -200,12 +209,13 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     default_message_type: "mobile_emergency",
     phone_fallback_to_caller: true,
     hide_not_mentioned: true,
+    shadow_mode: true,
   },
   test_prod: {
     name: "Test Client (Prod)",
     agent_ids: [],
-    dispatch_numbers: ["+13017872841"],
-    dispatch_email: ["samasra93@gmail.com"],
+    dispatch_numbers: [ownerConfig.phone],
+    dispatch_email: [ownerConfig.email],
     dispatch_cc: null,
     resolve_type: (vars) => {
       if (vars.is_emergency === "true") return "emergency";
@@ -241,6 +251,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     },
     default_message_type: "service_request",
     phone_fallback_to_caller: true,
+    shadow_mode: true,
   },
 };
 
