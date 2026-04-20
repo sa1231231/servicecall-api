@@ -132,7 +132,12 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
         subject_template:
           "Emergency: {{company_name}} — {{breakdown_location}}",
         fields: [
-          { key: "is_dispatch", label: "Dispatch", show: false, required: { equals: "true" } },
+          {
+            key: "is_dispatch",
+            label: "Dispatch",
+            show: false,
+            required: { equals: "true" },
+          },
           { key: "company_name", label: "Company" },
           { key: "full_name", label: "Name" },
           { key: "phone_number", label: "Phone" },
@@ -169,7 +174,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   },
   "rapid-care": {
     name: "Rapid Care Truck Repair",
-    agent_ids: ["agent_22cb78c4ce16e8a470ed6bce8d"],
+    agent_ids: ["agent_294ad7bd13016357ad5a1481d7"],
     dispatch_numbers: ["+18152073809", "+15748708959", ownerConfig.phone],
     dispatch_email: ["Dispatch@JAFleet.com", ownerConfig.email],
     dispatch_cc: null,
@@ -180,7 +185,12 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
         subject_template:
           "Emergency: {{company_name}} — {{breakdown_location}}",
         fields: [
-          { key: "is_dispatch", label: "Dispatch", show: false, required: { equals: "true" } },
+          {
+            key: "is_dispatch",
+            label: "Dispatch",
+            show: false,
+            required: { equals: "true" },
+          },
           { key: "company_name", label: "Company" },
           { key: "full_name", label: "Name" },
           { key: "phone_number", label: "Phone" },
