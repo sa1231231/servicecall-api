@@ -137,7 +137,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
       "+18156666686",
       ownerConfig.phone,
     ],
-    dispatch_call_number: null,
+    dispatch_call_number: "+18152073809",
     summary_agent_id: "agent_b1e4f94114485c41252b802afb",
     outbound_from_number: "+15747667823",
     dispatch_email: ["Dispatch@JAFleet.com", ownerConfig.email],
