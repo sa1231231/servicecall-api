@@ -121,7 +121,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   },
   "j-a": {
     name: "J&A Fleet Maintenance",
-    agent_ids: ["agent_a7155fa14c995df72b2144b88a"],
+    agent_ids: ["agent_09483ca979c6987f8af2ebc00c"],
     dispatch_numbers: ["+18152073809", "+15748708959", ownerConfig.phone],
     dispatch_email: ["Dispatch@JAFleet.com", ownerConfig.email],
     dispatch_cc: null,
@@ -146,7 +146,11 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
           { key: "driver_name", label: "Driver Name" },
           { key: "driver_phone", label: "Driver Phone" },
           { key: "driver_phone_extension", label: "Driver Phone Ext" },
-          { key: "breakdown_location", label: "Breakdown Location", required: true },
+          {
+            key: "breakdown_location",
+            label: "Breakdown Location",
+            required: true,
+          },
           { key: "problem_description", label: "Problem", required: true },
           { key: "vehicle_type", label: "Vehicle Type" },
           { key: "vehicle_manufacturer", label: "Vehicle Make" },
@@ -174,7 +178,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   },
   "rapid-care": {
     name: "Rapid Care Truck Repair",
-    agent_ids: ["agent_294ad7bd13016357ad5a1481d7"],
+    agent_ids: ["agent_d2ccc8446c3b0d77feda41d083"],
     dispatch_numbers: ["+18152073809", "+15748708959", ownerConfig.phone],
     dispatch_email: ["Dispatch@JAFleet.com", ownerConfig.email],
     dispatch_cc: null,
@@ -199,7 +203,11 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
           { key: "driver_name", label: "Driver Name" },
           { key: "driver_phone", label: "Driver Phone" },
           { key: "driver_phone_extension", label: "Driver Phone Ext" },
-          { key: "breakdown_location", label: "Breakdown Location", required: true },
+          {
+            key: "breakdown_location",
+            label: "Breakdown Location",
+            required: true,
+          },
           { key: "problem_description", label: "Problem", required: true },
           { key: "vehicle_type", label: "Vehicle Type" },
           { key: "vehicle_manufacturer", label: "Vehicle Make" },
