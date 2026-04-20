@@ -191,7 +191,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
     default_message_type: "mobile_emergency",
     phone_fallback_to_caller: true,
     hide_not_mentioned: true,
-    shadow_mode: false,
+    shadow_mode: true,
   },
   test_prod: {
     name: "Test Client (Prod)",
