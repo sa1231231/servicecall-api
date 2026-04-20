@@ -12,6 +12,7 @@ export const config = {
   STRIPE_SIGNING_SECRET: process.env.STRIPE_SIGNING_SECRET ?? "",
   STRIPE_API_KEY: process.env.STRIPE_API_KEY ?? "",
   RETELL_SIGNATURE_KEY: requireEnv("RETELL_SIGNATURE_KEY"),
+  RETELL_API_KEY: requireEnv("RETELL_API_KEY"),
   GHL_API_KEY: requireEnv("GHL_API_KEY"),
 
   API_KEY: requireEnv("API_KEY"),

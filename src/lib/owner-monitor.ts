@@ -1,7 +1,13 @@
+import Retell from "retell-sdk";
+import { config } from "../config.js";
 import { ownerConfig, type ClientNotificationConfig } from "../config/notification-clients.js";
 import { sendEmail } from "./notify-email.js";
 import { sendSms } from "./notify-sms.js";
 import { escapeHtml } from "./escape-html.js";
+
+const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+
+const ANALYSIS_FETCH_DELAY_MS = 5_000;
 
 interface CallAnalysis {
   call_summary?: string;
@@ -38,14 +44,28 @@ export async function sendOwnerCallMonitor(
 
   const callId = call.call_id ?? "unknown";
   const fromNumber = call.from_number ?? "unknown";
-  const durationMs = call.duration_ms ?? 0;
-  const duration = formatDuration(durationMs);
   const disconnectionReason = call.disconnection_reason ?? "unknown";
-  const transcript = call.transcript ?? "(no transcript)";
-  const recordingUrl = call.recording_url ?? null;
-  const publicLogUrl = call.public_log_url ?? null;
 
-  const analysis: CallAnalysis = call.call_analysis ?? {};
+  // Wait for Retell to compute call analysis, then fetch enriched call data
+  await new Promise((r) => setTimeout(r, ANALYSIS_FETCH_DELAY_MS));
+
+  let enrichedCall = call;
+  try {
+    if (callId !== "unknown") {
+      enrichedCall = await retell.call.retrieve(callId) as any;
+      console.log(`owner-monitor: fetched enriched call data for ${callId}`);
+    }
+  } catch (err: any) {
+    console.warn(`owner-monitor: failed to fetch call ${callId}, using webhook data: ${err.message}`);
+  }
+
+  const durationMs = enrichedCall.duration_ms ?? call.duration_ms ?? 0;
+  const duration = formatDuration(durationMs);
+  const transcript = enrichedCall.transcript ?? call.transcript ?? "(no transcript)";
+  const recordingUrl = enrichedCall.recording_url ?? call.recording_url ?? null;
+  const publicLogUrl = enrichedCall.public_log_url ?? call.public_log_url ?? null;
+
+  const analysis: CallAnalysis = enrichedCall.call_analysis ?? call.call_analysis ?? {};
   const sentiment = analysis.user_sentiment ?? "Unknown";
   const callSuccessful = analysis.call_successful;
   const callSummary = analysis.call_summary ?? "(no summary)";
