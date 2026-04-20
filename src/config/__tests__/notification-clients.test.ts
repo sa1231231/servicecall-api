@@ -57,4 +57,35 @@ describe("notificationClients", () => {
       ).toBe(true);
     }
   });
+
+  it("required fields have valid structure", () => {
+    for (const [key, client] of Object.entries(notificationClients)) {
+      for (const [typeKey, msgType] of Object.entries(client.message_types)) {
+        for (const field of msgType.fields) {
+          if (field.required && field.required !== true) {
+            const eq = field.required.equals;
+            expect(
+              typeof eq === "string" || Array.isArray(eq),
+              `${key}.${typeKey}.${field.key}: required.equals must be string or string[]`,
+            ).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
+  it("show property is boolean when set", () => {
+    for (const [key, client] of Object.entries(notificationClients)) {
+      for (const [typeKey, msgType] of Object.entries(client.message_types)) {
+        for (const field of msgType.fields) {
+          if (field.show !== undefined) {
+            expect(
+              typeof field.show,
+              `${key}.${typeKey}.${field.key}: show must be boolean`,
+            ).toBe("boolean");
+          }
+        }
+      }
+    }
+  });
 });

@@ -6,6 +6,8 @@ export const ownerConfig = {
 export interface Field {
   key: string;
   label: string;
+  show?: boolean;
+  required?: true | { equals: string | string[] };
   show_when?: { field: string; equals: string | string[] };
   format?: "yes_no";
 }
@@ -130,6 +132,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
         subject_template:
           "Emergency: {{company_name}} — {{breakdown_location}}",
         fields: [
+          { key: "is_dispatch", label: "Dispatch", show: false, required: { equals: "true" } },
           { key: "company_name", label: "Company" },
           { key: "full_name", label: "Name" },
           { key: "phone_number", label: "Phone" },
@@ -139,7 +142,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
           { key: "driver_phone", label: "Driver Phone" },
           { key: "driver_phone_extension", label: "Driver Phone Ext" },
           { key: "breakdown_location", label: "Breakdown Location" },
-          { key: "problem_description", label: "Problem" },
+          { key: "problem_description", label: "Problem", required: true },
           { key: "vehicle_type", label: "Vehicle Type" },
           { key: "vehicle_manufacturer", label: "Vehicle Make" },
           { key: "vehicle_color", label: "Vehicle Color" },
@@ -177,6 +180,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
         subject_template:
           "Emergency: {{company_name}} — {{breakdown_location}}",
         fields: [
+          { key: "is_dispatch", label: "Dispatch", show: false, required: { equals: "true" } },
           { key: "company_name", label: "Company" },
           { key: "full_name", label: "Name" },
           { key: "phone_number", label: "Phone" },
@@ -186,7 +190,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
           { key: "driver_phone", label: "Driver Phone" },
           { key: "driver_phone_extension", label: "Driver Phone Ext" },
           { key: "breakdown_location", label: "Breakdown Location" },
-          { key: "problem_description", label: "Problem" },
+          { key: "problem_description", label: "Problem", required: true },
           { key: "vehicle_type", label: "Vehicle Type" },
           { key: "vehicle_manufacturer", label: "Vehicle Make" },
           { key: "vehicle_color", label: "Vehicle Color" },

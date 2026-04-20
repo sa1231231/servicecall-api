@@ -96,6 +96,28 @@ export async function postHookHandler(req: Request, res: Response) {
     fields: fieldValues,
   });
 
+  // Check required fields — block notification if any required field fails
+  const failedRequired = messageType.fields.filter((f) => {
+    if (!f.required) return false;
+    const val = fieldValues[f.key] ?? "";
+    if (f.required === true) {
+      return !val || val === "Not Mentioned";
+    }
+    const allowed = Array.isArray(f.required.equals)
+      ? f.required.equals
+      : [f.required.equals];
+    return !allowed.includes(val);
+  });
+
+  if (failedRequired.length > 0) {
+    const names = failedRequired.map((f) => f.key).join(", ");
+    console.warn(
+      `retell-post-hook: required field check failed [${names}], skipping notification`,
+    );
+    res.status(200).json({ success: true, outcome: "skipped_required_field" });
+    return;
+  }
+
   // Skip notification if no meaningful data was collected (phone_number excluded — it defaults to caller)
   const meaningfulFields = messageType.fields.filter(
     (f) => f.key !== "phone_number" && fieldValues[f.key] && fieldValues[f.key] !== "Not Mentioned"
@@ -109,6 +131,7 @@ export async function postHookHandler(req: Request, res: Response) {
 
   // Filter visible fields
   const visibleFields = messageType.fields
+    .filter((f) => f.show !== false)
     .filter((f) => {
       if (f.show_when) {
         const dep = fieldValues[f.show_when.field] ?? "";

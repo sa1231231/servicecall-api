@@ -78,6 +78,7 @@ Clients are defined in `src/config/notification-clients.ts`. Each client maps a 
 | `default_message_type` | string | Fallback message type |
 | `phone_fallback_to_caller` | boolean | Use caller's number if phone not collected |
 | `hide_not_mentioned` | boolean | Omit fields with value "Not Mentioned" |
+| `shadow_mode` | boolean | Send dry-run preview to owner instead of dispatch |
 
 ### Current Clients
 
@@ -94,8 +95,16 @@ Clients are defined in `src/config/notification-clients.ts`. Each client maps a 
 Each message type defines a `label`, `subject_template`, optional `additional_text`, and a list of `fields` to include.
 
 **Fields** can have:
+- `required: true` — field must be non-empty and not "Not Mentioned", or the notification is blocked
+- `required: { equals: "value" }` — field must match a specific value, or the notification is blocked
+- `show: false` — field is used for validation/routing only and excluded from SMS/email output (defaults to `true`)
 - `show_when` — conditional visibility based on another field's value
 - `format: "yes_no"` — converts `"true"`/`"false"` to `"Yes"`/`"No"`
+
+**Example: guardrail field** — blocks notification unless `is_dispatch` is `"true"`, but never appears in the message:
+```typescript
+{ key: "is_dispatch", label: "Dispatch", show: false, required: { equals: "true" } }
+```
 
 ### Adding a New Client
 
@@ -127,17 +136,20 @@ The `agentIdToClient` lookup map is built automatically at startup.
 5. Resolve message type
    └─ client.resolve_type(allVars) → e.g., "emergency"
 
-6. Build notification
-   ├─ Filter visible fields (show_when, hide_not_mentioned)
+6. Check required fields
+   └─ Block notification if any required field fails validation
+
+7. Build notification
+   ├─ Filter visible fields (show, show_when, hide_not_mentioned)
    ├─ Format values (yes_no)
    ├─ Build SMS (plain text)
    └─ Build email (plain text + HTML with escaped values)
 
-7. Dispatch
+8. Dispatch
    ├─ SMS → Twilio → each dispatch_number
    └─ Email → Resend → each dispatch_email
 
-8. Monitor email delivery (fire-and-forget, 5s delay)
+9. Monitor email delivery (fire-and-forget, 5s delay)
    └─ Alert if bounced/failed/delayed
 ```
 
