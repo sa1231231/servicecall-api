@@ -6,6 +6,7 @@ import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
 import { agentIdToClient, ownerConfig } from "../../config/notification-clients.js";
 import { escapeHtml } from "../../lib/escape-html.js";
 import { sendOwnerCallMonitor } from "../../lib/owner-monitor.js";
+import { triggerDispatchCall } from "../../lib/dispatch-call.js";
 
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
@@ -177,7 +178,7 @@ export async function postHookHandler(req: Request, res: Response) {
   if (clientConfig.shadow_mode) {
     const dryRunSummary =
       `[SHADOW DRY-RUN] client="${clientConfig.name}"\n\n` +
-      `Original dispatch numbers: ${JSON.stringify(clientConfig.dispatch_numbers)}\n` +
+      `Original dispatch numbers: ${JSON.stringify(clientConfig.dispatch_text_numbers)}\n` +
       `Original dispatch emails:  ${JSON.stringify(clientConfig.dispatch_email)}\n\n` +
       `--- SMS PREVIEW ---\n${smsMessage}\n\n` +
       `--- EMAIL PREVIEW ---\nSubject: ${emailSubject}\n\n${emailBody}`;
@@ -192,7 +193,7 @@ export async function postHookHandler(req: Request, res: Response) {
         subject: `[SHADOW DRY-RUN] ${emailSubject}`,
         body: dryRunSummary,
         html: `<p><strong>[SHADOW DRY-RUN]</strong> for client "${escapeHtml(clientConfig.name)}"</p>` +
-          `<p>Original dispatch numbers: ${escapeHtml(JSON.stringify(clientConfig.dispatch_numbers))}<br>` +
+          `<p>Original dispatch numbers: ${escapeHtml(JSON.stringify(clientConfig.dispatch_text_numbers))}<br>` +
           `Original dispatch emails: ${escapeHtml(JSON.stringify(clientConfig.dispatch_email))}</p>` +
           `<hr><p><strong>SMS Preview:</strong></p><pre>${escapeHtml(smsMessage)}</pre>` +
           `<hr><p><strong>Email Preview (as client would see it):</strong></p>` +
@@ -201,6 +202,15 @@ export async function postHookHandler(req: Request, res: Response) {
     ];
 
     await Promise.allSettled(shadowTasks);
+
+    // Shadow mode: dispatch call goes to owner instead of client
+    if (clientConfig.summary_agent_id && clientConfig.outbound_from_number) {
+      triggerDispatchCall(
+        { ...clientConfig, dispatch_call_number: ownerConfig.phone },
+        { client_name: clientConfig.name, call_summary: smsMessage },
+      ).catch(() => {});
+    }
+
     sendOwnerCallMonitor(call, clientConfig, "shadow_dry_run").catch(() => {});
     res.status(200).json({ success: true, outcome: "shadow_dry_run" });
     return;
@@ -213,8 +223,8 @@ export async function postHookHandler(req: Request, res: Response) {
   const tasks: Promise<unknown>[] = [];
   const emailResendIds: string[] = [];
 
-  if (clientConfig.dispatch_numbers.length > 0) {
-    tasks.push(sendSmsToAll(clientConfig.dispatch_numbers, smsMessage));
+  if (clientConfig.dispatch_text_numbers.length > 0) {
+    tasks.push(sendSmsToAll(clientConfig.dispatch_text_numbers, smsMessage));
   } else {
     console.log(
       "retell-post-hook: no dispatch numbers configured, skipping SMS",
@@ -255,7 +265,7 @@ export async function postHookHandler(req: Request, res: Response) {
     }
 
     // Summary log
-    const smsCount = clientConfig.dispatch_numbers.length;
+    const smsCount = clientConfig.dispatch_text_numbers.length;
     const emailCount = clientConfig.dispatch_email?.length ?? 0;
     const callId = call?.call_id ?? "unknown";
     console.log(
@@ -270,6 +280,14 @@ export async function postHookHandler(req: Request, res: Response) {
     console.warn(
       "retell-post-hook: no notification channels configured for this client",
     );
+  }
+
+  // Fire-and-forget: voice call to dispatch
+  if (clientConfig.dispatch_call_number) {
+    triggerDispatchCall(clientConfig, {
+      client_name: clientConfig.name,
+      call_summary: smsMessage,
+    }).catch(() => {});
   }
 
   sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => {});

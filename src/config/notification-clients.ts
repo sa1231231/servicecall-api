@@ -22,7 +22,10 @@ export interface MessageType {
 export interface ClientNotificationConfig {
   name: string;
   agent_ids: string[];
-  dispatch_numbers: string[];
+  dispatch_text_numbers: string[];
+  dispatch_call_number: string | null;
+  summary_agent_id: string | null;
+  outbound_from_number: string | null;
   dispatch_email: string[] | null;
   dispatch_cc: string | null;
   resolve_type: (vars: Record<string, string>) => string;
@@ -37,7 +40,10 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   "pro-v": {
     name: "Pro V",
     agent_ids: ["agent_874f64ef6ad0aaa6a233be461e"],
-    dispatch_numbers: ["+19517608403", "+16193007267", ownerConfig.phone],
+    dispatch_text_numbers: ["+19517608403", "+16193007267", ownerConfig.phone],
+    dispatch_call_number: null,
+    summary_agent_id: null,
+    outbound_from_number: null,
     dispatch_email: ["info@provcontracting.com", ownerConfig.email],
     dispatch_cc: null, // removed — dispatch@provcontracting.com mailbox doesn't exist, was causing delivery_delayed
     resolve_type: (vars) => {
@@ -80,7 +86,10 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   test: {
     name: "Test Client",
     agent_ids: [],
-    dispatch_numbers: [ownerConfig.phone],
+    dispatch_text_numbers: [ownerConfig.phone],
+    dispatch_call_number: null,
+    summary_agent_id: null,
+    outbound_from_number: null,
     dispatch_email: [ownerConfig.email],
     dispatch_cc: null,
     resolve_type: (vars) => {
@@ -122,12 +131,15 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   "j-a": {
     name: "J&A Fleet Maintenance",
     agent_ids: ["agent_09483ca979c6987f8af2ebc00c"],
-    dispatch_numbers: [
+    dispatch_text_numbers: [
       "+18152073809",
       "+15748708959",
       "+18156666686",
       ownerConfig.phone,
     ],
+    dispatch_call_number: null,
+    summary_agent_id: "agent_b1e4f94114485c41252b802afb",
+    outbound_from_number: "+15747667823",
     dispatch_email: ["Dispatch@JAFleet.com", ownerConfig.email],
     dispatch_cc: null,
     resolve_type: () => "mobile_emergency",
@@ -184,7 +196,10 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
   test_prod: {
     name: "Test Client (Prod)",
     agent_ids: [],
-    dispatch_numbers: [ownerConfig.phone],
+    dispatch_text_numbers: [ownerConfig.phone],
+    dispatch_call_number: null,
+    summary_agent_id: null,
+    outbound_from_number: null,
     dispatch_email: [ownerConfig.email],
     dispatch_cc: null,
     resolve_type: (vars) => {

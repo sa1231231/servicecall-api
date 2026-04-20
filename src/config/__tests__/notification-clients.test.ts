@@ -14,9 +14,9 @@ describe("notificationClients", () => {
     }
   });
 
-  it("has dispatch_numbers as non-empty arrays for active clients", () => {
+  it("has dispatch_text_numbers as non-empty arrays for active clients", () => {
     for (const [key, client] of Object.entries(notificationClients)) {
-      expect(Array.isArray(client.dispatch_numbers), `${key}.dispatch_numbers should be an array`).toBe(true);
+      expect(Array.isArray(client.dispatch_text_numbers), `${key}.dispatch_text_numbers should be an array`).toBe(true);
     }
   });
 
