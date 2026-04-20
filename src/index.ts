@@ -5,6 +5,8 @@ import { healthRouter } from "./routes/health.js";
 import { stripeRouter } from "./routes/stripe/index.js";
 import { retellRouter } from "./routes/retell/index.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
+import { agentsRouter } from "./routes/agents/index.js";
+import { loadJsonClients } from "./config/load-json-clients.js";
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -59,7 +61,10 @@ app.use((req, res, next) => {
 
 // app.use("/stripe", stripeRouter);
 app.use("/deckscience", deckscienceRouter);
+app.use("/agents", agentsRouter);
 
+
+loadJsonClients();
 
 app.listen(Number(config.PORT), () => {
   console.log(`ServiceCall API listening on port ${config.PORT}`);

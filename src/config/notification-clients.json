@@ -1,0 +1,46 @@
+{
+  "poop-911": {
+    "name": "Poop 911",
+    "agent_ids": [
+      "agent_5c5f185509aa753cc2726c12ff"
+    ],
+    "dispatch_text_numbers": [
+      "+15551234567"
+    ],
+    "dispatch_call_number": null,
+    "summary_agent_id": null,
+    "outbound_from_number": null,
+    "dispatch_email": [
+      "owner@poop911.com"
+    ],
+    "dispatch_cc": null,
+    "message_types": {
+      "service_request": {
+        "label": "New Service Request",
+        "subject_template": "Service Request: {{full_name}} — {{street_address}}, {{city}}",
+        "fields": [
+          {
+            "key": "full_name",
+            "label": "Name"
+          },
+          {
+            "key": "phone_number",
+            "label": "Phone"
+          },
+          {
+            "key": "city",
+            "label": "City"
+          },
+          {
+            "key": "street_address",
+            "label": "Address"
+          }
+        ]
+      }
+    },
+    "default_message_type": "service_request",
+    "phone_fallback_to_caller": true,
+    "hide_not_mentioned": false,
+    "shadow_mode": true
+  }
+}

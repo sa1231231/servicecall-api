@@ -168,7 +168,7 @@ export const notificationClients: Record<string, ClientNotificationConfig> = {
             label: "Breakdown Location",
             required: true,
           },
-          { key: "problem_description", label: "Problem", required: true },
+          { key: "problem_description", label: "Problem Description", required: true },
           { key: "vehicle_type", label: "Vehicle Type" },
           { key: "vehicle_manufacturer", label: "Vehicle Make" },
           { key: "vehicle_color", label: "Vehicle Color" },
