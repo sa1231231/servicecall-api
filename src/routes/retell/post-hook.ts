@@ -5,6 +5,7 @@ import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
 import { agentIdToClient, ownerConfig } from "../../config/notification-clients.js";
 import { escapeHtml } from "../../lib/escape-html.js";
+import { sendOwnerCallMonitor } from "../../lib/owner-monitor.js";
 
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
@@ -114,6 +115,7 @@ export async function postHookHandler(req: Request, res: Response) {
     console.warn(
       `retell-post-hook: required field check failed [${names}], skipping notification`,
     );
+    sendOwnerCallMonitor(call, clientConfig, "skipped_required_field").catch(() => {});
     res.status(200).json({ success: true, outcome: "skipped_required_field" });
     return;
   }
@@ -125,6 +127,7 @@ export async function postHookHandler(req: Request, res: Response) {
 
   if (meaningfulFields.length === 0) {
     console.warn("retell-post-hook: empty call — no data collected, skipping notifications");
+    sendOwnerCallMonitor(call, clientConfig, "skipped_empty_call").catch(() => {});
     res.status(200).json({ success: true, outcome: "skipped_empty_call" });
     return;
   }
@@ -198,6 +201,7 @@ export async function postHookHandler(req: Request, res: Response) {
     ];
 
     await Promise.allSettled(shadowTasks);
+    sendOwnerCallMonitor(call, clientConfig, "shadow_dry_run").catch(() => {});
     res.status(200).json({ success: true, outcome: "shadow_dry_run" });
     return;
   }
@@ -245,6 +249,7 @@ export async function postHookHandler(req: Request, res: Response) {
 
     if (errors.length > 0) {
       console.error("retell-post-hook: notification errors", errors);
+      sendOwnerCallMonitor(call, clientConfig, "dispatch_error").catch(() => {});
       res.status(500).json({ success: false, errors });
       return;
     }
@@ -267,6 +272,7 @@ export async function postHookHandler(req: Request, res: Response) {
     );
   }
 
+  sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => {});
   res.status(200).json({ success: true });
 }
 
