@@ -56,6 +56,18 @@ app.use((req, res, next) => {
 app.use("/health", healthRouter);
 app.use("/retell", webhookLimiter, retellRouter);
 const formRouter = express.Router();
+formRouter.get("/debug", (_req, res) => {
+  const candidates = [
+    path.join(__dirname, "..", "public", "index.html"),
+    path.join(process.cwd(), "public", "index.html"),
+    path.join(__dirname, "public", "index.html"),
+  ];
+  res.json({
+    __dirname,
+    cwd: process.cwd(),
+    candidates: candidates.map((p) => ({ path: p, exists: fs.existsSync(p) })),
+  });
+});
 const formHtmlPath = path.join(__dirname, "..", "public", "index.html");
 formRouter.get("/", (_req, res) => {
   try {
