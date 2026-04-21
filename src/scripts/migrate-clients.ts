@@ -136,7 +136,12 @@ const hardcodedClients: Record<string, Record<string, unknown>> = {
     outbound_from_number: "+15747667823",
     dispatch_email: ["Dispatch@JAFleet.com", OWNER_EMAIL],
     dispatch_cc: null,
-    // No resolve_rule — single message type, default handles it
+    resolve_rule: {
+      field: "is_service_request",
+      equals: "true",
+      then: "service_request",
+      else: "mobile_emergency",
+    },
     message_types: {
       mobile_emergency: {
         label: "EMERGENCY REPAIR CALL",
@@ -180,6 +185,24 @@ const hardcodedClients: Record<string, Record<string, unknown>> = {
             key: "load_weight",
             label: "Load Weight",
             show_when: { field: "load_weight_collected", equals: "true" },
+          },
+          { key: "whos_paying", label: "Who's Paying" },
+          { key: "payment_method", label: "Payment Method" },
+        ],
+      },
+      service_request: {
+        label: "SERVICE REQUEST",
+        subject_template:
+          "Service Request: {{full_name}} — {{problem_description}}",
+        fields: [
+          { key: "full_name", label: "Name" },
+          { key: "phone_number", label: "Phone" },
+          { key: "vehicle_type", label: "Vehicle Type" },
+          { key: "vehicle_manufacturer", label: "Vehicle Make" },
+          {
+            key: "problem_description",
+            label: "Problem Description",
+            required: true,
           },
           { key: "whos_paying", label: "Who's Paying" },
           { key: "payment_method", label: "Payment Method" },
