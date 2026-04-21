@@ -1,0 +1,162 @@
+import { getDb } from "../lib/db.js";
+import {
+  notificationClients,
+  agentIdToClient,
+  type ClientNotificationConfig,
+} from "./notification-clients.js";
+
+// ── Types (migrated from load-json-clients.ts) ──────────────────────────────
+
+export interface ResolveRule {
+  field: string;
+  equals: string;
+  then: string;
+  else: string;
+}
+
+export interface JsonClientEntry {
+  name: string;
+  agent_ids: string[];
+  dispatch_text_numbers: string[];
+  dispatch_call_number: string | null;
+  summary_agent_id: string | null;
+  outbound_from_number: string | null;
+  dispatch_email: string[] | null;
+  dispatch_cc: string | null;
+  resolve_rule?: ResolveRule;
+  message_types: Record<
+    string,
+    {
+      label: string;
+      subject_template: string;
+      additional_text?: string;
+      fields: Array<{
+        key: string;
+        label: string;
+        show?: boolean;
+        required?: true | { equals: string | string[] };
+        show_when?: { field: string; equals: string | string[] };
+        format?: "yes_no";
+      }>;
+    }
+  >;
+  default_message_type: string;
+  phone_fallback_to_caller?: boolean;
+  hide_not_mentioned?: boolean;
+  shadow_mode?: boolean;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function ruleToFunction(
+  rule: ResolveRule | undefined,
+  defaultType: string,
+): (vars: Record<string, string>) => string {
+  if (!rule) return () => defaultType;
+  return (vars) =>
+    vars[rule.field] === rule.equals ? rule.then : rule.else;
+}
+
+function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig {
+  return {
+    name: entry.name,
+    agent_ids: entry.agent_ids,
+    dispatch_text_numbers: entry.dispatch_text_numbers,
+    dispatch_call_number: entry.dispatch_call_number,
+    summary_agent_id: entry.summary_agent_id,
+    outbound_from_number: entry.outbound_from_number,
+    dispatch_email: entry.dispatch_email,
+    dispatch_cc: entry.dispatch_cc,
+    resolve_type: ruleToFunction(entry.resolve_rule, entry.default_message_type),
+    message_types: entry.message_types,
+    default_message_type: entry.default_message_type,
+    phone_fallback_to_caller: entry.phone_fallback_to_caller,
+    hide_not_mentioned: entry.hide_not_mentioned,
+    shadow_mode: entry.shadow_mode,
+  };
+}
+
+function registerInMemory(slug: string, config: ClientNotificationConfig): void {
+  notificationClients[slug] = config;
+  for (const agentId of config.agent_ids) {
+    agentIdToClient[agentId] = config;
+  }
+}
+
+// ── Collection accessor ──────────────────────────────────────────────────────
+
+function clients() {
+  return getDb().collection<JsonClientEntry & { _id: string }>("clients");
+}
+
+// ── Public API ───────────────────────────────────────────────────────────────
+
+/** Load all clients from MongoDB and populate the in-memory maps. */
+export async function loadClientsFromDb(): Promise<void> {
+  const docs = await clients().find().toArray();
+
+  for (const doc of docs) {
+    const slug = doc._id;
+    const config = toClientConfig(doc);
+    registerInMemory(slug, config);
+  }
+
+  console.log(`[client-store] loaded ${docs.length} client(s) from MongoDB`);
+}
+
+/** Persist a client to MongoDB and register in memory. */
+export async function persistClient(
+  slug: string,
+  entry: JsonClientEntry,
+): Promise<ClientNotificationConfig> {
+  await clients().replaceOne(
+    { _id: slug } as any,
+    { _id: slug, ...entry } as any,
+    { upsert: true },
+  );
+
+  const config = toClientConfig(entry);
+  registerInMemory(slug, config);
+
+  console.log(`[client-store] persisted client "${slug}"`);
+  return config;
+}
+
+/** Update a single field on a client in MongoDB and in memory. */
+export async function updateClientField(
+  slug: string,
+  field: string,
+  value: unknown,
+): Promise<void> {
+  const result = await clients().updateOne(
+    { _id: slug } as any,
+    { $set: { [field]: value } },
+  );
+
+  if (result.matchedCount === 0) {
+    throw new Error(`Client "${slug}" not found`);
+  }
+
+  // Update in-memory config
+  const existing = notificationClients[slug];
+  if (existing) {
+    (existing as any)[field] = value;
+  }
+
+  console.log(`[client-store] updated "${slug}".${field} = ${JSON.stringify(value)}`);
+}
+
+/** Return lightweight summaries of all clients for the dashboard. */
+export function getAllClientSummaries(): Array<{
+  slug: string;
+  name: string;
+  shadow_mode: boolean;
+  agent_ids: string[];
+}> {
+  return Object.entries(notificationClients).map(([slug, c]) => ({
+    slug,
+    name: c.name,
+    shadow_mode: c.shadow_mode ?? false,
+    agent_ids: c.agent_ids,
+  }));
+}

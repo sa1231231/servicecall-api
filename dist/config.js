@@ -21,4 +21,6 @@ export const config = {
     // Email (Resend)
     RESEND_API_KEY: requireEnv("RESEND_API_KEY"),
     EMAIL_FROM: process.env.EMAIL_FROM ?? "notifications@servicecallsaver.com",
+    // MongoDB
+    MONGODB_URL: requireEnv("MONGODB_URL"),
 };

@@ -6,10 +6,10 @@ import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import { notificationClients } from "../../config/notification-clients.js";
 import {
-  persistJsonClient,
+  persistClient,
   type JsonClientEntry,
   type ResolveRule,
-} from "../../config/load-json-clients.js";
+} from "../../config/client-store.js";
 import {
   generateAgent,
   resolveDataPoints,
@@ -279,7 +279,7 @@ export async function createAgentHandler(
 
     // ── 5. Derive and persist notification config ──────────────────────────
     const jsonEntry = deriveNotificationConfig(resolved, body.client, agentId);
-    const clientConfig = persistJsonClient(slug, jsonEntry);
+    const clientConfig = await persistClient(slug, jsonEntry);
 
     console.log(`[create-agent] client "${slug}" registered with agent ${agentId}`);
 

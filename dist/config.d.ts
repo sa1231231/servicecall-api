@@ -12,4 +12,5 @@ export declare const config: {
     TWILIO_PHONE_NUMBER: string;
     RESEND_API_KEY: string;
     EMAIL_FROM: string;
+    MONGODB_URL: string;
 };

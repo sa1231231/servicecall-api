@@ -4,11 +4,13 @@ import { fileURLToPath } from "url";
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { config } from "./config.js";
+import { initDb } from "./lib/db.js";
+import { loadClientsFromDb } from "./config/client-store.js";
 import { healthRouter } from "./routes/health.js";
 import { retellRouter } from "./routes/retell/index.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
-import { loadJsonClients } from "./config/load-json-clients.js";
+import { dashboardRouter, dashboardApiRouter } from "./routes/dashboard/index.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -44,6 +46,7 @@ app.use((req, res, next) => {
 });
 app.use("/health", healthRouter);
 app.use("/retell", webhookLimiter, retellRouter);
+// ── Form (public, no auth) ──────────────────────────────────────────────────
 const formRouter = express.Router();
 const formHtmlPath = path.join(__dirname, "..", "public", "index.html");
 formRouter.get("/", (_req, res) => {
@@ -59,6 +62,9 @@ formRouter.get("/config", (_req, res) => {
     res.json({ apiKey: config.API_KEY });
 });
 app.use("/form", formRouter);
+// ── Dashboard (public HTML + config, API behind auth) ────────────────────────
+app.use("/dashboard", dashboardRouter);
+// ── Auth middleware ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
     const key = req.headers["x-api-key"];
     if (key !== config.API_KEY) {
@@ -68,10 +74,14 @@ app.use((req, res, next) => {
     }
     next();
 });
+// ── Authenticated routes ─────────────────────────────────────────────────────
 // app.use("/stripe", stripeRouter);
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
-loadJsonClients();
+app.use("/dashboard/api", dashboardApiRouter);
+// ── Start ────────────────────────────────────────────────────────────────────
+await initDb();
+await loadClientsFromDb();
 app.listen(Number(config.PORT), () => {
     console.log(`ServiceCall API listening on port ${config.PORT}`);
 });

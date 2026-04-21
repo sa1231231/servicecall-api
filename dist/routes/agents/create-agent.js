@@ -4,7 +4,7 @@ import { fileURLToPath } from "url";
 import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import { notificationClients } from "../../config/notification-clients.js";
-import { persistJsonClient, } from "../../config/load-json-clients.js";
+import { persistClient, } from "../../config/client-store.js";
 import { generateAgent, } from "../../lib/agent-generator/index.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = path.join(__dirname, "../../lib/agent-generator/output");
@@ -212,7 +212,7 @@ export async function createAgentHandler(req, res) {
         console.log(`[create-agent] agent created: ${agentId}`);
         // ── 5. Derive and persist notification config ──────────────────────────
         const jsonEntry = deriveNotificationConfig(resolved, body.client, agentId);
-        const clientConfig = persistJsonClient(slug, jsonEntry);
+        const clientConfig = await persistClient(slug, jsonEntry);
         console.log(`[create-agent] client "${slug}" registered with agent ${agentId}`);
         // ── 6. Return response ─────────────────────────────────────────────────
         res.status(201).json({

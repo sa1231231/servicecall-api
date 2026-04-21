@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 900px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    color: #1a1a1a;
+    background: #f7f7f8;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  .subtitle { color: #666; font-size: 0.85rem; margin-top: 0; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  th, td {
+    text-align: left;
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+  }
+  th {
+    background: #f9fafb;
+    font-weight: 600;
+    color: #444;
+    border-bottom: 2px solid #e5e7eb;
+  }
+  td { border-bottom: 1px solid #f0f0f0; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafbfc; }
+  .agent-ids {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: #666;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .status-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .status-live { background: #dcfce7; color: #166534; }
+  .status-shadow { background: #fef3c7; color: #92400e; }
+
+  /* Toggle switch */
+  .toggle {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #d1d5db;
+    border-radius: 24px;
+    transition: 0.2s;
+  }
+  .toggle .slider::before {
+    content: "";
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: 0.2s;
+  }
+  .toggle input:checked + .slider { background: #f59e0b; }
+  .toggle input:checked + .slider::before { transform: translateX(20px); }
+  .toggle input:disabled + .slider { opacity: 0.5; cursor: not-allowed; }
+
+  .toast {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #fff;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 100;
+  }
+  .toast.visible { opacity: 1; }
+  .toast.success { background: #166534; }
+  .toast.error { background: #991b1b; }
+  .loading { text-align: center; padding: 3rem; color: #888; }
+  .error-msg { text-align: center; padding: 2rem; color: #991b1b; }
+</style>
+</head>
+<body>
+<h1>Agent Dashboard</h1>
+<p class="subtitle">View and manage all agents. Toggle shadow mode to control whether notifications go to the owner or the client.</p>
+
+<div id="content"><div class="loading">Loading agents...</div></div>
+<div id="toast" class="toast"></div>
+
+<script>
+  let apiKey = '';
+  const content = document.getElementById('content');
+  const toast = document.getElementById('toast');
+
+  function showToast(message, type) {
+    toast.textContent = message;
+    toast.className = 'toast visible ' + type;
+    setTimeout(() => { toast.className = 'toast'; }, 3000);
+  }
+
+  async function loadAgents() {
+    try {
+      const configRes = await fetch('/dashboard/config');
+      const configData = await configRes.json();
+      apiKey = configData.apiKey;
+
+      const res = await fetch('/dashboard/api/agents', {
+        headers: { 'X-API-Key': apiKey },
+      });
+
+      if (!res.ok) throw new Error('Failed to load agents: ' + res.status);
+      const agents = await res.json();
+
+      if (agents.length === 0) {
+        content.innerHTML = '<div class="loading">No agents found.</div>';
+        return;
+      }
+
+      // Sort: live agents first, then by name
+      agents.sort((a, b) => {
+        if (a.shadow_mode !== b.shadow_mode) return a.shadow_mode ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      });
+
+      let html = `<table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Slug</th>
+            <th>Agent IDs</th>
+            <th>Status</th>
+            <th>Shadow Mode</th>
+          </tr>
+        </thead>
+        <tbody>`;
+
+      for (const agent of agents) {
+        const statusClass = agent.shadow_mode ? 'status-shadow' : 'status-live';
+        const statusLabel = agent.shadow_mode ? 'Shadow' : 'Live';
+        const agentIdsDisplay = agent.agent_ids.length > 0
+          ? agent.agent_ids.map(id => id.substring(0, 16) + '...').join(', ')
+          : '<span style="color:#aaa">none</span>';
+
+        html += `<tr data-slug="${agent.slug}">
+          <td><strong>${escapeHtml(agent.name)}</strong></td>
+          <td style="font-family:monospace;font-size:0.8rem;">${escapeHtml(agent.slug)}</td>
+          <td class="agent-ids" title="${escapeHtml(agent.agent_ids.join(', '))}">${agentIdsDisplay}</td>
+          <td><span class="status-badge ${statusClass}" data-status>${statusLabel}</span></td>
+          <td>
+            <label class="toggle">
+              <input type="checkbox" ${agent.shadow_mode ? 'checked' : ''}
+                onchange="toggleShadow('${agent.slug}', this)">
+              <span class="slider"></span>
+            </label>
+          </td>
+        </tr>`;
+      }
+
+      html += '</tbody></table>';
+      content.innerHTML = html;
+    } catch (err) {
+      content.innerHTML = '<div class="error-msg">Error: ' + escapeHtml(err.message) + '</div>';
+    }
+  }
+
+  async function toggleShadow(slug, checkbox) {
+    const newValue = checkbox.checked;
+    checkbox.disabled = true;
+
+    // Optimistic UI update
+    const row = checkbox.closest('tr');
+    const badge = row.querySelector('[data-status]');
+    badge.textContent = newValue ? 'Shadow' : 'Live';
+    badge.className = 'status-badge ' + (newValue ? 'status-shadow' : 'status-live');
+
+    try {
+      const res = await fetch('/dashboard/api/agents/' + slug + '/shadow', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({ shadow_mode: newValue }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Request failed');
+      }
+
+      showToast(slug + ' is now ' + (newValue ? 'in shadow mode' : 'LIVE'), 'success');
+    } catch (err) {
+      // Revert on failure
+      checkbox.checked = !newValue;
+      badge.textContent = !newValue ? 'Shadow' : 'Live';
+      badge.className = 'status-badge ' + (!newValue ? 'status-shadow' : 'status-live');
+      showToast('Failed: ' + err.message, 'error');
+    } finally {
+      checkbox.disabled = false;
+    }
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  loadAgents();
+</script>
+</body>
+</html>
