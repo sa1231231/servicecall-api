@@ -42,5 +42,47 @@
     "phone_fallback_to_caller": true,
     "hide_not_mentioned": false,
     "shadow_mode": true
+  },
+  "poop-911-test": {
+    "name": "poopy 911-display",
+    "agent_ids": [
+      "agent_2f18a9d5c4a08b5073e6d1c916"
+    ],
+    "dispatch_text_numbers": [
+      "+13017872841"
+    ],
+    "dispatch_call_number": null,
+    "summary_agent_id": null,
+    "outbound_from_number": null,
+    "dispatch_email": null,
+    "dispatch_cc": null,
+    "message_types": {
+      "service_request": {
+        "label": "New Service Request",
+        "subject_template": "Service Request: {{full_name}} — {{street_address}}, {{city}}",
+        "fields": [
+          {
+            "key": "full_name",
+            "label": "Full Name"
+          },
+          {
+            "key": "phone_number",
+            "label": "Phone Number"
+          },
+          {
+            "key": "street_address",
+            "label": "Street Address"
+          },
+          {
+            "key": "city",
+            "label": "City"
+          }
+        ]
+      }
+    },
+    "default_message_type": "service_request",
+    "phone_fallback_to_caller": true,
+    "hide_not_mentioned": false,
+    "shadow_mode": true
   }
 }

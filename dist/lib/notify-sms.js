@@ -1,14 +1,17 @@
 import Twilio from "twilio";
 import { config } from "../config.js";
+import { withRetry } from "./retry.js";
+const twilioClient = Twilio(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN);
 export async function sendSms(to, message) {
-    const client = Twilio(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN);
-    const result = await client.messages.create({
-        to,
-        from: config.TWILIO_PHONE_NUMBER,
-        body: message,
-    });
-    console.log(`notify-sms: sent to ${to}, sid=${result.sid}`);
-    return result;
+    return withRetry(async () => {
+        const result = await twilioClient.messages.create({
+            to,
+            from: config.TWILIO_PHONE_NUMBER,
+            body: message,
+        });
+        console.log(`notify-sms: sent to ${to}, sid=${result.sid}`);
+        return result;
+    }, { label: `sms to ${to}` });
 }
 export async function sendSmsToAll(numbers, message) {
     const results = await Promise.allSettled(numbers.map((num) => sendSms(num, message)));

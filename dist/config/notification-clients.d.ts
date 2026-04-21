@@ -1,6 +1,19 @@
+export declare const ownerConfig: {
+    readonly phone: "+13017872841";
+    readonly email: "samasra93@gmail.com";
+};
 export interface Field {
     key: string;
     label: string;
+    show?: boolean;
+    required?: true | {
+        equals: string | string[];
+    };
+    show_when?: {
+        field: string;
+        equals: string | string[];
+    };
+    format?: "yes_no";
 }
 export interface MessageType {
     label: string;
@@ -11,13 +24,18 @@ export interface MessageType {
 export interface ClientNotificationConfig {
     name: string;
     agent_ids: string[];
-    dispatch_numbers: string[];
-    dispatch_email: string | null;
+    dispatch_text_numbers: string[];
+    dispatch_call_number: string | null;
+    summary_agent_id: string | null;
+    outbound_from_number: string | null;
+    dispatch_email: string[] | null;
     dispatch_cc: string | null;
     resolve_type: (vars: Record<string, string>) => string;
     message_types: Record<string, MessageType>;
     default_message_type: string;
     phone_fallback_to_caller?: boolean;
+    hide_not_mentioned?: boolean;
+    shadow_mode?: boolean;
 }
 export declare const notificationClients: Record<string, ClientNotificationConfig>;
 export declare const agentIdToClient: Record<string, ClientNotificationConfig>;

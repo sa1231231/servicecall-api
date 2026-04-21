@@ -3,6 +3,7 @@ export declare const config: {
     STRIPE_SIGNING_SECRET: string;
     STRIPE_API_KEY: string;
     RETELL_SIGNATURE_KEY: string;
+    RETELL_API_KEY: string;
     GHL_API_KEY: string;
     API_KEY: string;
     PORT: string;

@@ -2,7 +2,10 @@ import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
-import { agentIdToClient } from "../../config/notification-clients.js";
+import { agentIdToClient, ownerConfig } from "../../config/notification-clients.js";
+import { escapeHtml } from "../../lib/escape-html.js";
+import { sendOwnerCallMonitor } from "../../lib/owner-monitor.js";
+import { triggerDispatchCall } from "../../lib/dispatch-call.js";
 export async function postHookHandler(req, res) {
     console.log("retell-post-hook: received request");
     // Skip signature verification for test client (matched by agent_id)
@@ -71,46 +74,128 @@ export async function postHookHandler(req, res) {
         message_type: typeKey,
         fields: fieldValues,
     });
+    // Check required fields — block notification if any required field fails
+    const failedRequired = messageType.fields.filter((f) => {
+        if (!f.required)
+            return false;
+        const val = fieldValues[f.key] ?? "";
+        if (f.required === true) {
+            return !val || val === "Not Mentioned";
+        }
+        const allowed = Array.isArray(f.required.equals)
+            ? f.required.equals
+            : [f.required.equals];
+        return !allowed.includes(val);
+    });
+    if (failedRequired.length > 0) {
+        const names = failedRequired.map((f) => f.key).join(", ");
+        console.warn(`retell-post-hook: required field check failed [${names}], skipping notification`);
+        sendOwnerCallMonitor(call, clientConfig, "skipped_required_field").catch(() => { });
+        res.status(200).json({ success: true, outcome: "skipped_required_field" });
+        return;
+    }
     // Skip notification if no meaningful data was collected (phone_number excluded — it defaults to caller)
     const meaningfulFields = messageType.fields.filter((f) => f.key !== "phone_number" && fieldValues[f.key] && fieldValues[f.key] !== "Not Mentioned");
     if (meaningfulFields.length === 0) {
         console.warn("retell-post-hook: empty call — no data collected, skipping notifications");
+        sendOwnerCallMonitor(call, clientConfig, "skipped_empty_call").catch(() => { });
         res.status(200).json({ success: true, outcome: "skipped_empty_call" });
         return;
     }
-    // Build field lines
-    const fieldLines = messageType.fields
-        .map((f) => `${f.label}: ${fieldValues[f.key]}`)
-        .filter((line) => !line.endsWith(": "))
-        .join("\n");
+    // Filter visible fields
+    const visibleFields = messageType.fields
+        .filter((f) => f.show !== false)
+        .filter((f) => {
+        if (f.show_when) {
+            const dep = fieldValues[f.show_when.field] ?? "";
+            const allowed = Array.isArray(f.show_when.equals) ? f.show_when.equals : [f.show_when.equals];
+            if (!allowed.includes(dep))
+                return false;
+        }
+        return true;
+    })
+        .map((f) => {
+        let val = fieldValues[f.key];
+        if (f.format === "yes_no")
+            val = val === "true" ? "Yes" : "No";
+        return { label: f.label, value: val };
+    })
+        .filter((f) => f.value)
+        .filter((f) => !clientConfig.hide_not_mentioned || f.value !== "Not Mentioned");
+    // Build plain-text field lines (for SMS)
+    const fieldLines = visibleFields.map((f) => `${f.label}: ${f.value}`).join("\n");
+    // Build HTML field lines (for email) — escape user-provided values
+    const fieldLinesHtml = visibleFields
+        .map((f) => `<strong>${escapeHtml(f.label)}:</strong> ${escapeHtml(f.value)}`)
+        .join("<br>");
     // Build message bodies
-    const bodyCore = `${messageType.label}\n\n${fieldLines}`;
+    const greeting = `Hi ${clientConfig.name}, you have a new call!`;
     const urgentSuffix = messageType.additional_text
         ? `\n\n${messageType.additional_text}`
         : "";
-    const smsMessage = `${bodyCore}${urgentSuffix}\n\n— Service Call Saver`;
-    const emailBody = `${bodyCore}${urgentSuffix}\n\n—\nSent by Service Call Saver\nservicecallsaver.com`;
+    const urgentSuffixHtml = messageType.additional_text
+        ? `<br><br>${escapeHtml(messageType.additional_text)}`
+        : "";
+    const smsMessage = `${greeting}\n\n${messageType.label}\n\n${fieldLines}${urgentSuffix}\n\n— Service Call Saver`;
+    const emailBody = `${greeting}\n\n${messageType.label}\n\n${fieldLines}${urgentSuffix}\n\n—\nSent by Service Call Saver\nservicecallsaver.com`;
+    const emailHtml = `<p>${escapeHtml(greeting)}</p><p><strong>${escapeHtml(messageType.label)}</strong></p><p>${fieldLinesHtml}</p>${urgentSuffixHtml}<br><br><p>—<br>Sent by Service Call Saver<br>servicecallsaver.com</p>`;
     const emailSubject = renderTemplate(messageType.subject_template, fieldValues);
+    // ── Shadow Dry-Run ─────────────────────────────────────────────────
+    if (clientConfig.shadow_mode) {
+        const dryRunSummary = `[SHADOW DRY-RUN] client="${clientConfig.name}"\n\n` +
+            `Original dispatch numbers: ${JSON.stringify(clientConfig.dispatch_text_numbers)}\n` +
+            `Original dispatch emails:  ${JSON.stringify(clientConfig.dispatch_email)}\n\n` +
+            `--- SMS PREVIEW ---\n${smsMessage}\n\n` +
+            `--- EMAIL PREVIEW ---\nSubject: ${emailSubject}\n\n${emailBody}`;
+        console.log(`retell-post-hook: ${dryRunSummary}`);
+        // Send the dry-run preview to owner so they can see exact formatting
+        const shadowTasks = [
+            sendSmsToAll([ownerConfig.phone], `[SHADOW DRY-RUN] ${clientConfig.name}\n\n--- SMS that would be sent ---\n\n${smsMessage}`),
+            sendEmail({
+                to: ownerConfig.email,
+                subject: `[SHADOW DRY-RUN] ${emailSubject}`,
+                body: dryRunSummary,
+                html: `<p><strong>[SHADOW DRY-RUN]</strong> for client "${escapeHtml(clientConfig.name)}"</p>` +
+                    `<p>Original dispatch numbers: ${escapeHtml(JSON.stringify(clientConfig.dispatch_text_numbers))}<br>` +
+                    `Original dispatch emails: ${escapeHtml(JSON.stringify(clientConfig.dispatch_email))}</p>` +
+                    `<hr><p><strong>SMS Preview:</strong></p><pre>${escapeHtml(smsMessage)}</pre>` +
+                    `<hr><p><strong>Email Preview (as client would see it):</strong></p>` +
+                    `<p>Subject: ${escapeHtml(emailSubject)}</p>${emailHtml}`,
+            }),
+        ];
+        await Promise.allSettled(shadowTasks);
+        // Shadow mode: dispatch call goes to owner instead of client
+        if (clientConfig.summary_agent_id && clientConfig.outbound_from_number) {
+            triggerDispatchCall({ ...clientConfig, dispatch_call_number: ownerConfig.phone }, { client_name: clientConfig.name, call_summary: smsMessage }).catch(() => { });
+        }
+        sendOwnerCallMonitor(call, clientConfig, "shadow_dry_run").catch(() => { });
+        res.status(200).json({ success: true, outcome: "shadow_dry_run" });
+        return;
+    }
     console.log(`retell-post-hook: sending notifications for client "${clientConfig.name}"`);
     const tasks = [];
-    let emailResendId = null;
-    if (clientConfig.dispatch_numbers.length > 0) {
-        tasks.push(sendSmsToAll(clientConfig.dispatch_numbers, smsMessage));
+    const emailResendIds = [];
+    if (clientConfig.dispatch_text_numbers.length > 0) {
+        tasks.push(sendSmsToAll(clientConfig.dispatch_text_numbers, smsMessage));
     }
     else {
         console.log("retell-post-hook: no dispatch numbers configured, skipping SMS");
     }
-    if (clientConfig.dispatch_email) {
-        const emailTask = sendEmail({
-            to: clientConfig.dispatch_email,
-            cc: clientConfig.dispatch_cc,
-            subject: emailSubject,
-            body: emailBody,
-        }).then((data) => {
-            emailResendId = data?.id ?? null;
-            return data;
-        });
-        tasks.push(emailTask);
+    if (clientConfig.dispatch_email && clientConfig.dispatch_email.length > 0) {
+        for (const email of clientConfig.dispatch_email) {
+            const emailTask = sendEmail({
+                to: email,
+                cc: clientConfig.dispatch_cc,
+                subject: emailSubject,
+                body: emailBody,
+                html: emailHtml,
+            }).then((data) => {
+                if (data?.id)
+                    emailResendIds.push(data.id);
+                return data;
+            });
+            tasks.push(emailTask);
+        }
     }
     else {
         console.log("retell-post-hook: no dispatch email configured, skipping email");
@@ -122,22 +207,31 @@ export async function postHookHandler(req, res) {
             .map((r) => r.reason?.message ?? String(r.reason));
         if (errors.length > 0) {
             console.error("retell-post-hook: notification errors", errors);
+            sendOwnerCallMonitor(call, clientConfig, "dispatch_error").catch(() => { });
             res.status(500).json({ success: false, errors });
             return;
         }
         // Summary log
-        const smsCount = clientConfig.dispatch_numbers.length;
-        const emailCount = clientConfig.dispatch_email ? 1 : 0;
+        const smsCount = clientConfig.dispatch_text_numbers.length;
+        const emailCount = clientConfig.dispatch_email?.length ?? 0;
         const callId = call?.call_id ?? "unknown";
         console.log(`retell-post-hook: notification summary | client="${clientConfig.name}" | call_id=${callId} | sms=${smsCount}/${smsCount} sent | email=${emailCount}/${emailCount} sent`);
         // Fire-and-forget: check email delivery status after a delay
-        if (emailResendId) {
-            checkEmailDelivery(emailResendId, clientConfig.name).catch(() => { });
+        for (const resendId of emailResendIds) {
+            checkEmailDelivery(resendId, clientConfig.name).catch(() => { });
         }
     }
     else {
         console.warn("retell-post-hook: no notification channels configured for this client");
     }
+    // Fire-and-forget: voice call to dispatch
+    if (clientConfig.dispatch_call_number) {
+        triggerDispatchCall(clientConfig, {
+            client_name: clientConfig.name,
+            call_summary: smsMessage,
+        }).catch(() => { });
+    }
+    sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => { });
     res.status(200).json({ success: true });
 }
 const EMAIL_CHECK_DELAY_MS = 5_000;
@@ -147,6 +241,7 @@ const EMAIL_PROBLEM_STATUSES = new Set([
     "failed",
     "delivery_delayed",
 ]);
+const ALERT_EMAIL = ownerConfig.email;
 async function checkEmailDelivery(resendId, clientName) {
     await new Promise((r) => setTimeout(r, EMAIL_CHECK_DELAY_MS));
     try {
@@ -154,6 +249,12 @@ async function checkEmailDelivery(resendId, clientName) {
         const lastEvent = status?.last_event ?? "unknown";
         if (EMAIL_PROBLEM_STATUSES.has(lastEvent)) {
             console.error(`retell-post-hook: EMAIL DELIVERY PROBLEM | client="${clientName}" | resend_id=${resendId} | status=${lastEvent} | to=${status?.to} | cc=${status?.cc}`);
+            // Alert via email
+            await sendEmail({
+                to: ALERT_EMAIL,
+                subject: `[SCS Alert] Email delivery problem for ${clientName}`,
+                body: `Email delivery issue detected.\n\nClient: ${clientName}\nStatus: ${lastEvent}\nResend ID: ${resendId}\nTo: ${status?.to}\nCC: ${status?.cc}\nSubject: ${status?.subject}\nSent at: ${status?.created_at}`,
+            });
         }
         else {
             console.log(`retell-post-hook: email status OK | client="${clientName}" | resend_id=${resendId} | status=${lastEvent}`);
