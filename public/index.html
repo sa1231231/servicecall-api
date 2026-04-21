@@ -17,7 +17,7 @@
   h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
   h2 { font-size: 1.1rem; margin: 1.5rem 0 0.75rem; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
   label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem; color: #333; }
-  input[type="text"], textarea {
+  input[type="text"], textarea, select {
     width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;
     font-size: 0.9rem; margin-bottom: 0.75rem;
   }
@@ -40,6 +40,60 @@
   }
   #result.success { background: #dcfce7; border: 1px solid #86efac; color: #166534; display: block; }
   #result.error { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; display: block; }
+
+  /* Custom data point cards */
+  .custom-dp-card {
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    background: #fff;
+    position: relative;
+  }
+  .custom-dp-card .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+  .custom-dp-card .card-header span {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #444;
+  }
+  .custom-dp-card .card-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .custom-dp-card .card-actions button {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    background: #fff;
+  }
+  .custom-dp-card .card-actions .btn-duplicate { color: #2563eb; border-color: #93b4f5; }
+  .custom-dp-card .card-actions .btn-duplicate:hover { background: #eff6ff; }
+  .custom-dp-card .card-actions .btn-remove { color: #dc2626; border-color: #fca5a5; }
+  .custom-dp-card .card-actions .btn-remove:hover { background: #fef2f2; }
+  .custom-dp-row { display: flex; gap: 0.75rem; }
+  .custom-dp-row > div { flex: 1; }
+  .custom-dp-row > div.type-col { flex: 0 0 140px; }
+  .custom-dp-card .choices-row { display: none; }
+  .custom-dp-card .choices-row.visible { display: block; }
+  .btn-add-custom {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    background: #fff;
+    color: #2563eb;
+    border: 1px dashed #93b4f5;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 0.75rem;
+  }
+  .btn-add-custom:hover { background: #eff6ff; }
 </style>
 </head>
 <body>
@@ -73,6 +127,12 @@
     <label><input type="checkbox" name="dataPoint" value="company_name"> Company Name</label>
     <label><input type="checkbox" name="dataPoint" value="scheduling"> Scheduling (Day/Time)</label>
   </div>
+
+  <!-- ── Custom Data Points ───────────────────────────────────── -->
+  <h2>Custom Data Points</h2>
+  <p style="font-size:0.8rem;color:#666;margin-top:-0.5rem;">Add custom fields for the agent to collect. All fields are required.</p>
+  <div id="customDataPoints"></div>
+  <button type="button" class="btn-add-custom" onclick="addCustomCard()">+ Add Custom Field</button>
 
   <!-- ── Client ──────────────────────────────────────────────── -->
   <h2>Client Configuration</h2>
@@ -127,6 +187,10 @@
   const form = document.getElementById('agentForm');
   const resultDiv = document.getElementById('result');
   const submitBtn = document.getElementById('submitBtn');
+  const customContainer = document.getElementById('customDataPoints');
+
+  const BUILTIN_NAMES = ['full_name', 'phone_number', 'email', 'street_address', 'city', 'company_name', 'scheduling'];
+  let cardCounter = 0;
 
   // Auto-load API key from server environment
   fetch('/form/config')
@@ -140,15 +204,178 @@
 
   function val(id) { return document.getElementById(id).value.trim(); }
 
+  function slugify(str) {
+    return str.toLowerCase().replace(/[\s\-]+/g, '_').replace(/[^a-z0-9_]/g, '');
+  }
+
+  function createCardHtml(id, values) {
+    const v = values || {};
+    return `
+      <div class="custom-dp-card" data-card-id="${id}">
+        <div class="card-header">
+          <span>Custom Field #<span class="card-num"></span></span>
+          <div class="card-actions">
+            <button type="button" class="btn-duplicate" onclick="duplicateCard('${id}')">Duplicate</button>
+            <button type="button" class="btn-remove" onclick="removeCard('${id}')">Remove</button>
+          </div>
+        </div>
+        <div class="custom-dp-row">
+          <div>
+            <label>Variable Name <span style="color:#dc2626">*</span></label>
+            <input type="text" class="cdp-variableName" placeholder="property_type" value="${v.variableName || ''}"
+              onblur="this.value = slugify(this.value)">
+          </div>
+          <div>
+            <label>Label <span style="color:#dc2626">*</span></label>
+            <input type="text" class="cdp-label" placeholder="Property Type" value="${v.label || ''}">
+          </div>
+          <div class="type-col">
+            <label>Type <span style="color:#dc2626">*</span></label>
+            <select class="cdp-type" onchange="toggleChoices(this)">
+              <option value="string"${(v.type || 'string') === 'string' ? ' selected' : ''}>string</option>
+              <option value="enum"${v.type === 'enum' ? ' selected' : ''}>enum</option>
+              <option value="boolean"${v.type === 'boolean' ? ' selected' : ''}>boolean</option>
+            </select>
+          </div>
+        </div>
+        <div class="choices-row${v.type === 'enum' ? ' visible' : ''}">
+          <label>Choices <span style="color:#dc2626">*</span></label>
+          <input type="text" class="cdp-choices" placeholder="Residential, Commercial, Industrial" value="${v.choices || ''}">
+          <div class="field-hint">Comma-separated list of valid options.</div>
+        </div>
+        <label>Description <span style="color:#dc2626">*</span></label>
+        <textarea class="cdp-description" placeholder='The type of property the caller is inquiring about. If not mentioned, set to "Not Mentioned".'>${v.description || ''}</textarea>
+        <div class="field-hint">What this variable represents and how to handle missing values.</div>
+        <label>Conversation Prompt <span style="color:#dc2626">*</span></label>
+        <textarea class="cdp-conversationPrompt" placeholder='Ask the caller what type of property they need service for.
+
+Do not ask for any other information than what is instructed for this node.'>${v.conversationPrompt || ''}</textarea>
+        <div class="field-hint">Instructions for how the agent should ask the caller for this information.</div>
+        <label>Forward Condition <span style="color:#dc2626">*</span></label>
+        <input type="text" class="cdp-forwardCondition" placeholder="The caller has provided their property type" value="${v.forwardCondition || ''}">
+        <div class="field-hint">When should the agent move on from this question?</div>
+      </div>
+    `;
+  }
+
+  function addCustomCard(values) {
+    const id = 'cdp_' + (++cardCounter);
+    customContainer.insertAdjacentHTML('beforeend', createCardHtml(id, values));
+    renumberCards();
+  }
+
+  function duplicateCard(cardId) {
+    const card = document.querySelector(`[data-card-id="${cardId}"]`);
+    if (!card) return;
+    const values = {
+      variableName: '',  // clear so user must fill in unique name
+      label: '',         // clear so user must fill in
+      type: card.querySelector('.cdp-type').value,
+      choices: card.querySelector('.cdp-choices').value,
+      description: card.querySelector('.cdp-description').value,
+      conversationPrompt: card.querySelector('.cdp-conversationPrompt').value,
+      forwardCondition: card.querySelector('.cdp-forwardCondition').value,
+    };
+    const id = 'cdp_' + (++cardCounter);
+    card.insertAdjacentHTML('afterend', createCardHtml(id, values));
+    renumberCards();
+  }
+
+  function removeCard(cardId) {
+    const card = document.querySelector(`[data-card-id="${cardId}"]`);
+    if (card) card.remove();
+    renumberCards();
+  }
+
+  function renumberCards() {
+    customContainer.querySelectorAll('.custom-dp-card').forEach((card, i) => {
+      card.querySelector('.card-num').textContent = i + 1;
+    });
+  }
+
+  function toggleChoices(select) {
+    const row = select.closest('.custom-dp-card').querySelector('.choices-row');
+    if (select.value === 'enum') {
+      row.classList.add('visible');
+    } else {
+      row.classList.remove('visible');
+    }
+  }
+
+  function collectCustomDataPoints() {
+    const cards = customContainer.querySelectorAll('.custom-dp-card');
+    const results = [];
+    const errors = [];
+    const seenNames = new Set();
+
+    cards.forEach((card, i) => {
+      const num = i + 1;
+      const variableName = slugify(card.querySelector('.cdp-variableName').value.trim());
+      const label = card.querySelector('.cdp-label').value.trim();
+      const type = card.querySelector('.cdp-type').value;
+      const choicesRaw = card.querySelector('.cdp-choices').value.trim();
+      const description = card.querySelector('.cdp-description').value.trim();
+      const conversationPrompt = card.querySelector('.cdp-conversationPrompt').value.trim();
+      const forwardCondition = card.querySelector('.cdp-forwardCondition').value.trim();
+
+      if (!variableName) errors.push(`Custom field #${num}: Variable Name is required.`);
+      if (!label) errors.push(`Custom field #${num}: Label is required.`);
+      if (!description) errors.push(`Custom field #${num}: Description is required.`);
+      if (!conversationPrompt) errors.push(`Custom field #${num}: Conversation Prompt is required.`);
+      if (!forwardCondition) errors.push(`Custom field #${num}: Forward Condition is required.`);
+
+      if (variableName && BUILTIN_NAMES.includes(variableName)) {
+        errors.push(`Custom field #${num}: "${variableName}" is a built-in data point name. Use a different name.`);
+      }
+      if (variableName && seenNames.has(variableName)) {
+        errors.push(`Custom field #${num}: Duplicate variable name "${variableName}".`);
+      }
+      seenNames.add(variableName);
+
+      const choices = type === 'enum' ? csvToArray(choicesRaw) : [];
+      if (type === 'enum' && choices.length === 0) {
+        errors.push(`Custom field #${num}: Enum type requires at least one choice.`);
+      }
+
+      if (errors.length === 0) {
+        results.push({
+          variableName,
+          label,
+          type,
+          choices,
+          description,
+          conversationPrompt,
+          forwardCondition,
+          finetuneExamples: [],
+          extractSuccessEquation: [
+            { left: `{{${variableName}}}`, operator: 'exists' },
+            { left: `{{${variableName}}}`, operator: '!=', right: 'Not Mentioned' },
+          ],
+        });
+      }
+    });
+
+    return { results, errors };
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     resultDiv.className = '';
     resultDiv.style.display = 'none';
 
-    // Gather data points
+    // Gather built-in data points
     const checked = [...document.querySelectorAll('input[name="dataPoint"]:checked')].map(cb => cb.value);
-    if (checked.length === 0) {
-      resultDiv.textContent = 'Please select at least one data point.';
+
+    // Gather custom data points
+    const custom = collectCustomDataPoints();
+    if (custom.errors.length > 0) {
+      resultDiv.textContent = custom.errors.join('\n');
+      resultDiv.className = 'error';
+      return;
+    }
+
+    if (checked.length === 0 && custom.results.length === 0) {
+      resultDiv.textContent = 'Please select at least one data point or add a custom field.';
       resultDiv.className = 'error';
       return;
     }
@@ -160,13 +387,15 @@
       return;
     }
 
+    const dataPoints = [...checked, ...custom.results];
+
     const body = {
       business: {
         businessName: val('businessName'),
         faqKnowledgeBase: val('faqKnowledgeBase'),
         introFinetuneExamples: [],
       },
-      dataPoints: checked,
+      dataPoints,
       client: {
         slug: val('slug'),
         dispatch_text_numbers: dispatchTexts,
