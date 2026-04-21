@@ -2,10 +2,11 @@ import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
-import { agentIdToClient, ownerConfig } from "../../config/notification-clients.js";
+import { agentIdToClient, agentIdToSlug, ownerConfig } from "../../config/notification-clients.js";
 import { escapeHtml } from "../../lib/escape-html.js";
 import { sendOwnerCallMonitor } from "../../lib/owner-monitor.js";
 import { triggerDispatchCall } from "../../lib/dispatch-call.js";
+import { saveCallLog } from "../../lib/call-log.js";
 export async function postHookHandler(req, res) {
     console.log("retell-post-hook: received request");
     // Skip signature verification for test client (matched by agent_id)
@@ -49,6 +50,26 @@ export async function postHookHandler(req, res) {
         return;
     }
     console.log(`retell-post-hook: matched client "${clientConfig.name}" (agent_id=${agentId})`);
+    const client = clientConfig; // local const for use in nested function
+    const clientSlug = agentIdToSlug[agentId] ?? "unknown";
+    function buildCallLog(outcome, typeKey = "", typeLabel = "", fields = {}) {
+        return {
+            _id: call.call_id ?? `unknown_${Date.now()}`,
+            client_slug: clientSlug,
+            client_name: client.name,
+            agent_id: agentId,
+            from_number: call.from_number ?? "unknown",
+            duration_ms: call.duration_ms ?? 0,
+            disconnection_reason: call.disconnection_reason ?? "unknown",
+            all_variables: allVars,
+            extracted_fields: fields,
+            message_type_key: typeKey,
+            message_type_label: typeLabel,
+            outcome,
+            shadow_mode: client.shadow_mode ?? false,
+            created_at: new Date(),
+        };
+    }
     // Resolve message type
     const typeKey = clientConfig.resolve_type(allVars);
     const messageType = clientConfig.message_types[typeKey] ??
@@ -90,6 +111,7 @@ export async function postHookHandler(req, res) {
     if (failedRequired.length > 0) {
         const names = failedRequired.map((f) => f.key).join(", ");
         console.warn(`retell-post-hook: required field check failed [${names}], skipping notification`);
+        saveCallLog(buildCallLog("skipped_required_field", typeKey, messageType.label, fieldValues)).catch(() => { });
         sendOwnerCallMonitor(call, clientConfig, "skipped_required_field").catch(() => { });
         res.status(200).json({ success: true, outcome: "skipped_required_field" });
         return;
@@ -98,6 +120,7 @@ export async function postHookHandler(req, res) {
     const meaningfulFields = messageType.fields.filter((f) => f.key !== "phone_number" && fieldValues[f.key] && fieldValues[f.key] !== "Not Mentioned");
     if (meaningfulFields.length === 0) {
         console.warn("retell-post-hook: empty call — no data collected, skipping notifications");
+        saveCallLog(buildCallLog("skipped_empty_call", typeKey, messageType.label, fieldValues)).catch(() => { });
         sendOwnerCallMonitor(call, clientConfig, "skipped_empty_call").catch(() => { });
         res.status(200).json({ success: true, outcome: "skipped_empty_call" });
         return;
@@ -168,6 +191,7 @@ export async function postHookHandler(req, res) {
         if (clientConfig.summary_agent_id && clientConfig.outbound_from_number) {
             triggerDispatchCall({ ...clientConfig, dispatch_call_number: ownerConfig.phone }, { client_name: clientConfig.name, call_summary: smsMessage }).catch(() => { });
         }
+        saveCallLog(buildCallLog("shadow_dry_run", typeKey, messageType.label, fieldValues)).catch(() => { });
         sendOwnerCallMonitor(call, clientConfig, "shadow_dry_run").catch(() => { });
         res.status(200).json({ success: true, outcome: "shadow_dry_run" });
         return;
@@ -207,6 +231,7 @@ export async function postHookHandler(req, res) {
             .map((r) => r.reason?.message ?? String(r.reason));
         if (errors.length > 0) {
             console.error("retell-post-hook: notification errors", errors);
+            saveCallLog(buildCallLog("dispatch_error", typeKey, messageType.label, fieldValues)).catch(() => { });
             sendOwnerCallMonitor(call, clientConfig, "dispatch_error").catch(() => { });
             res.status(500).json({ success: false, errors });
             return;
@@ -231,6 +256,7 @@ export async function postHookHandler(req, res) {
             call_summary: smsMessage,
         }).catch(() => { });
     }
+    saveCallLog(buildCallLog("dispatched", typeKey, messageType.label, fieldValues)).catch(() => { });
     sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => { });
     res.status(200).json({ success: true });
 }

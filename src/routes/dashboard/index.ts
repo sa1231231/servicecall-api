@@ -6,6 +6,8 @@ import express from "express";
 import { config } from "../../config.js";
 import { listAgentsHandler } from "./list-agents.js";
 import { toggleShadowHandler } from "./toggle-shadow.js";
+import { getAgentHandler } from "./get-agent.js";
+import { getCallsHandler } from "./get-calls.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -31,4 +33,6 @@ export const dashboardApiRouter = Router();
 dashboardApiRouter.use(express.json());
 
 dashboardApiRouter.get("/agents", listAgentsHandler);
+dashboardApiRouter.get("/agents/:slug", getAgentHandler);
+dashboardApiRouter.get("/agents/:slug/calls", getCallsHandler);
 dashboardApiRouter.patch("/agents/:slug/shadow", toggleShadowHandler);

@@ -2,6 +2,7 @@ import { getDb } from "../lib/db.js";
 import {
   notificationClients,
   agentIdToClient,
+  agentIdToSlug,
   type ClientNotificationConfig,
 } from "./notification-clients.js";
 
@@ -80,6 +81,7 @@ function registerInMemory(slug: string, config: ClientNotificationConfig): void 
   notificationClients[slug] = config;
   for (const agentId of config.agent_ids) {
     agentIdToClient[agentId] = config;
+    agentIdToSlug[agentId] = slug;
   }
 }
 
@@ -144,6 +146,13 @@ export async function updateClientField(
   }
 
   console.log(`[client-store] updated "${slug}".${field} = ${JSON.stringify(value)}`);
+}
+
+/** Get full client document from MongoDB for detail view. */
+export async function getClientDocument(
+  slug: string,
+): Promise<(JsonClientEntry & { _id: string }) | null> {
+  return clients().findOne({ _id: slug } as any) as any;
 }
 
 /** Return lightweight summaries of all clients for the dashboard. */

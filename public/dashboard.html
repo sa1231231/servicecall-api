@@ -8,13 +8,14 @@
   *, *::before, *::after { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    max-width: 900px;
+    max-width: 1000px;
     margin: 2rem auto;
     padding: 0 1rem;
     color: #1a1a1a;
     background: #f7f7f8;
   }
   h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.15rem; margin: 1.5rem 0 0.75rem; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
   .subtitle { color: #666; font-size: 0.85rem; margin-top: 0; }
   table {
     width: 100%;
@@ -26,8 +27,8 @@
   }
   th, td {
     text-align: left;
-    padding: 0.75rem 1rem;
-    font-size: 0.85rem;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.82rem;
   }
   th {
     background: #f9fafb;
@@ -37,203 +38,430 @@
   }
   td { border-bottom: 1px solid #f0f0f0; }
   tr:last-child td { border-bottom: none; }
-  tr:hover td { background: #fafbfc; }
+  .clickable-row { cursor: pointer; }
+  .clickable-row:hover td { background: #f0f5ff; }
   .agent-ids {
     font-family: monospace;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     color: #666;
-    max-width: 200px;
+    max-width: 180px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .status-badge {
+  .badge {
     display: inline-block;
-    padding: 0.2rem 0.6rem;
+    padding: 0.15rem 0.5rem;
     border-radius: 999px;
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     font-weight: 600;
   }
-  .status-live { background: #dcfce7; color: #166534; }
-  .status-shadow { background: #fef3c7; color: #92400e; }
+  .badge-live { background: #dcfce7; color: #166534; }
+  .badge-shadow { background: #fef3c7; color: #92400e; }
+  .badge-dispatched { background: #dcfce7; color: #166534; }
+  .badge-shadow_dry_run { background: #fef3c7; color: #92400e; }
+  .badge-skipped_required_field, .badge-skipped_empty_call { background: #e5e7eb; color: #6b7280; }
+  .badge-dispatch_error { background: #fee2e2; color: #991b1b; }
+  .sentiment-positive { color: #166534; }
+  .sentiment-negative { color: #991b1b; }
+  .sentiment-unknown { color: #6b7280; }
 
   /* Toggle switch */
-  .toggle {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-  }
+  .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
   .toggle input { opacity: 0; width: 0; height: 0; }
   .toggle .slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: #d1d5db;
-    border-radius: 24px;
-    transition: 0.2s;
+    position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+    background: #d1d5db; border-radius: 24px; transition: 0.2s;
   }
   .toggle .slider::before {
-    content: "";
-    position: absolute;
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background: #fff;
-    border-radius: 50%;
-    transition: 0.2s;
+    content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px;
+    background: #fff; border-radius: 50%; transition: 0.2s;
   }
   .toggle input:checked + .slider { background: #f59e0b; }
   .toggle input:checked + .slider::before { transform: translateX(20px); }
   .toggle input:disabled + .slider { opacity: 0.5; cursor: not-allowed; }
 
   .toast {
-    position: fixed;
-    bottom: 1.5rem;
-    right: 1.5rem;
-    padding: 0.75rem 1.25rem;
-    border-radius: 8px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: #fff;
-    opacity: 0;
-    transition: opacity 0.3s;
-    z-index: 100;
+    position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 0.75rem 1.25rem;
+    border-radius: 8px; font-size: 0.85rem; font-weight: 500; color: #fff;
+    opacity: 0; transition: opacity 0.3s; z-index: 100;
   }
   .toast.visible { opacity: 1; }
   .toast.success { background: #166534; }
   .toast.error { background: #991b1b; }
   .loading { text-align: center; padding: 3rem; color: #888; }
   .error-msg { text-align: center; padding: 2rem; color: #991b1b; }
+
+  /* Back button */
+  .btn-back {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.4rem 0.8rem; font-size: 0.82rem; font-weight: 500;
+    background: #fff; color: #444; border: 1px solid #d1d5db; border-radius: 6px;
+    cursor: pointer; margin-bottom: 1rem;
+  }
+  .btn-back:hover { background: #f9fafb; }
+
+  /* Detail config */
+  .config-grid {
+    display: grid; grid-template-columns: 160px 1fr; gap: 0.35rem 1rem;
+    font-size: 0.82rem; background: #fff; padding: 1rem; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .config-grid dt { font-weight: 600; color: #555; padding: 0.25rem 0; }
+  .config-grid dd { margin: 0; padding: 0.25rem 0; word-break: break-word; }
+  .config-grid dd code { font-size: 0.78rem; background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+  /* Message types collapsible */
+  details { margin-top: 0.5rem; }
+  details summary {
+    cursor: pointer; font-weight: 600; font-size: 0.82rem; color: #555;
+    padding: 0.4rem 0;
+  }
+  .mt-block {
+    background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;
+    padding: 0.75rem; margin: 0.5rem 0; font-size: 0.8rem;
+  }
+  .mt-block strong { font-size: 0.82rem; }
+
+  /* Call log expand */
+  .call-expand {
+    background: #f9fafb; padding: 0.75rem 1rem; font-size: 0.8rem;
+    border-top: 1px solid #e5e7eb;
+  }
+  .call-expand p { margin: 0.25rem 0; }
+  .call-expand .field-pair { display: inline-block; margin-right: 1.25rem; margin-bottom: 0.25rem; }
+  .call-expand .field-pair strong { color: #555; }
+
+  .btn-load-more {
+    display: block; margin: 1rem auto; padding: 0.5rem 1.5rem;
+    font-size: 0.85rem; background: #fff; color: #2563eb; border: 1px solid #93b4f5;
+    border-radius: 6px; cursor: pointer;
+  }
+  .btn-load-more:hover { background: #eff6ff; }
+  .btn-load-more:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
+
+  a.icon-link { color: #2563eb; text-decoration: none; font-size: 0.78rem; }
+  a.icon-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
-<h1>Agent Dashboard</h1>
-<p class="subtitle">View and manage all agents. Toggle shadow mode to control whether notifications go to the owner or the client.</p>
 
-<div id="content"><div class="loading">Loading agents...</div></div>
+<!-- ── Agent List View ──────────────────────────────────────────────── -->
+<div id="listView">
+  <h1>Agent Dashboard</h1>
+  <p class="subtitle">Click a client to view details and call history.</p>
+  <div id="agentList"><div class="loading">Loading agents...</div></div>
+</div>
+
+<!-- ── Detail View ──────────────────────────────────────────────────── -->
+<div id="detailView" style="display:none;">
+  <button class="btn-back" onclick="showList()">&larr; Back to all agents</button>
+  <div id="detailHeader"></div>
+  <h2>Configuration</h2>
+  <div id="detailConfig"></div>
+  <h2>Call Log</h2>
+  <div id="callLogContent"><div class="loading">Loading calls...</div></div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <script>
   let apiKey = '';
-  const content = document.getElementById('content');
-  const toast = document.getElementById('toast');
+  let currentSlug = '';
+  let callOffset = 0;
+  const CALL_LIMIT = 50;
 
-  function showToast(message, type) {
-    toast.textContent = message;
-    toast.className = 'toast visible ' + type;
-    setTimeout(() => { toast.className = 'toast'; }, 3000);
+  function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str ?? '';
+    return d.innerHTML;
   }
+
+  function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast visible ' + type;
+    setTimeout(() => { t.className = 'toast'; }, 3000);
+  }
+
+  function fmtDuration(ms) {
+    if (!ms) return '0:00';
+    const s = Math.round(ms / 1000);
+    return Math.floor(s / 60) + ':' + (s % 60).toString().padStart(2, '0');
+  }
+
+  function fmtDate(d) {
+    const dt = new Date(d);
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' +
+           dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function outcomeLabel(o) {
+    const map = {
+      dispatched: 'Dispatched',
+      shadow_dry_run: 'Shadow',
+      skipped_required_field: 'Skipped (req)',
+      skipped_empty_call: 'Skipped (empty)',
+      dispatch_error: 'Error',
+    };
+    return map[o] || o;
+  }
+
+  // ── LIST VIEW ──────────────────────────────────────────────────────
 
   async function loadAgents() {
     try {
-      const configRes = await fetch('/dashboard/config');
-      const configData = await configRes.json();
-      apiKey = configData.apiKey;
+      const cfgRes = await fetch('/dashboard/config');
+      const cfgData = await cfgRes.json();
+      apiKey = cfgData.apiKey;
 
-      const res = await fetch('/dashboard/api/agents', {
-        headers: { 'X-API-Key': apiKey },
-      });
-
-      if (!res.ok) throw new Error('Failed to load agents: ' + res.status);
+      const res = await fetch('/dashboard/api/agents', { headers: { 'X-API-Key': apiKey } });
+      if (!res.ok) throw new Error('Failed: ' + res.status);
       const agents = await res.json();
 
       if (agents.length === 0) {
-        content.innerHTML = '<div class="loading">No agents found.</div>';
+        document.getElementById('agentList').innerHTML = '<div class="loading">No agents found.</div>';
         return;
       }
 
-      // Sort: live agents first, then by name
       agents.sort((a, b) => {
         if (a.shadow_mode !== b.shadow_mode) return a.shadow_mode ? 1 : -1;
         return a.name.localeCompare(b.name);
       });
 
-      let html = `<table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Slug</th>
-            <th>Agent IDs</th>
-            <th>Status</th>
-            <th>Shadow Mode</th>
-          </tr>
-        </thead>
-        <tbody>`;
+      let html = `<table><thead><tr>
+        <th>Name</th><th>Slug</th><th>Agent IDs</th><th>Status</th><th>Shadow Mode</th>
+      </tr></thead><tbody>`;
 
-      for (const agent of agents) {
-        const statusClass = agent.shadow_mode ? 'status-shadow' : 'status-live';
-        const statusLabel = agent.shadow_mode ? 'Shadow' : 'Live';
-        const agentIdsDisplay = agent.agent_ids.length > 0
-          ? agent.agent_ids.map(id => id.substring(0, 16) + '...').join(', ')
+      for (const a of agents) {
+        const sc = a.shadow_mode ? 'badge-shadow' : 'badge-live';
+        const sl = a.shadow_mode ? 'Shadow' : 'Live';
+        const ids = a.agent_ids.length > 0
+          ? a.agent_ids.map(id => id.substring(0, 16) + '...').join(', ')
           : '<span style="color:#aaa">none</span>';
 
-        html += `<tr data-slug="${agent.slug}">
-          <td><strong>${escapeHtml(agent.name)}</strong></td>
-          <td style="font-family:monospace;font-size:0.8rem;">${escapeHtml(agent.slug)}</td>
-          <td class="agent-ids" title="${escapeHtml(agent.agent_ids.join(', '))}">${agentIdsDisplay}</td>
-          <td><span class="status-badge ${statusClass}" data-status>${statusLabel}</span></td>
-          <td>
+        html += `<tr class="clickable-row" onclick="showDetail('${esc(a.slug)}')" data-slug="${esc(a.slug)}">
+          <td><strong>${esc(a.name)}</strong></td>
+          <td style="font-family:monospace;font-size:0.78rem;">${esc(a.slug)}</td>
+          <td class="agent-ids" title="${esc(a.agent_ids.join(', '))}">${ids}</td>
+          <td><span class="badge ${sc}" data-status>${sl}</span></td>
+          <td onclick="event.stopPropagation()">
             <label class="toggle">
-              <input type="checkbox" ${agent.shadow_mode ? 'checked' : ''}
-                onchange="toggleShadow('${agent.slug}', this)">
+              <input type="checkbox" ${a.shadow_mode ? 'checked' : ''}
+                onchange="toggleShadow('${esc(a.slug)}', this)">
               <span class="slider"></span>
             </label>
           </td>
         </tr>`;
       }
-
       html += '</tbody></table>';
-      content.innerHTML = html;
+      document.getElementById('agentList').innerHTML = html;
     } catch (err) {
-      content.innerHTML = '<div class="error-msg">Error: ' + escapeHtml(err.message) + '</div>';
+      document.getElementById('agentList').innerHTML = '<div class="error-msg">Error: ' + esc(err.message) + '</div>';
     }
   }
 
-  async function toggleShadow(slug, checkbox) {
-    const newValue = checkbox.checked;
-    checkbox.disabled = true;
-
-    // Optimistic UI update
-    const row = checkbox.closest('tr');
+  async function toggleShadow(slug, cb) {
+    const nv = cb.checked;
+    cb.disabled = true;
+    const row = cb.closest('tr');
     const badge = row.querySelector('[data-status]');
-    badge.textContent = newValue ? 'Shadow' : 'Live';
-    badge.className = 'status-badge ' + (newValue ? 'status-shadow' : 'status-live');
-
+    badge.textContent = nv ? 'Shadow' : 'Live';
+    badge.className = 'badge ' + (nv ? 'badge-shadow' : 'badge-live');
     try {
       const res = await fetch('/dashboard/api/agents/' + slug + '/shadow', {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey,
-        },
-        body: JSON.stringify({ shadow_mode: newValue }),
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify({ shadow_mode: nv }),
       });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      showToast(slug + ' is now ' + (nv ? 'in shadow mode' : 'LIVE'), 'success');
+    } catch (err) {
+      cb.checked = !nv;
+      badge.textContent = !nv ? 'Shadow' : 'Live';
+      badge.className = 'badge ' + (!nv ? 'badge-shadow' : 'badge-live');
+      showToast('Failed: ' + err.message, 'error');
+    } finally { cb.disabled = false; }
+  }
 
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Request failed');
+  function showList() {
+    document.getElementById('detailView').style.display = 'none';
+    document.getElementById('listView').style.display = '';
+  }
+
+  // ── DETAIL VIEW ────────────────────────────────────────────────────
+
+  async function showDetail(slug) {
+    currentSlug = slug;
+    callOffset = 0;
+    document.getElementById('listView').style.display = 'none';
+    document.getElementById('detailView').style.display = '';
+    document.getElementById('detailConfig').innerHTML = '<div class="loading">Loading...</div>';
+    document.getElementById('callLogContent').innerHTML = '<div class="loading">Loading calls...</div>';
+
+    try {
+      const res = await fetch('/dashboard/api/agents/' + slug, { headers: { 'X-API-Key': apiKey } });
+      if (!res.ok) throw new Error('Failed: ' + res.status);
+      const doc = await res.json();
+      renderDetail(doc);
+    } catch (err) {
+      document.getElementById('detailConfig').innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+    }
+
+    loadCalls(true);
+  }
+
+  function renderDetail(doc) {
+    const sm = doc.shadow_mode;
+    const sc = sm ? 'badge-shadow' : 'badge-live';
+    const sl = sm ? 'Shadow' : 'Live';
+    document.getElementById('detailHeader').innerHTML =
+      `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span></h1>`;
+
+    const ids = (doc.agent_ids || []).map(id => `<code>${esc(id)}</code>`).join(', ') || '<span style="color:#aaa">none</span>';
+    const texts = (doc.dispatch_text_numbers || []).map(n => esc(n)).join(', ') || '—';
+    const emails = (doc.dispatch_email || []).map(e => esc(e)).join(', ') || '—';
+
+    let html = `<dl class="config-grid">
+      <dt>Slug</dt><dd><code>${esc(doc._id)}</code></dd>
+      <dt>Agent IDs</dt><dd>${ids}</dd>
+      <dt>Dispatch Text</dt><dd>${texts}</dd>
+      <dt>Dispatch Call</dt><dd>${esc(doc.dispatch_call_number) || '—'}</dd>
+      <dt>Dispatch Email</dt><dd>${emails}</dd>
+      <dt>Dispatch CC</dt><dd>${esc(doc.dispatch_cc) || '—'}</dd>
+      <dt>Outbound From</dt><dd>${esc(doc.outbound_from_number) || '—'}</dd>
+      <dt>Summary Agent</dt><dd>${doc.summary_agent_id ? '<code>' + esc(doc.summary_agent_id) + '</code>' : '—'}</dd>
+      <dt>Phone Fallback</dt><dd>${doc.phone_fallback_to_caller ? 'Yes' : 'No'}</dd>
+      <dt>Hide Not Mentioned</dt><dd>${doc.hide_not_mentioned ? 'Yes' : 'No'}</dd>
+      <dt>Shadow Mode</dt><dd>${doc.shadow_mode ? 'Yes' : 'No'}</dd>
+    </dl>`;
+
+    // Message types
+    const mt = doc.message_types || {};
+    if (Object.keys(mt).length > 0) {
+      html += '<details><summary>Message Types (' + Object.keys(mt).length + ')</summary>';
+      for (const [key, val] of Object.entries(mt)) {
+        html += `<div class="mt-block">
+          <strong>${esc(key)}</strong> &mdash; ${esc(val.label)}<br>
+          <span style="color:#666;">Subject:</span> ${esc(val.subject_template)}<br>`;
+        if (val.additional_text) html += `<span style="color:#666;">Note:</span> ${esc(val.additional_text)}<br>`;
+        html += `<span style="color:#666;">Fields:</span> ${val.fields.map(f => esc(f.label)).join(', ')}`;
+        html += '</div>';
+      }
+      html += '</details>';
+    }
+
+    document.getElementById('detailConfig').innerHTML = html;
+  }
+
+  // ── CALL LOG ───────────────────────────────────────────────────────
+
+  async function loadCalls(fresh) {
+    if (fresh) callOffset = 0;
+
+    try {
+      const res = await fetch(
+        '/dashboard/api/agents/' + currentSlug + '/calls?limit=' + CALL_LIMIT + '&offset=' + callOffset,
+        { headers: { 'X-API-Key': apiKey } }
+      );
+      if (!res.ok) throw new Error('Failed: ' + res.status);
+      const calls = await res.json();
+
+      if (fresh && calls.length === 0) {
+        document.getElementById('callLogContent').innerHTML = '<div class="loading">No calls yet.</div>';
+        return;
       }
 
-      showToast(slug + ' is now ' + (newValue ? 'in shadow mode' : 'LIVE'), 'success');
+      let html = '';
+      if (fresh) {
+        html = `<table id="callTable"><thead><tr>
+          <th>Date</th><th>From</th><th>Duration</th><th>Outcome</th>
+          <th>Sentiment</th><th>Summary</th><th>Links</th>
+        </tr></thead><tbody id="callBody">`;
+      }
+
+      for (const c of calls) {
+        const sentClass = (c.user_sentiment || '').toLowerCase().includes('positive') ? 'sentiment-positive'
+          : (c.user_sentiment || '').toLowerCase().includes('negative') ? 'sentiment-negative'
+          : 'sentiment-unknown';
+        const summary = c.call_summary
+          ? (c.call_summary.length > 80 ? c.call_summary.substring(0, 80) + '...' : c.call_summary)
+          : '<span style="color:#aaa">pending</span>';
+
+        const links = [];
+        if (c.recording_url) links.push('<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>');
+        if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
+
+        html += `<tr class="clickable-row" onclick="toggleCallExpand(this)">
+          <td>${fmtDate(c.created_at)}</td>
+          <td style="font-family:monospace;font-size:0.78rem;">${esc(c.from_number)}</td>
+          <td>${fmtDuration(c.duration_ms)}</td>
+          <td><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
+          <td class="${sentClass}">${esc(c.user_sentiment || 'Pending')}</td>
+          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.call_summary || '')}">${summary}</td>
+          <td>${links.join(' | ') || '—'}</td>
+        </tr>
+        <tr class="call-expand-row" style="display:none;"><td colspan="7">
+          <div class="call-expand">
+            <p><strong>Call ID:</strong> <code>${esc(c._id)}</code></p>
+            <p><strong>Disconnection:</strong> ${esc(c.disconnection_reason)}</p>
+            <p><strong>Message Type:</strong> ${esc(c.message_type_label || c.message_type_key)}</p>
+            ${c.call_summary ? '<p><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
+            <p style="margin-top:0.5rem;"><strong>Extracted Fields:</strong></p>
+            <p>${renderFields(c.extracted_fields)}</p>
+          </div>
+        </td></tr>`;
+      }
+
+      if (fresh) {
+        html += '</tbody></table>';
+        if (calls.length >= CALL_LIMIT) {
+          html += '<button class="btn-load-more" onclick="loadMoreCalls()">Load more</button>';
+        }
+        document.getElementById('callLogContent').innerHTML = html;
+      } else {
+        // Append to existing table
+        document.getElementById('callBody').insertAdjacentHTML('beforeend', html);
+        // Update load more button
+        const btn = document.querySelector('.btn-load-more');
+        if (btn) {
+          if (calls.length < CALL_LIMIT) {
+            btn.disabled = true;
+            btn.textContent = 'No more calls';
+          }
+        }
+      }
+
+      callOffset += calls.length;
     } catch (err) {
-      // Revert on failure
-      checkbox.checked = !newValue;
-      badge.textContent = !newValue ? 'Shadow' : 'Live';
-      badge.className = 'status-badge ' + (!newValue ? 'status-shadow' : 'status-live');
-      showToast('Failed: ' + err.message, 'error');
-    } finally {
-      checkbox.disabled = false;
+      if (fresh) {
+        document.getElementById('callLogContent').innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+      } else {
+        showToast('Failed to load calls: ' + err.message, 'error');
+      }
     }
   }
 
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+  function loadMoreCalls() {
+    loadCalls(false);
   }
 
+  function toggleCallExpand(row) {
+    const expandRow = row.nextElementSibling;
+    if (expandRow && expandRow.classList.contains('call-expand-row')) {
+      expandRow.style.display = expandRow.style.display === 'none' ? '' : 'none';
+    }
+  }
+
+  function renderFields(fields) {
+    if (!fields || Object.keys(fields).length === 0) return '<span style="color:#aaa">none</span>';
+    return Object.entries(fields)
+      .filter(([_, v]) => v && v !== 'Not Mentioned')
+      .map(([k, v]) => '<span class="field-pair"><strong>' + esc(k.replace(/_/g, ' ')) + ':</strong> ' + esc(v) + '</span>')
+      .join('') || '<span style="color:#aaa">none collected</span>';
+  }
+
+  // ── INIT ───────────────────────────────────────────────────────────
   loadAgents();
 </script>
 </body>

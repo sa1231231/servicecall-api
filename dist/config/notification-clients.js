@@ -5,3 +5,4 @@ export const ownerConfig = {
 // In-memory maps — populated from MongoDB at startup by client-store.ts
 export const notificationClients = {};
 export const agentIdToClient = {};
+export const agentIdToSlug = {};

@@ -1,5 +1,5 @@
 import { getDb } from "../lib/db.js";
-import { notificationClients, agentIdToClient, } from "./notification-clients.js";
+import { notificationClients, agentIdToClient, agentIdToSlug, } from "./notification-clients.js";
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function ruleToFunction(rule, defaultType) {
     if (!rule)
@@ -28,6 +28,7 @@ function registerInMemory(slug, config) {
     notificationClients[slug] = config;
     for (const agentId of config.agent_ids) {
         agentIdToClient[agentId] = config;
+        agentIdToSlug[agentId] = slug;
     }
 }
 // ── Collection accessor ──────────────────────────────────────────────────────
@@ -65,6 +66,10 @@ export async function updateClientField(slug, field, value) {
         existing[field] = value;
     }
     console.log(`[client-store] updated "${slug}".${field} = ${JSON.stringify(value)}`);
+}
+/** Get full client document from MongoDB for detail view. */
+export async function getClientDocument(slug) {
+    return clients().findOne({ _id: slug });
 }
 /** Return lightweight summaries of all clients for the dashboard. */
 export function getAllClientSummaries() {

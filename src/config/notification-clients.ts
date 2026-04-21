@@ -39,3 +39,4 @@ export interface ClientNotificationConfig {
 // In-memory maps — populated from MongoDB at startup by client-store.ts
 export const notificationClients: Record<string, ClientNotificationConfig> = {};
 export const agentIdToClient: Record<string, ClientNotificationConfig> = {};
+export const agentIdToSlug: Record<string, string> = {};

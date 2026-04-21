@@ -4,6 +4,7 @@ import { ownerConfig } from "../config/notification-clients.js";
 import { sendEmail } from "./notify-email.js";
 import { sendSms } from "./notify-sms.js";
 import { escapeHtml } from "./escape-html.js";
+import { enrichCallLog } from "./call-log.js";
 const retell = new Retell({ apiKey: config.RETELL_API_KEY });
 const ANALYSIS_FETCH_DELAY_MS = 5_000;
 function formatDuration(ms) {
@@ -53,6 +54,17 @@ export async function sendOwnerCallMonitor(call, clientConfig, notificationOutco
     const callSummary = analysis.call_summary ?? "(no summary)";
     const inVoicemail = analysis.in_voicemail ?? false;
     const problem = isProblemCall(analysis, disconnectionReason);
+    // Enrich call log in MongoDB with analysis data
+    if (callId !== "unknown") {
+        enrichCallLog(callId, {
+            call_summary: analysis.call_summary,
+            user_sentiment: sentiment,
+            call_successful: callSuccessful,
+            in_voicemail: inVoicemail,
+            recording_url: recordingUrl ?? undefined,
+            public_log_url: publicLogUrl ?? undefined,
+        }).catch(() => { });
+    }
     // Build subject
     const subjectPrefix = problem ? "[ALERT]" : "[Monitor]";
     const subjectParts = [subjectPrefix, clientConfig.name, `—`, duration, `—`, sentiment];

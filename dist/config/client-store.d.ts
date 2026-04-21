@@ -44,6 +44,10 @@ export declare function loadClientsFromDb(): Promise<void>;
 export declare function persistClient(slug: string, entry: JsonClientEntry): Promise<ClientNotificationConfig>;
 /** Update a single field on a client in MongoDB and in memory. */
 export declare function updateClientField(slug: string, field: string, value: unknown): Promise<void>;
+/** Get full client document from MongoDB for detail view. */
+export declare function getClientDocument(slug: string): Promise<(JsonClientEntry & {
+    _id: string;
+}) | null>;
 /** Return lightweight summaries of all clients for the dashboard. */
 export declare function getAllClientSummaries(): Array<{
     slug: string;
