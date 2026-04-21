@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create Retell Agent</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 720px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    color: #1a1a1a;
+    background: #f7f7f8;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+  h2 { font-size: 1.1rem; margin: 1.5rem 0 0.75rem; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 0.25rem; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.25rem; color: #333; }
+  input[type="text"], textarea {
+    width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;
+    font-size: 0.9rem; margin-bottom: 0.75rem;
+  }
+  textarea { resize: vertical; min-height: 100px; }
+  .field-hint { font-size: 0.75rem; color: #777; margin: -0.5rem 0 0.75rem; }
+  .checkbox-group { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin-bottom: 0.75rem; }
+  .checkbox-group label { display: flex; align-items: center; gap: 0.35rem; font-weight: 400; cursor: pointer; }
+  .checkbox-group input[type="checkbox"] { margin: 0; }
+  .toggle-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+  .toggle-row label { margin: 0; font-weight: 400; }
+  button[type="submit"] {
+    margin-top: 1rem; padding: 0.65rem 1.5rem; font-size: 1rem; font-weight: 600;
+    background: #2563eb; color: #fff; border: none; border-radius: 6px; cursor: pointer;
+  }
+  button[type="submit"]:hover { background: #1d4ed8; }
+  button[type="submit"]:disabled { background: #93b4f5; cursor: not-allowed; }
+  #result {
+    margin-top: 1.25rem; padding: 1rem; border-radius: 6px;
+    font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; display: none;
+  }
+  #result.success { background: #dcfce7; border: 1px solid #86efac; color: #166534; display: block; }
+  #result.error { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; display: block; }
+</style>
+</head>
+<body>
+<h1>Create Retell Agent</h1>
+<p style="color:#666;font-size:0.85rem;margin-top:0;">Fill in the fields below and click Create to provision a new agent.</p>
+
+<form id="agentForm">
+
+  <!-- API key is loaded automatically from the server -->
+  <input type="hidden" id="apiKey" value="">
+
+  <!-- ── Business ────────────────────────────────────────────── -->
+  <h2>Business</h2>
+
+  <label for="businessName">Business Name <span style="color:#dc2626">*</span></label>
+  <input type="text" id="businessName" required placeholder="e.g. Acme Plumbing">
+
+  <label for="faqKnowledgeBase">FAQ / Knowledge Base <span style="color:#dc2626">*</span></label>
+  <textarea id="faqKnowledgeBase" required placeholder="Paste the business FAQ or knowledge base content here..."></textarea>
+  <div class="field-hint">Service areas, hours, pricing info, etc. that the agent should know.</div>
+
+  <!-- ── Data Points ─────────────────────────────────────────── -->
+  <h2>Data Points to Collect</h2>
+  <p style="font-size:0.8rem;color:#666;margin-top:-0.5rem;">Select at least one. These are the fields the agent will ask callers for.</p>
+  <div class="checkbox-group">
+    <label><input type="checkbox" name="dataPoint" value="full_name" checked> Full Name</label>
+    <label><input type="checkbox" name="dataPoint" value="phone_number" checked> Phone Number</label>
+    <label><input type="checkbox" name="dataPoint" value="email"> Email</label>
+    <label><input type="checkbox" name="dataPoint" value="street_address" checked> Street Address</label>
+    <label><input type="checkbox" name="dataPoint" value="city" checked> City</label>
+    <label><input type="checkbox" name="dataPoint" value="company_name"> Company Name</label>
+    <label><input type="checkbox" name="dataPoint" value="scheduling"> Scheduling (Day/Time)</label>
+  </div>
+
+  <!-- ── Client ──────────────────────────────────────────────── -->
+  <h2>Client Configuration</h2>
+
+  <label for="slug">Slug <span style="color:#dc2626">*</span></label>
+  <input type="text" id="slug" required placeholder="e.g. acme-plumbing">
+  <div class="field-hint">Unique identifier. Lowercase, hyphens only.</div>
+
+  <label for="clientName">Display Name</label>
+  <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
+
+  <label for="dispatchTextNumbers">Dispatch Text Numbers <span style="color:#dc2626">*</span></label>
+  <input type="text" id="dispatchTextNumbers" required placeholder="+15551234567, +15559876543">
+  <div class="field-hint">Comma-separated phone numbers for SMS dispatch.</div>
+
+  <label for="dispatchCallNumber">Dispatch Call Number</label>
+  <input type="text" id="dispatchCallNumber" placeholder="+15551234567">
+
+  <label for="dispatchEmail">Dispatch Email(s)</label>
+  <input type="text" id="dispatchEmail" placeholder="dispatch@acme.com, backup@acme.com">
+  <div class="field-hint">Comma-separated email addresses.</div>
+
+  <label for="dispatchCc">Dispatch CC</label>
+  <input type="text" id="dispatchCc" placeholder="manager@acme.com">
+
+  <label for="outboundFromNumber">Outbound From Number</label>
+  <input type="text" id="outboundFromNumber" placeholder="+15551234567">
+
+  <label for="summaryAgentId">Summary Agent ID</label>
+  <input type="text" id="summaryAgentId" placeholder="agent_...">
+
+  <h2>Options</h2>
+  <div class="toggle-row">
+    <input type="checkbox" id="phoneFallbackToCaller" checked>
+    <label for="phoneFallbackToCaller">Phone fallback to caller</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="hideNotMentioned">
+    <label for="hideNotMentioned">Hide "Not Mentioned" fields</label>
+  </div>
+  <div class="toggle-row">
+    <input type="checkbox" id="shadowMode" checked>
+    <label for="shadowMode">Shadow mode (notifications go to you, not the client)</label>
+  </div>
+
+  <button type="submit" id="submitBtn">Create Agent</button>
+</form>
+
+<div id="result"></div>
+
+<script>
+  const form = document.getElementById('agentForm');
+  const resultDiv = document.getElementById('result');
+  const submitBtn = document.getElementById('submitBtn');
+
+  // Auto-load API key from server environment
+  fetch('/form/config')
+    .then(r => r.json())
+    .then(data => { document.getElementById('apiKey').value = data.apiKey; })
+    .catch(() => { /* key will be empty — POST will fail with 401 */ });
+
+  function csvToArray(value) {
+    return value.split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  function val(id) { return document.getElementById(id).value.trim(); }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    resultDiv.className = '';
+    resultDiv.style.display = 'none';
+
+    // Gather data points
+    const checked = [...document.querySelectorAll('input[name="dataPoint"]:checked')].map(cb => cb.value);
+    if (checked.length === 0) {
+      resultDiv.textContent = 'Please select at least one data point.';
+      resultDiv.className = 'error';
+      return;
+    }
+
+    const dispatchTexts = csvToArray(val('dispatchTextNumbers'));
+    if (dispatchTexts.length === 0) {
+      resultDiv.textContent = 'At least one dispatch text number is required.';
+      resultDiv.className = 'error';
+      return;
+    }
+
+    const body = {
+      business: {
+        businessName: val('businessName'),
+        faqKnowledgeBase: val('faqKnowledgeBase'),
+        introFinetuneExamples: [],
+      },
+      dataPoints: checked,
+      client: {
+        slug: val('slug'),
+        dispatch_text_numbers: dispatchTexts,
+      },
+    };
+
+    // Optional client fields
+    const clientName = val('clientName');
+    if (clientName) body.client.name = clientName;
+
+    const callNum = val('dispatchCallNumber');
+    if (callNum) body.client.dispatch_call_number = callNum;
+
+    const emails = csvToArray(val('dispatchEmail'));
+    if (emails.length) body.client.dispatch_email = emails;
+
+    const cc = val('dispatchCc');
+    if (cc) body.client.dispatch_cc = cc;
+
+    const outbound = val('outboundFromNumber');
+    if (outbound) body.client.outbound_from_number = outbound;
+
+    const summaryId = val('summaryAgentId');
+    if (summaryId) body.client.summary_agent_id = summaryId;
+
+    body.client.phone_fallback_to_caller = document.getElementById('phoneFallbackToCaller').checked;
+    body.client.hide_not_mentioned = document.getElementById('hideNotMentioned').checked;
+    body.client.shadow_mode = document.getElementById('shadowMode').checked;
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating...';
+
+    try {
+      const res = await fetch('/agents/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': val('apiKey'),
+        },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        resultDiv.textContent = 'Agent created successfully!\n\n'
+          + 'Agent ID: ' + data.agent_id + '\n'
+          + 'Conversation Flow ID: ' + data.conversation_flow_id;
+        resultDiv.className = 'success';
+      } else {
+        resultDiv.textContent = 'Error (' + res.status + '): ' + (data.error || JSON.stringify(data));
+        resultDiv.className = 'error';
+      }
+    } catch (err) {
+      resultDiv.textContent = 'Network error: ' + err.message;
+      resultDiv.className = 'error';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Create Agent';
+    }
+  });
+</script>
+</body>
+</html>
