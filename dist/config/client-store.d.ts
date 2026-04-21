@@ -44,6 +44,8 @@ export declare function loadClientsFromDb(): Promise<void>;
 export declare function persistClient(slug: string, entry: JsonClientEntry): Promise<ClientNotificationConfig>;
 /** Update a single field on a client in MongoDB and in memory. */
 export declare function updateClientField(slug: string, field: string, value: unknown): Promise<void>;
+/** Update multiple fields on a client in MongoDB and in memory. */
+export declare function updateClientFields(slug: string, updates: Record<string, unknown>): Promise<void>;
 /** Get full client document from MongoDB for detail view. */
 export declare function getClientDocument(slug: string): Promise<(JsonClientEntry & {
     _id: string;

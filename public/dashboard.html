@@ -142,6 +142,46 @@
 
   a.icon-link { color: #2563eb; text-decoration: none; font-size: 0.78rem; }
   a.icon-link:hover { text-decoration: underline; }
+
+  /* Chip / tag input */
+  .chip-input {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+    background: #fff; border: 1px solid #d1d5db; border-radius: 6px;
+    padding: 4px 6px; min-height: 34px; cursor: text;
+  }
+  .chip-input:focus-within { border-color: #93b4f5; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: #e5e7eb; color: #1a1a1a; padding: 2px 8px;
+    border-radius: 999px; font-size: 0.78rem; font-family: monospace;
+    white-space: nowrap;
+  }
+  .chip .remove {
+    cursor: pointer; font-size: 0.85rem; color: #6b7280; line-height: 1;
+    margin-left: 2px; font-family: sans-serif;
+  }
+  .chip .remove:hover { color: #991b1b; }
+  .chip-input input {
+    border: none; outline: none; font-size: 0.82rem; flex: 1; min-width: 80px;
+    padding: 2px 0; background: transparent; font-family: monospace;
+  }
+
+  /* Editable text inputs */
+  .edit-input {
+    width: 100%; padding: 4px 8px; font-size: 0.82rem;
+    border: 1px solid #d1d5db; border-radius: 6px; background: #fff;
+    font-family: monospace;
+  }
+  .edit-input:focus { border-color: #93b4f5; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); outline: none; }
+
+  .btn-save {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.5rem 1.5rem; font-size: 0.85rem; font-weight: 600;
+    background: #2563eb; color: #fff; border: none; border-radius: 6px;
+    cursor: pointer; margin-top: 1rem;
+  }
+  .btn-save:hover { background: #1d4ed8; }
+  .btn-save:disabled { background: #93b4f5; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -311,30 +351,98 @@
     loadCalls(true);
   }
 
+  let originalDoc = null; // stash for diffing on save
+
+  function chipHtml(values) {
+    return (values || []).map(v =>
+      `<span class="chip">${esc(v)}<span class="remove" onclick="removeChip(this)">&times;</span></span>`
+    ).join('');
+  }
+
+  function chipInputHtml(id, values, placeholder) {
+    return `<div class="chip-input" id="${id}" onclick="this.querySelector('input').focus()">
+      ${chipHtml(values)}
+      <input type="text" placeholder="${esc(placeholder)}"
+        onkeydown="chipKeydown(event, this)"
+        onblur="chipBlur(this)">
+    </div>`;
+  }
+
+  function removeChip(el) {
+    el.closest('.chip').remove();
+  }
+
+  function chipKeydown(e, input) {
+    if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',') {
+      e.preventDefault();
+      addChipFromInput(input);
+    }
+    // Backspace on empty input removes last chip
+    if (e.key === 'Backspace' && !input.value) {
+      const chips = input.parentElement.querySelectorAll('.chip');
+      if (chips.length > 0) chips[chips.length - 1].remove();
+    }
+  }
+
+  function chipBlur(input) {
+    if (input.value.trim()) addChipFromInput(input);
+  }
+
+  function addChipFromInput(input) {
+    const val = input.value.trim().replace(/,$/,'');
+    if (!val) return;
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = esc(val) + '<span class="remove" onclick="removeChip(this)">&times;</span>';
+    input.parentElement.insertBefore(chip, input);
+    input.value = '';
+  }
+
+  function getChipValues(id) {
+    const container = document.getElementById(id);
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.chip'))
+      .map(c => c.firstChild.textContent.trim());
+  }
+
   function renderDetail(doc) {
+    originalDoc = JSON.parse(JSON.stringify(doc));
+
     const sm = doc.shadow_mode;
     const sc = sm ? 'badge-shadow' : 'badge-live';
     const sl = sm ? 'Shadow' : 'Live';
     document.getElementById('detailHeader').innerHTML =
       `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span></h1>`;
 
-    const ids = (doc.agent_ids || []).map(id => `<code>${esc(id)}</code>`).join(', ') || '<span style="color:#aaa">none</span>';
-    const texts = (doc.dispatch_text_numbers || []).map(n => esc(n)).join(', ') || '—';
-    const emails = (doc.dispatch_email || []).map(e => esc(e)).join(', ') || '—';
-
     let html = `<dl class="config-grid">
       <dt>Slug</dt><dd><code>${esc(doc._id)}</code></dd>
-      <dt>Agent IDs</dt><dd>${ids}</dd>
-      <dt>Dispatch Text</dt><dd>${texts}</dd>
-      <dt>Dispatch Call</dt><dd>${esc(doc.dispatch_call_number) || '—'}</dd>
-      <dt>Dispatch Email</dt><dd>${emails}</dd>
-      <dt>Dispatch CC</dt><dd>${esc(doc.dispatch_cc) || '—'}</dd>
-      <dt>Outbound From</dt><dd>${esc(doc.outbound_from_number) || '—'}</dd>
-      <dt>Summary Agent</dt><dd>${doc.summary_agent_id ? '<code>' + esc(doc.summary_agent_id) + '</code>' : '—'}</dd>
+
+      <dt>Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
+
+      <dt>Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}</dd>
+
+      <dt>Dispatch Call</dt><dd><input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty"></dd>
+
+      <dt>Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}</dd>
+
+      <dt>Dispatch CC</dt><dd><input class="edit-input" id="edit-dispatch-cc" value="${esc(doc.dispatch_cc || '')}" placeholder="CC email or empty"></dd>
+
+      <dt>Outbound From</dt><dd><input class="edit-input" id="edit-outbound-from" value="${esc(doc.outbound_from_number || '')}" placeholder="Outbound number or empty"></dd>
+
+      <dt>Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
+
+      <dt>Shadow Mode</dt><dd>
+        <label class="toggle">
+          <input type="checkbox" id="edit-shadow-mode" ${doc.shadow_mode ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+      </dd>
+
       <dt>Phone Fallback</dt><dd>${doc.phone_fallback_to_caller ? 'Yes' : 'No'}</dd>
       <dt>Hide Not Mentioned</dt><dd>${doc.hide_not_mentioned ? 'Yes' : 'No'}</dd>
-      <dt>Shadow Mode</dt><dd>${doc.shadow_mode ? 'Yes' : 'No'}</dd>
     </dl>`;
+
+    html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
 
     // Message types
     const mt = doc.message_types || {};
@@ -352,6 +460,99 @@
     }
 
     document.getElementById('detailConfig').innerHTML = html;
+  }
+
+  function arraysEqual(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    if (a.length !== b.length) return false;
+    return a.every((v, i) => v === b[i]);
+  }
+
+  async function saveChanges() {
+    const btn = document.getElementById('btnSave');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const updates = {};
+
+    // Chip fields
+    const newAgentIds = getChipValues('chip-agent-ids');
+    if (!arraysEqual(newAgentIds, originalDoc.agent_ids || [])) {
+      updates.agent_ids = newAgentIds;
+    }
+
+    const newTextNums = getChipValues('chip-dispatch-text');
+    if (!arraysEqual(newTextNums, originalDoc.dispatch_text_numbers || [])) {
+      updates.dispatch_text_numbers = newTextNums;
+    }
+
+    const newEmails = getChipValues('chip-dispatch-email');
+    const origEmails = originalDoc.dispatch_email || [];
+    if (!arraysEqual(newEmails, origEmails)) {
+      updates.dispatch_email = newEmails.length > 0 ? newEmails : null;
+    }
+
+    // Text fields — send null for empty strings
+    const callNum = document.getElementById('edit-dispatch-call').value.trim() || null;
+    if (callNum !== (originalDoc.dispatch_call_number || null)) {
+      updates.dispatch_call_number = callNum;
+    }
+
+    const cc = document.getElementById('edit-dispatch-cc').value.trim() || null;
+    if (cc !== (originalDoc.dispatch_cc || null)) {
+      updates.dispatch_cc = cc;
+    }
+
+    const outbound = document.getElementById('edit-outbound-from').value.trim() || null;
+    if (outbound !== (originalDoc.outbound_from_number || null)) {
+      updates.outbound_from_number = outbound;
+    }
+
+    const summaryAgent = document.getElementById('edit-summary-agent').value.trim() || null;
+    if (summaryAgent !== (originalDoc.summary_agent_id || null)) {
+      updates.summary_agent_id = summaryAgent;
+    }
+
+    const shadowMode = document.getElementById('edit-shadow-mode').checked;
+    if (shadowMode !== (originalDoc.shadow_mode ?? false)) {
+      updates.shadow_mode = shadowMode;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      showToast('No changes to save', 'success');
+      btn.disabled = false;
+      btn.textContent = 'Save Changes';
+      return;
+    }
+
+    try {
+      const res = await fetch('/dashboard/api/agents/' + currentSlug, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed: ' + res.status);
+      }
+      const data = await res.json();
+      originalDoc = JSON.parse(JSON.stringify(data.doc));
+      showToast('Saved ' + Object.keys(updates).length + ' field(s)', 'success');
+
+      // Update header badge if shadow mode changed
+      if ('shadow_mode' in updates) {
+        const sc = updates.shadow_mode ? 'badge-shadow' : 'badge-live';
+        const sl = updates.shadow_mode ? 'Shadow' : 'Live';
+        document.getElementById('detailHeader').innerHTML =
+          `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span></h1>`;
+      }
+    } catch (err) {
+      showToast('Save failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save Changes';
+    }
   }
 
   // ── CALL LOG ───────────────────────────────────────────────────────

@@ -148,6 +148,72 @@ export async function updateClientField(
   console.log(`[client-store] updated "${slug}".${field} = ${JSON.stringify(value)}`);
 }
 
+const EDITABLE_FIELDS = new Set([
+  "agent_ids",
+  "dispatch_text_numbers",
+  "dispatch_call_number",
+  "dispatch_email",
+  "dispatch_cc",
+  "outbound_from_number",
+  "summary_agent_id",
+  "shadow_mode",
+]);
+
+/** Update multiple fields on a client in MongoDB and in memory. */
+export async function updateClientFields(
+  slug: string,
+  updates: Record<string, unknown>,
+): Promise<void> {
+  // Whitelist validation
+  const setObj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(updates)) {
+    if (!EDITABLE_FIELDS.has(key)) {
+      throw new Error(`Field "${key}" is not editable`);
+    }
+    setObj[key] = value;
+  }
+
+  if (Object.keys(setObj).length === 0) {
+    throw new Error("No valid fields to update");
+  }
+
+  const result = await clients().updateOne(
+    { _id: slug } as any,
+    { $set: setObj },
+  );
+
+  if (result.matchedCount === 0) {
+    throw new Error(`Client "${slug}" not found`);
+  }
+
+  // Update in-memory config
+  const existing = notificationClients[slug];
+  if (existing) {
+    // Special handling for agent_ids: remove old mappings first
+    if ("agent_ids" in setObj) {
+      for (const oldId of existing.agent_ids) {
+        delete agentIdToClient[oldId];
+        delete agentIdToSlug[oldId];
+      }
+    }
+
+    // Apply all field updates to in-memory object
+    for (const [key, value] of Object.entries(setObj)) {
+      (existing as any)[key] = value;
+    }
+
+    // Re-register agent_ids if they changed
+    if ("agent_ids" in setObj) {
+      for (const newId of existing.agent_ids) {
+        agentIdToClient[newId] = existing;
+        agentIdToSlug[newId] = slug;
+      }
+    }
+  }
+
+  console.log(`[client-store] updated "${slug}" fields: ${Object.keys(setObj).join(", ")}`);
+}
+
 /** Get full client document from MongoDB for detail view. */
 export async function getClientDocument(
   slug: string,
