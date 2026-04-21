@@ -9,6 +9,7 @@ export const retellRouter = Router();
 // so capture it via the verify callback while still parsing JSON.
 retellRouter.use(
   express.json({
+    limit: "10mb",
     verify: (req, _res, buf) => {
       (req as any).rawBody = buf.toString();
     },
