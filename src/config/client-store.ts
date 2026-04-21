@@ -99,6 +99,10 @@ export async function loadClientsFromDb(): Promise<void> {
 
   for (const doc of docs) {
     const slug = doc._id;
+    if (!Array.isArray(doc.agent_ids)) {
+      console.log(`[client-store] skipping "${slug}" (missing agent_ids)`);
+      continue;
+    }
     const config = toClientConfig(doc);
     registerInMemory(slug, config);
   }
