@@ -6,7 +6,7 @@ import {
   type ClientNotificationConfig,
 } from "./notification-clients.js";
 
-// ── Types (migrated from load-json-clients.ts) ──────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
 export interface ResolveRule {
   field: string;

@@ -7,12 +7,7 @@
  */
 
 import "dotenv/config";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { MongoClient } from "mongodb";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const MONGODB_URL = process.env.MONGODB_URL;
 if (!MONGODB_URL) {
@@ -263,17 +258,6 @@ const hardcodedClients: Record<string, Record<string, unknown>> = {
   },
 };
 
-// ── JSON-file clients ────────────────────────────────────────────────────────
-
-const jsonPath = path.join(__dirname, "../config/notification-clients.json");
-let jsonClients: Record<string, Record<string, unknown>> = {};
-if (fs.existsSync(jsonPath)) {
-  jsonClients = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-  console.log(
-    `Loaded ${Object.keys(jsonClients).length} client(s) from notification-clients.json`,
-  );
-}
-
 // ── Migrate ──────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -282,10 +266,9 @@ async function main() {
   const db = client.db();
   const col = db.collection("clients");
 
-  const allClients = { ...hardcodedClients, ...jsonClients };
   let upserted = 0;
 
-  for (const [slug, entry] of Object.entries(allClients)) {
+  for (const [slug, entry] of Object.entries(hardcodedClients)) {
     await col.replaceOne(
       { _id: slug as any },
       { _id: slug, ...entry } as any,
