@@ -56,7 +56,7 @@ app.use((req, res, next) => {
 app.use("/health", healthRouter);
 app.use("/retell", webhookLimiter, retellRouter);
 const formRouter = express.Router();
-const formHtmlPath = path.join(process.cwd(), "public", "index.html");
+const formHtmlPath = path.join(__dirname, "..", "public", "index.html");
 formRouter.get("/", (_req, res) => {
   try {
     res.type("html").send(fs.readFileSync(formHtmlPath, "utf8"));
