@@ -1,3 +1,10 @@
+// ────────────────────────────────────────────────────────────────────────────
+// DEPRECATED — This file is no longer in use.
+// Client configs are now stored in MongoDB and managed by client-store.ts.
+// Kept for reference only.
+// ────────────────────────────────────────────────────────────────────────────
+
+/*
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -77,7 +84,6 @@ function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig {
   };
 }
 
-/** Load JSON client configs and merge into the in-memory maps. */
 export function loadJsonClients(): void {
   if (!fs.existsSync(JSON_PATH)) return;
 
@@ -97,24 +103,19 @@ export function loadJsonClients(): void {
   );
 }
 
-/** Persist a new client entry to the JSON file and register in memory. */
 export function persistJsonClient(
   slug: string,
   entry: JsonClientEntry,
 ): ClientNotificationConfig {
-  // Read existing
   let entries: Record<string, JsonClientEntry> = {};
   if (fs.existsSync(JSON_PATH)) {
     entries = JSON.parse(fs.readFileSync(JSON_PATH, "utf8"));
   }
 
-  // Add new entry
   entries[slug] = entry;
 
-  // Write back
   fs.writeFileSync(JSON_PATH, JSON.stringify(entries, null, 2), "utf8");
 
-  // Register in memory
   const config = toClientConfig(entry);
   notificationClients[slug] = config;
   for (const agentId of config.agent_ids) {
@@ -126,3 +127,4 @@ export function persistJsonClient(
 }
 
 export { JSON_PATH };
+*/

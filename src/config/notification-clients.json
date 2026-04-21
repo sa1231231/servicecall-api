@@ -1,4 +1,5 @@
 {
+  "_DEPRECATED": "This file is no longer in use. Client configs are now stored in MongoDB and managed by client-store.ts. Kept for reference only.",
   "poop-911": {
     "name": "Poop 911",
     "agent_ids": [
