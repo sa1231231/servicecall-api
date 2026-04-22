@@ -43,13 +43,25 @@ export function deriveNotificationConfig(variables, clientInfo, agentId) {
     const messageTypes = {};
     let resolveRule;
     let defaultMessageType;
-    // Critical fields for emergency-type messages
+    // Critical fields for emergency-type messages (residential/commercial)
     const criticalKeys = new Set([
         "full_name",
         "phone_number",
         "street_address",
         "city",
         "problem_description",
+    ]);
+    // Service request fields for fleet/mobile repair agents —
+    // non-emergency scheduled work still needs vehicle + payment info
+    const fleetServiceKeys = new Set([
+        "full_name",
+        "phone_number",
+        "company_name",
+        "vehicle_type",
+        "vehicle_manufacturer",
+        "problem_description",
+        "whos_paying",
+        "payment_method",
     ]);
     if (hasEmergency) {
         // Pattern: is_emergency = true → emergency, else → service_request
@@ -76,7 +88,7 @@ export function deriveNotificationConfig(variables, clientInfo, agentId) {
     else if (hasServiceRequest) {
         // Pattern: is_service_request = true → service_request, else → mobile_emergency
         // (used by fleet/mobile repair agents like J&A Fleet)
-        const serviceFields = fields.filter((f) => criticalKeys.has(f.key));
+        const serviceFields = fields.filter((f) => fleetServiceKeys.has(f.key));
         messageTypes.mobile_emergency = {
             label: "EMERGENCY REPAIR CALL",
             subject_template: `EMERGENCY: ${subjectParts}`.trim(),

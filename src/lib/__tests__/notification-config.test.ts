@@ -181,11 +181,16 @@ describe("deriveNotificationConfig", () => {
 
   it("creates mobile_emergency + service_request when is_service_request present", () => {
     const vars: VariableEntry[] = [
+      { key: "company_name", label: "Company" },
       { key: "full_name", label: "Name" },
       { key: "phone_number", label: "Phone" },
       { key: "truck_number", label: "Truck Number" },
       { key: "breakdown_location", label: "Breakdown Location" },
       { key: "problem_description", label: "Problem" },
+      { key: "vehicle_type", label: "Vehicle Type" },
+      { key: "vehicle_manufacturer", label: "Vehicle Make" },
+      { key: "whos_paying", label: "Who's Paying" },
+      { key: "payment_method", label: "Payment Method" },
       { key: "is_service_request", label: "Is Service Request" },
     ];
 
@@ -204,15 +209,21 @@ describe("deriveNotificationConfig", () => {
     });
 
     // mobile_emergency gets all fields
-    expect(result.message_types.mobile_emergency.fields.length).toBe(6);
+    expect(result.message_types.mobile_emergency.fields.length).toBe(11);
     expect(result.message_types.mobile_emergency.label).toBe("EMERGENCY REPAIR CALL");
 
-    // service_request gets critical fields only
+    // service_request gets fleet service fields (vehicle + payment info)
     const srKeys = result.message_types.service_request.fields.map((f) => f.key);
     expect(srKeys).toContain("full_name");
     expect(srKeys).toContain("phone_number");
+    expect(srKeys).toContain("company_name");
     expect(srKeys).toContain("problem_description");
+    expect(srKeys).toContain("vehicle_type");
+    expect(srKeys).toContain("vehicle_manufacturer");
+    expect(srKeys).toContain("whos_paying");
+    expect(srKeys).toContain("payment_method");
     expect(srKeys).not.toContain("truck_number");
+    expect(srKeys).not.toContain("breakdown_location");
   });
 
   it("is_emergency takes precedence over is_service_request", () => {
