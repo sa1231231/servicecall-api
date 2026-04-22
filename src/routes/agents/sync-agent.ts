@@ -16,11 +16,24 @@ import {
   extractAgentParams,
 } from "../../lib/retell-sync.js";
 
+// ── Slug Generation ──────────────────────────────────────────────────────────
+
+import crypto from "crypto";
+
+function generateSlug(name: string): string {
+  const base = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const hash = crypto.randomBytes(4).toString("hex").slice(0, 7);
+  return `${base || "agent"}-${hash}`;
+}
+
 // ── POST /agents/import ──────────────────────────────────────────────────────
 
 interface ImportBody {
   agent_id: string;
-  client: ClientInfo;
+  client?: Partial<ClientInfo>;
 }
 
 export async function importAgentHandler(
@@ -34,18 +47,6 @@ export async function importAgentHandler(
     res.status(400).json({ error: "Missing required field: agent_id" });
     return;
   }
-  if (!body.client?.slug) {
-    res.status(400).json({ error: "Missing required field: client.slug" });
-    return;
-  }
-  if (!Array.isArray(body.client.dispatch_text_numbers) || body.client.dispatch_text_numbers.length === 0) {
-    res.status(400).json({ error: "Missing required field: client.dispatch_text_numbers (non-empty array)" });
-    return;
-  }
-  if (notificationClients[body.client.slug]) {
-    res.status(409).json({ error: `Client slug "${body.client.slug}" already exists` });
-    return;
-  }
 
   const retell = new Retell({ apiKey: config.RETELL_API_KEY });
 
@@ -53,20 +54,41 @@ export async function importAgentHandler(
     console.log(`[import-agent] fetching agent ${body.agent_id} from Retell...`);
     const snapshot = await fetchRetellAgent(retell, body.agent_id);
 
+    // Auto-generate slug from agent name if not provided
+    const slug = body.client?.slug || generateSlug(snapshot.agentName);
+    if (notificationClients[slug]) {
+      res.status(409).json({ error: `Client slug "${slug}" already exists` });
+      return;
+    }
+
+    const clientInfo: ClientInfo = {
+      slug,
+      name: body.client?.name ?? snapshot.agentName,
+      dispatch_text_numbers: body.client?.dispatch_text_numbers ?? [],
+      dispatch_call_number: body.client?.dispatch_call_number,
+      dispatch_email: body.client?.dispatch_email,
+      dispatch_cc: body.client?.dispatch_cc,
+      outbound_from_number: body.client?.outbound_from_number,
+      summary_agent_id: body.client?.summary_agent_id,
+      phone_fallback_to_caller: body.client?.phone_fallback_to_caller,
+      hide_not_mentioned: body.client?.hide_not_mentioned,
+      shadow_mode: body.client?.shadow_mode ?? true,
+    };
+
     const jsonEntry = deriveNotificationConfig(
       snapshot.variables,
-      body.client,
+      clientInfo,
       snapshot.agentId,
     );
     jsonEntry.retell_agents = { [snapshot.agentId]: snapshot.canonicalJson };
 
-    const slug = body.client.slug;
     await persistClient(slug, jsonEntry);
 
     console.log(`[import-agent] client "${slug}" imported with agent ${snapshot.agentId}`);
 
     res.status(201).json({
       success: true,
+      slug,
       agent_id: snapshot.agentId,
       agent_name: snapshot.agentName,
       conversation_flow_id: snapshot.conversationFlowId,
@@ -162,7 +184,7 @@ export async function syncAgentHandler(
 
 interface DuplicateBody {
   source_agent_id: string;
-  client: ClientInfo;
+  client?: Partial<ClientInfo>;
 }
 
 export async function duplicateAgentHandler(
@@ -176,18 +198,6 @@ export async function duplicateAgentHandler(
     res.status(400).json({ error: "Missing required field: source_agent_id" });
     return;
   }
-  if (!body.client?.slug) {
-    res.status(400).json({ error: "Missing required field: client.slug" });
-    return;
-  }
-  if (!Array.isArray(body.client.dispatch_text_numbers) || body.client.dispatch_text_numbers.length === 0) {
-    res.status(400).json({ error: "Missing required field: client.dispatch_text_numbers (non-empty array)" });
-    return;
-  }
-  if (notificationClients[body.client.slug]) {
-    res.status(409).json({ error: `Client slug "${body.client.slug}" already exists` });
-    return;
-  }
 
   const retell = new Retell({ apiKey: config.RETELL_API_KEY });
   let newFlowId: string | undefined;
@@ -195,6 +205,14 @@ export async function duplicateAgentHandler(
   try {
     console.log(`[duplicate-agent] fetching source agent ${body.source_agent_id} from Retell...`);
     const snapshot = await fetchRetellAgent(retell, body.source_agent_id);
+
+    // Auto-generate slug from agent name if not provided
+    const agentName = body.client?.name ?? snapshot.agentName;
+    const slug = body.client?.slug || generateSlug(agentName);
+    if (notificationClients[slug]) {
+      res.status(409).json({ error: `Client slug "${slug}" already exists` });
+      return;
+    }
 
     // 1. Create new conversation flow (copy of source)
     const flowParams = extractFlowParams(
@@ -207,10 +225,7 @@ export async function duplicateAgentHandler(
 
     // 2. Create new agent (copy of source, linked to new flow)
     const agentParams = extractAgentParams(snapshot.canonicalJson, newFlowId);
-    // Override name if provided
-    if (body.client.name) {
-      agentParams.agent_name = body.client.name;
-    }
+    agentParams.agent_name = agentName;
 
     console.log(`[duplicate-agent] creating new agent...`);
     const agentResponse = await retell.agent.create(agentParams as any);
@@ -221,27 +236,41 @@ export async function duplicateAgentHandler(
     const newCanonicalJson: Record<string, unknown> = {
       ...snapshot.canonicalJson,
       agent_id: newAgentId,
-      agent_name: body.client.name ?? snapshot.agentName,
+      agent_name: agentName,
     };
     // Update the nested flow reference
     const newFlowObj = flowResponse as unknown as Record<string, unknown>;
     newCanonicalJson.conversationFlow = newFlowObj;
 
     // 4. Derive notification config and persist
+    const clientInfo: ClientInfo = {
+      slug,
+      name: agentName,
+      dispatch_text_numbers: body.client?.dispatch_text_numbers ?? [],
+      dispatch_call_number: body.client?.dispatch_call_number,
+      dispatch_email: body.client?.dispatch_email,
+      dispatch_cc: body.client?.dispatch_cc,
+      outbound_from_number: body.client?.outbound_from_number,
+      summary_agent_id: body.client?.summary_agent_id,
+      phone_fallback_to_caller: body.client?.phone_fallback_to_caller,
+      hide_not_mentioned: body.client?.hide_not_mentioned,
+      shadow_mode: body.client?.shadow_mode ?? true,
+    };
+
     const jsonEntry = deriveNotificationConfig(
       snapshot.variables,
-      body.client,
+      clientInfo,
       newAgentId,
     );
     jsonEntry.retell_agents = { [newAgentId]: newCanonicalJson };
 
-    const slug = body.client.slug;
     await persistClient(slug, jsonEntry);
 
     console.log(`[duplicate-agent] client "${slug}" created with agent ${newAgentId}`);
 
     res.status(201).json({
       success: true,
+      slug,
       agent_id: newAgentId,
       conversation_flow_id: newFlowId,
       source_agent_id: body.source_agent_id,
