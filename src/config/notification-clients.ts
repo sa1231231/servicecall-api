@@ -36,7 +36,4 @@ export interface ClientNotificationConfig {
   shadow_mode?: boolean;
 }
 
-// In-memory maps — populated from MongoDB at startup by client-store.ts
-export const notificationClients: Record<string, ClientNotificationConfig> = {};
-export const agentIdToClient: Record<string, ClientNotificationConfig> = {};
-export const agentIdToSlug: Record<string, string> = {};
+// Runtime cache maps moved to src/_cache/clients.ts

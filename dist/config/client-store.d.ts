@@ -1,4 +1,4 @@
-import { type ClientNotificationConfig } from "./notification-clients.js";
+import type { ClientNotificationConfig } from "./notification-clients.js";
 export interface ResolveRule {
     field: string;
     equals: string;
@@ -37,6 +37,7 @@ export interface JsonClientEntry {
     phone_fallback_to_caller?: boolean;
     hide_not_mentioned?: boolean;
     shadow_mode?: boolean;
+    retell_agents?: Record<string, Record<string, unknown>>;
 }
 /** Load all clients from MongoDB and populate the in-memory maps. */
 export declare function loadClientsFromDb(): Promise<void>;

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   notificationClients,
   agentIdToClient,
-} from "../notification-clients.js";
+} from "../../_cache/clients.js";
 
 describe("notificationClients", () => {
   it("has dispatch_email as arrays or null", () => {

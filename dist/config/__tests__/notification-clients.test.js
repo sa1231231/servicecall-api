@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { notificationClients, agentIdToClient, } from "../notification-clients.js";
+import { notificationClients, agentIdToClient, } from "../../_cache/clients.js";
 describe("notificationClients", () => {
     it("has dispatch_email as arrays or null", () => {
         for (const [key, client] of Object.entries(notificationClients)) {

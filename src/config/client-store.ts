@@ -1,10 +1,10 @@
 import { getDb } from "../lib/db.js";
+import type { ClientNotificationConfig } from "./notification-clients.js";
 import {
   notificationClients,
   agentIdToClient,
   agentIdToSlug,
-  type ClientNotificationConfig,
-} from "./notification-clients.js";
+} from "../_cache/clients.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,7 @@ export interface JsonClientEntry {
   phone_fallback_to_caller?: boolean;
   hide_not_mentioned?: boolean;
   shadow_mode?: boolean;
+  retell_agents?: Record<string, Record<string, unknown>>;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

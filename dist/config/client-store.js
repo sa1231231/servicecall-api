@@ -1,5 +1,5 @@
 import { getDb } from "../lib/db.js";
-import { notificationClients, agentIdToClient, agentIdToSlug, } from "./notification-clients.js";
+import { notificationClients, agentIdToClient, agentIdToSlug, } from "../_cache/clients.js";
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function ruleToFunction(rule, defaultType) {
     if (!rule)
@@ -41,6 +41,10 @@ export async function loadClientsFromDb() {
     const docs = await clients().find().toArray();
     for (const doc of docs) {
         const slug = doc._id;
+        if (!Array.isArray(doc.agent_ids)) {
+            console.log(`[client-store] skipping "${slug}" (missing agent_ids)`);
+            continue;
+        }
         const config = toClientConfig(doc);
         registerInMemory(slug, config);
     }
