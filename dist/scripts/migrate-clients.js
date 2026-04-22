@@ -6,11 +6,7 @@
  * Requires MONGODB_URL env var (set in .env or Railway).
  */
 import "dotenv/config";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { MongoClient } from "mongodb";
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MONGODB_URL = process.env.MONGODB_URL;
 if (!MONGODB_URL) {
     console.error("MONGODB_URL env var is required");
@@ -126,7 +122,12 @@ const hardcodedClients = {
         outbound_from_number: "+15747667823",
         dispatch_email: ["Dispatch@JAFleet.com", OWNER_EMAIL],
         dispatch_cc: null,
-        // No resolve_rule — single message type, default handles it
+        resolve_rule: {
+            field: "is_service_request",
+            equals: "true",
+            then: "service_request",
+            else: "mobile_emergency",
+        },
         message_types: {
             mobile_emergency: {
                 label: "EMERGENCY REPAIR CALL",
@@ -169,6 +170,23 @@ const hardcodedClients = {
                         key: "load_weight",
                         label: "Load Weight",
                         show_when: { field: "load_weight_collected", equals: "true" },
+                    },
+                    { key: "whos_paying", label: "Who's Paying" },
+                    { key: "payment_method", label: "Payment Method" },
+                ],
+            },
+            service_request: {
+                label: "SERVICE REQUEST",
+                subject_template: "Service Request: {{full_name}} — {{problem_description}}",
+                fields: [
+                    { key: "full_name", label: "Name" },
+                    { key: "phone_number", label: "Phone" },
+                    { key: "vehicle_type", label: "Vehicle Type" },
+                    { key: "vehicle_manufacturer", label: "Vehicle Make" },
+                    {
+                        key: "problem_description",
+                        label: "Problem Description",
+                        required: true,
                     },
                     { key: "whos_paying", label: "Who's Paying" },
                     { key: "payment_method", label: "Payment Method" },
@@ -226,22 +244,14 @@ const hardcodedClients = {
         shadow_mode: true,
     },
 };
-// ── JSON-file clients ────────────────────────────────────────────────────────
-const jsonPath = path.join(__dirname, "../config/notification-clients.json");
-let jsonClients = {};
-if (fs.existsSync(jsonPath)) {
-    jsonClients = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-    console.log(`Loaded ${Object.keys(jsonClients).length} client(s) from notification-clients.json`);
-}
 // ── Migrate ──────────────────────────────────────────────────────────────────
 async function main() {
     const client = new MongoClient(MONGODB_URL);
     await client.connect();
     const db = client.db();
     const col = db.collection("clients");
-    const allClients = { ...hardcodedClients, ...jsonClients };
     let upserted = 0;
-    for (const [slug, entry] of Object.entries(allClients)) {
+    for (const [slug, entry] of Object.entries(hardcodedClients)) {
         await col.replaceOne({ _id: slug }, { _id: slug, ...entry }, { upsert: true });
         upserted++;
         console.log(`  [${upserted}] upserted "${slug}"`);

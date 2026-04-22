@@ -439,7 +439,12 @@
       </dd>
 
       <dt>Phone Fallback</dt><dd>${doc.phone_fallback_to_caller ? 'Yes' : 'No'}</dd>
-      <dt>Hide Not Mentioned</dt><dd>${doc.hide_not_mentioned ? 'Yes' : 'No'}</dd>
+      <dt>Hide Not Mentioned</dt><dd>
+        <label class="toggle">
+          <input type="checkbox" id="edit-hide-not-mentioned" ${doc.hide_not_mentioned ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+      </dd>
     </dl>`;
 
     html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
@@ -447,13 +452,22 @@
     // Message types
     const mt = doc.message_types || {};
     if (Object.keys(mt).length > 0) {
-      html += '<details><summary>Message Types (' + Object.keys(mt).length + ')</summary>';
+      html += '<details open><summary>Message Types (' + Object.keys(mt).length + ')</summary>';
       for (const [key, val] of Object.entries(mt)) {
         html += `<div class="mt-block">
           <strong>${esc(key)}</strong> &mdash; ${esc(val.label)}<br>
           <span style="color:#666;">Subject:</span> ${esc(val.subject_template)}<br>`;
         if (val.additional_text) html += `<span style="color:#666;">Note:</span> ${esc(val.additional_text)}<br>`;
-        html += `<span style="color:#666;">Fields:</span> ${val.fields.map(f => esc(f.label)).join(', ')}`;
+        html += `<span style="color:#666;display:block;margin-top:0.4rem;">Fields (toggle visibility in outgoing messages):</span>`;
+        html += '<div style="margin-top:0.25rem;">';
+        for (const f of val.fields) {
+          const checked = f.show !== false ? 'checked' : '';
+          html += `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 12px 2px 0;font-size:0.8rem;cursor:pointer;">
+            <input type="checkbox" ${checked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-toggle">
+            ${esc(f.label)}
+          </label>`;
+        }
+        html += '</div>';
         html += '</div>';
       }
       html += '</details>';
@@ -517,6 +531,35 @@
     const shadowMode = document.getElementById('edit-shadow-mode').checked;
     if (shadowMode !== (originalDoc.shadow_mode ?? false)) {
       updates.shadow_mode = shadowMode;
+    }
+
+    const hideNotMentioned = document.getElementById('edit-hide-not-mentioned').checked;
+    if (hideNotMentioned !== (originalDoc.hide_not_mentioned ?? false)) {
+      updates.hide_not_mentioned = hideNotMentioned;
+    }
+
+    // Field visibility toggles
+    const fieldToggles = document.querySelectorAll('.field-toggle');
+    if (fieldToggles.length > 0) {
+      const updatedMt = JSON.parse(JSON.stringify(originalDoc.message_types || {}));
+      let mtChanged = false;
+      for (const toggle of fieldToggles) {
+        const mtKey = toggle.dataset.mtKey;
+        const fieldKey = toggle.dataset.fieldKey;
+        const isVisible = toggle.checked;
+        const mt = updatedMt[mtKey];
+        if (!mt) continue;
+        const field = mt.fields.find(f => f.key === fieldKey);
+        if (!field) continue;
+        const wasVisible = field.show !== false;
+        if (isVisible !== wasVisible) {
+          field.show = isVisible ? undefined : false;
+          // Clean up: remove show property entirely when true (default)
+          if (isVisible) delete field.show;
+          mtChanged = true;
+        }
+      }
+      if (mtChanged) updates.message_types = updatedMt;
     }
 
     if (Object.keys(updates).length === 0) {

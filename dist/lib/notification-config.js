@@ -25,8 +25,9 @@ export function deriveNotificationConfig(variables, clientInfo, agentId) {
     const fields = variables
         .filter((v) => v.key !== "phone_number_collected")
         .map((v) => ({ key: v.key, label: v.label }));
-    // Check if is_emergency is among the variables
+    // Check for routing variables
     const hasEmergency = variables.some((v) => v.key === "is_emergency");
+    const hasServiceRequest = variables.some((v) => v.key === "is_service_request");
     // Build subject template from available fields
     const hasName = fields.some((f) => f.key === "full_name");
     const hasAddress = fields.some((f) => f.key === "street_address");
@@ -42,15 +43,16 @@ export function deriveNotificationConfig(variables, clientInfo, agentId) {
     const messageTypes = {};
     let resolveRule;
     let defaultMessageType;
+    // Critical fields for emergency-type messages
+    const criticalKeys = new Set([
+        "full_name",
+        "phone_number",
+        "street_address",
+        "city",
+        "problem_description",
+    ]);
     if (hasEmergency) {
-        // Critical fields for emergency: name, phone, address, city, problem
-        const criticalKeys = new Set([
-            "full_name",
-            "phone_number",
-            "street_address",
-            "city",
-            "problem_description",
-        ]);
+        // Pattern: is_emergency = true → emergency, else → service_request
         const emergencyFields = fields.filter((f) => criticalKeys.has(f.key));
         messageTypes.emergency = {
             label: "EMERGENCY CALL",
@@ -70,6 +72,28 @@ export function deriveNotificationConfig(variables, clientInfo, agentId) {
             else: "service_request",
         };
         defaultMessageType = "service_request";
+    }
+    else if (hasServiceRequest) {
+        // Pattern: is_service_request = true → service_request, else → mobile_emergency
+        // (used by fleet/mobile repair agents like J&A Fleet)
+        const serviceFields = fields.filter((f) => criticalKeys.has(f.key));
+        messageTypes.mobile_emergency = {
+            label: "EMERGENCY REPAIR CALL",
+            subject_template: `EMERGENCY: ${subjectParts}`.trim(),
+            fields,
+        };
+        messageTypes.service_request = {
+            label: "SERVICE REQUEST",
+            subject_template: `Service Request: ${subjectParts}`.trim(),
+            fields: serviceFields.length > 0 ? serviceFields : fields,
+        };
+        resolveRule = {
+            field: "is_service_request",
+            equals: "true",
+            then: "service_request",
+            else: "mobile_emergency",
+        };
+        defaultMessageType = "mobile_emergency";
     }
     else {
         messageTypes.service_request = {

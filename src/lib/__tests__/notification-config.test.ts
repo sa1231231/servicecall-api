@@ -179,6 +179,56 @@ describe("deriveNotificationConfig", () => {
     );
   });
 
+  it("creates mobile_emergency + service_request when is_service_request present", () => {
+    const vars: VariableEntry[] = [
+      { key: "full_name", label: "Name" },
+      { key: "phone_number", label: "Phone" },
+      { key: "truck_number", label: "Truck Number" },
+      { key: "breakdown_location", label: "Breakdown Location" },
+      { key: "problem_description", label: "Problem" },
+      { key: "is_service_request", label: "Is Service Request" },
+    ];
+
+    const result = deriveNotificationConfig(vars, baseClient, "agent_123");
+
+    expect(result.message_types.mobile_emergency).toBeDefined();
+    expect(result.message_types.service_request).toBeDefined();
+    expect(result.default_message_type).toBe("mobile_emergency");
+
+    // Resolve rule routes on is_service_request
+    expect(result.resolve_rule).toEqual({
+      field: "is_service_request",
+      equals: "true",
+      then: "service_request",
+      else: "mobile_emergency",
+    });
+
+    // mobile_emergency gets all fields
+    expect(result.message_types.mobile_emergency.fields.length).toBe(6);
+    expect(result.message_types.mobile_emergency.label).toBe("EMERGENCY REPAIR CALL");
+
+    // service_request gets critical fields only
+    const srKeys = result.message_types.service_request.fields.map((f) => f.key);
+    expect(srKeys).toContain("full_name");
+    expect(srKeys).toContain("phone_number");
+    expect(srKeys).toContain("problem_description");
+    expect(srKeys).not.toContain("truck_number");
+  });
+
+  it("is_emergency takes precedence over is_service_request", () => {
+    const vars: VariableEntry[] = [
+      { key: "full_name", label: "Name" },
+      { key: "is_emergency", label: "Is Emergency" },
+      { key: "is_service_request", label: "Is Service Request" },
+    ];
+
+    const result = deriveNotificationConfig(vars, baseClient, "agent_123");
+    // is_emergency pattern wins
+    expect(result.resolve_rule?.field).toBe("is_emergency");
+    expect(result.message_types.emergency).toBeDefined();
+    expect(result.message_types.mobile_emergency).toBeUndefined();
+  });
+
   it("uses slug as name when no name provided", () => {
     const client: ClientInfo = {
       slug: "my-slug",

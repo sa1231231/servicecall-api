@@ -6,6 +6,7 @@ export const retellRouter = Router();
 // Retell HMAC verification requires the raw body string,
 // so capture it via the verify callback while still parsing JSON.
 retellRouter.use(express.json({
+    limit: "10mb",
     verify: (req, _res, buf) => {
         req.rawBody = buf.toString();
     },

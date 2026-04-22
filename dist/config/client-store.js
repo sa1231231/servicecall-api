@@ -80,6 +80,8 @@ const EDITABLE_FIELDS = new Set([
     "outbound_from_number",
     "summary_agent_id",
     "shadow_mode",
+    "hide_not_mentioned",
+    "message_types",
 ]);
 /** Update multiple fields on a client in MongoDB and in memory. */
 export async function updateClientFields(slug, updates) {
