@@ -36,6 +36,16 @@ export const LABEL_MAP: Record<string, string> = {
   problem_description: "Problem",
   preferred_time: "Preferred Time",
   preferred_day: "Preferred Day",
+  // Trucking
+  truck_number: "Truck #",
+  driver_name: "Driver",
+  driver_phone: "Driver Phone",
+  breakdown_location: "Location",
+  vehicle_type: "Vehicle Type",
+  vehicle_manufacturer: "Make",
+  vehicle_color: "Color",
+  whos_paying: "Who's Paying",
+  payment_method: "Payment Method",
 };
 
 export function toLabel(variableName: string, dataPointLabel?: string): string {
