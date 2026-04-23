@@ -23,6 +23,19 @@ import {
   type AgentConfig,
 } from "./node-builders.js";
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export interface PathConfig {
+  name: string;
+  transitionCondition: string;
+  dataPoints: RawDataPoint[];
+}
+
+export interface ResolvedPath {
+  name: string;
+  resolved: DataPoint[];
+}
+
 // ── Resolve Data Points ──────────────────────────────────────────────────────
 
 export function resolveDataPoints(rawDataPoints: RawDataPoint[]): DataPoint[] {
@@ -78,12 +91,43 @@ export function resolveDataPoints(rawDataPoints: RawDataPoint[]): DataPoint[] {
 export function generateAgent(
   agentConfig: AgentConfig,
   rawDataPoints: RawDataPoint[],
-): { agent: Record<string, unknown>; resolved: DataPoint[] } {
+  pathConfigs?: PathConfig[],
+): {
+  agent: Record<string, unknown>;
+  resolved: DataPoint[];
+  resolvedPaths?: ResolvedPath[];
+} {
   const { businessName, faqKnowledgeBase } = agentConfig;
   const f = makeIdFactory();
-  const resolved = resolveDataPoints(rawDataPoints);
-  const ids = generateIds(f, resolved);
-  const pos = layoutPositions(resolved);
+
+  // Normalize: if pathConfigs provided, use them; otherwise wrap rawDataPoints as single path
+  const hasPaths = pathConfigs && pathConfigs.length > 0;
+  const paths = hasPaths
+    ? pathConfigs
+    : [
+        {
+          name: "Default",
+          transitionCondition:
+            "The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.",
+          dataPoints: rawDataPoints,
+        },
+      ];
+
+  const isMultiPath = paths.length > 1;
+
+  // Resolve data points per path
+  const resolvedPaths: ResolvedPath[] = paths.map((p) => ({
+    name: p.name,
+    resolved: resolveDataPoints(p.dataPoints),
+  }));
+
+  // All resolved data points (flattened, for backward compat)
+  const allResolved = resolvedPaths.flatMap((p) => p.resolved);
+
+  // Generate IDs and positions for all paths
+  const pathDataPoints = resolvedPaths.map((p) => p.resolved);
+  const ids = generateIds(f, pathDataPoints);
+  const pos = layoutPositions(pathDataPoints);
 
   const globalPrompt = `You are Anthony, an inbound receptionist for ${businessName}.
 
@@ -115,20 +159,47 @@ Acknowledge by using the available short acknowledgments listed here:
 When listing anything — services, time slots, examples, options — never list more than 3 items at a time, unless explicitly asked by the caller.
 `;
 
-  const allNodes = [
-    buildEndNode(ids, pos),
-    buildIntroNode(agentConfig, ids, pos, f),
-    buildTransitionNode(ids, pos, f),
-    buildFaqNode(faqKnowledgeBase, ids, pos, f),
-    buildHumanRequestNode(ids, pos, f),
-    ...buildDataChain(resolved, ids, pos, f),
-    buildCloseNode(businessName, ids, pos, f),
-    ...buildClosingSequence(ids, pos, f),
-    buildIrrelevantGuardrailNode(ids, pos, f),
-    buildEmergencyGuardrailNode(ids, pos, f),
-    buildPoliteHangupNode(ids, pos, f),
-    buildGuardrailEndNode(ids, pos),
-  ];
+  // Build all nodes
+  const allNodes: Record<string, unknown>[] = [];
+
+  // Shared structural nodes
+  allNodes.push(buildEndNode(ids, pos));
+  allNodes.push(
+    buildIntroNode(
+      agentConfig,
+      ids,
+      pos,
+      f,
+      isMultiPath
+        ? paths.map((p) => ({
+            name: p.name,
+            transitionCondition: p.transitionCondition,
+          }))
+        : undefined,
+    ),
+  );
+
+  // Per-path nodes: transition + data chain
+  resolvedPaths.forEach((rp, pathIdx) => {
+    const pIds = ids.paths[pathIdx];
+    const pPos = pos.paths[pathIdx];
+    const pathLabel = isMultiPath ? rp.name : undefined;
+
+    allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel));
+    allNodes.push(
+      ...buildDataChain(rp.resolved, pIds, pPos, ids.closeId, f, pathLabel),
+    );
+  });
+
+  // Shared global + closing nodes
+  allNodes.push(buildFaqNode(faqKnowledgeBase, ids, pos, f, isMultiPath));
+  allNodes.push(buildHumanRequestNode(ids, pos, f));
+  allNodes.push(buildCloseNode(businessName, ids, pos, f));
+  allNodes.push(...buildClosingSequence(ids, pos, f));
+  allNodes.push(buildIrrelevantGuardrailNode(ids, pos, f));
+  allNodes.push(buildEmergencyGuardrailNode(ids, pos, f));
+  allNodes.push(buildPoliteHangupNode(ids, pos, f));
+  allNodes.push(buildGuardrailEndNode(ids, pos));
 
   const conversationFlow = {
     version: 1,
@@ -155,5 +226,9 @@ When listing anything — services, time slots, examples, options — never list
 
   const agent = buildAgentRoot(businessName, conversationFlow);
 
-  return { agent, resolved };
+  return {
+    agent,
+    resolved: allResolved,
+    resolvedPaths: isMultiPath ? resolvedPaths : undefined,
+  };
 }

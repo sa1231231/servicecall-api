@@ -22,8 +22,16 @@ describe("toLabel", () => {
     expect(toLabel("preferred_day")).toBe("Preferred Day");
   });
 
+  it("returns LABEL_MAP value for trucking keys", () => {
+    expect(toLabel("truck_number")).toBe("Truck #");
+    expect(toLabel("driver_name")).toBe("Driver");
+    expect(toLabel("driver_phone")).toBe("Driver Phone");
+    expect(toLabel("breakdown_location")).toBe("Location");
+    expect(toLabel("whos_paying")).toBe("Who's Paying");
+    expect(toLabel("payment_method")).toBe("Payment Method");
+  });
+
   it("title-cases unknown variable names with underscores", () => {
-    expect(toLabel("truck_number")).toBe("Truck Number");
     expect(toLabel("driver_phone_extension")).toBe("Driver Phone Extension");
     expect(toLabel("is_loaded")).toBe("Is Loaded");
   });

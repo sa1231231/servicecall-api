@@ -9,6 +9,13 @@ export interface IdFactory {
   goBackId(): string;
 }
 
+export interface PathIds {
+  transitionId: string;
+  frontExtractId: string;
+  routerId: string;
+  chain: Array<{ convId: string; confirmId: string }>;
+}
+
 interface Ids {
   introId: string;
   endId: string;
@@ -18,18 +25,27 @@ interface Ids {
   emergencyGuardrailId: string;
   politeHangupId: string;
   guardrailEndId: string;
-  transitionId: string;
-  frontExtractId: string;
-  routerId: string;
   closeId: string;
   closingRemarksId: string;
   closingStatementId: string;
+  paths: PathIds[];
+  // Backward-compat aliases (point to paths[0])
+  transitionId: string;
+  frontExtractId: string;
+  routerId: string;
   chain: Array<{ convId: string; confirmId: string }>;
 }
 
 interface Position {
   x: number;
   y: number;
+}
+
+export interface PathPositions {
+  transition: Position;
+  frontExtract: Position;
+  router: Position;
+  chain: Array<{ conv: Position; confirm: Position }>;
 }
 
 interface Positions {
@@ -41,17 +57,24 @@ interface Positions {
   emergencyGuardrail: Position;
   politeHangup: Position;
   guardrailEnd: Position;
+  close: Position;
+  paths: PathPositions[];
+  // Backward-compat aliases (point to paths[0])
   transition: Position;
   frontExtract: Position;
   router: Position;
   chain: Array<{ conv: Position; confirm: Position }>;
-  close: Position;
 }
 
 export interface AgentConfig {
   businessName: string;
   faqKnowledgeBase: string;
   introFinetuneExamples: FinetuneExample[];
+}
+
+export interface IntroPathConfig {
+  name: string;
+  transitionCondition: string;
 }
 
 // ── ID Factory ───────────────────────────────────────────────────────────────
@@ -107,7 +130,17 @@ function resolveFinetuneExamples(
 
 // ── Pre-allocate IDs ─────────────────────────────────────────────────────────
 
-export function generateIds(f: IdFactory, resolvedDataPoints: DataPoint[]): Ids {
+export function generateIds(f: IdFactory, pathDataPoints: DataPoint[][]): Ids {
+  const paths: PathIds[] = pathDataPoints.map((dps) => ({
+    transitionId: f.nodeId(),
+    frontExtractId: f.nodeId(),
+    routerId: f.nodeId(),
+    chain: dps.map(() => ({
+      convId: f.nodeId(),
+      confirmId: f.nodeId(),
+    })),
+  }));
+
   return {
     introId: f.nodeId(),
     endId: f.nodeId(),
@@ -117,25 +150,43 @@ export function generateIds(f: IdFactory, resolvedDataPoints: DataPoint[]): Ids 
     emergencyGuardrailId: f.nodeId(),
     politeHangupId: f.nodeId(),
     guardrailEndId: f.nodeId(),
-    transitionId: f.nodeId(),
-    frontExtractId: f.nodeId(),
-    routerId: f.nodeId(),
     closeId: f.nodeId(),
     closingRemarksId: f.nodeId(),
     closingStatementId: f.nodeId(),
-    chain: resolvedDataPoints.map(() => ({
-      convId: f.nodeId(),
-      confirmId: f.nodeId(),
-    })),
+    paths,
+    // Backward-compat aliases
+    transitionId: paths[0].transitionId,
+    frontExtractId: paths[0].frontExtractId,
+    routerId: paths[0].routerId,
+    chain: paths[0].chain,
   };
 }
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
-export function layoutPositions(resolvedDataPoints: DataPoint[]): Positions {
-  const BASE_X = -954;
-  const STEP_X = 550;
-  const pos: Positions = {
+const BASE_X = -954;
+const STEP_X = 550;
+const PATH_Y_OFFSET = 2000;
+
+export function layoutPositions(pathDataPoints: DataPoint[][]): Positions {
+  const paths: PathPositions[] = pathDataPoints.map((dps, pathIdx) => {
+    const yBase = pathIdx * PATH_Y_OFFSET;
+    return {
+      transition: { x: -18, y: -400 + yBase },
+      frontExtract: { x: -18, y: 0 + yBase },
+      router: { x: -18, y: 450 + yBase },
+      chain: dps.map((_, i) => ({
+        conv: { x: BASE_X + i * STEP_X, y: 900 + yBase },
+        confirm: { x: BASE_X + i * STEP_X, y: 1350 + yBase },
+      })),
+    };
+  });
+
+  const maxChainLen = Math.max(...pathDataPoints.map((dps) => dps.length));
+  const lastX = BASE_X + (maxChainLen - 1) * STEP_X + STEP_X;
+  const lastPathYBase = (pathDataPoints.length - 1) * PATH_Y_OFFSET;
+
+  return {
     intro: { x: -18, y: -906 },
     end: { x: 1494, y: -882 },
     faq: { x: -1386, y: -1770 },
@@ -144,19 +195,14 @@ export function layoutPositions(resolvedDataPoints: DataPoint[]): Positions {
     emergencyGuardrail: { x: -882, y: -2778 },
     politeHangup: { x: -1026, y: -2394 },
     guardrailEnd: { x: -666, y: -2346 },
-    transition: { x: -18, y: -400 },
-    frontExtract: { x: -18, y: 0 },
-    router: { x: -18, y: 450 },
-    chain: resolvedDataPoints.map((_, i) => ({
-      conv: { x: BASE_X + i * STEP_X, y: 900 },
-      confirm: { x: BASE_X + i * STEP_X, y: 1350 },
-    })),
-    close: { x: 0, y: 0 }, // placeholder, set below
+    close: { x: lastX, y: 894 + lastPathYBase },
+    paths,
+    // Backward-compat aliases
+    transition: paths[0].transition,
+    frontExtract: paths[0].frontExtract,
+    router: paths[0].router,
+    chain: paths[0].chain,
   };
-
-  const lastX = BASE_X + (resolvedDataPoints.length - 1) * STEP_X + STEP_X;
-  pos.close = { x: lastX, y: 894 };
-  return pos;
 }
 
 // ── Node Builders ────────────────────────────────────────────────────────────
@@ -171,7 +217,12 @@ export function buildEndNode(ids: Ids, pos: Positions) {
   };
 }
 
-export function buildTransitionNode(ids: Ids, pos: Positions, f: IdFactory) {
+export function buildTransitionNode(
+  pathIds: PathIds,
+  pathPos: PathPositions,
+  f: IdFactory,
+  pathName?: string,
+) {
   return {
     instruction: {
       type: "prompt",
@@ -181,13 +232,13 @@ export function buildTransitionNode(ids: Ids, pos: Positions, f: IdFactory) {
 
 Do not ask any questions here.`,
     },
-    name: "Conversation",
+    name: pathName ? `Transition (${pathName})` : "Conversation",
     edges: [],
-    id: ids.transitionId,
+    id: pathIds.transitionId,
     type: "conversation",
-    display_position: pos.transition,
+    display_position: pathPos.transition,
     skip_response_edge: {
-      destination_node_id: ids.frontExtractId,
+      destination_node_id: pathIds.frontExtractId,
       id: `skip-response-edge-${f.nextTs()}-${randomSuffix(9)}`,
       transition_condition: {
         type: "prompt",
@@ -202,11 +253,39 @@ export function buildIntroNode(
   ids: Ids,
   pos: Positions,
   f: IdFactory,
+  pathConfigs?: IntroPathConfig[],
 ) {
+  const isMultiPath = pathConfigs && pathConfigs.length > 1;
+
   const nodeMap: Record<string, string> = {
     __faq__: ids.faqId,
-    __extract__: ids.transitionId,
+    __extract__: ids.paths[0].transitionId,
   };
+
+  let edges;
+  if (isMultiPath) {
+    edges = pathConfigs!.map((p, i) => ({
+      destination_node_id: ids.paths[i].transitionId,
+      id: f.edgeId(),
+      transition_condition: {
+        type: "prompt",
+        prompt: p.transitionCondition,
+      },
+    }));
+  } else {
+    edges = [
+      {
+        destination_node_id: ids.paths[0].transitionId,
+        id: f.edgeId(),
+        transition_condition: {
+          type: "prompt",
+          prompt:
+            "The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.",
+        },
+      },
+    ];
+  }
+
   return {
     finetune_conversation_examples: [],
     instruction: {
@@ -226,21 +305,11 @@ Stay in this node until the caller expresses clear intent to move forward with s
 Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ global node handle those and return here.`,
     },
     name: "Intro",
-    edges: [
-      {
-        destination_node_id: ids.transitionId,
-        id: f.edgeId(),
-        transition_condition: {
-          type: "prompt",
-          prompt:
-            "The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.",
-        },
-      },
-    ],
+    edges,
     start_speaker: "agent",
     finetune_transition_examples: resolveFinetuneExamples(
       config.introFinetuneExamples,
-      ids.transitionId,
+      ids.paths[0].transitionId,
       nodeMap,
       f,
     ),
@@ -255,7 +324,14 @@ export function buildFaqNode(
   ids: Ids,
   pos: Positions,
   f: IdFactory,
+  isMultiPath?: boolean,
 ) {
+  // Multi-path: forward-intent goes to Intro so caller re-enters path routing
+  // Single-path: forward-intent goes directly to transition (existing behavior)
+  const forwardDestination = isMultiPath
+    ? ids.introId
+    : ids.paths[0].transitionId;
+
   return {
     instruction: {
       type: "prompt",
@@ -266,7 +342,7 @@ ${faqKnowledgeBase}`,
     name: "Admin/FAQ",
     edges: [
       {
-        destination_node_id: ids.transitionId,
+        destination_node_id: forwardDestination,
         id: f.edgeId(),
         transition_condition: {
           type: "prompt",
@@ -490,35 +566,47 @@ function toVarDefs(rdp: DataPoint) {
 
 export function buildDataChain(
   resolvedDataPoints: DataPoint[],
-  ids: ReturnType<typeof generateIds>,
-  pos: ReturnType<typeof layoutPositions>,
+  pathIds: PathIds,
+  pathPos: PathPositions,
+  closeId: string,
   f: IdFactory,
+  pathName?: string,
 ) {
   const nodes: Record<string, unknown>[] = [];
+  const suffix = pathName ? ` (${pathName})` : "";
 
   // Front-loaded Extract: capture all variables from caller's initial input
   const allVariableDefs = resolvedDataPoints.flatMap(toVarDefs);
 
+  // In multi-path mode, add hidden _path_taken variable for post-call routing
+  if (pathName) {
+    allVariableDefs.push({
+      name: "_path_taken",
+      type: "string",
+      description: `Always set to "${pathName}".`,
+    });
+  }
+
   nodes.push({
     variables: allVariableDefs,
     else_edge: {
-      destination_node_id: ids.routerId,
-      id: `${ids.frontExtractId}-else-edge`,
+      destination_node_id: pathIds.routerId,
+      id: `${pathIds.frontExtractId}-else-edge`,
       transition_condition: { type: "prompt", prompt: "Else" },
     },
-    name: "Extract All Variables",
+    name: `Extract All Variables${suffix}`,
     edges: [],
     finetune_transition_examples: [],
-    id: ids.frontExtractId,
+    id: pathIds.frontExtractId,
     type: "extract_dynamic_variables",
-    display_position: pos.frontExtract,
+    display_position: pathPos.frontExtract,
   });
 
   // Variables Router: check each variable, route to first missing one
   const routerEdges = resolvedDataPoints.map((dp, i) => {
     if (dp.variableName === "phone_number") {
       return {
-        destination_node_id: ids.chain[i].convId,
+        destination_node_id: pathIds.chain[i].convId,
         id: f.edgeId(),
         transition_condition: {
           type: "equation",
@@ -544,7 +632,7 @@ export function buildDataChain(
         { left: `{{${v.variableName}}}`, operator: "==", right: "Not Mentioned" },
       ]);
       return {
-        destination_node_id: ids.chain[i].convId,
+        destination_node_id: pathIds.chain[i].convId,
         id: f.edgeId(),
         transition_condition: {
           type: "equation",
@@ -554,7 +642,7 @@ export function buildDataChain(
       };
     }
     return {
-      destination_node_id: ids.chain[i].convId,
+      destination_node_id: pathIds.chain[i].convId,
       id: f.edgeId(),
       transition_condition: {
         type: "equation",
@@ -572,22 +660,22 @@ export function buildDataChain(
   });
 
   nodes.push({
-    name: "Variables Router (in order)",
+    name: `Variables Router${suffix}`,
     edges: routerEdges,
-    id: ids.routerId,
+    id: pathIds.routerId,
     else_edge: {
-      destination_node_id: ids.closeId,
-      id: `${ids.routerId}-else-edge`,
+      destination_node_id: closeId,
+      id: `${pathIds.routerId}-else-edge`,
       transition_condition: { type: "prompt", prompt: "Else" },
     },
     type: "branch",
-    display_position: pos.router,
+    display_position: pathPos.router,
   });
 
   // Per-variable: Collect (conversation) + Confirm (extract) → back to router
   resolvedDataPoints.forEach((dp, i) => {
-    const chainIds = ids.chain[i];
-    const chainPos = pos.chain[i];
+    const chainIds = pathIds.chain[i];
+    const chainPos = pathPos.chain[i];
 
     // Tapered variable list: this variable + all remaining after it
     const remainingVarDefs = resolvedDataPoints.slice(i).flatMap(toVarDefs);
@@ -631,7 +719,7 @@ export function buildDataChain(
     nodes.push({
       variables: remainingVarDefs,
       else_edge: {
-        destination_node_id: ids.routerId,
+        destination_node_id: pathIds.routerId,
         id: `${chainIds.confirmId}-else-edge`,
         transition_condition: { type: "prompt", prompt: "Else" },
       },
@@ -648,8 +736,8 @@ export function buildDataChain(
 
 export function buildCloseNode(
   businessName: string,
-  ids: ReturnType<typeof generateIds>,
-  pos: ReturnType<typeof layoutPositions>,
+  ids: Ids,
+  pos: Positions,
   f: IdFactory,
 ) {
   return {
@@ -671,8 +759,8 @@ export function buildCloseNode(
 }
 
 export function buildClosingSequence(
-  ids: ReturnType<typeof generateIds>,
-  pos: ReturnType<typeof layoutPositions>,
+  ids: Ids,
+  pos: Positions,
   f: IdFactory,
 ) {
   const lastX = pos.close.x;

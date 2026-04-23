@@ -6,7 +6,7 @@ import { config } from "../../config.js";
 import { notificationClients } from "../../_cache/clients.js";
 import { persistClient } from "../../config/client-store.js";
 import { generateAgent, } from "../../lib/agent-generator/index.js";
-import { toLabel, deriveNotificationConfig, } from "../../lib/notification-config.js";
+import { toLabel, deriveNotificationConfig, deriveMultiPathNotificationConfig, } from "../../lib/notification-config.js";
 import { extractFlowParams, extractAgentParams, } from "../../lib/retell-sync.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = path.join(__dirname, "../../lib/agent-generator/output");
@@ -33,9 +33,27 @@ export async function createAgentHandler(req, res) {
         res.status(400).json({ error: "Missing required field: business.businessName and business.faqKnowledgeBase" });
         return;
     }
-    if (!Array.isArray(body.dataPoints) || body.dataPoints.length === 0) {
-        res.status(400).json({ error: "Missing required field: dataPoints (non-empty array)" });
+    const hasPaths = Array.isArray(body.paths) && body.paths.length > 0;
+    const hasDataPoints = Array.isArray(body.dataPoints) && body.dataPoints.length > 0;
+    if (!hasPaths && !hasDataPoints) {
+        res.status(400).json({ error: "Must provide either 'dataPoints' or 'paths' (non-empty)" });
         return;
+    }
+    if (hasPaths) {
+        for (const [i, p] of body.paths.entries()) {
+            if (!p.name) {
+                res.status(400).json({ error: `paths[${i}].name is required` });
+                return;
+            }
+            if (!p.transitionCondition) {
+                res.status(400).json({ error: `paths[${i}].transitionCondition is required` });
+                return;
+            }
+            if (!Array.isArray(p.dataPoints) || p.dataPoints.length === 0) {
+                res.status(400).json({ error: `paths[${i}].dataPoints must be non-empty` });
+                return;
+            }
+        }
     }
     if (!body.client?.slug) {
         res.status(400).json({ error: "Missing required field: client.slug" });
@@ -54,7 +72,7 @@ export async function createAgentHandler(req, res) {
     try {
         // ── 1. Generate agent JSON ─────────────────────────────────────────────
         console.log(`[create-agent] generating agent for "${body.business.businessName}"`);
-        const { agent: agentJson, resolved } = generateAgent(body.business, body.dataPoints);
+        const { agent: agentJson, resolved, resolvedPaths } = generateAgent(body.business, body.dataPoints ?? [], body.paths);
         // ── 2. Save generated JSON to output ───────────────────────────────────
         if (!fs.existsSync(OUTPUT_DIR)) {
             fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -77,8 +95,20 @@ export async function createAgentHandler(req, res) {
         const agentId = agentResponse.agent_id;
         console.log(`[create-agent] agent created: ${agentId}`);
         // ── 5. Derive and persist notification config ──────────────────────────
-        const variables = flattenDataPoints(resolved);
-        const jsonEntry = deriveNotificationConfig(variables, body.client, agentId);
+        let jsonEntry;
+        if (resolvedPaths && resolvedPaths.length > 1) {
+            // Multi-path: one message_type per path
+            const pathVariables = resolvedPaths.map((p) => ({
+                name: p.name,
+                variables: flattenDataPoints(p.resolved),
+            }));
+            jsonEntry = deriveMultiPathNotificationConfig(pathVariables, body.client, agentId);
+        }
+        else {
+            // Single-path (backward compat)
+            const variables = flattenDataPoints(resolved);
+            jsonEntry = deriveNotificationConfig(variables, body.client, agentId);
+        }
         // Store canonical agent JSON on the client document
         const canonicalJson = { ...agentJson, agent_id: agentId };
         jsonEntry.retell_agents = { [agentId]: canonicalJson };

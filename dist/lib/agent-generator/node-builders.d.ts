@@ -5,6 +5,15 @@ export interface IdFactory {
     edgeId(): string;
     goBackId(): string;
 }
+export interface PathIds {
+    transitionId: string;
+    frontExtractId: string;
+    routerId: string;
+    chain: Array<{
+        convId: string;
+        confirmId: string;
+    }>;
+}
 interface Ids {
     introId: string;
     endId: string;
@@ -14,12 +23,13 @@ interface Ids {
     emergencyGuardrailId: string;
     politeHangupId: string;
     guardrailEndId: string;
-    transitionId: string;
-    frontExtractId: string;
-    routerId: string;
     closeId: string;
     closingRemarksId: string;
     closingStatementId: string;
+    paths: PathIds[];
+    transitionId: string;
+    frontExtractId: string;
+    routerId: string;
     chain: Array<{
         convId: string;
         confirmId: string;
@@ -28,6 +38,15 @@ interface Ids {
 interface Position {
     x: number;
     y: number;
+}
+export interface PathPositions {
+    transition: Position;
+    frontExtract: Position;
+    router: Position;
+    chain: Array<{
+        conv: Position;
+        confirm: Position;
+    }>;
 }
 interface Positions {
     intro: Position;
@@ -38,6 +57,8 @@ interface Positions {
     emergencyGuardrail: Position;
     politeHangup: Position;
     guardrailEnd: Position;
+    close: Position;
+    paths: PathPositions[];
     transition: Position;
     frontExtract: Position;
     router: Position;
@@ -45,16 +66,19 @@ interface Positions {
         conv: Position;
         confirm: Position;
     }>;
-    close: Position;
 }
 export interface AgentConfig {
     businessName: string;
     faqKnowledgeBase: string;
     introFinetuneExamples: FinetuneExample[];
 }
+export interface IntroPathConfig {
+    name: string;
+    transitionCondition: string;
+}
 export declare function makeIdFactory(baseMs?: number): IdFactory;
-export declare function generateIds(f: IdFactory, resolvedDataPoints: DataPoint[]): Ids;
-export declare function layoutPositions(resolvedDataPoints: DataPoint[]): Positions;
+export declare function generateIds(f: IdFactory, pathDataPoints: DataPoint[][]): Ids;
+export declare function layoutPositions(pathDataPoints: DataPoint[][]): Positions;
 export declare function buildEndNode(ids: Ids, pos: Positions): {
     name: string;
     id: string;
@@ -62,7 +86,7 @@ export declare function buildEndNode(ids: Ids, pos: Positions): {
     speak_during_execution: boolean;
     display_position: Position;
 };
-export declare function buildTransitionNode(ids: Ids, pos: Positions, f: IdFactory): {
+export declare function buildTransitionNode(pathIds: PathIds, pathPos: PathPositions, f: IdFactory, pathName?: string): {
     instruction: {
         type: string;
         text: string;
@@ -81,7 +105,7 @@ export declare function buildTransitionNode(ids: Ids, pos: Positions, f: IdFacto
         };
     };
 };
-export declare function buildIntroNode(config: AgentConfig, ids: Ids, pos: Positions, f: IdFactory): {
+export declare function buildIntroNode(config: AgentConfig, ids: Ids, pos: Positions, f: IdFactory, pathConfigs?: IntroPathConfig[]): {
     finetune_conversation_examples: never[];
     instruction: {
         type: string;
@@ -102,7 +126,7 @@ export declare function buildIntroNode(config: AgentConfig, ids: Ids, pos: Posit
     type: string;
     display_position: Position;
 };
-export declare function buildFaqNode(faqKnowledgeBase: string, ids: Ids, pos: Positions, f: IdFactory): {
+export declare function buildFaqNode(faqKnowledgeBase: string, ids: Ids, pos: Positions, f: IdFactory, isMultiPath?: boolean): {
     instruction: {
         type: string;
         text: string;
@@ -243,8 +267,8 @@ export declare function buildGuardrailEndNode(ids: Ids, pos: Positions): {
     speak_during_execution: boolean;
     display_position: Position;
 };
-export declare function buildDataChain(resolvedDataPoints: DataPoint[], ids: ReturnType<typeof generateIds>, pos: ReturnType<typeof layoutPositions>, f: IdFactory): Record<string, unknown>[];
-export declare function buildCloseNode(businessName: string, ids: ReturnType<typeof generateIds>, pos: ReturnType<typeof layoutPositions>, f: IdFactory): {
+export declare function buildDataChain(resolvedDataPoints: DataPoint[], pathIds: PathIds, pathPos: PathPositions, closeId: string, f: IdFactory, pathName?: string): Record<string, unknown>[];
+export declare function buildCloseNode(businessName: string, ids: Ids, pos: Positions, f: IdFactory): {
     instruction: {
         type: string;
         text: string;
@@ -263,7 +287,7 @@ export declare function buildCloseNode(businessName: string, ids: ReturnType<typ
     type: string;
     display_position: Position;
 };
-export declare function buildClosingSequence(ids: ReturnType<typeof generateIds>, pos: ReturnType<typeof layoutPositions>, f: IdFactory): ({
+export declare function buildClosingSequence(ids: Ids, pos: Positions, f: IdFactory): ({
     instruction: {
         type: string;
         text: string;
@@ -338,8 +362,13 @@ export declare function buildAgentRoot(businessName: string, conversationFlow: R
     analysis_successful_prompt: string;
     analysis_summary_prompt: string;
     analysis_user_sentiment_prompt: string;
+    handbook_config: {
+        natural_filler_words: boolean;
+        speech_normalization: boolean;
+    };
     voice_id: string;
-    fallback_voice_ids: string[];
+    voice_model: string;
+    fallback_voice_ids: never[];
     voice_temperature: number;
     voice_speed: number;
     volume: number;
@@ -353,6 +382,7 @@ export declare function buildAgentRoot(businessName: string, conversationFlow: R
     ambient_sound: string;
     ambient_sound_volume: number;
     responsiveness: number;
+    normalize_for_speech: boolean;
     begin_message_delay_ms: number;
     voicemail_option: {
         action: {
@@ -361,7 +391,11 @@ export declare function buildAgentRoot(businessName: string, conversationFlow: R
     };
     allow_user_dtmf: boolean;
     user_dtmf_options: {};
-    webhook_events: string[];
+    post_call_analysis_data: {
+        type: string;
+        name: string;
+        description: string;
+    }[];
     conversationFlow: Record<string, unknown>;
 };
 export {};

@@ -11,10 +11,12 @@ import {
   type AgentConfig,
   type RawDataPoint,
   type DataPoint,
+  type PathConfig,
 } from "../../lib/agent-generator/index.js";
 import {
   toLabel,
   deriveNotificationConfig,
+  deriveMultiPathNotificationConfig,
   type VariableEntry,
 } from "../../lib/notification-config.js";
 import {
@@ -45,7 +47,12 @@ function flattenDataPoints(resolved: DataPoint[]): VariableEntry[] {
 
 interface CreateAgentBody {
   business: AgentConfig;
-  dataPoints: RawDataPoint[];
+  dataPoints?: RawDataPoint[];
+  paths?: Array<{
+    name: string;
+    transitionCondition: string;
+    dataPoints: RawDataPoint[];
+  }>;
   client: {
     slug: string;
     name?: string;
@@ -74,10 +81,32 @@ export async function createAgentHandler(
     res.status(400).json({ error: "Missing required field: business.businessName and business.faqKnowledgeBase" });
     return;
   }
-  if (!Array.isArray(body.dataPoints) || body.dataPoints.length === 0) {
-    res.status(400).json({ error: "Missing required field: dataPoints (non-empty array)" });
+
+  const hasPaths = Array.isArray(body.paths) && body.paths.length > 0;
+  const hasDataPoints = Array.isArray(body.dataPoints) && body.dataPoints.length > 0;
+
+  if (!hasPaths && !hasDataPoints) {
+    res.status(400).json({ error: "Must provide either 'dataPoints' or 'paths' (non-empty)" });
     return;
   }
+
+  if (hasPaths) {
+    for (const [i, p] of body.paths!.entries()) {
+      if (!p.name) {
+        res.status(400).json({ error: `paths[${i}].name is required` });
+        return;
+      }
+      if (!p.transitionCondition) {
+        res.status(400).json({ error: `paths[${i}].transitionCondition is required` });
+        return;
+      }
+      if (!Array.isArray(p.dataPoints) || p.dataPoints.length === 0) {
+        res.status(400).json({ error: `paths[${i}].dataPoints must be non-empty` });
+        return;
+      }
+    }
+  }
+
   if (!body.client?.slug) {
     res.status(400).json({ error: "Missing required field: client.slug" });
     return;
@@ -97,9 +126,10 @@ export async function createAgentHandler(
   try {
     // ── 1. Generate agent JSON ─────────────────────────────────────────────
     console.log(`[create-agent] generating agent for "${body.business.businessName}"`);
-    const { agent: agentJson, resolved } = generateAgent(
+    const { agent: agentJson, resolved, resolvedPaths } = generateAgent(
       body.business,
-      body.dataPoints,
+      body.dataPoints ?? [],
+      body.paths as PathConfig[] | undefined,
     );
 
     // ── 2. Save generated JSON to output ───────────────────────────────────
@@ -129,8 +159,19 @@ export async function createAgentHandler(
     console.log(`[create-agent] agent created: ${agentId}`);
 
     // ── 5. Derive and persist notification config ──────────────────────────
-    const variables = flattenDataPoints(resolved);
-    const jsonEntry = deriveNotificationConfig(variables, body.client, agentId);
+    let jsonEntry;
+    if (resolvedPaths && resolvedPaths.length > 1) {
+      // Multi-path: one message_type per path
+      const pathVariables = resolvedPaths.map((p) => ({
+        name: p.name,
+        variables: flattenDataPoints(p.resolved),
+      }));
+      jsonEntry = deriveMultiPathNotificationConfig(pathVariables, body.client, agentId);
+    } else {
+      // Single-path (backward compat)
+      const variables = flattenDataPoints(resolved);
+      jsonEntry = deriveNotificationConfig(variables, body.client, agentId);
+    }
 
     // Store canonical agent JSON on the client document
     const canonicalJson = { ...agentJson, agent_id: agentId };

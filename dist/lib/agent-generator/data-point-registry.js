@@ -162,6 +162,248 @@ Do not ask for any other information than what is instructed for this node.`,
             { left: "{{company_name}}", operator: "!=", right: "Not Mentioned" },
         ],
     },
+    // ── Trucking ─────────────────────────────────────────────────────────────────
+    truck_number: {
+        label: "Truck Number",
+        variableName: "truck_number",
+        type: "string",
+        choices: [],
+        description: `The fleet vehicle identifier (e.g., "Truck 124", "Unit 87"). If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the truck number, set to "Caller Doesn't Know".`,
+        conversationPrompt: `Collect the truck number by asking:\n\n"what is the truck number?"`,
+        forwardCondition: "The caller has provided the truck number",
+        finetuneExamples: [],
+        extractSuccessEquation: [
+            { left: "{{truck_number}}", operator: "exists" },
+            { left: "{{truck_number}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    driver_name: {
+        label: "Driver Name",
+        variableName: "driver_name",
+        type: "string",
+        choices: [],
+        description: `The name of the driver who is with the vehicle. If not mentioned, set to "Not Mentioned".`,
+        conversationPrompt: `Collect the name of the driver who is with the truck by asking:\n\n"what is the driver's name?"`,
+        forwardCondition: "The caller has provided the driver's name",
+        finetuneExamples: [],
+        extractSuccessEquation: [
+            { left: "{{driver_name}}", operator: "exists" },
+            { left: "{{driver_name}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    driver_phone: {
+        label: "Driver Phone Number",
+        variableName: "driver_phone",
+        type: "string",
+        choices: [],
+        description: `The phone number where the driver can be reached directly. Convert any spoken digits to numeric format (e.g., 'three one two five five five one two three four' becomes '312-555-1234'). If not mentioned, set to "Not Mentioned".`,
+        conversationPrompt: `Collect the driver's direct phone number by asking:\n\n"what is the driver's phone number?"\n\nIf the caller gives you an incomplete phone number, ask for it again.\n\nPhone Number Readback Rules:\nFormat\n\t•\tRead phone numbers in three sections:\n\t•\tArea code\n\t•\tPrefix\n\t•\tLine number\n\nExample\n\t•\tCaller says: 214-555-1234\n\t•\tRead back as:\n"Two one four… five five five… one two three four."\n\n\t•\tDigits are read individually, never as full numbers.\n\t•\tInsert a ~475–550 ms pause between each section.\n\t•\tDo not add country codes unless the caller explicitly states one.\n\nPacing\n\t•\tTarget speed: 2.5–3.2 characters per second\n\t•\tThis is slower than conversational speech but still natural.`,
+        forwardCondition: "The caller has provided the driver's complete 10 or more digit phone number",
+        finetuneExamples: [
+            {
+                type: "negative",
+                transcript: [
+                    {
+                        content: "Driver's Direct's phone number is eight six seven five three zero nine.",
+                        role: "user",
+                    },
+                    {
+                        content: "I'm sorry, I don't think I heard the complete phone number.",
+                        role: "agent",
+                    },
+                ],
+            },
+        ],
+        extractSuccessEquation: [
+            { left: "{{driver_phone}}", operator: "exists" },
+            { left: "{{driver_phone}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    breakdown_location: {
+        label: "Breakdown Location",
+        variableName: "breakdown_location",
+        type: "string",
+        choices: [],
+        description: `Where the truck is broken down. This could be a truck stop name, highway and mile marker, city, cross streets, or any description the caller provides. Capture as much detail as given. If not mentioned, set to "Not Mentioned".`,
+        conversationPrompt: `Ask the caller where the truck is located by saying "Where is the vehicle located?"
+
+Do not elaborate on your initial question.
+
+After they respond, determine if you have enough detail to find the truck:
+
+If they give a highway (like I-80, I-55, Route 6):
+- You also need a mile marker OR a nearby city/town/exit. Ask: "Do you have a mile marker or what's the nearest city or exit?"
+
+If they give a truck stop or business name (like Pilot, TA, Love's):
+- That's sufficient. Move on.
+
+If they give a city or town only:
+- You need a street address or cross streets or a landmark. Ask: "Do you have a street address or cross streets?"
+
+If they give a full street address:
+- That's sufficient. Move on.
+
+A complete location is one of these:
+- Highway + mile marker (e.g., "I-80 eastbound, mile marker 118")
+- Highway + nearby city (e.g., "I-55 south, near Gardner")
+- Truck stop or business name + city (e.g., "Pilot in Morris")
+- Street address (e.g., "4500 Industrial Dr")
+
+Do not move on until you have enough detail for a technician to find the truck.
+
+Do not repeat the full location back to them.`,
+        forwardCondition: "The caller has described to you the location of the truck",
+        finetuneExamples: [],
+        extractSuccessEquation: [
+            { left: "{{breakdown_location}}", operator: "exists" },
+            { left: "{{breakdown_location}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    problem_description: {
+        label: "Problem Description",
+        variableName: "problem_description",
+        type: "string",
+        choices: [],
+        description: `A description of what is wrong with the truck (e.g., won't start, clicking noise, overheating, flat tire, alternator issue). Capture the caller's description in their own words. If not mentioned, set to "Not Mentioned".`,
+        conversationPrompt: `Collect the truck problem by asking:\n\n"what is going wrong with the truck?"`,
+        forwardCondition: "The caller has described the problem with the truck",
+        finetuneExamples: [],
+        extractSuccessEquation: [
+            { left: "{{problem_description}}", operator: "exists" },
+            { left: "{{problem_description}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    vehicle_type: {
+        label: "Vehicle Type",
+        variableName: "vehicle_type",
+        type: "enum",
+        choices: [
+            "Semi tractor-trailer",
+            "Box truck",
+            "Dump truck",
+            "Caller Doesn't Know",
+            "Other",
+            "Not Mentioned",
+        ],
+        description: `The type of vehicle that needs service. If the caller says something not in the list, set to "Other". If not mentioned, set to "Not Mentioned".`,
+        conversationPrompt: `Collect the truck vehicle type by asking:\n\n"what type of truck is it?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.`,
+        forwardCondition: "The caller has provided the vehicle type.",
+        finetuneExamples: [],
+        extractSuccessEquation: [
+            { left: "{{vehicle_type}}", operator: "exists" },
+            { left: "{{vehicle_type}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    vehicle_manufacturer: {
+        label: "Vehicle Manufacturer",
+        variableName: "vehicle_manufacturer",
+        type: "enum",
+        choices: [
+            "Kenworth",
+            "Peterbilt",
+            "Freightliner",
+            "International",
+            "Volvo",
+            "Mack",
+            "Western Star",
+            "Hino",
+            "Isuzu",
+            "Caller Doesn't Know",
+            "Other",
+            "Not Mentioned",
+        ],
+        description: `The make or manufacturer of the vehicle. If the caller says a brand not in the list, set to "Other". If not mentioned, set to "Not Mentioned".`,
+        conversationPrompt: `Collect the truck make by asking:\n\n"what make is the truck?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.`,
+        forwardCondition: "The caller has provided the make of the truck",
+        finetuneExamples: [],
+        extractSuccessEquation: [
+            { left: "{{vehicle_manufacturer}}", operator: "exists" },
+            { left: "{{vehicle_manufacturer}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    vehicle_color: {
+        label: "Vehicle Color",
+        variableName: "vehicle_color",
+        type: "enum",
+        choices: [
+            "White",
+            "Black",
+            "Red",
+            "Blue",
+            "Yellow",
+            "Green",
+            "Silver",
+            "Gray",
+            "Orange",
+            "Caller Doesn't Know",
+            "Other",
+            "Not Mentioned",
+        ],
+        description: `The color of the vehicle. If not mentioned, set to "Not Mentioned".`,
+        conversationPrompt: `Collect the truck color by asking:\n\n"what color is the truck?"`,
+        forwardCondition: "The caller has provided the color of the truck",
+        finetuneExamples: [],
+        extractSuccessEquation: [
+            { left: "{{vehicle_color}}", operator: "exists" },
+            { left: "{{vehicle_color}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    whos_paying: {
+        label: "Who's Paying",
+        variableName: "whos_paying",
+        type: "string",
+        choices: [],
+        description: `Who is responsible for the bill for the service. If not mentioned, set to "Not Mentioned".`,
+        conversationPrompt: `Collect who will be responsible for the bill by asking:\n\n"who will be responsible for payment?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf they say one word like "Me" or "Us" then just assume it is the caller's company and proceed.`,
+        forwardCondition: "The caller has indicated who is paying for the service",
+        finetuneExamples: [
+            {
+                type: "positive",
+                transcript: [{ content: "Us", role: "user" }],
+            },
+            {
+                type: "positive",
+                transcript: [{ content: "Me", role: "user" }],
+            },
+            {
+                type: "positive",
+                transcript: [{ content: "The company", role: "user" }],
+            },
+            {
+                type: "positive",
+                transcript: [{ content: "We are", role: "user" }],
+            },
+        ],
+        extractSuccessEquation: [
+            { left: "{{whos_paying}}", operator: "exists" },
+            { left: "{{whos_paying}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    payment_method: {
+        label: "Payment Method",
+        variableName: "payment_method",
+        type: "enum",
+        choices: [
+            "EFS",
+            "Credit Card",
+            "Comdata",
+            "Fleet account",
+            "Cash",
+            "Check",
+            "Caller Doesn't Know",
+            "Other",
+            "Not Mentioned",
+        ],
+        description: `The method of payment for the service. If not mentioned, set to "Not Mentioned".`,
+        conversationPrompt: `Collect what payment method they'll be using by asking:\n\n"what payment method will be used?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller repeats themselves twice, assume what they are saying is the payment method and transition.`,
+        forwardCondition: "The caller has provided the payment method they will be using",
+        finetuneExamples: [],
+        extractSuccessEquation: [
+            { left: "{{payment_method}}", operator: "exists" },
+            { left: "{{payment_method}}", operator: "!=", right: "Not Mentioned" },
+        ],
+    },
+    // ── Scheduling ──────────────────────────────────────────────────────────────
     scheduling: {
         composite: true,
         label: "Day / Time Preference",

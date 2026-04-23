@@ -16,6 +16,11 @@ export interface ClientInfo {
     hide_not_mentioned?: boolean;
     shadow_mode?: boolean;
 }
+export interface PathVariables {
+    name: string;
+    variables: VariableEntry[];
+}
 export declare const LABEL_MAP: Record<string, string>;
 export declare function toLabel(variableName: string, dataPointLabel?: string): string;
 export declare function deriveNotificationConfig(variables: VariableEntry[], clientInfo: ClientInfo, agentId: string): JsonClientEntry;
+export declare function deriveMultiPathNotificationConfig(pathVariables: PathVariables[], clientInfo: ClientInfo, agentId: string): JsonClientEntry;

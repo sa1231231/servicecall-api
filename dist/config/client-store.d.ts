@@ -5,6 +5,11 @@ export interface ResolveRule {
     then: string;
     else: string;
 }
+export interface ResolveRuleEntry {
+    field: string;
+    equals: string;
+    then: string;
+}
 export interface JsonClientEntry {
     name: string;
     agent_ids: string[];
@@ -15,6 +20,7 @@ export interface JsonClientEntry {
     dispatch_email: string[] | null;
     dispatch_cc: string | null;
     resolve_rule?: ResolveRule;
+    resolve_rules?: ResolveRuleEntry[];
     message_types: Record<string, {
         label: string;
         subject_template: string;

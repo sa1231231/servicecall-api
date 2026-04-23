@@ -15,6 +15,12 @@ export interface ResolveRule {
   else: string;
 }
 
+export interface ResolveRuleEntry {
+  field: string;
+  equals: string;
+  then: string;
+}
+
 export interface JsonClientEntry {
   name: string;
   agent_ids: string[];
@@ -25,6 +31,7 @@ export interface JsonClientEntry {
   dispatch_email: string[] | null;
   dispatch_cc: string | null;
   resolve_rule?: ResolveRule;
+  resolve_rules?: ResolveRuleEntry[];
   message_types: Record<
     string,
     {
@@ -52,11 +59,24 @@ export interface JsonClientEntry {
 
 function ruleToFunction(
   rule: ResolveRule | undefined,
+  rules: ResolveRuleEntry[] | undefined,
   defaultType: string,
 ): (vars: Record<string, string>) => string {
-  if (!rule) return () => defaultType;
-  return (vars) =>
-    vars[rule.field] === rule.equals ? rule.then : rule.else;
+  // Multi-path: ordered rules, first match wins
+  if (rules && rules.length > 0) {
+    return (vars) => {
+      for (const r of rules) {
+        if (vars[r.field] === r.equals) return r.then;
+      }
+      return defaultType;
+    };
+  }
+  // Single binary rule (backward compat)
+  if (rule) {
+    return (vars) =>
+      vars[rule.field] === rule.equals ? rule.then : rule.else;
+  }
+  return () => defaultType;
 }
 
 function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig {
@@ -69,7 +89,7 @@ function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig {
     outbound_from_number: entry.outbound_from_number,
     dispatch_email: entry.dispatch_email,
     dispatch_cc: entry.dispatch_cc,
-    resolve_type: ruleToFunction(entry.resolve_rule, entry.default_message_type),
+    resolve_type: ruleToFunction(entry.resolve_rule, entry.resolve_rules, entry.default_message_type),
     message_types: entry.message_types,
     default_message_type: entry.default_message_type,
     phone_fallback_to_caller: entry.phone_fallback_to_caller,
@@ -164,6 +184,7 @@ const EDITABLE_FIELDS = new Set([
   "shadow_mode",
   "hide_not_mentioned",
   "message_types",
+  "resolve_rules",
 ]);
 
 /** Update multiple fields on a client in MongoDB and in memory. */

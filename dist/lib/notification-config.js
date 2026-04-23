@@ -9,6 +9,16 @@ export const LABEL_MAP = {
     problem_description: "Problem",
     preferred_time: "Preferred Time",
     preferred_day: "Preferred Day",
+    // Trucking
+    truck_number: "Truck #",
+    driver_name: "Driver",
+    driver_phone: "Driver Phone",
+    breakdown_location: "Location",
+    vehicle_type: "Vehicle Type",
+    vehicle_manufacturer: "Make",
+    vehicle_color: "Color",
+    whos_paying: "Who's Paying",
+    payment_method: "Payment Method",
 };
 export function toLabel(variableName, dataPointLabel) {
     if (dataPointLabel && dataPointLabel !== variableName)
@@ -19,26 +29,52 @@ export function toLabel(variableName, dataPointLabel) {
         .replace(/_/g, " ")
         .replace(/\b\w/g, (c) => c.toUpperCase());
 }
-// ── Derive Notification Config ───────────────────────────────────────────────
-export function deriveNotificationConfig(variables, clientInfo, agentId) {
-    // Filter out internal variables
-    const fields = variables
-        .filter((v) => v.key !== "phone_number_collected")
-        .map((v) => ({ key: v.key, label: v.label }));
-    // Check for routing variables
-    const hasEmergency = variables.some((v) => v.key === "is_emergency");
-    const hasServiceRequest = variables.some((v) => v.key === "is_service_request");
-    // Build subject template from available fields
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function buildSubjectTemplate(fields) {
     const hasName = fields.some((f) => f.key === "full_name");
     const hasAddress = fields.some((f) => f.key === "street_address");
     const hasCity = fields.some((f) => f.key === "city");
-    let subjectParts = "";
+    let parts = "";
     if (hasName)
-        subjectParts += "{{full_name}}";
+        parts += "{{full_name}}";
     if (hasAddress)
-        subjectParts += ` — {{street_address}}`;
+        parts += ` — {{street_address}}`;
     if (hasCity)
-        subjectParts += `, {{city}}`;
+        parts += `, {{city}}`;
+    return parts;
+}
+function filterInternalVars(variables) {
+    return variables
+        .filter((v) => v.key !== "phone_number_collected" && v.key !== "_path_taken")
+        .map((v) => ({ key: v.key, label: v.label }));
+}
+function buildClientEntry(clientInfo, agentId, messageTypes, defaultMessageType, resolveRule, resolveRules) {
+    return {
+        name: clientInfo.name ?? clientInfo.slug,
+        agent_ids: [agentId],
+        dispatch_text_numbers: clientInfo.dispatch_text_numbers,
+        dispatch_call_number: clientInfo.dispatch_call_number ?? null,
+        summary_agent_id: clientInfo.summary_agent_id ?? null,
+        outbound_from_number: clientInfo.outbound_from_number ?? null,
+        dispatch_email: clientInfo.dispatch_email ?? null,
+        dispatch_cc: clientInfo.dispatch_cc ?? null,
+        resolve_rule: resolveRule,
+        resolve_rules: resolveRules,
+        message_types: messageTypes,
+        default_message_type: defaultMessageType,
+        phone_fallback_to_caller: clientInfo.phone_fallback_to_caller ?? true,
+        hide_not_mentioned: clientInfo.hide_not_mentioned ?? false,
+        shadow_mode: clientInfo.shadow_mode ?? true,
+    };
+}
+// ── Derive Notification Config (single-path) ────────────────────────────────
+export function deriveNotificationConfig(variables, clientInfo, agentId) {
+    // Filter out internal variables
+    const fields = filterInternalVars(variables);
+    // Check for routing variables
+    const hasEmergency = variables.some((v) => v.key === "is_emergency");
+    const hasServiceRequest = variables.some((v) => v.key === "is_service_request");
+    const subjectParts = buildSubjectTemplate(fields);
     // Build message types
     const messageTypes = {};
     let resolveRule;
@@ -115,20 +151,33 @@ export function deriveNotificationConfig(variables, clientInfo, agentId) {
         };
         defaultMessageType = "service_request";
     }
-    return {
-        name: clientInfo.name ?? clientInfo.slug,
-        agent_ids: [agentId],
-        dispatch_text_numbers: clientInfo.dispatch_text_numbers,
-        dispatch_call_number: clientInfo.dispatch_call_number ?? null,
-        summary_agent_id: clientInfo.summary_agent_id ?? null,
-        outbound_from_number: clientInfo.outbound_from_number ?? null,
-        dispatch_email: clientInfo.dispatch_email ?? null,
-        dispatch_cc: clientInfo.dispatch_cc ?? null,
-        resolve_rule: resolveRule,
-        message_types: messageTypes,
-        default_message_type: defaultMessageType,
-        phone_fallback_to_caller: clientInfo.phone_fallback_to_caller ?? true,
-        hide_not_mentioned: clientInfo.hide_not_mentioned ?? false,
-        shadow_mode: clientInfo.shadow_mode ?? true,
-    };
+    return buildClientEntry(clientInfo, agentId, messageTypes, defaultMessageType, resolveRule);
+}
+// ── Derive Notification Config (multi-path) ─────────────────────────────────
+function pathNameToKey(name) {
+    return name
+        .toLowerCase()
+        .replace(/\s+/g, "_")
+        .replace(/[^a-z0-9_]/g, "");
+}
+export function deriveMultiPathNotificationConfig(pathVariables, clientInfo, agentId) {
+    const messageTypes = {};
+    const resolveRules = [];
+    for (const path of pathVariables) {
+        const fields = filterInternalVars(path.variables);
+        const typeKey = pathNameToKey(path.name);
+        const subjectParts = buildSubjectTemplate(fields);
+        messageTypes[typeKey] = {
+            label: path.name,
+            subject_template: `${path.name}: ${subjectParts}`.trim(),
+            fields,
+        };
+        resolveRules.push({
+            field: "_path_taken",
+            equals: path.name,
+            then: typeKey,
+        });
+    }
+    const defaultMessageType = Object.keys(messageTypes)[0];
+    return buildClientEntry(clientInfo, agentId, messageTypes, defaultMessageType, undefined, resolveRules);
 }

@@ -1,6 +1,7 @@
 import type {
   JsonClientEntry,
   ResolveRule,
+  ResolveRuleEntry,
 } from "../config/client-store.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -22,6 +23,11 @@ export interface ClientInfo {
   phone_fallback_to_caller?: boolean;
   hide_not_mentioned?: boolean;
   shadow_mode?: boolean;
+}
+
+export interface PathVariables {
+  name: string;
+  variables: VariableEntry[];
 }
 
 // ── Label Mapping ────────────────────────────────────────────────────────────
@@ -56,7 +62,60 @@ export function toLabel(variableName: string, dataPointLabel?: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// ── Derive Notification Config ───────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function buildSubjectTemplate(
+  fields: Array<{ key: string; label: string }>,
+): string {
+  const hasName = fields.some((f) => f.key === "full_name");
+  const hasAddress = fields.some((f) => f.key === "street_address");
+  const hasCity = fields.some((f) => f.key === "city");
+
+  let parts = "";
+  if (hasName) parts += "{{full_name}}";
+  if (hasAddress) parts += ` — {{street_address}}`;
+  if (hasCity) parts += `, {{city}}`;
+  return parts;
+}
+
+function filterInternalVars(
+  variables: VariableEntry[],
+): Array<{ key: string; label: string }> {
+  return variables
+    .filter(
+      (v) => v.key !== "phone_number_collected" && v.key !== "_path_taken",
+    )
+    .map((v) => ({ key: v.key, label: v.label }));
+}
+
+function buildClientEntry(
+  clientInfo: ClientInfo,
+  agentId: string,
+  messageTypes: JsonClientEntry["message_types"],
+  defaultMessageType: string,
+  resolveRule?: ResolveRule,
+  resolveRules?: ResolveRuleEntry[],
+): JsonClientEntry {
+  return {
+    name: clientInfo.name ?? clientInfo.slug,
+    agent_ids: [agentId],
+    dispatch_text_numbers: clientInfo.dispatch_text_numbers,
+    dispatch_call_number: clientInfo.dispatch_call_number ?? null,
+    summary_agent_id: clientInfo.summary_agent_id ?? null,
+    outbound_from_number: clientInfo.outbound_from_number ?? null,
+    dispatch_email: clientInfo.dispatch_email ?? null,
+    dispatch_cc: clientInfo.dispatch_cc ?? null,
+    resolve_rule: resolveRule,
+    resolve_rules: resolveRules,
+    message_types: messageTypes,
+    default_message_type: defaultMessageType,
+    phone_fallback_to_caller: clientInfo.phone_fallback_to_caller ?? true,
+    hide_not_mentioned: clientInfo.hide_not_mentioned ?? false,
+    shadow_mode: clientInfo.shadow_mode ?? true,
+  };
+}
+
+// ── Derive Notification Config (single-path) ────────────────────────────────
 
 export function deriveNotificationConfig(
   variables: VariableEntry[],
@@ -64,23 +123,13 @@ export function deriveNotificationConfig(
   agentId: string,
 ): JsonClientEntry {
   // Filter out internal variables
-  const fields = variables
-    .filter((v) => v.key !== "phone_number_collected")
-    .map((v) => ({ key: v.key, label: v.label }));
+  const fields = filterInternalVars(variables);
 
   // Check for routing variables
   const hasEmergency = variables.some((v) => v.key === "is_emergency");
   const hasServiceRequest = variables.some((v) => v.key === "is_service_request");
 
-  // Build subject template from available fields
-  const hasName = fields.some((f) => f.key === "full_name");
-  const hasAddress = fields.some((f) => f.key === "street_address");
-  const hasCity = fields.some((f) => f.key === "city");
-
-  let subjectParts = "";
-  if (hasName) subjectParts += "{{full_name}}";
-  if (hasAddress) subjectParts += ` — {{street_address}}`;
-  if (hasCity) subjectParts += `, {{city}}`;
+  const subjectParts = buildSubjectTemplate(fields);
 
   // Build message types
   const messageTypes: JsonClientEntry["message_types"] = {};
@@ -162,20 +211,58 @@ export function deriveNotificationConfig(
     defaultMessageType = "service_request";
   }
 
-  return {
-    name: clientInfo.name ?? clientInfo.slug,
-    agent_ids: [agentId],
-    dispatch_text_numbers: clientInfo.dispatch_text_numbers,
-    dispatch_call_number: clientInfo.dispatch_call_number ?? null,
-    summary_agent_id: clientInfo.summary_agent_id ?? null,
-    outbound_from_number: clientInfo.outbound_from_number ?? null,
-    dispatch_email: clientInfo.dispatch_email ?? null,
-    dispatch_cc: clientInfo.dispatch_cc ?? null,
-    resolve_rule: resolveRule,
-    message_types: messageTypes,
-    default_message_type: defaultMessageType,
-    phone_fallback_to_caller: clientInfo.phone_fallback_to_caller ?? true,
-    hide_not_mentioned: clientInfo.hide_not_mentioned ?? false,
-    shadow_mode: clientInfo.shadow_mode ?? true,
-  };
+  return buildClientEntry(
+    clientInfo,
+    agentId,
+    messageTypes,
+    defaultMessageType,
+    resolveRule,
+  );
+}
+
+// ── Derive Notification Config (multi-path) ─────────────────────────────────
+
+function pathNameToKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "");
+}
+
+export function deriveMultiPathNotificationConfig(
+  pathVariables: PathVariables[],
+  clientInfo: ClientInfo,
+  agentId: string,
+): JsonClientEntry {
+  const messageTypes: JsonClientEntry["message_types"] = {};
+  const resolveRules: ResolveRuleEntry[] = [];
+
+  for (const path of pathVariables) {
+    const fields = filterInternalVars(path.variables);
+    const typeKey = pathNameToKey(path.name);
+    const subjectParts = buildSubjectTemplate(fields);
+
+    messageTypes[typeKey] = {
+      label: path.name,
+      subject_template: `${path.name}: ${subjectParts}`.trim(),
+      fields,
+    };
+
+    resolveRules.push({
+      field: "_path_taken",
+      equals: path.name,
+      then: typeKey,
+    });
+  }
+
+  const defaultMessageType = Object.keys(messageTypes)[0];
+
+  return buildClientEntry(
+    clientInfo,
+    agentId,
+    messageTypes,
+    defaultMessageType,
+    undefined,
+    resolveRules,
+  );
 }

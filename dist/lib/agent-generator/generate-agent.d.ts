@@ -1,7 +1,17 @@
 import { type DataPoint, type RawDataPoint } from "./data-point-registry.js";
 import { type AgentConfig } from "./node-builders.js";
+export interface PathConfig {
+    name: string;
+    transitionCondition: string;
+    dataPoints: RawDataPoint[];
+}
+export interface ResolvedPath {
+    name: string;
+    resolved: DataPoint[];
+}
 export declare function resolveDataPoints(rawDataPoints: RawDataPoint[]): DataPoint[];
-export declare function generateAgent(agentConfig: AgentConfig, rawDataPoints: RawDataPoint[]): {
+export declare function generateAgent(agentConfig: AgentConfig, rawDataPoints: RawDataPoint[], pathConfigs?: PathConfig[]): {
     agent: Record<string, unknown>;
     resolved: DataPoint[];
+    resolvedPaths?: ResolvedPath[];
 };
