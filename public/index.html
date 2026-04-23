@@ -157,6 +157,8 @@
 <h1>Create Retell Agent</h1>
 <p style="color:#666;font-size:0.85rem;margin-top:0;">Fill in the fields below and click Create to provision a new agent.</p>
 
+<div id="result"></div>
+
 <form id="agentForm">
 
   <!-- API key is loaded automatically from the server -->
@@ -263,14 +265,23 @@
   <button type="submit" id="submitBtn">Create Agent</button>
 </form>
 
-<div id="result"></div>
-
 <script>
   const form = document.getElementById('agentForm');
   const resultDiv = document.getElementById('result');
   const submitBtn = document.getElementById('submitBtn');
   const customContainer = document.getElementById('customDataPoints');
   const pathsContainer = document.getElementById('routingPaths');
+
+  function showResult(message, type) {
+    resultDiv.textContent = message;
+    resultDiv.className = type;
+    resultDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function clearResult() {
+    resultDiv.className = '';
+    resultDiv.style.display = 'none';
+  }
 
   const BUILTIN_NAMES = [
     'full_name', 'phone_number', 'email', 'street_address', 'city', 'company_name', 'scheduling',
@@ -709,8 +720,7 @@ Do not ask for any other information than what is instructed for this node.'>${v
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    resultDiv.className = '';
-    resultDiv.style.display = 'none';
+    clearResult();
 
     // Gather built-in data points
     const checked = [...document.querySelectorAll('input[name="dataPoint"]:checked')].map(cb => cb.value);
@@ -718,16 +728,14 @@ Do not ask for any other information than what is instructed for this node.'>${v
     // Gather custom data points
     const custom = collectCustomDataPoints();
     if (custom.errors.length > 0) {
-      resultDiv.textContent = custom.errors.join('\n');
-      resultDiv.className = 'error';
+      showResult(custom.errors.join('\n'), 'error');
       return;
     }
 
     // Gather routing paths
     const pathData = collectPaths(custom.results);
     if (pathData.errors.length > 0) {
-      resultDiv.textContent = pathData.errors.join('\n');
-      resultDiv.className = 'error';
+      showResult(pathData.errors.join('\n'), 'error');
       return;
     }
 
@@ -735,15 +743,13 @@ Do not ask for any other information than what is instructed for this node.'>${v
 
     // Validate: must have data points (single-path) or paths (multi-path)
     if (!hasPaths && checked.length === 0 && custom.results.length === 0) {
-      resultDiv.textContent = 'Please select at least one data point or add a routing path.';
-      resultDiv.className = 'error';
+      showResult('Please select at least one data point or add a routing path.', 'error');
       return;
     }
 
     const dispatchTexts = csvToArray(val('dispatchTextNumbers'));
     if (dispatchTexts.length === 0) {
-      resultDiv.textContent = 'At least one dispatch text number is required.';
-      resultDiv.className = 'error';
+      showResult('At least one dispatch text number is required.', 'error');
       return;
     }
 
@@ -804,17 +810,17 @@ Do not ask for any other information than what is instructed for this node.'>${v
       const data = await res.json();
 
       if (res.ok) {
-        resultDiv.textContent = 'Agent created successfully!\n\n'
+        showResult(
+          'Agent created successfully!\n\n'
           + 'Agent ID: ' + data.agent_id + '\n'
-          + 'Conversation Flow ID: ' + data.conversation_flow_id;
-        resultDiv.className = 'success';
+          + 'Conversation Flow ID: ' + data.conversation_flow_id,
+          'success'
+        );
       } else {
-        resultDiv.textContent = 'Error (' + res.status + '): ' + (data.error || JSON.stringify(data));
-        resultDiv.className = 'error';
+        showResult('Error (' + res.status + '): ' + (data.error || JSON.stringify(data)), 'error');
       }
     } catch (err) {
-      resultDiv.textContent = 'Network error: ' + err.message;
-      resultDiv.className = 'error';
+      showResult('Network error: ' + err.message, 'error');
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Create Agent';
