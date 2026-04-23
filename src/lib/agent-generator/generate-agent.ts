@@ -66,13 +66,13 @@ export function resolveDataPoints(rawDataPoints: RawDataPoint[]): DataPoint[] {
       choices: dp.choices || [],
       description:
         dp.description ||
-        `${dp.variableName}. If not mentioned, set to "Not Mentioned".`,
+        `${dp.variableName}. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know, set to "Caller Doesn't Know".`,
       conversationPrompt:
         dp.conversationPrompt ||
-        `Ask the caller for their ${dp.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.`,
+        `Ask the caller for their ${dp.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know, acknowledge it and move on.`,
       forwardCondition:
         dp.forwardCondition ||
-        `The caller has provided their ${dp.variableName.replace(/_/g, " ")}`,
+        `The caller has provided their ${dp.variableName.replace(/_/g, " ")} or has indicated they don't know it`,
       finetuneExamples: dp.finetuneExamples || [],
       extractSuccessEquation: dp.extractSuccessEquation || [
         { left: `{{${dp.variableName}}}`, operator: "exists" },

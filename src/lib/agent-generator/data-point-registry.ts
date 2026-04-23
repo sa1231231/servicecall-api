@@ -45,11 +45,13 @@ export const DATA_POINT_REGISTRY: Record<string, DataPoint> = {
     variableName: "full_name",
     type: "string",
     choices: [],
-    description: `Full name of the caller. If the caller does not specifically mention their name, set to "Not Mentioned".`,
+    description: `Full name of the caller. If the caller does not specifically mention their name, set to "Not Mentioned". If the caller explicitly says they don't know the name, set to "Caller Doesn't Know".`,
     conversationPrompt: `Your goal is to collect the caller's full name by asking: "Can I get your name please?"
 
-If the caller is correcting your spelling, correct the spelling and re-confirm.`,
-    forwardCondition: "The caller has given you their name",
+If the caller is correcting your spelling, correct the spelling and re-confirm.
+
+If the caller says they don't know or aren't sure of the name, acknowledge it and move on.`,
+    forwardCondition: "The caller has given you their name or has indicated they don't know it",
     finetuneExamples: [
       {
         type: "negative",
@@ -69,7 +71,7 @@ If the caller is correcting your spelling, correct the spelling and re-confirm.`
     variableName: "phone_number",
     type: "string",
     choices: [],
-    description: `Phone number of the caller. Convert any spoken digits to numeric format (e.g., 'three one two five five five one two three four' becomes '312-555-1234'). If not mentioned, set to "Not Mentioned".`,
+    description: `Phone number of the caller. Convert any spoken digits to numeric format (e.g., 'three one two five five five one two three four' becomes '312-555-1234'). If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the phone number, set to "Caller Doesn't Know".`,
     conversationPrompt: `Ask the caller if the current number they're calling from is the best number to reach them by saying "Is this the best number to reach you at?"
 
 Wait for their reply.
@@ -94,8 +96,10 @@ Example
 Pacing
 \t•\tTarget speed: 2.5-3.2 characters per second
 \t•\tThis is slower than conversational speech but still natural.
+
+If the caller says they don't know the number, acknowledge it and move on.
     `,
-    forwardCondition: "You have the caller's best number to reach them.",
+    forwardCondition: "You have the caller's best number to reach them, or the caller has indicated they don't know it.",
     finetuneExamples: [
       {
         type: "negative",
@@ -122,11 +126,13 @@ Pacing
     variableName: "email",
     type: "string",
     choices: [],
-    description: `Email address of the caller. If not mentioned, set to "Not Mentioned".`,
+    description: `Email address of the caller. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the email, set to "Caller Doesn't Know".`,
     conversationPrompt: `Ask the caller for their email address.
 
-Spell it back to confirm you have it right.`,
-    forwardCondition: "The caller has given you their email address",
+Spell it back to confirm you have it right.
+
+If the caller says they don't know their email address, acknowledge it and move on.`,
+    forwardCondition: "The caller has given you their email address or has indicated they don't know it",
     extractSuccessEquation: [
       { left: "{{email}}", operator: "exists" },
       { left: "{{email}}", operator: "!=", right: "Not Mentioned" },
@@ -137,7 +143,7 @@ Spell it back to confirm you have it right.`,
     variableName: "street_address",
     type: "string",
     choices: [],
-    description: `The physical street address. Extract only the street number and street name (e.g., "123 Main Street"). Do not include city, state, or zip code. If not mentioned, set to "Not Mentioned"`,
+    description: `The physical street address. Extract only the street number and street name (e.g., "123 Main Street"). Do not include city, state, or zip code. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the address, set to "Caller Doesn't Know".`,
     conversationPrompt: `Ask the caller for their street address.
 
 If the caller provides incomplete information:
@@ -163,9 +169,11 @@ If the caller corrects any part:
 2. Read back the corrected address in the same format
 3. Wait for confirmation again
 
+If the caller says they don't know the address, acknowledge it and move on.
+
 ##
 Do not ask for any other information than what is instructed for this node.`,
-    forwardCondition: "You have confirmed the caller's street address.",
+    forwardCondition: "You have confirmed the caller's street address, or the caller has indicated they don't know it.",
     extractSuccessEquation: [
       { left: "{{street_address}}", operator: "exists" },
       { left: "{{street_address}}", operator: "!=", right: "Not Mentioned" },
@@ -176,14 +184,16 @@ Do not ask for any other information than what is instructed for this node.`,
     variableName: "city",
     type: "string",
     choices: [],
-    description: `The city of the property. Extract only the city name (e.g., "Los Angeles"). Do not include state or zip code. If not mentioned, set to "Not Mentioned".`,
+    description: `The city of the property. Extract only the city name (e.g., "Los Angeles"). Do not include state or zip code. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the city, set to "Caller Doesn't Know".`,
     conversationPrompt: `Ask the caller for their city by saying "Which city are you in?"
 
 Refer to the system prompt for list of cities we service.
 
+If the caller says they don't know the city, acknowledge it and move on.
+
 ##
 Do not ask for any other information than what is instructed for this node.`,
-    forwardCondition: "The caller has given you their city",
+    forwardCondition: "The caller has given you their city or has indicated they don't know it",
     extractSuccessEquation: [
       { left: "{{city}}", operator: "exists" },
       { left: "{{city}}", operator: "!=", right: "Not Mentioned" },
@@ -194,9 +204,11 @@ Do not ask for any other information than what is instructed for this node.`,
     variableName: "company_name",
     type: "string",
     choices: [],
-    description: `The name of the caller's company or business. If not mentioned, set to "Not Mentioned".`,
-    conversationPrompt: `Ask the caller for their company or business name by asking: "May I get the company name?"`,
-    forwardCondition: "The caller has given you their company name",
+    description: `The name of the caller's company or business. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the company name, set to "Caller Doesn't Know".`,
+    conversationPrompt: `Ask the caller for their company or business name by asking: "May I get the company name?"
+
+If the caller says they don't know the company name, acknowledge it and move on.`,
+    forwardCondition: "The caller has given you their company name or has indicated they don't know it",
     extractSuccessEquation: [
       { left: "{{company_name}}", operator: "exists" },
       { left: "{{company_name}}", operator: "!=", right: "Not Mentioned" },
@@ -209,8 +221,8 @@ Do not ask for any other information than what is instructed for this node.`,
     type: "string",
     choices: [],
     description: `The fleet vehicle identifier (e.g., "Truck 124", "Unit 87"). If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the truck number, set to "Caller Doesn't Know".`,
-    conversationPrompt: `Collect the truck number by asking:\n\n"what is the truck number?"`,
-    forwardCondition: "The caller has provided the truck number",
+    conversationPrompt: `Collect the truck number by asking:\n\n"what is the truck number?"\n\nIf the caller says they don't know the truck number, acknowledge it and move on.`,
+    forwardCondition: "The caller has provided the truck number or has indicated they don't know it",
     finetuneExamples: [],
     extractSuccessEquation: [
       { left: "{{truck_number}}", operator: "exists" },
@@ -222,9 +234,9 @@ Do not ask for any other information than what is instructed for this node.`,
     variableName: "driver_name",
     type: "string",
     choices: [],
-    description: `The name of the driver who is with the vehicle. If not mentioned, set to "Not Mentioned".`,
-    conversationPrompt: `Collect the name of the driver who is with the truck by asking:\n\n"what is the driver's name?"`,
-    forwardCondition: "The caller has provided the driver's name",
+    description: `The name of the driver who is with the vehicle. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the driver's name, set to "Caller Doesn't Know".`,
+    conversationPrompt: `Collect the name of the driver who is with the truck by asking:\n\n"what is the driver's name?"\n\nIf the caller says they don't know the driver's name, acknowledge it and move on.`,
+    forwardCondition: "The caller has provided the driver's name or has indicated they don't know it",
     finetuneExamples: [],
     extractSuccessEquation: [
       { left: "{{driver_name}}", operator: "exists" },
@@ -236,9 +248,9 @@ Do not ask for any other information than what is instructed for this node.`,
     variableName: "driver_phone",
     type: "string",
     choices: [],
-    description: `The phone number where the driver can be reached directly. Convert any spoken digits to numeric format (e.g., 'three one two five five five one two three four' becomes '312-555-1234'). If not mentioned, set to "Not Mentioned".`,
-    conversationPrompt: `Collect the driver's direct phone number by asking:\n\n"what is the driver's phone number?"\n\nIf the caller gives you an incomplete phone number, ask for it again.\n\nPhone Number Readback Rules:\nFormat\n\t•\tRead phone numbers in three sections:\n\t•\tArea code\n\t•\tPrefix\n\t•\tLine number\n\nExample\n\t•\tCaller says: 214-555-1234\n\t•\tRead back as:\n"Two one four… five five five… one two three four."\n\n\t•\tDigits are read individually, never as full numbers.\n\t•\tInsert a ~475–550 ms pause between each section.\n\t•\tDo not add country codes unless the caller explicitly states one.\n\nPacing\n\t•\tTarget speed: 2.5–3.2 characters per second\n\t•\tThis is slower than conversational speech but still natural.`,
-    forwardCondition: "The caller has provided the driver's complete 10 or more digit phone number",
+    description: `The phone number where the driver can be reached directly. Convert any spoken digits to numeric format (e.g., 'three one two five five five one two three four' becomes '312-555-1234'). If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the driver's phone number, set to "Caller Doesn't Know".`,
+    conversationPrompt: `Collect the driver's direct phone number by asking:\n\n"what is the driver's phone number?"\n\nIf the caller gives you an incomplete phone number, ask for it again.\n\nPhone Number Readback Rules:\nFormat\n\t•\tRead phone numbers in three sections:\n\t•\tArea code\n\t•\tPrefix\n\t•\tLine number\n\nExample\n\t•\tCaller says: 214-555-1234\n\t•\tRead back as:\n"Two one four… five five five… one two three four."\n\n\t•\tDigits are read individually, never as full numbers.\n\t•\tInsert a ~475–550 ms pause between each section.\n\t•\tDo not add country codes unless the caller explicitly states one.\n\nPacing\n\t•\tTarget speed: 2.5–3.2 characters per second\n\t•\tThis is slower than conversational speech but still natural.\n\nIf the caller says they don't know the driver's phone number, acknowledge it and move on.`,
+    forwardCondition: "The caller has provided the driver's complete 10 or more digit phone number, or has indicated they don't know it",
     finetuneExamples: [
       {
         type: "negative",
@@ -264,7 +276,7 @@ Do not ask for any other information than what is instructed for this node.`,
     variableName: "breakdown_location",
     type: "string",
     choices: [],
-    description: `Where the truck is broken down. This could be a truck stop name, highway and mile marker, city, cross streets, or any description the caller provides. Capture as much detail as given. If not mentioned, set to "Not Mentioned".`,
+    description: `Where the truck is broken down. This could be a truck stop name, highway and mile marker, city, cross streets, or any description the caller provides. Capture as much detail as given. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the location, set to "Caller Doesn't Know".`,
     conversationPrompt: `Ask the caller where the truck is located by saying "Where is the vehicle located?"
 
 Do not elaborate on your initial question.
@@ -291,8 +303,10 @@ A complete location is one of these:
 
 Do not move on until you have enough detail for a technician to find the truck.
 
-Do not repeat the full location back to them.`,
-    forwardCondition: "The caller has described to you the location of the truck",
+Do not repeat the full location back to them.
+
+If the caller says they don't know the location, acknowledge it and move on.`,
+    forwardCondition: "The caller has described to you the location of the truck or has indicated they don't know it",
     finetuneExamples: [],
     extractSuccessEquation: [
       { left: "{{breakdown_location}}", operator: "exists" },
@@ -304,9 +318,9 @@ Do not repeat the full location back to them.`,
     variableName: "problem_description",
     type: "string",
     choices: [],
-    description: `A description of what is wrong with the truck (e.g., won't start, clicking noise, overheating, flat tire, alternator issue). Capture the caller's description in their own words. If not mentioned, set to "Not Mentioned".`,
-    conversationPrompt: `Collect the truck problem by asking:\n\n"what is going wrong with the truck?"`,
-    forwardCondition: "The caller has described the problem with the truck",
+    description: `A description of what is wrong with the truck (e.g., won't start, clicking noise, overheating, flat tire, alternator issue). Capture the caller's description in their own words. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know what's wrong, set to "Caller Doesn't Know".`,
+    conversationPrompt: `Collect the truck problem by asking:\n\n"what is going wrong with the truck?"\n\nIf the caller says they don't know what's wrong with the truck, acknowledge it and move on.`,
+    forwardCondition: "The caller has described the problem with the truck or has indicated they don't know what's wrong",
     finetuneExamples: [],
     extractSuccessEquation: [
       { left: "{{problem_description}}", operator: "exists" },
@@ -325,9 +339,9 @@ Do not repeat the full location back to them.`,
       "Other",
       "Not Mentioned",
     ],
-    description: `The type of vehicle that needs service. If the caller says something not in the list, set to "Other". If not mentioned, set to "Not Mentioned".`,
-    conversationPrompt: `Collect the truck vehicle type by asking:\n\n"what type of truck is it?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.`,
-    forwardCondition: "The caller has provided the vehicle type.",
+    description: `The type of vehicle that needs service. If the caller says something not in the list, set to "Other". If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the vehicle type, set to "Caller Doesn't Know".`,
+    conversationPrompt: `Collect the truck vehicle type by asking:\n\n"what type of truck is it?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know the vehicle type, acknowledge it and move on.`,
+    forwardCondition: "The caller has provided the vehicle type or has indicated they don't know it.",
     finetuneExamples: [],
     extractSuccessEquation: [
       { left: "{{vehicle_type}}", operator: "exists" },
@@ -352,9 +366,9 @@ Do not repeat the full location back to them.`,
       "Other",
       "Not Mentioned",
     ],
-    description: `The make or manufacturer of the vehicle. If the caller says a brand not in the list, set to "Other". If not mentioned, set to "Not Mentioned".`,
-    conversationPrompt: `Collect the truck make by asking:\n\n"what make is the truck?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.`,
-    forwardCondition: "The caller has provided the make of the truck",
+    description: `The make or manufacturer of the vehicle. If the caller says a brand not in the list, set to "Other". If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the make, set to "Caller Doesn't Know".`,
+    conversationPrompt: `Collect the truck make by asking:\n\n"what make is the truck?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know the make of the truck, acknowledge it and move on.`,
+    forwardCondition: "The caller has provided the make of the truck or has indicated they don't know it",
     finetuneExamples: [],
     extractSuccessEquation: [
       { left: "{{vehicle_manufacturer}}", operator: "exists" },
@@ -379,9 +393,9 @@ Do not repeat the full location back to them.`,
       "Other",
       "Not Mentioned",
     ],
-    description: `The color of the vehicle. If not mentioned, set to "Not Mentioned".`,
-    conversationPrompt: `Collect the truck color by asking:\n\n"what color is the truck?"`,
-    forwardCondition: "The caller has provided the color of the truck",
+    description: `The color of the vehicle. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the color, set to "Caller Doesn't Know".`,
+    conversationPrompt: `Collect the truck color by asking:\n\n"what color is the truck?"\n\nIf the caller says they don't know the color of the truck, acknowledge it and move on.`,
+    forwardCondition: "The caller has provided the color of the truck or has indicated they don't know it",
     finetuneExamples: [],
     extractSuccessEquation: [
       { left: "{{vehicle_color}}", operator: "exists" },
@@ -393,9 +407,9 @@ Do not repeat the full location back to them.`,
     variableName: "whos_paying",
     type: "string",
     choices: [],
-    description: `Who is responsible for the bill for the service. If not mentioned, set to "Not Mentioned".`,
-    conversationPrompt: `Collect who will be responsible for the bill by asking:\n\n"who will be responsible for payment?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf they say one word like "Me" or "Us" then just assume it is the caller's company and proceed.`,
-    forwardCondition: "The caller has indicated who is paying for the service",
+    description: `Who is responsible for the bill for the service. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know who's paying, set to "Caller Doesn't Know".`,
+    conversationPrompt: `Collect who will be responsible for the bill by asking:\n\n"who will be responsible for payment?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf they say one word like "Me" or "Us" then just assume it is the caller's company and proceed.\n\nIf the caller says they don't know who will be paying, acknowledge it and move on.`,
+    forwardCondition: "The caller has indicated who is paying for the service or has indicated they don't know",
     finetuneExamples: [
       {
         type: "positive",
@@ -434,9 +448,9 @@ Do not repeat the full location back to them.`,
       "Other",
       "Not Mentioned",
     ],
-    description: `The method of payment for the service. If not mentioned, set to "Not Mentioned".`,
-    conversationPrompt: `Collect what payment method they'll be using by asking:\n\n"what payment method will be used?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller repeats themselves twice, assume what they are saying is the payment method and transition.`,
-    forwardCondition: "The caller has provided the payment method they will be using",
+    description: `The method of payment for the service. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the payment method, set to "Caller Doesn't Know".`,
+    conversationPrompt: `Collect what payment method they'll be using by asking:\n\n"what payment method will be used?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller repeats themselves twice, assume what they are saying is the payment method and transition.\n\nIf the caller says they don't know the payment method, acknowledge it and move on.`,
+    forwardCondition: "The caller has provided the payment method they will be using or has indicated they don't know it",
     finetuneExamples: [],
     extractSuccessEquation: [
       { left: "{{payment_method}}", operator: "exists" },
@@ -461,9 +475,10 @@ Do not repeat the full location back to them.`,
           "Thursday",
           "Friday",
           "Saturday",
+          "Caller Doesn't Know",
           "Not Mentioned",
         ],
-        description: `The day the caller would like us to come out and see them. If they say "as soon as possible" or "right away" or "now," set to "the current day which is {{current_time_America/Los_Angeles}}." If they say or imply a specific day of the week, use that day. If not mentioned, set to "Not Mentioned".`,
+        description: `The day the caller would like us to come out and see them. If they say "as soon as possible" or "right away" or "now," set to "the current day which is {{current_time_America/Los_Angeles}}." If they say or imply a specific day of the week, use that day. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know what day works, set to "Caller Doesn't Know".`,
       },
       {
         variableName: "preferred_time",
@@ -474,9 +489,10 @@ Do not repeat the full location back to them.`,
           "12 PM - 2 PM",
           "2 PM - 4 PM",
           "4 PM - 6 PM",
+          "Caller Doesn't Know",
           "Not Mentioned",
         ],
-        description: `The 2-hour time window the caller prefers. If the caller gives a specific time like "around 3," map to the closest window (2 PM - 4 PM). If they say "morning," use "8 AM - 10 AM." If they say "afternoon," use "12 PM - 2 PM." If they say "evening" or "later in the day," use "4 PM - 6 PM." If not mentioned, set to "Not Mentioned".`,
+        description: `The 2-hour time window the caller prefers. If the caller gives a specific time like "around 3," map to the closest window (2 PM - 4 PM). If they say "morning," use "8 AM - 10 AM." If they say "afternoon," use "12 PM - 2 PM." If they say "evening" or "later in the day," use "4 PM - 6 PM." If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know what time works, set to "Caller Doesn't Know".`,
       },
     ],
     conversationPrompt: `Your goal is to find out when the caller would like someone to come out, and confirm a a day and 2-hour time window.
@@ -509,10 +525,12 @@ Rules:
 
 Do not offer more than 3 window options at a time.
 
+If the caller says they don't know when they'd like someone to come out, or can't commit to a day or time, acknowledge it and move on.
+
 ##
 Do not ask for any other information than what is instructed for this node.`,
     forwardCondition:
-      "The caller's has agreed to one of your day and time slot options.",
+      "The caller has agreed to one of your day and time slot options, or has indicated they don't know when works.",
     finetuneExamples: [
       {
         type: "positive",

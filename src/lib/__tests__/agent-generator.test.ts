@@ -121,6 +121,49 @@ describe("DATA_POINT_REGISTRY", () => {
       expect(dp.forwardCondition, `${key}.forwardCondition`).toBeTruthy();
     });
   });
+
+  it("all data points include 'don't know' in forwardCondition", () => {
+    Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
+      expect(dp.forwardCondition, `${key}.forwardCondition`).toMatch(/don't know/i);
+    });
+  });
+
+  it("all data points include 'don't know' in conversationPrompt", () => {
+    Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
+      expect(dp.conversationPrompt, `${key}.conversationPrompt`).toMatch(/don't know/i);
+    });
+  });
+
+  it("all non-composite data points include 'Caller Doesn\\'t Know' in description", () => {
+    Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
+      if (dp.composite) return;
+      expect(dp.description, `${key}.description`).toContain("Caller Doesn't Know");
+    });
+  });
+
+  it("all enum data points have 'Caller Doesn\\'t Know' in choices", () => {
+    Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
+      if (dp.type !== "enum" || dp.composite) return;
+      expect(dp.choices, `${key}.choices`).toContain("Caller Doesn't Know");
+    });
+  });
+
+  it("scheduling sub-variables have 'Caller Doesn\\'t Know' in choices", () => {
+    const scheduling = DATA_POINT_REGISTRY.scheduling;
+    expect(scheduling.variables).toBeDefined();
+    scheduling.variables!.forEach((v) => {
+      expect(v.choices, `${v.variableName}.choices`).toContain("Caller Doesn't Know");
+    });
+  });
+});
+
+describe("custom data point defaults include 'Caller Doesn\\'t Know' handling", () => {
+  it("default description, conversationPrompt, and forwardCondition handle don't know", () => {
+    const resolved = resolveDataPoints([{ variableName: "my_var" }]);
+    expect(resolved[0].description).toContain("Caller Doesn't Know");
+    expect(resolved[0].conversationPrompt).toMatch(/don't know/i);
+    expect(resolved[0].forwardCondition).toMatch(/don't know/i);
+  });
 });
 
 // ── generateAgent (single-path) ──────────────────────────────────────────────
