@@ -3,6 +3,9 @@ import {
   generateAgent,
   resolveDataPoints,
   DATA_POINT_REGISTRY,
+  NOT_MENTIONED,
+  CALLER_DOESNT_KNOW,
+  PHONE_COLLECTED_FLAG,
   type DataPoint,
 } from "../agent-generator/index.js";
 
@@ -103,12 +106,12 @@ describe("DATA_POINT_REGISTRY", () => {
     });
   });
 
-  it("enum data points have choices array with 'Not Mentioned'", () => {
+  it("enum data points have choices array with NOT_MENTIONED", () => {
     const enumKeys = ["vehicle_type", "vehicle_manufacturer", "vehicle_color", "payment_method"];
     enumKeys.forEach(key => {
       const dp = DATA_POINT_REGISTRY[key];
       expect(dp.type).toBe("enum");
-      expect(dp.choices).toContain("Not Mentioned");
+      expect(dp.choices).toContain(NOT_MENTIONED);
       expect(dp.choices!.length).toBeGreaterThan(2);
     });
   });
@@ -137,14 +140,14 @@ describe("DATA_POINT_REGISTRY", () => {
   it("all non-composite data points include 'Caller Doesn\\'t Know' in description", () => {
     Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
       if (dp.composite) return;
-      expect(dp.description, `${key}.description`).toContain("Caller Doesn't Know");
+      expect(dp.description, `${key}.description`).toContain(CALLER_DOESNT_KNOW);
     });
   });
 
   it("all enum data points have 'Caller Doesn\\'t Know' in choices", () => {
     Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
       if (dp.type !== "enum" || dp.composite) return;
-      expect(dp.choices, `${key}.choices`).toContain("Caller Doesn't Know");
+      expect(dp.choices, `${key}.choices`).toContain(CALLER_DOESNT_KNOW);
     });
   });
 
@@ -152,7 +155,7 @@ describe("DATA_POINT_REGISTRY", () => {
     const scheduling = DATA_POINT_REGISTRY.scheduling;
     expect(scheduling.variables).toBeDefined();
     scheduling.variables!.forEach((v) => {
-      expect(v.choices, `${v.variableName}.choices`).toContain("Caller Doesn't Know");
+      expect(v.choices, `${v.variableName}.choices`).toContain(CALLER_DOESNT_KNOW);
     });
   });
 });
@@ -160,9 +163,70 @@ describe("DATA_POINT_REGISTRY", () => {
 describe("custom data point defaults include 'Caller Doesn\\'t Know' handling", () => {
   it("default description, conversationPrompt, and forwardCondition handle don't know", () => {
     const resolved = resolveDataPoints([{ variableName: "my_var" }]);
-    expect(resolved[0].description).toContain("Caller Doesn't Know");
+    expect(resolved[0].description).toContain(CALLER_DOESNT_KNOW);
     expect(resolved[0].conversationPrompt).toMatch(/don't know/i);
     expect(resolved[0].forwardCondition).toMatch(/don't know/i);
+  });
+});
+
+// ── Edge cases ──────────────────────────────────────────────────────────────
+
+describe("edge cases", () => {
+  it("router equations use NOT_MENTIONED constant value", () => {
+    const { agent } = generateAgent(baseConfig, ["full_name", "city"]);
+    const flow = agent.conversationFlow as any;
+    const router = flow.nodes.find((n: any) => n.name === "Variables Router");
+    router.edges.forEach((edge: any) => {
+      const eqs = edge.transition_condition.equations;
+      const notMentionedEq = eqs.find((eq: any) => eq.operator === "==");
+      if (notMentionedEq) {
+        expect(notMentionedEq.right).toBe(NOT_MENTIONED);
+      }
+    });
+  });
+
+  it("phone_number_collected flag is added to phone confirm extract node", () => {
+    const { agent } = generateAgent(baseConfig, ["phone_number", "full_name"]);
+    const flow = agent.conversationFlow as any;
+    const confirmPhone = flow.nodes.find((n: any) => n.name === "Confirm Phone Number");
+    const flagVar = confirmPhone.variables.find((v: any) => v.name === PHONE_COLLECTED_FLAG);
+    expect(flagVar).toBeDefined();
+    expect(flagVar.type).toBe("boolean");
+  });
+
+  it("throws on empty data points in a path", () => {
+    expect(() =>
+      generateAgent(baseConfig, [], [
+        { name: "Empty Path", transitionCondition: "test", dataPoints: [] },
+      ]),
+    ).toThrow(/Path "Empty Path" has no data points/);
+  });
+
+  it("includes path name in error for bad data point reference", () => {
+    expect(() =>
+      generateAgent(baseConfig, [], [
+        { name: "Bad Path", transitionCondition: "test", dataPoints: ["nonexistent"] as any[] },
+      ]),
+    ).toThrow(/Path "Bad Path".*Unknown data point/);
+  });
+
+  it("generates valid agent with single data point", () => {
+    const { agent, resolved } = generateAgent(baseConfig, ["full_name"]);
+    expect(resolved).toHaveLength(1);
+    const flow = agent.conversationFlow as any;
+    expect(flow.nodes.length).toBeGreaterThan(10);
+    const router = flow.nodes.find((n: any) => n.name === "Variables Router");
+    expect(router.edges).toHaveLength(1);
+  });
+
+  it("duplicate variable names across paths don't cause ID collisions", () => {
+    const { agent } = generateAgent(baseConfig, [], [
+      { name: "Path A", transitionCondition: "A", dataPoints: ["full_name", "phone_number"] as any[] },
+      { name: "Path B", transitionCondition: "B", dataPoints: ["full_name", "city"] as any[] },
+    ]);
+    const flow = agent.conversationFlow as any;
+    const ids = flow.nodes.map((n: any) => n.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });
 

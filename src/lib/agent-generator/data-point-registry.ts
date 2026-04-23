@@ -37,6 +37,23 @@ export interface DataPoint {
 
 export type RawDataPoint = string | Partial<DataPoint> & { variableName?: string; composite?: boolean; variables?: VariableDef[] };
 
+// ── Constants ────────────────────────────────────────────────────────────────
+
+export const NOT_MENTIONED = "Not Mentioned";
+export const CALLER_DOESNT_KNOW = "Caller Doesn't Know";
+export const PHONE_COLLECTED_FLAG = "phone_number_collected";
+export const PATH_TAKEN_VAR = "_path_taken";
+export const INTERNAL_VARS = new Set([PHONE_COLLECTED_FLAG, PATH_TAKEN_VAR]);
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+export function defaultExtractEquation(varName: string): ExtractEquation[] {
+  return [
+    { left: `{{${varName}}}`, operator: "exists" },
+    { left: `{{${varName}}}`, operator: "!=", right: NOT_MENTIONED },
+  ];
+}
+
 // ── Built-in Data Point Registry ─────────────────────────────────────────────
 
 export const DATA_POINT_REGISTRY: Record<string, DataPoint> = {
@@ -61,10 +78,7 @@ If the caller says they don't know or aren't sure of the name, acknowledge it an
         ],
       },
     ],
-    extractSuccessEquation: [
-      { left: "{{full_name}}", operator: "exists" },
-      { left: "{{full_name}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("full_name"),
   },
   phone_number: {
     label: "Phone Number",
@@ -116,10 +130,7 @@ If the caller says they don't know the number, acknowledge it and move on.
         ],
       },
     ],
-    extractSuccessEquation: [
-      { left: "{{phone_number}}", operator: "exists" },
-      { left: "{{phone_number}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("phone_number"),
   },
   email: {
     label: "Email",
@@ -133,10 +144,7 @@ Spell it back to confirm you have it right.
 
 If the caller says they don't know their email address, acknowledge it and move on.`,
     forwardCondition: "The caller has given you their email address or has indicated they don't know it",
-    extractSuccessEquation: [
-      { left: "{{email}}", operator: "exists" },
-      { left: "{{email}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("email"),
   },
   street_address: {
     label: "Street Address",
@@ -174,10 +182,7 @@ If the caller says they don't know the address, acknowledge it and move on.
 ##
 Do not ask for any other information than what is instructed for this node.`,
     forwardCondition: "You have confirmed the caller's street address, or the caller has indicated they don't know it.",
-    extractSuccessEquation: [
-      { left: "{{street_address}}", operator: "exists" },
-      { left: "{{street_address}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("street_address"),
   },
   city: {
     label: "City",
@@ -194,10 +199,7 @@ If the caller says they don't know the city, acknowledge it and move on.
 ##
 Do not ask for any other information than what is instructed for this node.`,
     forwardCondition: "The caller has given you their city or has indicated they don't know it",
-    extractSuccessEquation: [
-      { left: "{{city}}", operator: "exists" },
-      { left: "{{city}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("city"),
   },
   company_name: {
     label: "Company Name",
@@ -209,10 +211,7 @@ Do not ask for any other information than what is instructed for this node.`,
 
 If the caller says they don't know the company name, acknowledge it and move on.`,
     forwardCondition: "The caller has given you their company name or has indicated they don't know it",
-    extractSuccessEquation: [
-      { left: "{{company_name}}", operator: "exists" },
-      { left: "{{company_name}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("company_name"),
   },
   // ── Trucking ─────────────────────────────────────────────────────────────────
   truck_number: {
@@ -224,10 +223,7 @@ If the caller says they don't know the company name, acknowledge it and move on.
     conversationPrompt: `Collect the truck number by asking:\n\n"what is the truck number?"\n\nIf the caller says they don't know the truck number, acknowledge it and move on.`,
     forwardCondition: "The caller has provided the truck number or has indicated they don't know it",
     finetuneExamples: [],
-    extractSuccessEquation: [
-      { left: "{{truck_number}}", operator: "exists" },
-      { left: "{{truck_number}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("truck_number"),
   },
   driver_name: {
     label: "Driver Name",
@@ -238,10 +234,7 @@ If the caller says they don't know the company name, acknowledge it and move on.
     conversationPrompt: `Collect the name of the driver who is with the truck by asking:\n\n"what is the driver's name?"\n\nIf the caller says they don't know the driver's name, acknowledge it and move on.`,
     forwardCondition: "The caller has provided the driver's name or has indicated they don't know it",
     finetuneExamples: [],
-    extractSuccessEquation: [
-      { left: "{{driver_name}}", operator: "exists" },
-      { left: "{{driver_name}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("driver_name"),
   },
   driver_phone: {
     label: "Driver Phone Number",
@@ -266,10 +259,7 @@ If the caller says they don't know the company name, acknowledge it and move on.
         ],
       },
     ],
-    extractSuccessEquation: [
-      { left: "{{driver_phone}}", operator: "exists" },
-      { left: "{{driver_phone}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("driver_phone"),
   },
   breakdown_location: {
     label: "Breakdown Location",
@@ -308,10 +298,7 @@ Do not repeat the full location back to them.
 If the caller says they don't know the location, acknowledge it and move on.`,
     forwardCondition: "The caller has described to you the location of the truck or has indicated they don't know it",
     finetuneExamples: [],
-    extractSuccessEquation: [
-      { left: "{{breakdown_location}}", operator: "exists" },
-      { left: "{{breakdown_location}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("breakdown_location"),
   },
   problem_description: {
     label: "Problem Description",
@@ -322,10 +309,7 @@ If the caller says they don't know the location, acknowledge it and move on.`,
     conversationPrompt: `Collect the truck problem by asking:\n\n"what is going wrong with the truck?"\n\nIf the caller says they don't know what's wrong with the truck, acknowledge it and move on.`,
     forwardCondition: "The caller has described the problem with the truck or has indicated they don't know what's wrong",
     finetuneExamples: [],
-    extractSuccessEquation: [
-      { left: "{{problem_description}}", operator: "exists" },
-      { left: "{{problem_description}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("problem_description"),
   },
   vehicle_type: {
     label: "Vehicle Type",
@@ -335,18 +319,15 @@ If the caller says they don't know the location, acknowledge it and move on.`,
       "Semi tractor-trailer",
       "Box truck",
       "Dump truck",
-      "Caller Doesn't Know",
+      CALLER_DOESNT_KNOW,
       "Other",
-      "Not Mentioned",
+      NOT_MENTIONED,
     ],
     description: `The type of vehicle that needs service. If the caller says something not in the list, set to "Other". If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the vehicle type, set to "Caller Doesn't Know".`,
     conversationPrompt: `Collect the truck vehicle type by asking:\n\n"what type of truck is it?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know the vehicle type, acknowledge it and move on.`,
     forwardCondition: "The caller has provided the vehicle type or has indicated they don't know it.",
     finetuneExamples: [],
-    extractSuccessEquation: [
-      { left: "{{vehicle_type}}", operator: "exists" },
-      { left: "{{vehicle_type}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("vehicle_type"),
   },
   vehicle_manufacturer: {
     label: "Vehicle Manufacturer",
@@ -362,18 +343,15 @@ If the caller says they don't know the location, acknowledge it and move on.`,
       "Western Star",
       "Hino",
       "Isuzu",
-      "Caller Doesn't Know",
+      CALLER_DOESNT_KNOW,
       "Other",
-      "Not Mentioned",
+      NOT_MENTIONED,
     ],
     description: `The make or manufacturer of the vehicle. If the caller says a brand not in the list, set to "Other". If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the make, set to "Caller Doesn't Know".`,
     conversationPrompt: `Collect the truck make by asking:\n\n"what make is the truck?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know the make of the truck, acknowledge it and move on.`,
     forwardCondition: "The caller has provided the make of the truck or has indicated they don't know it",
     finetuneExamples: [],
-    extractSuccessEquation: [
-      { left: "{{vehicle_manufacturer}}", operator: "exists" },
-      { left: "{{vehicle_manufacturer}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("vehicle_manufacturer"),
   },
   vehicle_color: {
     label: "Vehicle Color",
@@ -389,18 +367,15 @@ If the caller says they don't know the location, acknowledge it and move on.`,
       "Silver",
       "Gray",
       "Orange",
-      "Caller Doesn't Know",
+      CALLER_DOESNT_KNOW,
       "Other",
-      "Not Mentioned",
+      NOT_MENTIONED,
     ],
     description: `The color of the vehicle. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the color, set to "Caller Doesn't Know".`,
     conversationPrompt: `Collect the truck color by asking:\n\n"what color is the truck?"\n\nIf the caller says they don't know the color of the truck, acknowledge it and move on.`,
     forwardCondition: "The caller has provided the color of the truck or has indicated they don't know it",
     finetuneExamples: [],
-    extractSuccessEquation: [
-      { left: "{{vehicle_color}}", operator: "exists" },
-      { left: "{{vehicle_color}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("vehicle_color"),
   },
   whos_paying: {
     label: "Who's Paying",
@@ -428,10 +403,7 @@ If the caller says they don't know the location, acknowledge it and move on.`,
         transcript: [{ content: "We are", role: "user" }],
       },
     ],
-    extractSuccessEquation: [
-      { left: "{{whos_paying}}", operator: "exists" },
-      { left: "{{whos_paying}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("whos_paying"),
   },
   payment_method: {
     label: "Payment Method",
@@ -444,18 +416,15 @@ If the caller says they don't know the location, acknowledge it and move on.`,
       "Fleet account",
       "Cash",
       "Check",
-      "Caller Doesn't Know",
+      CALLER_DOESNT_KNOW,
       "Other",
-      "Not Mentioned",
+      NOT_MENTIONED,
     ],
     description: `The method of payment for the service. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know the payment method, set to "Caller Doesn't Know".`,
     conversationPrompt: `Collect what payment method they'll be using by asking:\n\n"what payment method will be used?"\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller repeats themselves twice, assume what they are saying is the payment method and transition.\n\nIf the caller says they don't know the payment method, acknowledge it and move on.`,
     forwardCondition: "The caller has provided the payment method they will be using or has indicated they don't know it",
     finetuneExamples: [],
-    extractSuccessEquation: [
-      { left: "{{payment_method}}", operator: "exists" },
-      { left: "{{payment_method}}", operator: "!=", right: "Not Mentioned" },
-    ],
+    extractSuccessEquation: defaultExtractEquation("payment_method"),
   },
   // ── Scheduling ──────────────────────────────────────────────────────────────
   scheduling: {
@@ -475,8 +444,8 @@ If the caller says they don't know the location, acknowledge it and move on.`,
           "Thursday",
           "Friday",
           "Saturday",
-          "Caller Doesn't Know",
-          "Not Mentioned",
+          CALLER_DOESNT_KNOW,
+          NOT_MENTIONED,
         ],
         description: `The day the caller would like us to come out and see them. If they say "as soon as possible" or "right away" or "now," set to "the current day which is {{current_time_America/Los_Angeles}}." If they say or imply a specific day of the week, use that day. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know what day works, set to "Caller Doesn't Know".`,
       },
@@ -489,8 +458,8 @@ If the caller says they don't know the location, acknowledge it and move on.`,
           "12 PM - 2 PM",
           "2 PM - 4 PM",
           "4 PM - 6 PM",
-          "Caller Doesn't Know",
-          "Not Mentioned",
+          CALLER_DOESNT_KNOW,
+          NOT_MENTIONED,
         ],
         description: `The 2-hour time window the caller prefers. If the caller gives a specific time like "around 3," map to the closest window (2 PM - 4 PM). If they say "morning," use "8 AM - 10 AM." If they say "afternoon," use "12 PM - 2 PM." If they say "evening" or "later in the day," use "4 PM - 6 PM." If not mentioned, set to "Not Mentioned". If the caller explicitly says they don't know what time works, set to "Caller Doesn't Know".`,
       },

@@ -1,5 +1,6 @@
 import type Retell from "retell-sdk";
 import { toLabel, type VariableEntry } from "./notification-config.js";
+import { INTERNAL_VARS } from "./agent-generator/data-point-registry.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,7 +102,7 @@ export function extractVariables(
       }
     }
     return allVars
-      .filter((v) => v.name !== "phone_number_collected")
+      .filter((v) => !INTERNAL_VARS.has(v.name))
       .map((v) => ({ key: v.name, label: toLabel(v.name) }));
   }
 
@@ -109,7 +110,7 @@ export function extractVariables(
   if (!Array.isArray(vars)) return [];
 
   return vars
-    .filter((v) => v.name !== "phone_number_collected")
+    .filter((v) => !INTERNAL_VARS.has(v.name))
     .map((v) => ({ key: v.name, label: toLabel(v.name) }));
 }
 

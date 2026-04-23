@@ -3,6 +3,7 @@ import type {
   ResolveRule,
   ResolveRuleEntry,
 } from "../config/client-store.js";
+import { INTERNAL_VARS, PATH_TAKEN_VAR } from "./agent-generator/data-point-registry.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,9 +83,7 @@ function filterInternalVars(
   variables: VariableEntry[],
 ): Array<{ key: string; label: string }> {
   return variables
-    .filter(
-      (v) => v.key !== "phone_number_collected" && v.key !== "_path_taken",
-    )
+    .filter((v) => !INTERNAL_VARS.has(v.key))
     .map((v) => ({ key: v.key, label: v.label }));
 }
 
@@ -249,7 +248,7 @@ export function deriveMultiPathNotificationConfig(
     };
 
     resolveRules.push({
-      field: "_path_taken",
+      field: PATH_TAKEN_VAR,
       equals: path.name,
       then: typeKey,
     });
