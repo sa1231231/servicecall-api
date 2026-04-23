@@ -274,6 +274,6 @@ describe("extractVariables", () => {
 
     const vars = extractVariables(json);
     expect(vars[0]).toEqual({ key: "full_name", label: "Name" });
-    expect(vars[1]).toEqual({ key: "truck_number", label: "Truck Number" });
+    expect(vars[1]).toEqual({ key: "truck_number", label: "Truck #" });
   });
 });

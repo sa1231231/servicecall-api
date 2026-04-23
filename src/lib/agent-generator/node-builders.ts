@@ -29,11 +29,6 @@ interface Ids {
   closingRemarksId: string;
   closingStatementId: string;
   paths: PathIds[];
-  // Backward-compat aliases (point to paths[0])
-  transitionId: string;
-  frontExtractId: string;
-  routerId: string;
-  chain: Array<{ convId: string; confirmId: string }>;
 }
 
 interface Position {
@@ -59,11 +54,6 @@ interface Positions {
   guardrailEnd: Position;
   close: Position;
   paths: PathPositions[];
-  // Backward-compat aliases (point to paths[0])
-  transition: Position;
-  frontExtract: Position;
-  router: Position;
-  chain: Array<{ conv: Position; confirm: Position }>;
 }
 
 export interface AgentConfig {
@@ -154,11 +144,6 @@ export function generateIds(f: IdFactory, pathDataPoints: DataPoint[][]): Ids {
     closingRemarksId: f.nodeId(),
     closingStatementId: f.nodeId(),
     paths,
-    // Backward-compat aliases
-    transitionId: paths[0].transitionId,
-    frontExtractId: paths[0].frontExtractId,
-    routerId: paths[0].routerId,
-    chain: paths[0].chain,
   };
 }
 
@@ -197,11 +182,6 @@ export function layoutPositions(pathDataPoints: DataPoint[][]): Positions {
     guardrailEnd: { x: -666, y: -2346 },
     close: { x: lastX, y: 894 + lastPathYBase },
     paths,
-    // Backward-compat aliases
-    transition: paths[0].transition,
-    frontExtract: paths[0].frontExtract,
-    router: paths[0].router,
-    chain: paths[0].chain,
   };
 }
 

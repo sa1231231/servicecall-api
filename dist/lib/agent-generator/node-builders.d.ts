@@ -27,13 +27,6 @@ interface Ids {
     closingRemarksId: string;
     closingStatementId: string;
     paths: PathIds[];
-    transitionId: string;
-    frontExtractId: string;
-    routerId: string;
-    chain: Array<{
-        convId: string;
-        confirmId: string;
-    }>;
 }
 interface Position {
     x: number;
@@ -59,13 +52,6 @@ interface Positions {
     guardrailEnd: Position;
     close: Position;
     paths: PathPositions[];
-    transition: Position;
-    frontExtract: Position;
-    router: Position;
-    chain: Array<{
-        conv: Position;
-        confirm: Position;
-    }>;
 }
 export interface AgentConfig {
     businessName: string;

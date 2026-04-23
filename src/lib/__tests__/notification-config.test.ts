@@ -3,8 +3,10 @@ import {
   toLabel,
   LABEL_MAP,
   deriveNotificationConfig,
+  deriveMultiPathNotificationConfig,
   type VariableEntry,
   type ClientInfo,
+  type PathVariables,
 } from "../notification-config.js";
 
 // ── toLabel ──────────────────────────────────────────────────────────────────
@@ -304,5 +306,168 @@ describe("deriveNotificationConfig", () => {
     const result = deriveNotificationConfig([], baseClient, "agent_123");
     expect(result.message_types.service_request.fields).toEqual([]);
     expect(result.default_message_type).toBe("service_request");
+  });
+
+  it("filters out _path_taken from fields", () => {
+    const vars: VariableEntry[] = [
+      { key: "full_name", label: "Name" },
+      { key: "_path_taken", label: "Path Taken" },
+    ];
+    const result = deriveNotificationConfig(vars, baseClient, "agent_123");
+    const keys = result.message_types.service_request.fields.map(f => f.key);
+    expect(keys).toContain("full_name");
+    expect(keys).not.toContain("_path_taken");
+  });
+});
+
+// ── deriveMultiPathNotificationConfig ────────────────────────────────────────
+
+describe("deriveMultiPathNotificationConfig", () => {
+  it("creates one message_type per path", () => {
+    const pathVars: PathVariables[] = [
+      {
+        name: "Emergency Dispatch",
+        variables: [
+          { key: "full_name", label: "Name" },
+          { key: "truck_number", label: "Truck #" },
+        ],
+      },
+      {
+        name: "Shop Service",
+        variables: [
+          { key: "full_name", label: "Name" },
+          { key: "vehicle_type", label: "Vehicle Type" },
+        ],
+      },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    expect(Object.keys(result.message_types)).toEqual(["emergency_dispatch", "shop_service"]);
+  });
+
+  it("each message_type has correct fields", () => {
+    const pathVars: PathVariables[] = [
+      {
+        name: "Dispatch",
+        variables: [
+          { key: "full_name", label: "Name" },
+          { key: "phone_number", label: "Phone" },
+          { key: "breakdown_location", label: "Location" },
+        ],
+      },
+      {
+        name: "Scheduling",
+        variables: [
+          { key: "full_name", label: "Name" },
+          { key: "preferred_day", label: "Day" },
+        ],
+      },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+
+    const dispatchKeys = result.message_types.dispatch.fields.map(f => f.key);
+    expect(dispatchKeys).toEqual(["full_name", "phone_number", "breakdown_location"]);
+
+    const schedKeys = result.message_types.scheduling.fields.map(f => f.key);
+    expect(schedKeys).toEqual(["full_name", "preferred_day"]);
+  });
+
+  it("generates resolve_rules based on _path_taken", () => {
+    const pathVars: PathVariables[] = [
+      { name: "Path A", variables: [{ key: "full_name", label: "Name" }] },
+      { name: "Path B", variables: [{ key: "city", label: "City" }] },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+
+    expect(result.resolve_rules).toEqual([
+      { field: "_path_taken", equals: "Path A", then: "path_a" },
+      { field: "_path_taken", equals: "Path B", then: "path_b" },
+    ]);
+  });
+
+  it("default_message_type is first path", () => {
+    const pathVars: PathVariables[] = [
+      { name: "First Path", variables: [{ key: "full_name", label: "Name" }] },
+      { name: "Second Path", variables: [{ key: "city", label: "City" }] },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    expect(result.default_message_type).toBe("first_path");
+  });
+
+  it("builds subject template per path", () => {
+    const pathVars: PathVariables[] = [
+      {
+        name: "Emergency",
+        variables: [
+          { key: "full_name", label: "Name" },
+          { key: "street_address", label: "Address" },
+          { key: "city", label: "City" },
+        ],
+      },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    expect(result.message_types.emergency.subject_template).toBe(
+      "Emergency: {{full_name}} — {{street_address}}, {{city}}",
+    );
+  });
+
+  it("uses path name as label", () => {
+    const pathVars: PathVariables[] = [
+      { name: "Emergency Dispatch", variables: [{ key: "full_name", label: "Name" }] },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    expect(result.message_types.emergency_dispatch.label).toBe("Emergency Dispatch");
+  });
+
+  it("filters out _path_taken and phone_number_collected from fields", () => {
+    const pathVars: PathVariables[] = [
+      {
+        name: "Test",
+        variables: [
+          { key: "full_name", label: "Name" },
+          { key: "_path_taken", label: "Path" },
+          { key: "phone_number_collected", label: "Collected" },
+        ],
+      },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    const keys = result.message_types.test.fields.map(f => f.key);
+    expect(keys).toEqual(["full_name"]);
+  });
+
+  it("slugifies path names with special characters", () => {
+    const pathVars: PathVariables[] = [
+      { name: "Who's Paying?!", variables: [{ key: "full_name", label: "Name" }] },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    expect(Object.keys(result.message_types)).toEqual(["whos_paying"]);
+  });
+
+  it("no resolve_rule is set (uses resolve_rules instead)", () => {
+    const pathVars: PathVariables[] = [
+      { name: "A", variables: [{ key: "full_name", label: "Name" }] },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    expect(result.resolve_rule).toBeUndefined();
+  });
+
+  it("passes through client fields correctly", () => {
+    const pathVars: PathVariables[] = [
+      { name: "Test", variables: [{ key: "full_name", label: "Name" }] },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    expect(result.name).toBe("Test Company");
+    expect(result.agent_ids).toEqual(["agent_123"]);
+    expect(result.dispatch_text_numbers).toEqual(["+15551234567"]);
+    expect(result.shadow_mode).toBe(true);
   });
 });

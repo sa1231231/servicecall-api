@@ -62,11 +62,6 @@ export function generateIds(f, pathDataPoints) {
         closingRemarksId: f.nodeId(),
         closingStatementId: f.nodeId(),
         paths,
-        // Backward-compat aliases
-        transitionId: paths[0].transitionId,
-        frontExtractId: paths[0].frontExtractId,
-        routerId: paths[0].routerId,
-        chain: paths[0].chain,
     };
 }
 // ── Layout ───────────────────────────────────────────────────────────────────
@@ -100,11 +95,6 @@ export function layoutPositions(pathDataPoints) {
         guardrailEnd: { x: -666, y: -2346 },
         close: { x: lastX, y: 894 + lastPathYBase },
         paths,
-        // Backward-compat aliases
-        transition: paths[0].transition,
-        frontExtract: paths[0].frontExtract,
-        router: paths[0].router,
-        chain: paths[0].chain,
     };
 }
 // ── Node Builders ────────────────────────────────────────────────────────────
