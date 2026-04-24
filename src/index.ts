@@ -60,7 +60,26 @@ app.use((req, res, next) => {
 app.use("/health", healthRouter);
 app.use("/retell", webhookLimiter, retellRouter);
 
-// ── Form (public, no auth) ──────────────────────────────────────────────────
+// ── Basic Auth for form + dashboard ─────────────────────────────────────────
+import type { Request, Response, NextFunction } from "express";
+
+function basicAuth(req: Request, res: Response, next: NextFunction): void {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Basic ")) {
+    res.set("WWW-Authenticate", 'Basic realm="ServiceCall Saver"');
+    res.status(401).send("Authentication required");
+    return;
+  }
+  const [, pass] = Buffer.from(auth.slice(6), "base64").toString().split(":");
+  if (pass !== config.ADMIN_PASSWORD) {
+    res.set("WWW-Authenticate", 'Basic realm="ServiceCall Saver"');
+    res.status(401).send("Invalid credentials");
+    return;
+  }
+  next();
+}
+
+// ── Form (Basic Auth protected) ─────────────────────────────────────────────
 const formRouter = express.Router();
 const formHtmlPath = path.join(__dirname, "..", "public", "index.html");
 formRouter.get("/", (_req, res) => {
@@ -74,10 +93,10 @@ formRouter.get("/", (_req, res) => {
 formRouter.get("/config", (_req, res) => {
   res.json({ apiKey: config.API_KEY });
 });
-app.use("/form", formRouter);
+app.use("/form", basicAuth, formRouter);
 
-// ── Dashboard (public HTML + config, API behind auth) ────────────────────────
-app.use("/dashboard", dashboardRouter);
+// ── Dashboard (Basic Auth protected) ────────────────────────────────────────
+app.use("/dashboard", basicAuth, dashboardRouter);
 
 // ── Auth middleware ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {

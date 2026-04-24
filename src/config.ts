@@ -29,4 +29,7 @@ export const config = {
 
   // MongoDB
   MONGODB_URL: requireEnv("MONGODB_URL"),
+
+  // Admin
+  ADMIN_PASSWORD: requireEnv("ADMIN_PASSWORD"),
 };

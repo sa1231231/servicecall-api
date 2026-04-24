@@ -6,6 +6,7 @@ import { describe, it, expect, afterAll } from "vitest";
 // Use SYSTEM_TEST_URL to avoid collision with Vite's built-in BASE_URL
 const BASE_URL = process.env.SYSTEM_TEST_URL ?? process.env.BASE_URL;
 const API_KEY = process.env.API_KEY;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const DEMO_SLUG = "demo-530e570";
 
 function url(path: string): string {
@@ -14,6 +15,10 @@ function url(path: string): string {
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return { "x-api-key": API_KEY!, "Content-Type": "application/json", ...extra };
+}
+
+function basicAuthHeader(): string {
+  return "Basic " + Buffer.from(`admin:${ADMIN_PASSWORD}`).toString("base64");
 }
 
 async function json(resp: Response): Promise<any> {
@@ -60,8 +65,10 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(body.timestamp).toBeDefined();
     });
 
-    it("GET /dashboard/config returns apiKey", async () => {
-      const resp = await fetch(url("/dashboard/config"));
+    it("GET /dashboard/config returns apiKey with Basic Auth", async () => {
+      const resp = await fetch(url("/dashboard/config"), {
+        headers: { Authorization: basicAuthHeader() },
+      });
       expect(resp.status).toBe(200);
       const body = await json(resp);
       expect(typeof body.apiKey).toBe("string");
@@ -72,16 +79,42 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
   // ── 2. Auth ─────────────────────────────────────────────────────────────
 
   describe("Auth", () => {
-    it("rejects requests with no API key", async () => {
+    it("rejects API requests with no API key", async () => {
       const resp = await fetch(url("/dashboard/api/agents"));
       expect(resp.status).toBe(401);
     });
 
-    it("rejects requests with wrong API key", async () => {
+    it("rejects API requests with wrong API key", async () => {
       const resp = await fetch(url("/dashboard/api/agents"), {
         headers: { "x-api-key": "wrong-key" },
       });
       expect(resp.status).toBe(401);
+    });
+
+    it("rejects /form/config without Basic Auth", async () => {
+      const resp = await fetch(url("/form/config"));
+      expect(resp.status).toBe(401);
+    });
+
+    it("rejects /dashboard/config without Basic Auth", async () => {
+      const resp = await fetch(url("/dashboard/config"));
+      expect(resp.status).toBe(401);
+    });
+
+    it("rejects /form/config with wrong password", async () => {
+      const resp = await fetch(url("/form/config"), {
+        headers: { Authorization: "Basic " + Buffer.from("admin:wrong").toString("base64") },
+      });
+      expect(resp.status).toBe(401);
+    });
+
+    it("allows /form/config with correct Basic Auth", async () => {
+      const resp = await fetch(url("/form/config"), {
+        headers: { Authorization: basicAuthHeader() },
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(typeof body.apiKey).toBe("string");
     });
   });
 
