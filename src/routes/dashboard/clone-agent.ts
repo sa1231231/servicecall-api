@@ -69,7 +69,7 @@ export async function cloneAgentHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const sourceSlug = req.params.slug;
+  const sourceSlug = req.params.slug as string;
   const body = req.body as CloneBody;
 
   // Validate
