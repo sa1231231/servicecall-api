@@ -909,12 +909,89 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.details || 'Failed: ' + res.status);
 
-      showToast('Test notification sent! SMS + email sent to owner.', 'success');
+      const dest = data.shadow_mode ? 'owner (shadow mode)' : 'client dispatch channels';
+      showToast('Test notification sent to ' + dest + '!', 'success');
     } catch (err) {
       showToast('Test notification failed: ' + err.message, 'error');
     } finally {
       btn.disabled = false;
       btn.textContent = 'Send Test Notification';
+    }
+  }
+
+  // ── CLONE AGENT ──────────────────────────────────────────────────
+
+  function showCloneModal() {
+    document.getElementById('cloneNameInput').value = '';
+    document.getElementById('cloneFaqInput').value = '';
+    document.getElementById('cloneCallInput').value = '';
+    document.getElementById('cloneCcInput').value = '';
+    document.getElementById('cloneOutboundInput').value = '';
+    // Clear chip inputs
+    for (const id of ['clone-chip-text', 'clone-chip-email']) {
+      const el = document.getElementById(id);
+      el.querySelectorAll('.chip').forEach(c => c.remove());
+    }
+    document.getElementById('cloneModal').style.display = 'flex';
+    document.getElementById('cloneNameInput').focus();
+  }
+
+  function hideCloneModal() {
+    document.getElementById('cloneModal').style.display = 'none';
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (document.getElementById('cloneModal').style.display === 'flex') {
+      if (e.key === 'Escape') hideCloneModal();
+    }
+  });
+
+  async function cloneAgent() {
+    const nameInput = document.getElementById('cloneNameInput');
+    const faqInput = document.getElementById('cloneFaqInput');
+    const name = nameInput.value.trim();
+    const faq = faqInput.value.trim();
+
+    nameInput.style.borderColor = name ? '' : '#ef4444';
+    faqInput.style.borderColor = faq ? '' : '#ef4444';
+    if (!name || !faq) return;
+
+    const btn = document.getElementById('btnCloneConfirm');
+    btn.disabled = true;
+    btn.textContent = 'Cloning...';
+
+    const textNums = getChipValues('clone-chip-text');
+    const emails = getChipValues('clone-chip-email');
+
+    const body = {
+      name,
+      faq,
+      dispatch_text_numbers: textNums,
+      dispatch_call_number: document.getElementById('cloneCallInput').value.trim() || null,
+      dispatch_email: emails.length > 0 ? emails : null,
+      dispatch_cc: document.getElementById('cloneCcInput').value.trim() || null,
+      outbound_from_number: document.getElementById('cloneOutboundInput').value.trim() || null,
+    };
+
+    try {
+      const res = await fetch('/dashboard/api/agents/' + currentSlug + '/clone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed: ' + res.status);
+      }
+      const data = await res.json();
+      hideCloneModal();
+      showToast('Cloned! Opening ' + data.slug + '...', 'success');
+      showDetail(data.slug);
+    } catch (err) {
+      showToast('Clone failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Clone';
     }
   }
 

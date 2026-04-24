@@ -14,18 +14,19 @@ import { saveCallLog, type CallLogDocument } from "../../lib/call-log.js";
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
 
-  // Skip signature verification for test client (matched by agent_id)
+  // Skip signature verification for test clients or internal API-key-authenticated calls
   const agentId = req.body?.call?.agent_id ?? null;
   const isTestClient = agentIdToClient[agentId]?.name === "Test Client";
+  const isInternalCall = req.headers["x-api-key"] === config.API_KEY;
 
-  if (!isTestClient) {
+  if (!isTestClient && !isInternalCall) {
     const sig = (req.headers["x-retell-signature"] as string) ?? "";
     const rawBody = (req as any).rawBody as string;
 
     if (!verifyRetellWebhookOr401(rawBody, sig, config.RETELL_SIGNATURE_KEY, res))
       return;
   } else {
-    console.log("retell-post-hook: skipping signature verification for test client");
+    console.log(`retell-post-hook: skipping signature verification (${isTestClient ? "test client" : "internal call"})`);
   }
 
   console.log("retell-post-hook: signature verified");
