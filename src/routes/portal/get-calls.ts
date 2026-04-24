@@ -22,6 +22,7 @@ export async function portalGetCallsHandler(
       message_type_label: c.message_type_label,
       call_summary: c.call_summary,
       user_sentiment: c.user_sentiment,
+      recording_url: c.recording_url,
       created_at: c.created_at,
     }));
 

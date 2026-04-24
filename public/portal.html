@@ -83,6 +83,9 @@
   .btn-load-more:hover { background: #eff6ff; }
   .btn-load-more:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
 
+  a.icon-link { color: #2563eb; text-decoration: none; font-size: 0.78rem; }
+  a.icon-link:hover { text-decoration: underline; }
+
   .footer {
     text-align: center; margin-top: 3rem; padding: 1rem;
     font-size: 0.75rem; color: #999;
@@ -229,7 +232,7 @@
       let html = '';
       if (fresh) {
         html = `<table id="callTable"><thead><tr>
-          <th>Date</th><th>From</th><th>Duration</th><th>Type</th><th>Outcome</th><th>Summary</th>
+          <th>Date</th><th>From</th><th>Duration</th><th>Type</th><th>Outcome</th><th>Summary</th><th>Recording</th>
         </tr></thead><tbody id="callBody">`;
       }
 
@@ -248,8 +251,9 @@
           <td>${esc(c.message_type_label || '')}</td>
           <td><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
           <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.call_summary || '')}">${summary}</td>
+          <td>${c.recording_url ? '<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>' : '—'}</td>
         </tr>
-        <tr class="call-expand-row" style="display:none;"><td colspan="6">
+        <tr class="call-expand-row" style="display:none;"><td colspan="7">
           <div class="call-expand">
             <p><strong>Message Type:</strong> ${esc(c.message_type_label || '')}</p>
             ${c.call_summary ? '<p><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
