@@ -12,19 +12,21 @@ export async function portalGetCallsHandler(
   try {
     const calls = await getCallLogsByClient(slug, limit, offset);
 
-    // Return only client-safe fields
-    const sanitized = calls.map((c) => ({
-      _id: c._id,
-      from_number: c.from_number,
-      duration_ms: c.duration_ms,
-      outcome: c.outcome,
-      extracted_fields: c.extracted_fields,
-      message_type_label: c.message_type_label,
-      call_summary: c.call_summary,
-      user_sentiment: c.user_sentiment,
-      recording_url: c.recording_url,
-      created_at: c.created_at,
-    }));
+    // Filter out shadow/test calls and strip internal fields
+    const sanitized = calls
+      .filter((c) => c.outcome !== "shadow_dry_run")
+      .map((c) => ({
+        _id: c._id,
+        from_number: c.from_number,
+        duration_ms: c.duration_ms,
+        outcome: c.outcome,
+        extracted_fields: c.extracted_fields,
+        message_type_label: c.message_type_label,
+        call_summary: c.call_summary,
+        user_sentiment: c.user_sentiment,
+        recording_url: c.recording_url,
+        created_at: c.created_at,
+      }));
 
     res.json(sanitized);
   } catch (err) {

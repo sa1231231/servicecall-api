@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { getClientDocument } from "../../config/client-store.js";
+import { ownerConfig } from "../../config/notification-clients.js";
 
 export async function portalGetAgentHandler(
   req: Request,
@@ -14,14 +15,19 @@ export async function portalGetAgentHandler(
       return;
     }
 
-    // Return only client-safe fields
+    // Return only client-safe fields, strip owner phone/email
+    const textNumbers = (doc.dispatch_text_numbers || []).filter((n) => n !== ownerConfig.phone);
+    const emails = (doc.dispatch_email || []).filter((e) => e !== ownerConfig.email);
+    const callNumber = doc.dispatch_call_number === ownerConfig.phone ? null : doc.dispatch_call_number;
+    const cc = doc.dispatch_cc === ownerConfig.email ? null : doc.dispatch_cc;
+
     res.json({
       name: doc.name,
       shadow_mode: doc.shadow_mode ?? false,
-      dispatch_text_numbers: doc.dispatch_text_numbers,
-      dispatch_call_number: doc.dispatch_call_number,
-      dispatch_email: doc.dispatch_email,
-      dispatch_cc: doc.dispatch_cc,
+      dispatch_text_numbers: textNumbers,
+      dispatch_call_number: callNumber,
+      dispatch_email: emails.length > 0 ? emails : null,
+      dispatch_cc: cc,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
