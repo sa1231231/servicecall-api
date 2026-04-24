@@ -182,6 +182,38 @@
   }
   .btn-save:hover { background: #1d4ed8; }
   .btn-save:disabled { background: #93b4f5; cursor: not-allowed; }
+
+  /* Smoke test */
+  .btn-smoke {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
+    background: #fff; color: #2563eb; border: 1px solid #93b4f5; border-radius: 6px;
+    cursor: pointer; margin-left: 0.75rem; vertical-align: middle;
+  }
+  .btn-smoke:hover { background: #eff6ff; }
+  .btn-smoke:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
+  .smoke-results {
+    background: #fff; border-radius: 8px; padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1rem;
+    font-size: 0.82rem;
+  }
+  .smoke-results .smoke-header {
+    display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem;
+  }
+  .smoke-results .smoke-header .badge { font-size: 0.78rem; }
+  .smoke-results .smoke-meta { color: #888; font-size: 0.75rem; }
+  .smoke-check {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.3rem 0; border-bottom: 1px solid #f0f0f0;
+  }
+  .smoke-check:last-child { border-bottom: none; }
+  .smoke-icon { font-size: 0.9rem; width: 1.2em; text-align: center; flex-shrink: 0; }
+  .smoke-icon.pass { color: #166534; }
+  .smoke-icon.fail { color: #991b1b; }
+  .smoke-icon.warn { color: #92400e; }
+  .smoke-icon.skip { color: #6b7280; }
+  .smoke-name { font-weight: 600; color: #444; min-width: 200px; }
+  .smoke-msg { color: #555; }
 </style>
 </head>
 <body>
@@ -197,6 +229,7 @@
 <div id="detailView" style="display:none;">
   <button class="btn-back" onclick="showList()">&larr; Back to all agents</button>
   <div id="detailHeader"></div>
+  <div id="smokeResults"></div>
   <h2>Configuration</h2>
   <div id="detailConfig"></div>
   <h2>Call Log</h2>
@@ -412,7 +445,9 @@
     const sc = sm ? 'badge-shadow' : 'badge-live';
     const sl = sm ? 'Shadow' : 'Live';
     document.getElementById('detailHeader').innerHTML =
-      `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span></h1>`;
+      `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
+      `<button class="btn-smoke" onclick="runSmokeTest('${esc(doc._id)}')" id="btnSmoke">Run Smoke Test</button></h1>`;
+    document.getElementById('smokeResults').innerHTML = '';
 
     let html = `<dl class="config-grid">
       <dt>Slug</dt><dd><code>${esc(doc._id)}</code></dd>
@@ -588,7 +623,8 @@
         const sc = updates.shadow_mode ? 'badge-shadow' : 'badge-live';
         const sl = updates.shadow_mode ? 'Shadow' : 'Live';
         document.getElementById('detailHeader').innerHTML =
-          `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span></h1>`;
+          `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
+          `<button class="btn-smoke" onclick="runSmokeTest('${esc(currentSlug)}')" id="btnSmoke">Run Smoke Test</button></h1>`;
       }
     } catch (err) {
       showToast('Save failed: ' + err.message, 'error');
@@ -703,6 +739,59 @@
       .filter(([_, v]) => v && v !== 'Not Mentioned')
       .map(([k, v]) => '<span class="field-pair"><strong>' + esc(k.replace(/_/g, ' ')) + ':</strong> ' + esc(v) + '</span>')
       .join('') || '<span style="color:#aaa">none collected</span>';
+  }
+
+  // ── SMOKE TEST ─────────────────────────────────────────────────────
+
+  async function runSmokeTest(slug) {
+    const btn = document.getElementById('btnSmoke');
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    document.getElementById('smokeResults').innerHTML = '<div class="loading">Running smoke test...</div>';
+
+    try {
+      const res = await fetch('/qa/smoke/' + slug, {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed: ' + res.status);
+      }
+      const report = await res.json();
+      renderSmokeReport(report);
+    } catch (err) {
+      document.getElementById('smokeResults').innerHTML =
+        '<div class="smoke-results"><div class="error-msg">' + esc(err.message) + '</div></div>';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Run Smoke Test';
+    }
+  }
+
+  function renderSmokeReport(report) {
+    const icons = { pass: '\u2705', fail: '\u274C', warn: '\u26A0\uFE0F', skip: '\u23ED\uFE0F' };
+    const overallClass = report.overall === 'pass' ? 'badge-live' : 'badge-dispatch_error';
+    const overallLabel = report.overall === 'pass' ? 'All Checks Passed' : 'Checks Failed';
+
+    let html = '<div class="smoke-results">';
+    html += '<div class="smoke-header">';
+    html += '<span class="badge ' + overallClass + '">' + overallLabel + '</span>';
+    html += '<span class="smoke-meta">' + report.summary.pass + '/' + report.summary.total + ' passed';
+    if (report.summary.warn > 0) html += ', ' + report.summary.warn + ' warning(s)';
+    html += ' &middot; ' + report.duration_ms + 'ms</span>';
+    html += '</div>';
+
+    for (const c of report.checks) {
+      html += '<div class="smoke-check">';
+      html += '<span class="smoke-icon ' + c.status + '">' + (icons[c.status] || '?') + '</span>';
+      html += '<span class="smoke-name">' + esc(c.check) + '</span>';
+      html += '<span class="smoke-msg">' + esc(c.message) + '</span>';
+      html += '</div>';
+    }
+
+    html += '</div>';
+    document.getElementById('smokeResults').innerHTML = html;
   }
 
   // ── INIT ───────────────────────────────────────────────────────────
