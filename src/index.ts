@@ -13,6 +13,7 @@ import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
 import { dashboardRouter, dashboardApiRouter } from "./routes/dashboard/index.js";
 import { qaRouter } from "./routes/qa.js";
+import { portalRouter } from "./routes/portal/index.js";
 import { startAutoSync } from "./lib/retell-auto-sync.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,8 +58,18 @@ app.use((req, res, next) => {
   next();
 });
 
+// Portal rate limiter — tighter to prevent token brute-force
+const portalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
 app.use("/health", healthRouter);
 app.use("/retell", webhookLimiter, retellRouter);
+app.use("/portal", portalLimiter, portalRouter);
 
 // ── Basic Auth for form + dashboard ─────────────────────────────────────────
 import type { Request, Response, NextFunction } from "express";

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { getDb } from "../lib/db.js";
 import type { ClientNotificationConfig } from "./notification-clients.js";
 import {
@@ -54,6 +55,7 @@ export interface JsonClientEntry {
   shadow_mode?: boolean;
   retell_agents?: Record<string, Record<string, unknown>>;
   last_deployed_at?: string;
+  portal_token?: string | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -271,4 +273,30 @@ export function getAllClientSummaries(): Array<{
     shadow_mode: c.shadow_mode ?? false,
     agent_ids: c.agent_ids,
   }));
+}
+
+/** Generate a portal token for a client and persist it. */
+export async function generatePortalToken(slug: string): Promise<string> {
+  const token = crypto.randomBytes(32).toString("hex");
+  const result = await clients().updateOne(
+    { _id: slug } as any,
+    { $set: { portal_token: token } },
+  );
+  if (result.matchedCount === 0) {
+    throw new Error(`Client "${slug}" not found`);
+  }
+  console.log(`[client-store] generated portal token for "${slug}"`);
+  return token;
+}
+
+/** Validate a portal token against a client slug. */
+export async function validatePortalToken(
+  slug: string,
+  token: string,
+): Promise<boolean> {
+  const doc = await clients().findOne(
+    { _id: slug, portal_token: token } as any,
+    { projection: { _id: 1 } },
+  );
+  return doc !== null;
 }

@@ -200,6 +200,24 @@
   }
   .btn-test-notify:hover { background: #ecfdf5; }
   .btn-test-notify:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
+  .portal-link-box {
+    background: #fff; border-radius: 8px; padding: 0.75rem 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1rem;
+    font-size: 0.82rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+  }
+  .portal-link-box input {
+    flex: 1; min-width: 200px; padding: 4px 8px; font-size: 0.78rem;
+    border: 1px solid #d1d5db; border-radius: 6px; background: #f9fafb;
+    font-family: monospace; color: #444;
+  }
+  .btn-portal {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
+    background: #fff; color: #7c3aed; border: 1px solid #c4b5fd; border-radius: 6px;
+    cursor: pointer;
+  }
+  .btn-portal:hover { background: #f5f3ff; }
+  .btn-portal:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
   .smoke-results {
     background: #fff; border-radius: 8px; padding: 1rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1rem;
@@ -282,6 +300,7 @@
   <button class="btn-back" onclick="showList()">&larr; Back to all agents</button>
   <div id="detailHeader"></div>
   <div id="smokeResults"></div>
+  <div id="portalLinkSection"></div>
   <h2>Configuration</h2>
   <div id="detailConfig"></div>
   <h2>Call Log</h2>
@@ -478,6 +497,7 @@
     }
 
     loadCalls(true);
+    loadPortalLink(slug);
   }
 
   let originalDoc = null; // stash for diffing on save
@@ -917,6 +937,57 @@
       btn.disabled = false;
       btn.textContent = 'Send Test Notification';
     }
+  }
+
+  // ── PORTAL LINK ────────────────────────────────────────────────────
+
+  async function loadPortalLink(slug) {
+    try {
+      const res = await fetch('/dashboard/api/agents/' + slug + '/portal-token', { headers: { 'X-API-Key': apiKey } });
+      if (!res.ok) return;
+      const data = await res.json();
+      renderPortalLink(slug, data.portal_url);
+    } catch (err) { /* ignore */ }
+  }
+
+  function renderPortalLink(slug, url) {
+    const section = document.getElementById('portalLinkSection');
+    if (url) {
+      section.innerHTML = '<div class="portal-link-box">' +
+        '<strong>Portal Link:</strong>' +
+        '<input type="text" value="' + esc(url) + '" readonly onclick="this.select()">' +
+        '<button class="btn-portal" onclick="copyPortalLink(this)">Copy</button>' +
+        '<button class="btn-portal" onclick="generatePortalLink(\'' + esc(slug) + '\')">Regenerate</button>' +
+        '</div>';
+    } else {
+      section.innerHTML = '<div class="portal-link-box">' +
+        '<strong>Portal Link:</strong> <span style="color:#888;">Not generated yet</span>' +
+        '<button class="btn-portal" onclick="generatePortalLink(\'' + esc(slug) + '\')">Generate Portal Link</button>' +
+        '</div>';
+    }
+  }
+
+  async function generatePortalLink(slug) {
+    try {
+      const res = await fetch('/dashboard/api/agents/' + slug + '/portal-token', {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey },
+      });
+      if (!res.ok) throw new Error('Failed: ' + res.status);
+      const data = await res.json();
+      renderPortalLink(slug, data.portal_url);
+      showToast('Portal link generated!', 'success');
+    } catch (err) {
+      showToast('Failed to generate portal link: ' + err.message, 'error');
+    }
+  }
+
+  function copyPortalLink(btn) {
+    const input = btn.parentElement.querySelector('input');
+    input.select();
+    navigator.clipboard.writeText(input.value).then(() => {
+      showToast('Portal link copied!', 'success');
+    });
   }
 
   // ── CLONE AGENT ──────────────────────────────────────────────────
