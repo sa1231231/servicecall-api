@@ -57,7 +57,7 @@ export interface JsonClientEntry {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function ruleToFunction(
+export function ruleToFunction(
   rule: ResolveRule | undefined,
   rules: ResolveRuleEntry[] | undefined,
   defaultType: string,

@@ -12,6 +12,7 @@ import { retellRouter } from "./routes/retell/index.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
 import { dashboardRouter, dashboardApiRouter } from "./routes/dashboard/index.js";
+import { qaRouter } from "./routes/qa.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -92,6 +93,7 @@ app.use((req, res, next) => {
 // app.use("/stripe", stripeRouter);
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
+app.use("/qa", qaRouter);
 app.use("/dashboard/api", dashboardApiRouter);
 
 // ── Start ────────────────────────────────────────────────────────────────────
