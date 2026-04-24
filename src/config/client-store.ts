@@ -53,6 +53,7 @@ export interface JsonClientEntry {
   hide_not_mentioned?: boolean;
   shadow_mode?: boolean;
   retell_agents?: Record<string, Record<string, unknown>>;
+  last_deployed_at?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ export function ruleToFunction(
   return () => defaultType;
 }
 
-function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig {
+export function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig {
   return {
     name: entry.name,
     agent_ids: entry.agent_ids,
@@ -136,6 +137,7 @@ export async function persistClient(
   slug: string,
   entry: JsonClientEntry,
 ): Promise<ClientNotificationConfig> {
+  entry.last_deployed_at = new Date().toISOString();
   await clients().replaceOne(
     { _id: slug } as any,
     { _id: slug, ...entry } as any,
@@ -247,6 +249,13 @@ export async function getClientDocument(
   slug: string,
 ): Promise<(JsonClientEntry & { _id: string }) | null> {
   return clients().findOne({ _id: slug } as any) as any;
+}
+
+/** Get all client documents from MongoDB. */
+export async function getAllClientDocuments(): Promise<
+  Array<JsonClientEntry & { _id: string }>
+> {
+  return clients().find().toArray() as any;
 }
 
 /** Return lightweight summaries of all clients for the dashboard. */

@@ -13,6 +13,7 @@ import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
 import { dashboardRouter, dashboardApiRouter } from "./routes/dashboard/index.js";
 import { qaRouter } from "./routes/qa.js";
+import { startAutoSync } from "./lib/retell-auto-sync.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -102,4 +103,5 @@ await loadClientsFromDb();
 
 app.listen(Number(config.PORT), () => {
   console.log(`ServiceCall API listening on port ${config.PORT}`);
+  startAutoSync();
 });

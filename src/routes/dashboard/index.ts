@@ -9,6 +9,7 @@ import { toggleShadowHandler } from "./toggle-shadow.js";
 import { getAgentHandler } from "./get-agent.js";
 import { getCallsHandler } from "./get-calls.js";
 import { updateAgentHandler } from "./update-agent.js";
+import { cloneAgentHandler } from "./clone-agent.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -38,3 +39,4 @@ dashboardApiRouter.get("/agents/:slug", getAgentHandler);
 dashboardApiRouter.get("/agents/:slug/calls", getCallsHandler);
 dashboardApiRouter.patch("/agents/:slug/shadow", toggleShadowHandler);
 dashboardApiRouter.patch("/agents/:slug", updateAgentHandler);
+dashboardApiRouter.post("/agents/:slug/clone", cloneAgentHandler);

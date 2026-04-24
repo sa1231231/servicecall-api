@@ -6,6 +6,7 @@ import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
 import { ownerConfig } from "../../config/notification-clients.js";
 import { agentIdToClient, agentIdToSlug } from "../../_cache/clients.js";
 import { escapeHtml } from "../../lib/escape-html.js";
+import { buildNotificationMessages } from "../../lib/build-notification.js";
 import { sendOwnerCallMonitor } from "../../lib/owner-monitor.js";
 import { triggerDispatchCall } from "../../lib/dispatch-call.js";
 import { saveCallLog, type CallLogDocument } from "../../lib/call-log.js";
@@ -93,117 +94,48 @@ export async function postHookHandler(req: Request, res: Response) {
     };
   }
 
-  // Resolve message type
-  const typeKey = clientConfig.resolve_type(allVars);
-  const messageType =
-    clientConfig.message_types[typeKey] ??
-    clientConfig.message_types[clientConfig.default_message_type];
+  // Build notification messages
+  const buildResult = buildNotificationMessages({
+    clientConfig,
+    allVars,
+    callerNumber: call?.from_number,
+  });
 
-  if (!messageType) {
-    console.error(
-      `retell-post-hook: no message type found for key="${typeKey}" or default="${clientConfig.default_message_type}"`,
-    );
-    res.status(500).json({ success: false, message: "No message type configured." });
+  if (!buildResult.ok) {
+    const { reason, details } = buildResult;
+    if (reason === "no_message_type") {
+      console.error(`retell-post-hook: ${details}`);
+      res.status(500).json({ success: false, message: "No message type configured." });
+      return;
+    }
+
+    const typeKey = clientConfig.resolve_type(allVars);
+    const messageType = clientConfig.message_types[typeKey] ?? clientConfig.message_types[clientConfig.default_message_type];
+    const typeLabel = messageType?.label ?? "";
+
+    if (reason === "failed_required") {
+      console.warn(`retell-post-hook: ${details}, skipping notification`);
+      saveCallLog(buildCallLog("skipped_required_field", typeKey, typeLabel, {})).catch(() => {});
+      sendOwnerCallMonitor(call, clientConfig, "skipped_required_field").catch(() => {});
+      res.status(200).json({ success: true, outcome: "skipped_required_field" });
+      return;
+    }
+
+    // empty_call
+    console.warn("retell-post-hook: empty call — no data collected, skipping notifications");
+    saveCallLog(buildCallLog("skipped_empty_call", typeKey, typeLabel, {})).catch(() => {});
+    sendOwnerCallMonitor(call, clientConfig, "skipped_empty_call").catch(() => {});
+    res.status(200).json({ success: true, outcome: "skipped_empty_call" });
     return;
   }
 
-  // Extract field values
-  const fieldValues: Record<string, string> = {};
-  for (const field of messageType.fields) {
-    let value = allVars[field.key] ?? "";
-    if (
-      clientConfig.phone_fallback_to_caller &&
-      field.key === "phone_number" &&
-      (!value || value === "Not Mentioned")
-    ) {
-      value = call?.from_number ?? "";
-    }
-    fieldValues[field.key] = value;
-  }
+  const { typeKey, messageType, fieldValues, smsMessage, emailBody, emailHtml, emailSubject } = buildResult.payload;
 
   console.log("retell-post-hook: extracted notification data", {
     agent_id: agentId,
     message_type: typeKey,
     fields: fieldValues,
   });
-
-  // Check required fields — block notification if any required field fails
-  const failedRequired = messageType.fields.filter((f) => {
-    if (!f.required) return false;
-    const val = fieldValues[f.key] ?? "";
-    if (f.required === true) {
-      return !val || val === "Not Mentioned";
-    }
-    const allowed = Array.isArray(f.required.equals)
-      ? f.required.equals
-      : [f.required.equals];
-    return !allowed.includes(val);
-  });
-
-  if (failedRequired.length > 0) {
-    const names = failedRequired.map((f) => f.key).join(", ");
-    console.warn(
-      `retell-post-hook: required field check failed [${names}], skipping notification`,
-    );
-    saveCallLog(buildCallLog("skipped_required_field", typeKey, messageType.label, fieldValues)).catch(() => {});
-    sendOwnerCallMonitor(call, clientConfig, "skipped_required_field").catch(() => {});
-    res.status(200).json({ success: true, outcome: "skipped_required_field" });
-    return;
-  }
-
-  // Skip notification if no meaningful data was collected (phone_number excluded — it defaults to caller)
-  const meaningfulFields = messageType.fields.filter(
-    (f) => f.key !== "phone_number" && fieldValues[f.key] && fieldValues[f.key] !== "Not Mentioned"
-  );
-
-  if (meaningfulFields.length === 0) {
-    console.warn("retell-post-hook: empty call — no data collected, skipping notifications");
-    saveCallLog(buildCallLog("skipped_empty_call", typeKey, messageType.label, fieldValues)).catch(() => {});
-    sendOwnerCallMonitor(call, clientConfig, "skipped_empty_call").catch(() => {});
-    res.status(200).json({ success: true, outcome: "skipped_empty_call" });
-    return;
-  }
-
-  // Filter visible fields
-  const visibleFields = messageType.fields
-    .filter((f) => f.show !== false)
-    .filter((f) => {
-      if (f.show_when) {
-        const dep = fieldValues[f.show_when.field] ?? "";
-        const allowed = Array.isArray(f.show_when.equals) ? f.show_when.equals : [f.show_when.equals];
-        if (!allowed.includes(dep)) return false;
-      }
-      return true;
-    })
-    .map((f) => {
-      let val = fieldValues[f.key];
-      if (f.format === "yes_no") val = val === "true" ? "Yes" : "No";
-      return { label: f.label, value: val };
-    })
-    .filter((f) => f.value)
-    .filter((f) => !clientConfig.hide_not_mentioned || f.value !== "Not Mentioned");
-
-  // Build plain-text field lines (for SMS)
-  const fieldLines = visibleFields.map((f) => `${f.label}: ${f.value}`).join("\n");
-
-  // Build HTML field lines (for email) — escape user-provided values
-  const fieldLinesHtml = visibleFields
-    .map((f) => `<strong>${escapeHtml(f.label)}:</strong> ${escapeHtml(f.value)}`)
-    .join("<br>");
-
-  // Build message bodies
-  const greeting = `Hi ${clientConfig.name}, you have a new call!`;
-  const urgentSuffix = messageType.additional_text
-    ? `\n\n${messageType.additional_text}`
-    : "";
-  const urgentSuffixHtml = messageType.additional_text
-    ? `<br><br>${escapeHtml(messageType.additional_text)}`
-    : "";
-
-  const smsMessage = `${greeting}\n\n${messageType.label}\n\n${fieldLines}${urgentSuffix}\n\n— Service Call Saver`;
-  const emailBody = `${greeting}\n\n${messageType.label}\n\n${fieldLines}${urgentSuffix}\n\n—\nSent by Service Call Saver\nservicecallsaver.com`;
-  const emailHtml = `<p>${escapeHtml(greeting)}</p><p><strong>${escapeHtml(messageType.label)}</strong></p><p>${fieldLinesHtml}</p>${urgentSuffixHtml}<br><br><p>—<br>Sent by Service Call Saver<br>servicecallsaver.com</p>`;
-  const emailSubject = renderTemplate(messageType.subject_template, fieldValues);
 
   // ── Shadow Dry-Run ─────────────────────────────────────────────────
   if (clientConfig.shadow_mode) {
@@ -365,9 +297,3 @@ async function checkEmailDelivery(resendId: string, clientName: string) {
   }
 }
 
-function renderTemplate(
-  template: string,
-  values: Record<string, string>,
-): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] ?? "");
-}
