@@ -4,16 +4,7 @@ import { notificationClients } from "../../_cache/clients.js";
 import { persistClient, getClientDocument, } from "../../config/client-store.js";
 import { deriveNotificationConfig, } from "../../lib/notification-config.js";
 import { fetchRetellAgent, extractFlowParams, extractAgentParams, } from "../../lib/retell-sync.js";
-// ── Slug Generation ──────────────────────────────────────────────────────────
-import crypto from "crypto";
-function generateSlug(name) {
-    const base = name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "");
-    const hash = crypto.randomBytes(4).toString("hex").slice(0, 7);
-    return `${base || "agent"}-${hash}`;
-}
+import { generateSlug } from "../../lib/slug.js";
 export async function importAgentHandler(req, res) {
     const body = req.body;
     // Validate

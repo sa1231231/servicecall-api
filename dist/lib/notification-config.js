@@ -1,3 +1,4 @@
+import { INTERNAL_VARS, PATH_TAKEN_VAR } from "./agent-generator/data-point-registry.js";
 // ── Label Mapping ────────────────────────────────────────────────────────────
 export const LABEL_MAP = {
     full_name: "Name",
@@ -45,7 +46,7 @@ function buildSubjectTemplate(fields) {
 }
 function filterInternalVars(variables) {
     return variables
-        .filter((v) => v.key !== "phone_number_collected" && v.key !== "_path_taken")
+        .filter((v) => !INTERNAL_VARS.has(v.key))
         .map((v) => ({ key: v.key, label: v.label }));
 }
 function buildClientEntry(clientInfo, agentId, messageTypes, defaultMessageType, resolveRule, resolveRules) {
@@ -173,7 +174,7 @@ export function deriveMultiPathNotificationConfig(pathVariables, clientInfo, age
             fields,
         };
         resolveRules.push({
-            field: "_path_taken",
+            field: PATH_TAKEN_VAR,
             equals: path.name,
             then: typeKey,
         });

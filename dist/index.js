@@ -11,6 +11,9 @@ import { retellRouter } from "./routes/retell/index.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
 import { dashboardRouter, dashboardApiRouter } from "./routes/dashboard/index.js";
+import { qaRouter } from "./routes/qa.js";
+import { portalRouter } from "./routes/portal/index.js";
+import { startAutoSync } from "./lib/retell-auto-sync.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -44,9 +47,33 @@ app.use((req, res, next) => {
     });
     next();
 });
+// Portal rate limiter — tighter to prevent token brute-force
+const portalLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many requests, please try again later." },
+});
 app.use("/health", healthRouter);
 app.use("/retell", webhookLimiter, retellRouter);
-// ── Form (public, no auth) ──────────────────────────────────────────────────
+app.use("/portal", portalLimiter, portalRouter);
+function basicAuth(req, res, next) {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith("Basic ")) {
+        res.set("WWW-Authenticate", 'Basic realm="ServiceCall Saver"');
+        res.status(401).send("Authentication required");
+        return;
+    }
+    const [, pass] = Buffer.from(auth.slice(6), "base64").toString().split(":");
+    if (pass !== config.ADMIN_PASSWORD) {
+        res.set("WWW-Authenticate", 'Basic realm="ServiceCall Saver"');
+        res.status(401).send("Invalid credentials");
+        return;
+    }
+    next();
+}
+// ── Form (Basic Auth protected) ─────────────────────────────────────────────
 const formRouter = express.Router();
 const formHtmlPath = path.join(__dirname, "..", "public", "index.html");
 formRouter.get("/", (_req, res) => {
@@ -61,9 +88,9 @@ formRouter.get("/", (_req, res) => {
 formRouter.get("/config", (_req, res) => {
     res.json({ apiKey: config.API_KEY });
 });
-app.use("/form", formRouter);
-// ── Dashboard (public HTML + config, API behind auth) ────────────────────────
-app.use("/dashboard", dashboardRouter);
+app.use("/form", basicAuth, formRouter);
+// ── Dashboard (Basic Auth protected) ────────────────────────────────────────
+app.use("/dashboard", basicAuth, dashboardRouter);
 // ── Auth middleware ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
     const key = req.headers["x-api-key"];
@@ -78,10 +105,12 @@ app.use((req, res, next) => {
 // app.use("/stripe", stripeRouter);
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
+app.use("/qa", qaRouter);
 app.use("/dashboard/api", dashboardApiRouter);
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();
 await loadClientsFromDb();
 app.listen(Number(config.PORT), () => {
     console.log(`ServiceCall API listening on port ${config.PORT}`);
+    startAutoSync();
 });

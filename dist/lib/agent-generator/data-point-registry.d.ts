@@ -36,4 +36,10 @@ export type RawDataPoint = string | Partial<DataPoint> & {
     composite?: boolean;
     variables?: VariableDef[];
 };
+export declare const NOT_MENTIONED = "Not Mentioned";
+export declare const CALLER_DOESNT_KNOW = "Caller Doesn't Know";
+export declare const PHONE_COLLECTED_FLAG = "phone_number_collected";
+export declare const PATH_TAKEN_VAR = "_path_taken";
+export declare const INTERNAL_VARS: Set<string>;
+export declare function defaultExtractEquation(varName: string): ExtractEquation[];
 export declare const DATA_POINT_REGISTRY: Record<string, DataPoint>;

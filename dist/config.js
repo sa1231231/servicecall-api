@@ -23,4 +23,6 @@ export const config = {
     EMAIL_FROM: process.env.EMAIL_FROM ?? "notifications@servicecallsaver.com",
     // MongoDB
     MONGODB_URL: requireEnv("MONGODB_URL"),
+    // Admin
+    ADMIN_PASSWORD: requireEnv("ADMIN_PASSWORD"),
 };

@@ -1,7 +1,8 @@
+import crypto from "crypto";
 import { getDb } from "../lib/db.js";
 import { notificationClients, agentIdToClient, agentIdToSlug, } from "../_cache/clients.js";
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function ruleToFunction(rule, rules, defaultType) {
+export function ruleToFunction(rule, rules, defaultType) {
     // Multi-path: ordered rules, first match wins
     if (rules && rules.length > 0) {
         return (vars) => {
@@ -18,7 +19,7 @@ function ruleToFunction(rule, rules, defaultType) {
     }
     return () => defaultType;
 }
-function toClientConfig(entry) {
+export function toClientConfig(entry) {
     return {
         name: entry.name,
         agent_ids: entry.agent_ids,
@@ -64,6 +65,7 @@ export async function loadClientsFromDb() {
 }
 /** Persist a client to MongoDB and register in memory. */
 export async function persistClient(slug, entry) {
+    entry.last_deployed_at = new Date().toISOString();
     await clients().replaceOne({ _id: slug }, { _id: slug, ...entry }, { upsert: true });
     const config = toClientConfig(entry);
     registerInMemory(slug, config);
@@ -137,9 +139,26 @@ export async function updateClientFields(slug, updates) {
     }
     console.log(`[client-store] updated "${slug}" fields: ${Object.keys(setObj).join(", ")}`);
 }
+/** Delete a client from MongoDB and remove from in-memory cache. */
+export async function deleteClient(slug) {
+    const existing = notificationClients[slug];
+    if (existing) {
+        for (const agentId of existing.agent_ids) {
+            delete agentIdToClient[agentId];
+            delete agentIdToSlug[agentId];
+        }
+        delete notificationClients[slug];
+    }
+    await clients().deleteOne({ _id: slug });
+    console.log(`[client-store] deleted client "${slug}"`);
+}
 /** Get full client document from MongoDB for detail view. */
 export async function getClientDocument(slug) {
     return clients().findOne({ _id: slug });
+}
+/** Get all client documents from MongoDB. */
+export async function getAllClientDocuments() {
+    return clients().find().toArray();
 }
 /** Return lightweight summaries of all clients for the dashboard. */
 export function getAllClientSummaries() {
@@ -149,4 +168,19 @@ export function getAllClientSummaries() {
         shadow_mode: c.shadow_mode ?? false,
         agent_ids: c.agent_ids,
     }));
+}
+/** Generate a portal token for a client and persist it. */
+export async function generatePortalToken(slug) {
+    const token = crypto.randomBytes(32).toString("hex");
+    const result = await clients().updateOne({ _id: slug }, { $set: { portal_token: token } });
+    if (result.matchedCount === 0) {
+        throw new Error(`Client "${slug}" not found`);
+    }
+    console.log(`[client-store] generated portal token for "${slug}"`);
+    return token;
+}
+/** Validate a portal token against a client slug. */
+export async function validatePortalToken(slug, token) {
+    const doc = await clients().findOne({ _id: slug, portal_token: token }, { projection: { _id: 1 } });
+    return doc !== null;
 }

@@ -13,4 +13,5 @@ export declare const config: {
     RESEND_API_KEY: string;
     EMAIL_FROM: string;
     MONGODB_URL: string;
+    ADMIN_PASSWORD: string;
 };

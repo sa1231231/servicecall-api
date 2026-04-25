@@ -1,3 +1,4 @@
+import { NOT_MENTIONED, PHONE_COLLECTED_FLAG, PATH_TAKEN_VAR } from "./data-point-registry.js";
 // ── ID Factory ───────────────────────────────────────────────────────────────
 function randomSuffix(len) {
     return Math.random()
@@ -81,7 +82,8 @@ export function layoutPositions(pathDataPoints) {
             })),
         };
     });
-    const maxChainLen = Math.max(...pathDataPoints.map((dps) => dps.length));
+    const chainLengths = pathDataPoints.map((dps) => dps.length);
+    const maxChainLen = chainLengths.length > 0 ? Math.max(...chainLengths) : 0;
     const lastX = BASE_X + (maxChainLen - 1) * STEP_X + STEP_X;
     const lastPathYBase = (pathDataPoints.length - 1) * PATH_Y_OFFSET;
     return {
@@ -415,6 +417,9 @@ function toVarDefs(rdp) {
     return [def];
 }
 export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f, pathName) {
+    if (resolvedDataPoints.length !== pathIds.chain.length) {
+        throw new Error(`buildDataChain: data point count (${resolvedDataPoints.length}) does not match allocated chain IDs (${pathIds.chain.length})`);
+    }
     const nodes = [];
     const suffix = pathName ? ` (${pathName})` : "";
     // Front-loaded Extract: capture all variables from caller's initial input
@@ -422,7 +427,7 @@ export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f,
     // In multi-path mode, add hidden _path_taken variable for post-call routing
     if (pathName) {
         allVariableDefs.push({
-            name: "_path_taken",
+            name: PATH_TAKEN_VAR,
             type: "string",
             description: `Always set to "${pathName}".`,
         });
@@ -453,10 +458,10 @@ export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f,
                         {
                             left: `{{phone_number}}`,
                             operator: "==",
-                            right: "Not Mentioned",
+                            right: NOT_MENTIONED,
                         },
                         {
-                            left: `{{phone_number_collected}}`,
+                            left: `{{${PHONE_COLLECTED_FLAG}}}`,
                             operator: "!=",
                             right: "true",
                         },
@@ -468,7 +473,7 @@ export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f,
         if (dp.composite && dp.variables) {
             const equations = dp.variables.flatMap((v) => [
                 { left: `{{${v.variableName}}}`, operator: "not_exist" },
-                { left: `{{${v.variableName}}}`, operator: "==", right: "Not Mentioned" },
+                { left: `{{${v.variableName}}}`, operator: "==", right: NOT_MENTIONED },
             ]);
             return {
                 destination_node_id: pathIds.chain[i].convId,
@@ -490,7 +495,7 @@ export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f,
                     {
                         left: `{{${dp.variableName}}}`,
                         operator: "==",
-                        right: "Not Mentioned",
+                        right: NOT_MENTIONED,
                     },
                 ],
                 operator: "||",
@@ -538,7 +543,7 @@ export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f,
         // For phone_number, add a collected flag to break potential confirmation loops
         if (dp.variableName === "phone_number") {
             remainingVarDefs.push({
-                name: "phone_number_collected",
+                name: PHONE_COLLECTED_FLAG,
                 type: "boolean",
                 description: "Always set to true",
             });

@@ -1,4 +1,4 @@
-import { DATA_POINT_REGISTRY, } from "./data-point-registry.js";
+import { DATA_POINT_REGISTRY, NOT_MENTIONED, CALLER_DOESNT_KNOW, defaultExtractEquation, } from "./data-point-registry.js";
 import { makeIdFactory, generateIds, layoutPositions, buildEndNode, buildIntroNode, buildTransitionNode, buildFaqNode, buildHumanRequestNode, buildDataChain, buildCloseNode, buildClosingSequence, buildIrrelevantGuardrailNode, buildEmergencyGuardrailNode, buildPoliteHangupNode, buildGuardrailEndNode, buildAgentRoot, } from "./node-builders.js";
 // ── Resolve Data Points ──────────────────────────────────────────────────────
 export function resolveDataPoints(rawDataPoints) {
@@ -25,20 +25,14 @@ export function resolveDataPoints(rawDataPoints) {
             type: dp.type || "string",
             choices: dp.choices || [],
             description: dp.description ||
-                `${dp.variableName}. If not mentioned, set to "Not Mentioned".`,
+                `${dp.variableName}. If not mentioned, set to "${NOT_MENTIONED}". If the caller explicitly says they don't know, set to "${CALLER_DOESNT_KNOW}".`,
             conversationPrompt: dp.conversationPrompt ||
-                `Ask the caller for their ${dp.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.`,
+                `Ask the caller for their ${dp.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know, acknowledge it and move on.`,
             forwardCondition: dp.forwardCondition ||
-                `The caller has provided their ${dp.variableName.replace(/_/g, " ")}`,
+                `The caller has provided their ${dp.variableName.replace(/_/g, " ")} or has indicated they don't know it`,
             finetuneExamples: dp.finetuneExamples || [],
-            extractSuccessEquation: dp.extractSuccessEquation || [
-                { left: `{{${dp.variableName}}}`, operator: "exists" },
-                {
-                    left: `{{${dp.variableName}}}`,
-                    operator: "!=",
-                    right: "Not Mentioned",
-                },
-            ],
+            extractSuccessEquation: dp.extractSuccessEquation ||
+                defaultExtractEquation(dp.variableName),
         };
     });
 }
@@ -58,11 +52,19 @@ export function generateAgent(agentConfig, rawDataPoints, pathConfigs) {
             },
         ];
     const isMultiPath = paths.length > 1;
-    // Resolve data points per path
-    const resolvedPaths = paths.map((p) => ({
-        name: p.name,
-        resolved: resolveDataPoints(p.dataPoints),
-    }));
+    // Validate and resolve data points per path
+    const resolvedPaths = paths.map((p) => {
+        if (!p.dataPoints || p.dataPoints.length === 0) {
+            throw new Error(`Path "${p.name}" has no data points`);
+        }
+        try {
+            return { name: p.name, resolved: resolveDataPoints(p.dataPoints) };
+        }
+        catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            throw new Error(`Path "${p.name}": ${msg}`);
+        }
+    });
     // All resolved data points (flattened, for backward compat)
     const allResolved = resolvedPaths.flatMap((p) => p.resolved);
     // Generate IDs and positions for all paths

@@ -1,4 +1,5 @@
 import { toLabel } from "./notification-config.js";
+import { INTERNAL_VARS } from "./agent-generator/data-point-registry.js";
 // ── Strip keys for Retell SDK create calls ───────────────────────────────────
 const AGENT_STRIP_KEYS = new Set([
     "agent_id",
@@ -67,14 +68,14 @@ export function extractVariables(canonicalJson) {
             }
         }
         return allVars
-            .filter((v) => v.name !== "phone_number_collected")
+            .filter((v) => !INTERNAL_VARS.has(v.name))
             .map((v) => ({ key: v.name, label: toLabel(v.name) }));
     }
     const vars = extractNode.variables;
     if (!Array.isArray(vars))
         return [];
     return vars
-        .filter((v) => v.name !== "phone_number_collected")
+        .filter((v) => !INTERNAL_VARS.has(v.name))
         .map((v) => ({ key: v.name, label: toLabel(v.name) }));
 }
 // ── Fetch from Retell API ────────────────────────────────────────────────────
