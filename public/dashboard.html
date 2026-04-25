@@ -722,7 +722,7 @@
     // Message types
     const mt = doc.message_types || {};
     if (Object.keys(mt).length > 0) {
-      html += '<details open><summary>Message Types (' + Object.keys(mt).length + ')</summary>';
+      html += '<details><summary>Message Types (' + Object.keys(mt).length + ')</summary>';
       for (const [key, val] of Object.entries(mt)) {
         html += `<div class="mt-block">
           <strong>${esc(key)}</strong> &mdash; ${esc(val.label)}<br>
