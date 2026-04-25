@@ -13,7 +13,7 @@ function formatDate(d) {
         timeZone: "America/New_York",
     });
 }
-async function getCallCountsForClient(clientSlug, start, end) {
+async function getCallCountsForClient(clientSlug, start, end, messageTypes) {
     const docs = await getDb()
         .collection("call_logs")
         .find({
@@ -21,10 +21,16 @@ async function getCallCountsForClient(clientSlug, start, end) {
         created_at: { $gte: start, $lt: end },
     })
         .toArray();
-    const byType = {};
+    const byKey = {};
     for (const doc of docs) {
-        const key = doc.message_type_label || "Other";
-        byType[key] = (byType[key] ?? 0) + 1;
+        const key = doc.message_type_key || "other";
+        byKey[key] = (byKey[key] ?? 0) + 1;
+    }
+    // Resolve keys to canonical labels from the client config
+    const byType = {};
+    for (const [key, count] of Object.entries(byKey)) {
+        const label = messageTypes[key]?.label ?? "Other";
+        byType[label] = (byType[label] ?? 0) + count;
     }
     return { total: docs.length, byType };
 }
@@ -103,7 +109,7 @@ export async function sendWeeklyReportForClient(doc) {
     const start = new Date(end.getTime() - ONE_WEEK_MS);
     const startDate = formatDate(start);
     const endDate = formatDate(end);
-    const counts = await getCallCountsForClient(slug, start, end);
+    const counts = await getCallCountsForClient(slug, start, end, doc.message_types ?? {});
     const subject = `Weekly Report — ${clientName}`;
     const emailHtml = buildEmailHtml(clientName, startDate, endDate, counts);
     const emailText = buildEmailText(clientName, startDate, endDate, counts);

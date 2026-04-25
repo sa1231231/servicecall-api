@@ -26,6 +26,7 @@ async function getCallCountsForClient(
   clientSlug: string,
   start: Date,
   end: Date,
+  messageTypes: Record<string, { label: string }>,
 ): Promise<CallCounts> {
   const docs = await getDb()
     .collection("call_logs")
@@ -35,10 +36,17 @@ async function getCallCountsForClient(
     })
     .toArray();
 
-  const byType: Record<string, number> = {};
+  const byKey: Record<string, number> = {};
   for (const doc of docs) {
-    const key = (doc as any).message_type_label || "Other";
-    byType[key] = (byType[key] ?? 0) + 1;
+    const key = (doc as any).message_type_key || "other";
+    byKey[key] = (byKey[key] ?? 0) + 1;
+  }
+
+  // Resolve keys to canonical labels from the client config
+  const byType: Record<string, number> = {};
+  for (const [key, count] of Object.entries(byKey)) {
+    const label = messageTypes[key]?.label ?? "Other";
+    byType[label] = (byType[label] ?? 0) + count;
   }
 
   return { total: docs.length, byType };
@@ -150,7 +158,7 @@ export async function sendWeeklyReportForClient(
   const startDate = formatDate(start);
   const endDate = formatDate(end);
 
-  const counts = await getCallCountsForClient(slug, start, end);
+  const counts = await getCallCountsForClient(slug, start, end, doc.message_types ?? {});
 
   const subject = `Weekly Report — ${clientName}`;
   const emailHtml = buildEmailHtml(clientName, startDate, endDate, counts);
