@@ -10,6 +10,7 @@ import { getAgentHandler } from "./get-agent.js";
 import { getCallsHandler } from "./get-calls.js";
 import { updateAgentHandler } from "./update-agent.js";
 import { cloneAgentHandler } from "./clone-agent.js";
+import { deleteAgentHandler } from "./delete-agent.js";
 import {
   getClientDocument,
   generatePortalToken,
@@ -44,6 +45,7 @@ dashboardApiRouter.get("/agents/:slug/calls", getCallsHandler);
 dashboardApiRouter.patch("/agents/:slug/shadow", toggleShadowHandler);
 dashboardApiRouter.patch("/agents/:slug", updateAgentHandler);
 dashboardApiRouter.post("/agents/:slug/clone", cloneAgentHandler);
+dashboardApiRouter.delete("/agents/:slug", deleteAgentHandler);
 
 dashboardApiRouter.get("/agents/:slug/portal-token", async (req, res) => {
   const slug = String(req.params.slug);

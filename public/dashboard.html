@@ -241,6 +241,12 @@
   .smoke-name { font-weight: 600; color: #444; min-width: 200px; }
   .smoke-msg { color: #555; }
 
+  /* Delete button */
+  .btn-delete {
+    float: right; margin-left: 0.5rem; padding: 0.3rem 0.75rem; font-size: 0.75rem;
+    border: 1px solid #fca5a5; border-radius: 6px; background: #fff; color: #dc2626; cursor: pointer;
+  }
+  .btn-delete:hover { background: #fef2f2; }
   /* Clone button */
   .btn-clone {
     display: inline-flex; align-items: center; gap: 0.35rem;
@@ -349,6 +355,18 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="hideCloneModal()">Cancel</button>
       <button class="btn-confirm" id="btnCloneConfirm" onclick="cloneAgent()">Clone</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Delete Modal ─────────────────────────────────────────────────── -->
+<div id="deleteModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)hideDeleteModal()">
+  <div class="modal">
+    <h3 style="color:#dc2626;">Delete Agent</h3>
+    <p class="modal-desc">This will permanently delete the agent from Retell and remove all configuration. This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="hideDeleteModal()">Cancel</button>
+      <button class="btn-confirm" id="btnDeleteConfirm" style="background:#dc2626;" onclick="deleteAgent()">Delete</button>
     </div>
   </div>
 </div>
@@ -564,6 +582,7 @@
       `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
       `<button class="btn-smoke" onclick="runSmokeTest('${esc(doc._id)}')" id="btnSmoke">Run Smoke Test</button>` +
       `<button class="btn-test-notify" onclick="sendTestNotify('${esc(doc._id)}')" id="btnTestNotify">Send Test Notification</button>` +
+      `<button class="btn-delete" onclick="showDeleteModal()">Delete Agent</button>` +
       `<button class="btn-clone" onclick="showCloneModal()">Clone Agent</button></h1>`;
     document.getElementById('smokeResults').innerHTML = '';
 
@@ -744,7 +763,8 @@
           `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
           `<button class="btn-smoke" onclick="runSmokeTest('${esc(currentSlug)}')" id="btnSmoke">Run Smoke Test</button>` +
           `<button class="btn-test-notify" onclick="sendTestNotify('${esc(currentSlug)}')" id="btnTestNotify">Send Test Notification</button>` +
-          `<button class="btn-clone" onclick="showCloneModal()">Clone Agent</button></h1>`;
+          `<button class="btn-delete" onclick="showDeleteModal()">Delete Agent</button>` +
+      `<button class="btn-clone" onclick="showCloneModal()">Clone Agent</button></h1>`;
       }
     } catch (err) {
       showToast('Save failed: ' + err.message, 'error');
@@ -990,6 +1010,42 @@
     });
   }
 
+  // ── DELETE AGENT ─────────────────────────────────────────────────
+
+  function showDeleteModal() {
+    document.getElementById('deleteModal').style.display = 'flex';
+  }
+
+  function hideDeleteModal() {
+    document.getElementById('deleteModal').style.display = 'none';
+  }
+
+  async function deleteAgent() {
+    const btn = document.getElementById('btnDeleteConfirm');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+
+    try {
+      const res = await fetch('/dashboard/api/agents/' + currentSlug, {
+        method: 'DELETE',
+        headers: { 'X-API-Key': apiKey },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed: ' + res.status);
+      }
+      hideDeleteModal();
+      showToast('Agent deleted', 'success');
+      showList();
+      loadAgents();
+    } catch (err) {
+      showToast('Delete failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Delete';
+    }
+  }
+
   // ── CLONE AGENT ──────────────────────────────────────────────────
 
   function showCloneModal() {
@@ -1012,8 +1068,9 @@
   }
 
   document.addEventListener('keydown', function(e) {
-    if (document.getElementById('cloneModal').style.display === 'flex') {
-      if (e.key === 'Escape') hideCloneModal();
+    if (e.key === 'Escape') {
+      if (document.getElementById('deleteModal').style.display === 'flex') hideDeleteModal();
+      if (document.getElementById('cloneModal').style.display === 'flex') hideCloneModal();
     }
   });
 

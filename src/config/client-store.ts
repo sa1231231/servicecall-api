@@ -246,6 +246,21 @@ export async function updateClientFields(
   console.log(`[client-store] updated "${slug}" fields: ${Object.keys(setObj).join(", ")}`);
 }
 
+/** Delete a client from MongoDB and remove from in-memory cache. */
+export async function deleteClient(slug: string): Promise<void> {
+  const existing = notificationClients[slug];
+  if (existing) {
+    for (const agentId of existing.agent_ids) {
+      delete agentIdToClient[agentId];
+      delete agentIdToSlug[agentId];
+    }
+    delete notificationClients[slug];
+  }
+
+  await clients().deleteOne({ _id: slug } as any);
+  console.log(`[client-store] deleted client "${slug}"`);
+}
+
 /** Get full client document from MongoDB for detail view. */
 export async function getClientDocument(
   slug: string,
