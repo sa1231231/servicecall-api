@@ -92,6 +92,59 @@
   }
   .footer a { color: #2563eb; text-decoration: none; }
   .footer a:hover { text-decoration: underline; }
+
+  /* ── Mobile responsive ─────────────────────────────────────────── */
+  @media (max-width: 640px) {
+    body { margin: 1rem auto; padding: 0 0.5rem; }
+    h1 { font-size: 1.25rem; }
+    .config-grid {
+      grid-template-columns: 1fr;
+    }
+    .config-grid dt {
+      padding-bottom: 0;
+      margin-top: 0.4rem;
+    }
+    .config-grid dd {
+      padding-top: 0;
+    }
+    /* Call log table → card layout */
+    #callTable thead { display: none; }
+    #callTable tbody tr.clickable-row {
+      display: block;
+      margin-bottom: 0.75rem;
+      background: #fff;
+      border-radius: 8px;
+      padding: 0.75rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    #callTable tbody tr.clickable-row td {
+      display: block;
+      padding: 0.15rem 0;
+      border: none;
+    }
+    #callTable tbody tr.clickable-row td::before {
+      content: attr(data-label);
+      font-weight: 600;
+      color: #555;
+      margin-right: 0.5rem;
+    }
+    #callTable tbody tr.clickable-row td:empty { display: none; }
+    tr.call-expand-row { display: none; }
+    tr.call-expand-row[style*="display: table-row"],
+    tr.call-expand-row:not([style*="display: none"]):not([style=""]) {
+      display: block !important;
+    }
+    tr.call-expand-row td {
+      display: block;
+      padding: 0;
+    }
+    .call-expand {
+      border-radius: 0 0 8px 8px;
+      margin-top: -0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .btn-load-more { width: 100%; }
+  }
 </style>
 </head>
 <body>
@@ -245,13 +298,13 @@
           : '<span style="color:#aaa">pending</span>';
 
         html += `<tr class="clickable-row" onclick="toggleCallExpand(this)">
-          <td>${fmtDate(c.created_at)}</td>
-          <td style="font-family:monospace;font-size:0.78rem;">${esc(c.from_number)}</td>
-          <td>${fmtDuration(c.duration_ms)}</td>
-          <td>${esc(c.message_type_label || '')}</td>
-          <td><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
-          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.call_summary || '')}">${summary}</td>
-          <td>${c.recording_url ? '<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>' : '—'}</td>
+          <td data-label="Date">${fmtDate(c.created_at)}</td>
+          <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${esc(c.from_number)}</td>
+          <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
+          <td data-label="Type">${esc(c.message_type_label || '')}</td>
+          <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
+          <td data-label="Summary" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.call_summary || '')}">${summary}</td>
+          <td data-label="Recording">${c.recording_url ? '<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>' : '—'}</td>
         </tr>
         <tr class="call-expand-row" style="display:none;"><td colspan="7">
           <div class="call-expand">

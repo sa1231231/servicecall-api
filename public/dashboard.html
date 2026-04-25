@@ -290,6 +290,104 @@
   }
   .modal .btn-confirm:hover { background: #047857; }
   .modal .btn-confirm:disabled { background: #6ee7b7; cursor: not-allowed; }
+
+  /* ── Mobile responsive ─────────────────────────────────────────── */
+  @media (max-width: 640px) {
+    body { margin: 1rem auto; padding: 0 0.5rem; }
+    h1 { font-size: 1.15rem; line-height: 1.4; }
+    h2 { font-size: 1rem; }
+
+    /* Agent list — hide agent-ids and slug columns */
+    #agentList .agent-ids { display: none; }
+    #agentList table th:nth-child(2),
+    #agentList table td:nth-child(2) { display: none; }
+    #agentList table th:nth-child(3),
+    #agentList table td:nth-child(3) { display: none; }
+
+    /* Config grid — single column */
+    .config-grid {
+      grid-template-columns: 1fr;
+    }
+    .config-grid dt {
+      padding-bottom: 0;
+      margin-top: 0.4rem;
+    }
+    .config-grid dd {
+      padding-top: 0;
+    }
+
+    /* Detail header — wrap buttons below title */
+    #detailHeader h1 {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    #detailHeader .btn-smoke,
+    #detailHeader .btn-test-notify,
+    #detailHeader .btn-clone,
+    #detailHeader .btn-delete {
+      margin-left: 0;
+      font-size: 0.75rem;
+      padding: 0.35rem 0.6rem;
+    }
+
+    /* Save button full width */
+    .btn-save { width: 100%; justify-content: center; }
+
+    /* Call log table → card layout */
+    #callTable thead { display: none; }
+    #callTable tbody tr.clickable-row {
+      display: block;
+      margin-bottom: 0.75rem;
+      background: #fff;
+      border-radius: 8px;
+      padding: 0.75rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    #callTable tbody tr.clickable-row td {
+      display: block;
+      padding: 0.15rem 0;
+      border: none;
+      white-space: normal !important;
+      max-width: none !important;
+      overflow: visible !important;
+    }
+    #callTable tbody tr.clickable-row td::before {
+      content: attr(data-label);
+      font-weight: 600;
+      color: #555;
+      margin-right: 0.5rem;
+    }
+    #callTable tbody tr.clickable-row td:empty { display: none; }
+    tr.call-expand-row td {
+      display: block;
+      padding: 0;
+    }
+    .call-expand {
+      border-radius: 0 0 8px 8px;
+      margin-top: -0.75rem;
+      margin-bottom: 0.75rem;
+    }
+    .call-expand .field-pair {
+      display: block;
+      margin-right: 0;
+    }
+
+    /* Smoke test results */
+    .smoke-check { flex-wrap: wrap; }
+    .smoke-name { min-width: auto; }
+
+    /* Portal link box */
+    .portal-link-box { flex-direction: column; align-items: stretch; }
+    .portal-link-box input { min-width: 0; width: 100%; }
+
+    /* Buttons full width */
+    .btn-load-more { width: 100%; }
+
+    /* Modal — tighter padding on small screens */
+    .modal { padding: 1rem; }
+  }
 </style>
 </head>
 <body>
@@ -832,13 +930,13 @@
         if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
 
         html += `<tr class="clickable-row" onclick="toggleCallExpand(this)">
-          <td>${fmtDate(c.created_at)}</td>
-          <td style="font-family:monospace;font-size:0.78rem;">${esc(c.from_number)}</td>
-          <td>${fmtDuration(c.duration_ms)}</td>
-          <td><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
-          <td class="${sentClass}">${esc(c.user_sentiment || 'Pending')}</td>
-          <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.call_summary || '')}">${summary}</td>
-          <td>${links.join(' | ') || '—'}</td>
+          <td data-label="Date">${fmtDate(c.created_at)}</td>
+          <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${esc(c.from_number)}</td>
+          <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
+          <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
+          <td data-label="Sentiment" class="${sentClass}">${esc(c.user_sentiment || 'Pending')}</td>
+          <td data-label="Summary" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.call_summary || '')}">${summary}</td>
+          <td data-label="Links">${links.join(' | ') || '—'}</td>
         </tr>
         <tr class="call-expand-row" style="display:none;"><td colspan="7">
           <div class="call-expand">
