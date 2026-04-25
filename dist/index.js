@@ -14,6 +14,8 @@ import { dashboardRouter, dashboardApiRouter } from "./routes/dashboard/index.js
 import { qaRouter } from "./routes/qa.js";
 import { portalRouter } from "./routes/portal/index.js";
 import { startAutoSync } from "./lib/retell-auto-sync.js";
+import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
+import { reportsRouter } from "./routes/reports/index.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -107,10 +109,12 @@ app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
 app.use("/qa", qaRouter);
 app.use("/dashboard/api", dashboardApiRouter);
+app.use("/api/reports", reportsRouter);
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();
 await loadClientsFromDb();
 app.listen(Number(config.PORT), () => {
     console.log(`ServiceCall API listening on port ${config.PORT}`);
     startAutoSync();
+    startWeeklyReportScheduler();
 });
