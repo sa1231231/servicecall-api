@@ -636,7 +636,12 @@
           const checked = f.show !== false ? 'checked' : '';
           html += `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 12px 2px 0;font-size:0.8rem;cursor:pointer;">
             <input type="checkbox" ${checked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-toggle">
-            ${esc(f.label)}
+            <input type="text" value="${esc(f.label)}" data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-label-input"
+              style="width:${Math.max(4, f.label.length + 1)}ch;font-size:0.8rem;padding:1px 4px;border:1px solid transparent;border-radius:3px;background:transparent;font-family:inherit;"
+              onfocus="this.style.borderColor='#93b5ff';this.style.background='#fff'"
+              onblur="this.style.borderColor='transparent';this.style.background='transparent'"
+              onclick="event.stopPropagation()"
+              oninput="this.style.width=Math.max(4,this.value.length+1)+'ch'">
           </label>`;
         }
         html += '</div>';
@@ -710,7 +715,7 @@
       updates.hide_not_mentioned = hideNotMentioned;
     }
 
-    // Field visibility toggles
+    // Field visibility toggles + label edits
     const fieldToggles = document.querySelectorAll('.field-toggle');
     if (fieldToggles.length > 0) {
       const updatedMt = JSON.parse(JSON.stringify(originalDoc.message_types || {}));
@@ -728,6 +733,20 @@
           field.show = isVisible ? undefined : false;
           // Clean up: remove show property entirely when true (default)
           if (isVisible) delete field.show;
+          mtChanged = true;
+        }
+      }
+      // Field label edits
+      const labelInputs = document.querySelectorAll('.field-label-input');
+      for (const input of labelInputs) {
+        const mtKey = input.dataset.mtKey;
+        const fieldKey = input.dataset.fieldKey;
+        const newLabel = input.value.trim();
+        const mt = updatedMt[mtKey];
+        if (!mt) continue;
+        const field = mt.fields.find(f => f.key === fieldKey);
+        if (field && newLabel && newLabel !== field.label) {
+          field.label = newLabel;
           mtChanged = true;
         }
       }
