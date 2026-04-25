@@ -255,6 +255,14 @@
     cursor: pointer; margin-left: 0.5rem; vertical-align: middle;
   }
   .btn-clone:hover { background: #ecfdf5; }
+  .btn-report {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
+    background: #fff; color: #9333ea; border: 1px solid #c4b5fd; border-radius: 6px;
+    cursor: pointer; margin-left: 0.5rem; vertical-align: middle;
+  }
+  .btn-report:hover { background: #f5f3ff; }
+  .btn-report:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
 
   /* Clone modal */
   .modal-overlay {
@@ -326,6 +334,7 @@
     #detailHeader .btn-smoke,
     #detailHeader .btn-test-notify,
     #detailHeader .btn-clone,
+    #detailHeader .btn-report,
     #detailHeader .btn-delete {
       margin-left: 0;
       font-size: 0.75rem;
@@ -680,6 +689,7 @@
       `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
       `<button class="btn-smoke" onclick="runSmokeTest('${esc(doc._id)}')" id="btnSmoke">Run Smoke Test</button>` +
       `<button class="btn-test-notify" onclick="sendTestNotify('${esc(doc._id)}')" id="btnTestNotify">Send Test Notification</button>` +
+      `<button class="btn-report" onclick="sendWeeklyReport('${esc(doc._id)}')" id="btnReport">Send Weekly Report</button>` +
       `<button class="btn-delete" onclick="showDeleteModal()">Delete Agent</button>` +
       `<button class="btn-clone" onclick="showCloneModal()">Clone Agent</button></h1>`;
     document.getElementById('smokeResults').innerHTML = '';
@@ -880,6 +890,7 @@
           `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
           `<button class="btn-smoke" onclick="runSmokeTest('${esc(currentSlug)}')" id="btnSmoke">Run Smoke Test</button>` +
           `<button class="btn-test-notify" onclick="sendTestNotify('${esc(currentSlug)}')" id="btnTestNotify">Send Test Notification</button>` +
+          `<button class="btn-report" onclick="sendWeeklyReport('${esc(currentSlug)}')" id="btnReport">Send Weekly Report</button>` +
           `<button class="btn-delete" onclick="showDeleteModal()">Delete Agent</button>` +
       `<button class="btn-clone" onclick="showCloneModal()">Clone Agent</button></h1>`;
       }
@@ -1073,6 +1084,32 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Send Test Notification';
+    }
+  }
+
+  // ── SEND WEEKLY REPORT ───────────────────────────────────────────
+
+  async function sendWeeklyReport(slug) {
+    const btn = document.getElementById('btnReport');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch('/api/reports/weekly?client_id=' + encodeURIComponent(slug), {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed: ' + res.status);
+
+      const shadowMode = document.getElementById('edit-shadow-mode').checked;
+      const dest = shadowMode ? 'owner (shadow mode)' : 'client dispatch channels';
+      showToast('Weekly report sent to ' + dest + '!', 'success');
+    } catch (err) {
+      showToast('Weekly report failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send Weekly Report';
     }
   }
 
