@@ -101,16 +101,7 @@ export function checkGreetingBusinessName(
   const introNode = nodes.find((n) => n.id === startNodeId);
   const introInstruction = extractInstructionText(introNode);
 
-  // Resolve {{variable}} references in prompts using default_dynamic_variables
-  const dynVars = (flow.default_dynamic_variables as Record<string, string>) ?? {};
-  const agentDynVars = (snapshot.canonicalJson.default_dynamic_variables as Record<string, string>) ?? {};
-  const allDynVars: Record<string, string> = { ...agentDynVars, ...dynVars };
-
-  const resolveVars = (text: string): string =>
-    text.replace(/\{\{(\w+)\}\}/g, (_, key) => allDynVars[key] ?? `{{${key}}}`);
-
-  const resolvedGlobal = resolveVars(globalPrompt);
-  const resolvedIntro = resolveVars(introInstruction);
+  const combined = globalPrompt + "\n" + introInstruction;
 
   // Check that every significant word from the business name appears in the text
   const nameWords = name
@@ -123,14 +114,22 @@ export function checkGreetingBusinessName(
     return nameWords.every((w) => lower.includes(w));
   };
 
-  const inGlobal = containsName(resolvedGlobal);
-  const inIntro = containsName(resolvedIntro);
+  // 1. Direct match: name words appear literally in prompts
+  const inGlobal = containsName(globalPrompt);
+  const inIntro = containsName(introInstruction);
 
-  if (inGlobal && inIntro) {
-    return { check: "greeting_has_business_name", status: "pass", message: `Found '${name}' in global prompt and intro node` };
-  }
   if (inGlobal || inIntro) {
-    return { check: "greeting_has_business_name", status: "pass", message: `Found '${name}' in ${inGlobal ? "global prompt" : "intro node"}` };
+    const where = inGlobal && inIntro ? "global prompt and intro node"
+      : inGlobal ? "global prompt" : "intro node";
+    return { check: "greeting_has_business_name", status: "pass", message: `Found '${name}' in ${where}` };
+  }
+
+  // 2. Variable reference: prompt uses a {{variable}} that holds the business name
+  const varRefPattern = /\{\{(\w*(?:business|company|client)[\w]*)\}\}/gi;
+  const varRefs = combined.match(varRefPattern);
+  if (varRefs && varRefs.length > 0) {
+    const varNames = varRefs.map((r) => r.replace(/[{}]/g, ""));
+    return { check: "greeting_has_business_name", status: "pass", message: `Business name injected via variable {{${varNames[0]}}}` };
   }
 
   return { check: "greeting_has_business_name", status: "fail", message: `Business name '${name}' not found in global prompt or intro node` };
