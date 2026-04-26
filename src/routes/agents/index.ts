@@ -6,6 +6,7 @@ import {
   syncAgentHandler,
   duplicateAgentHandler,
 } from "./sync-agent.js";
+import { provisionNumberHandler } from "./provision-number.js";
 
 export const agentsRouter = Router();
 agentsRouter.use(express.json());
@@ -13,3 +14,4 @@ agentsRouter.post("/create", createAgentHandler);
 agentsRouter.post("/import", importAgentHandler);
 agentsRouter.post("/:slug/sync", syncAgentHandler);
 agentsRouter.post("/duplicate", duplicateAgentHandler);
+agentsRouter.post("/provision-number", provisionNumberHandler);

@@ -27,6 +27,11 @@ export const config = {
   RESEND_API_KEY: requireEnv("RESEND_API_KEY"),
   EMAIL_FROM: process.env.EMAIL_FROM ?? "notifications@servicecallsaver.com",
 
+  // Twilio provisioning
+  TWILIO_TRUNK_SID: process.env.TWILIO_TRUNK_SID ?? "",
+  TWILIO_EMERGENCY_ADDRESS_SID: process.env.TWILIO_EMERGENCY_ADDRESS_SID ?? "",
+  TWILIO_MESSAGING_SERVICE_SID: process.env.TWILIO_MESSAGING_SERVICE_SID ?? "",
+
   // MongoDB
   MONGODB_URL: requireEnv("MONGODB_URL"),
 

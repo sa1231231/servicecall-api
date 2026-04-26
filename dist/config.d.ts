@@ -12,6 +12,9 @@ export declare const config: {
     TWILIO_PHONE_NUMBER: string;
     RESEND_API_KEY: string;
     EMAIL_FROM: string;
+    TWILIO_TRUNK_SID: string;
+    TWILIO_EMERGENCY_ADDRESS_SID: string;
+    TWILIO_MESSAGING_SERVICE_SID: string;
     MONGODB_URL: string;
     ADMIN_PASSWORD: string;
 };

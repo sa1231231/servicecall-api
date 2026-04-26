@@ -168,6 +168,86 @@ describe("checkGreetingBusinessName", () => {
         expect(result.status).toBe("fail");
         expect(result.message).toContain("No conversation flow");
     });
+    it("passes when business name is a {{business_name}} variable", () => {
+        const snapshot = makeSnapshot({
+            canonicalJson: {
+                conversationFlow: {
+                    start_node_id: "node-intro",
+                    global_prompt: "You are Anthony, an inbound receptionist for {{business_name}}.",
+                    nodes: [
+                        {
+                            id: "node-intro",
+                            type: "conversation",
+                            instruction: { type: "prompt", text: "Welcome the caller." },
+                        },
+                    ],
+                },
+            },
+        });
+        const result = checkGreetingBusinessName(snapshot, makeClientDoc());
+        expect(result.status).toBe("pass");
+        expect(result.message).toContain("variable");
+        expect(result.message).toContain("business_name");
+    });
+    it("passes when {{company_name}} variable is in intro node", () => {
+        const snapshot = makeSnapshot({
+            canonicalJson: {
+                conversationFlow: {
+                    start_node_id: "node-intro",
+                    global_prompt: "You are a receptionist.",
+                    nodes: [
+                        {
+                            id: "node-intro",
+                            type: "conversation",
+                            instruction: { type: "prompt", text: "Thank you for calling {{company_name}}." },
+                        },
+                    ],
+                },
+            },
+        });
+        const result = checkGreetingBusinessName(snapshot, makeClientDoc());
+        expect(result.status).toBe("pass");
+        expect(result.message).toContain("company_name");
+    });
+    it("fails when variable reference is not business/company/client related", () => {
+        const snapshot = makeSnapshot({
+            canonicalJson: {
+                conversationFlow: {
+                    start_node_id: "node-intro",
+                    global_prompt: "You are {{agent_name}} receptionist.",
+                    nodes: [
+                        {
+                            id: "node-intro",
+                            type: "conversation",
+                            instruction: { type: "prompt", text: "Welcome." },
+                        },
+                    ],
+                },
+            },
+        });
+        const result = checkGreetingBusinessName(snapshot, makeClientDoc());
+        expect(result.status).toBe("fail");
+    });
+    it("matches word parts of business name with special characters", () => {
+        const snapshot = makeSnapshot({
+            canonicalJson: {
+                conversationFlow: {
+                    start_node_id: "node-intro",
+                    global_prompt: "You are Anthony for J & A Fleet Maintenance.",
+                    nodes: [
+                        {
+                            id: "node-intro",
+                            type: "conversation",
+                            instruction: { type: "prompt", text: "Welcome." },
+                        },
+                    ],
+                },
+            },
+        });
+        const client = makeClientDoc({ name: "J&A Fleet Maintenance" });
+        const result = checkGreetingBusinessName(snapshot, client);
+        expect(result.status).toBe("pass");
+    });
 });
 // ── data_points_in_flow ──────────────────────────────────────────────────────
 describe("checkDataPointsInFlow", () => {

@@ -4,7 +4,8 @@ import { fileURLToPath } from "url";
 import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import { notificationClients } from "../../_cache/clients.js";
-import { persistClient } from "../../config/client-store.js";
+import { persistClient, updateClientField } from "../../config/client-store.js";
+import { provisionPhoneNumber } from "../../lib/provision-number.js";
 import { generateAgent, } from "../../lib/agent-generator/index.js";
 import { toLabel, deriveNotificationConfig, deriveMultiPathNotificationConfig, } from "../../lib/notification-config.js";
 import { extractFlowParams, extractAgentParams, } from "../../lib/retell-sync.js";
@@ -114,12 +115,35 @@ export async function createAgentHandler(req, res) {
         jsonEntry.retell_agents = { [agentId]: canonicalJson };
         await persistClient(slug, jsonEntry);
         console.log(`[create-agent] client "${slug}" registered with agent ${agentId}`);
-        // ── 6. Return response ─────────────────────────────────────────────────
+        // ── 6. Provision phone number ──────────────────────────────────────────
+        let provisionedNumber = null;
+        let provisionError = null;
+        const dispatchCall = body.client.dispatch_call_number;
+        if (dispatchCall) {
+            try {
+                const result = await provisionPhoneNumber({
+                    agentId,
+                    clientName: body.business.businessName,
+                    dispatchCallNumber: dispatchCall,
+                });
+                provisionedNumber = result.phoneNumber;
+                await updateClientField(slug, "outbound_from_number", provisionedNumber);
+                console.log(`[create-agent] provisioned number ${provisionedNumber} for "${slug}"`);
+            }
+            catch (provErr) {
+                const msg = provErr instanceof Error ? provErr.message : String(provErr);
+                provisionError = msg;
+                console.error(`[create-agent] provisioning failed for "${slug}":`, msg);
+            }
+        }
+        // ── 7. Return response ─────────────────────────────────────────────────
         res.status(201).json({
             success: true,
             agent_id: agentId,
             conversation_flow_id: conversationFlowId,
             notification_config: jsonEntry,
+            provisioned_number: provisionedNumber,
+            provision_error: provisionError,
         });
     }
     catch (err) {
