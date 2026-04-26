@@ -57,6 +57,13 @@ export function checkGreetingBusinessName(snapshot, clientDoc) {
     // Find intro node
     const introNode = nodes.find((n) => n.id === startNodeId);
     const introInstruction = extractInstructionText(introNode);
+    // Resolve {{variable}} references in prompts using default_dynamic_variables
+    const dynVars = flow.default_dynamic_variables ?? {};
+    const agentDynVars = snapshot.canonicalJson.default_dynamic_variables ?? {};
+    const allDynVars = { ...agentDynVars, ...dynVars };
+    const resolveVars = (text) => text.replace(/\{\{(\w+)\}\}/g, (_, key) => allDynVars[key] ?? `{{${key}}}`);
+    const resolvedGlobal = resolveVars(globalPrompt);
+    const resolvedIntro = resolveVars(introInstruction);
     // Check that every significant word from the business name appears in the text
     const nameWords = name
         .toLowerCase()
@@ -66,8 +73,8 @@ export function checkGreetingBusinessName(snapshot, clientDoc) {
         const lower = text.toLowerCase();
         return nameWords.every((w) => lower.includes(w));
     };
-    const inGlobal = containsName(globalPrompt);
-    const inIntro = containsName(introInstruction);
+    const inGlobal = containsName(resolvedGlobal);
+    const inIntro = containsName(resolvedIntro);
     if (inGlobal && inIntro) {
         return { check: "greeting_has_business_name", status: "pass", message: `Found '${name}' in global prompt and intro node` };
     }
