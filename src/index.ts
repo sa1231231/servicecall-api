@@ -38,6 +38,7 @@ const webhookLimiter = rateLimit({
 });
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(globalLimiter);
 
 app.use((req, res, next) => {

@@ -33,6 +33,7 @@ const webhookLimiter = rateLimit({
     message: { error: "Too many requests, please try again later." },
 });
 const app = express();
+app.set("trust proxy", 1);
 app.use(globalLimiter);
 app.use((req, res, next) => {
     const start = Date.now();
