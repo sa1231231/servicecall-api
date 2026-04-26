@@ -16,6 +16,7 @@ import { portalRouter } from "./routes/portal/index.js";
 import { startAutoSync } from "./lib/retell-auto-sync.js";
 import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
 import { reportsRouter } from "./routes/reports/index.js";
+import { refreshOwnerConfig } from "./lib/settings.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
@@ -114,6 +115,7 @@ app.use("/api/reports", reportsRouter);
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();
 await loadClientsFromDb();
+await refreshOwnerConfig();
 app.listen(Number(config.PORT), () => {
     console.log(`ServiceCall API listening on port ${config.PORT}`);
     startAutoSync();

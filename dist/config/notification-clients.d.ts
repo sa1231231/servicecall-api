@@ -1,7 +1,8 @@
 export declare const ownerConfig: {
-    readonly phone: "+13017872841";
-    readonly email: "samasra93@gmail.com";
+    phone: string;
+    email: string;
 };
+export declare function setOwnerConfig(email: string, phone: string): void;
 export interface Field {
     key: string;
     label: string;

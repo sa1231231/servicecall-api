@@ -451,6 +451,14 @@
   <button class="btn-back" onclick="hideSettings()">&larr; Back to all agents</button>
   <h1>Settings</h1>
   <div class="settings-form">
+    <label for="settings-owner-email">Owner Email</label>
+    <input type="email" id="settings-owner-email" placeholder="owner@example.com">
+    <p class="settings-hint">Shadow mode notifications, call monitoring alerts, and weekly reports go here.</p>
+
+    <label for="settings-owner-phone">Owner Phone</label>
+    <input type="tel" id="settings-owner-phone" placeholder="+15551234567">
+    <p class="settings-hint">Shadow mode SMS and problem call alerts go here.</p>
+
     <label for="settings-review-url">Google Review URL</label>
     <input type="text" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
 
@@ -1436,6 +1444,8 @@
       const res = await fetch('/dashboard/api/settings', { headers: { 'X-API-Key': apiKey } });
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const settings = await res.json();
+      document.getElementById('settings-owner-email').value = settings.owner_email || '';
+      document.getElementById('settings-owner-phone').value = settings.owner_phone || '';
       document.getElementById('settings-review-url').value = settings.google_review_url || '';
       document.getElementById('settings-review-msg').value = settings.review_sms_message || '';
     } catch (err) {
@@ -1454,6 +1464,8 @@
     btn.textContent = 'Saving...';
 
     const updates = {
+      owner_email: document.getElementById('settings-owner-email').value.trim(),
+      owner_phone: document.getElementById('settings-owner-phone').value.trim(),
       google_review_url: document.getElementById('settings-review-url').value.trim(),
       review_sms_message: document.getElementById('settings-review-msg').value,
     };

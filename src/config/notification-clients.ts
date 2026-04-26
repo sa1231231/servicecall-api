@@ -1,7 +1,12 @@
 export const ownerConfig = {
   phone: "+13017872841",
   email: "samasra93@gmail.com",
-} as const;
+};
+
+export function setOwnerConfig(email: string, phone: string): void {
+  ownerConfig.email = email;
+  ownerConfig.phone = phone;
+}
 
 export interface Field {
   key: string;
