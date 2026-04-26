@@ -4,11 +4,11 @@ import { getAllClientDocuments, loadClientsFromDb, } from "../config/client-stor
 import { fetchRetellAgent } from "./retell-sync.js";
 import { deriveNotificationConfig, } from "./notification-config.js";
 import { getDb } from "./db.js";
-const ONE_HOUR_MS = 3_600_000;
-const TWO_HOURS_MS = 2 * ONE_HOUR_MS;
+const THREE_MIN_MS = 3 * 60_000;
+const TEN_MIN_MS = 10 * 60_000;
 export function startAutoSync() {
-    console.log("[auto-sync] scheduled hourly Retell -> MongoDB sync");
-    setInterval(runAutoSync, ONE_HOUR_MS);
+    console.log("[auto-sync] scheduled Retell -> MongoDB sync every 3 minutes");
+    setInterval(runAutoSync, THREE_MIN_MS);
 }
 async function runAutoSync() {
     console.log("[auto-sync] starting sync run...");
@@ -19,10 +19,10 @@ async function runAutoSync() {
     let errors = 0;
     for (const doc of docs) {
         const slug = doc._id;
-        // Guard: skip clients deployed within the last 2 hours
+        // Guard: skip clients deployed within the last 10 minutes
         if (doc.last_deployed_at) {
             const age = Date.now() - new Date(doc.last_deployed_at).getTime();
-            if (age < TWO_HOURS_MS) {
+            if (age < TEN_MIN_MS) {
                 console.log(`[auto-sync] skipping "${slug}" (deployed ${Math.round(age / 60_000)}m ago)`);
                 skipped++;
                 continue;
