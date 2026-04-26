@@ -15,6 +15,7 @@ export declare const config: {
     TWILIO_TRUNK_SID: string;
     TWILIO_EMERGENCY_ADDRESS_SID: string;
     TWILIO_MESSAGING_SERVICE_SID: string;
+    GOOGLE_REVIEW_URL: string;
     MONGODB_URL: string;
     ADMIN_PASSWORD: string;
 };

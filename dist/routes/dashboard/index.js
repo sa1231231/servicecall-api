@@ -12,6 +12,7 @@ import { updateAgentHandler } from "./update-agent.js";
 import { cloneAgentHandler } from "./clone-agent.js";
 import { deleteAgentHandler } from "./delete-agent.js";
 import { getClientDocument, generatePortalToken, } from "../../config/client-store.js";
+import { sendSmsToAll } from "../../lib/notify-sms.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
 // Public routes (no auth): serves HTML and config
@@ -68,5 +69,31 @@ dashboardApiRouter.post("/agents/:slug/portal-token", async (req, res) => {
     catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         res.status(500).json({ error: message });
+    }
+});
+dashboardApiRouter.post("/agents/:slug/request-review", async (req, res) => {
+    const slug = String(req.params.slug);
+    const doc = await getClientDocument(slug);
+    if (!doc) {
+        res.status(404).json({ error: `Client "${slug}" not found` });
+        return;
+    }
+    if (!config.GOOGLE_REVIEW_URL) {
+        res.status(400).json({ error: "GOOGLE_REVIEW_URL is not configured" });
+        return;
+    }
+    const numbers = doc.dispatch_text_numbers ?? [];
+    if (numbers.length === 0) {
+        res.status(400).json({ error: "No dispatch text numbers configured for this client" });
+        return;
+    }
+    const message = `Hi! We'd love your feedback on our service. If you have a moment, please leave us a Google review:\n${config.GOOGLE_REVIEW_URL}\n\nThank you!\n— Service Call Saver`;
+    try {
+        await sendSmsToAll(numbers, message);
+        res.json({ success: true, sent_to: numbers });
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        res.status(502).json({ error: "Failed to send review request", details: msg });
     }
 });

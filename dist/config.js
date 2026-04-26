@@ -25,6 +25,8 @@ export const config = {
     TWILIO_TRUNK_SID: process.env.TWILIO_TRUNK_SID ?? "",
     TWILIO_EMERGENCY_ADDRESS_SID: process.env.TWILIO_EMERGENCY_ADDRESS_SID ?? "",
     TWILIO_MESSAGING_SERVICE_SID: process.env.TWILIO_MESSAGING_SERVICE_SID ?? "",
+    // Google Review
+    GOOGLE_REVIEW_URL: process.env.GOOGLE_REVIEW_URL ?? "",
     // MongoDB
     MONGODB_URL: requireEnv("MONGODB_URL"),
     // Admin

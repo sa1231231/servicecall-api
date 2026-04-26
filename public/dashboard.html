@@ -272,6 +272,14 @@
   }
   .btn-report:hover { background: #f5f3ff; }
   .btn-report:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
+  .btn-review {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
+    background: #fff; color: #0d9488; border: 1px solid #5eead4; border-radius: 6px;
+    cursor: pointer; margin-left: 0.5rem; vertical-align: middle;
+  }
+  .btn-review:hover { background: #f0fdfa; }
+  .btn-review:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
 
   /* Clone modal */
   .modal-overlay {
@@ -344,6 +352,7 @@
     #detailHeader .btn-test-notify,
     #detailHeader .btn-clone,
     #detailHeader .btn-report,
+    #detailHeader .btn-review,
     #detailHeader .btn-delete {
       margin-left: 0;
       font-size: 0.75rem;
@@ -703,6 +712,7 @@
       `<button class="btn-smoke" onclick="runSmokeTest('${esc(doc._id)}')" id="btnSmoke">Run Smoke Test</button>` +
       `<button class="btn-test-notify" onclick="sendTestNotify('${esc(doc._id)}')" id="btnTestNotify">Send Test Notification</button>` +
       `<button class="btn-report" onclick="sendWeeklyReport('${esc(doc._id)}')" id="btnReport">Send Weekly Report</button>` +
+      `<button class="btn-review" onclick="requestReview('${esc(doc._id)}')" id="btnReview">Request Review</button>` +
       `<button class="btn-delete" onclick="showDeleteModal()">Delete Agent</button>` +
       `<button class="btn-clone" onclick="showCloneModal()">Clone Agent</button></h1>`;
     document.getElementById('smokeResults').innerHTML = '';
@@ -955,6 +965,7 @@
           `<button class="btn-smoke" onclick="runSmokeTest('${esc(currentSlug)}')" id="btnSmoke">Run Smoke Test</button>` +
           `<button class="btn-test-notify" onclick="sendTestNotify('${esc(currentSlug)}')" id="btnTestNotify">Send Test Notification</button>` +
           `<button class="btn-report" onclick="sendWeeklyReport('${esc(currentSlug)}')" id="btnReport">Send Weekly Report</button>` +
+          `<button class="btn-review" onclick="requestReview('${esc(currentSlug)}')" id="btnReview">Request Review</button>` +
           `<button class="btn-delete" onclick="showDeleteModal()">Delete Agent</button>` +
       `<button class="btn-clone" onclick="showCloneModal()">Clone Agent</button></h1>`;
       }
@@ -1174,6 +1185,30 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Send Weekly Report';
+    }
+  }
+
+  // ── REQUEST REVIEW ──────────────────────────────────────────────────
+
+  async function requestReview(slug) {
+    const btn = document.getElementById('btnReview');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/request-review', {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed: ' + res.status);
+
+      showToast('Review request sent to ' + data.sent_to.length + ' number(s)!', 'success');
+    } catch (err) {
+      showToast('Review request failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Request Review';
     }
   }
 
