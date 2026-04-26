@@ -87,7 +87,6 @@ export function checkGreetingBusinessName(
   clientDoc: JsonClientEntry,
 ): CheckResult {
   const name = clientDoc.name;
-  const nameLower = name.toLowerCase();
 
   const flow = snapshot.canonicalJson.conversationFlow as Record<string, unknown> | undefined;
   if (!flow) {
@@ -102,8 +101,19 @@ export function checkGreetingBusinessName(
   const introNode = nodes.find((n) => n.id === startNodeId);
   const introInstruction = extractInstructionText(introNode);
 
-  const inGlobal = globalPrompt.toLowerCase().includes(nameLower);
-  const inIntro = introInstruction.toLowerCase().includes(nameLower);
+  // Check that every significant word from the business name appears in the text
+  const nameWords = name
+    .toLowerCase()
+    .split(/[\s&,.\-\/]+/)
+    .filter((w) => w.length >= 2);
+
+  const containsName = (text: string): boolean => {
+    const lower = text.toLowerCase();
+    return nameWords.every((w) => lower.includes(w));
+  };
+
+  const inGlobal = containsName(globalPrompt);
+  const inIntro = containsName(introInstruction);
 
   if (inGlobal && inIntro) {
     return { check: "greeting_has_business_name", status: "pass", message: `Found '${name}' in global prompt and intro node` };
