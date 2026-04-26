@@ -471,9 +471,13 @@
   <div class="modal">
     <h3 style="color:#dc2626;">Delete Agent</h3>
     <p class="modal-desc">This will permanently delete the agent from Retell and remove all configuration. This cannot be undone.</p>
+    <div class="modal-field">
+      <label class="modal-label">Type <strong id="deleteNameLabel"></strong> to confirm:</label>
+      <input class="edit-input" type="text" id="deleteNameInput" placeholder="" oninput="checkDeleteName()">
+    </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="hideDeleteModal()">Cancel</button>
-      <button class="btn-confirm" id="btnDeleteConfirm" style="background:#dc2626;" onclick="deleteAgent()">Delete</button>
+      <button class="btn-confirm" id="btnDeleteConfirm" style="background:#dc2626;" onclick="deleteAgent()" disabled>Delete</button>
     </div>
   </div>
 </div>
@@ -1167,11 +1171,24 @@
   // ── DELETE AGENT ─────────────────────────────────────────────────
 
   function showDeleteModal() {
+    const nameLabel = document.getElementById('deleteNameLabel');
+    const nameInput = document.getElementById('deleteNameInput');
+    nameLabel.textContent = originalDoc.name;
+    nameInput.value = '';
+    nameInput.placeholder = originalDoc.name;
+    document.getElementById('btnDeleteConfirm').disabled = true;
     document.getElementById('deleteModal').style.display = 'flex';
+    nameInput.focus();
   }
 
   function hideDeleteModal() {
     document.getElementById('deleteModal').style.display = 'none';
+  }
+
+  function checkDeleteName() {
+    const input = document.getElementById('deleteNameInput').value.trim();
+    const expected = originalDoc.name;
+    document.getElementById('btnDeleteConfirm').disabled = input !== expected;
   }
 
   async function deleteAgent() {
