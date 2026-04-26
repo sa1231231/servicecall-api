@@ -1,5 +1,5 @@
 import type Retell from "retell-sdk";
-import { fetchRetellAgent, type RetellAgentSnapshot } from "./retell-sync.js";
+import { fetchRetellAgent, extractVariables, type RetellAgentSnapshot } from "./retell-sync.js";
 import type { JsonClientEntry } from "../config/client-store.js";
 import { ruleToFunction } from "../config/client-store.js";
 import { config } from "../config.js";
@@ -298,14 +298,28 @@ export async function runSmokeTest(
   const agentId = clientDoc.agent_ids[0] ?? "";
   const checks: CheckResult[] = [];
 
-  // 1. Agent reachable
+  // 1. Agent config present — prefer canonical JSON from MongoDB, fall back to live Retell API
   let snapshot: RetellAgentSnapshot | null = null;
-  try {
-    snapshot = await fetchRetellAgent(retell, agentId);
-    checks.push({ check: "agent_reachable", status: "pass", message: `Agent '${snapshot.agentName}' retrieved from Retell` });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    checks.push({ check: "agent_reachable", status: "fail", message: `Cannot reach agent '${agentId}': ${msg}` });
+  const storedJson = clientDoc.retell_agents?.[agentId];
+  if (storedJson) {
+    const variables = extractVariables(storedJson);
+    const agentName = (storedJson.agent_name as string) ?? clientDoc.name;
+    snapshot = {
+      agentId,
+      agentName,
+      conversationFlowId: "",
+      variables,
+      canonicalJson: storedJson,
+    };
+    checks.push({ check: "agent_reachable", status: "pass", message: `Agent '${agentName}' loaded from config` });
+  } else {
+    try {
+      snapshot = await fetchRetellAgent(retell, agentId);
+      checks.push({ check: "agent_reachable", status: "pass", message: `Agent '${snapshot.agentName}' retrieved from Retell (not yet synced)` });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      checks.push({ check: "agent_reachable", status: "fail", message: `Cannot reach agent '${agentId}': ${msg}` });
+    }
   }
 
   // Checks 2-6 require the snapshot

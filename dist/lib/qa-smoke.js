@@ -1,4 +1,4 @@
-import { fetchRetellAgent } from "./retell-sync.js";
+import { fetchRetellAgent, extractVariables } from "./retell-sync.js";
 import { ruleToFunction } from "../config/client-store.js";
 import { config } from "../config.js";
 // ── Synthetic variable generation ────────────────────────────────────────────
@@ -196,15 +196,30 @@ export async function runSmokeTest(retell, clientDoc, options = {}) {
     const slug = clientDoc._id;
     const agentId = clientDoc.agent_ids[0] ?? "";
     const checks = [];
-    // 1. Agent reachable
+    // 1. Agent config present — prefer canonical JSON from MongoDB, fall back to live Retell API
     let snapshot = null;
-    try {
-        snapshot = await fetchRetellAgent(retell, agentId);
-        checks.push({ check: "agent_reachable", status: "pass", message: `Agent '${snapshot.agentName}' retrieved from Retell` });
+    const storedJson = clientDoc.retell_agents?.[agentId];
+    if (storedJson) {
+        const variables = extractVariables(storedJson);
+        const agentName = storedJson.agent_name ?? clientDoc.name;
+        snapshot = {
+            agentId,
+            agentName,
+            conversationFlowId: "",
+            variables,
+            canonicalJson: storedJson,
+        };
+        checks.push({ check: "agent_reachable", status: "pass", message: `Agent '${agentName}' loaded from config` });
     }
-    catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        checks.push({ check: "agent_reachable", status: "fail", message: `Cannot reach agent '${agentId}': ${msg}` });
+    else {
+        try {
+            snapshot = await fetchRetellAgent(retell, agentId);
+            checks.push({ check: "agent_reachable", status: "pass", message: `Agent '${snapshot.agentName}' retrieved from Retell (not yet synced)` });
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            checks.push({ check: "agent_reachable", status: "fail", message: `Cannot reach agent '${agentId}': ${msg}` });
+        }
     }
     // Checks 2-6 require the snapshot
     if (snapshot) {
