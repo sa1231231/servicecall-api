@@ -90,14 +90,41 @@ export async function syncAgentHandler(req, res) {
             shadow_mode: existingDoc.shadow_mode,
         };
         const jsonEntry = deriveNotificationConfig(snapshot.variables, clientInfo, agentId);
-        // Preserve full agent_ids array from existing doc
-        jsonEntry.agent_ids = existingDoc.agent_ids;
-        // Merge canonical JSON: overwrite by agent_id
-        jsonEntry.retell_agents = {
-            ...(existingDoc.retell_agents ?? {}),
-            [agentId]: snapshot.canonicalJson,
+        // Preserve field-level customizations (show, label) from existing config
+        if (existingDoc.message_types) {
+            for (const [typeKey, newType] of Object.entries(jsonEntry.message_types)) {
+                const existingType = existingDoc.message_types[typeKey];
+                if (!existingType)
+                    continue;
+                for (const field of newType.fields) {
+                    const existingField = existingType.fields.find((f) => f.key === field.key);
+                    if (!existingField)
+                        continue;
+                    if (existingField.show === false)
+                        field.show = false;
+                    if (existingField.label !== field.label)
+                        field.label = existingField.label;
+                }
+            }
+        }
+        // Preserve all existing doc fields, only overwrite Retell-derived ones
+        const mergedEntry = {
+            ...existingDoc,
+            ...jsonEntry,
+            agent_ids: existingDoc.agent_ids,
+            dispatch_call_overrides: existingDoc.dispatch_call_overrides,
+            portal_token: existingDoc.portal_token,
+            retell_agents: {
+                ...(existingDoc.retell_agents ?? {}),
+                [agentId]: snapshot.canonicalJson,
+            },
         };
-        await persistClient(slug, jsonEntry);
+        // Preserve existing resolve_rules if manually configured
+        if (existingDoc.resolve_rules && existingDoc.resolve_rules.length > 0) {
+            mergedEntry.resolve_rules = existingDoc.resolve_rules;
+            delete mergedEntry.resolve_rule;
+        }
+        await persistClient(slug, mergedEntry);
         console.log(`[sync-agent] client "${slug}" synced from Retell agent ${agentId}`);
         res.status(200).json({
             success: true,

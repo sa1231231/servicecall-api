@@ -293,7 +293,76 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             expect(check?.status).toBe("pass");
         });
     });
-    // ── 8. Update Agent Fields ────────────────────────────────────────────
+    // ── 8. Weekly Reports ────────────────────────────────────────────────
+    describe("Weekly reports", () => {
+        it("sends a weekly report for a specific client", async () => {
+            const resp = await fetch(url(`/api/reports/weekly?client_id=${DEMO_SLUG}`), {
+                method: "POST",
+                headers: authHeaders(),
+            });
+            expect(resp.status).toBe(200);
+            const body = await json(resp);
+            expect(body.success).toBe(true);
+            expect(Array.isArray(body.sent)).toBe(true);
+            expect(body.sent).toContain(DEMO_SLUG);
+        });
+        it("returns empty sent for nonexistent client", async () => {
+            const resp = await fetch(url("/api/reports/weekly?client_id=nonexistent-xyz"), {
+                method: "POST",
+                headers: authHeaders(),
+            });
+            expect(resp.status).toBe(200);
+            const body = await json(resp);
+            expect(body.sent).toHaveLength(0);
+        });
+        it("rejects without API key", async () => {
+            const resp = await fetch(url("/api/reports/weekly"), {
+                method: "POST",
+            });
+            expect(resp.status).toBe(401);
+        });
+    });
+    // ── 9. Phone Provisioning Endpoint ──────────────────────────────────
+    describe("Phone provisioning endpoint", () => {
+        it("rejects without slug", async () => {
+            const resp = await fetch(url("/agents/provision-number"), {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({}),
+            });
+            expect(resp.status).toBe(400);
+            const body = await json(resp);
+            expect(body.error).toContain("slug");
+        });
+        it("returns 404 for nonexistent client", async () => {
+            const resp = await fetch(url("/agents/provision-number"), {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({ slug: "nonexistent-xyz" }),
+            });
+            expect(resp.status).toBe(404);
+        });
+        it("rejects client without dispatch_call_number", async () => {
+            // pro-v has no dispatch_call_number
+            const resp = await fetch(url("/agents/provision-number"), {
+                method: "POST",
+                headers: authHeaders(),
+                body: JSON.stringify({ slug: "pro-v" }),
+            });
+            expect(resp.status).toBe(400);
+            const body = await json(resp);
+            expect(body.error).toContain("dispatch_call_number");
+        });
+        it("rejects without API key", async () => {
+            const resp = await fetch(url("/agents/provision-number"), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ slug: DEMO_SLUG }),
+            });
+            expect(resp.status).toBe(401);
+        });
+    });
+    // ── 10. Update Agent Fields ────────────────────────────────────────────
     describe("Update agent fields", () => {
         it("updates hide_not_mentioned", async () => {
             const resp = await fetch(url(`/dashboard/api/agents/${DEMO_SLUG}`), {

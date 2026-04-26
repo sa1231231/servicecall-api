@@ -75,19 +75,33 @@ async function runAutoSync(): Promise<void> {
           agentId,
         );
 
-        // Preserve full agent_ids array
-        jsonEntry.agent_ids = doc.agent_ids;
+        // Preserve field-level customizations (show, label) from existing config
+        if (doc.message_types) {
+          for (const [typeKey, newType] of Object.entries(jsonEntry.message_types)) {
+            const existingType = doc.message_types[typeKey];
+            if (!existingType) continue;
+            for (const field of newType.fields) {
+              const existingField = existingType.fields.find((f) => f.key === field.key);
+              if (!existingField) continue;
+              if (existingField.show === false) field.show = false;
+              if (existingField.label !== field.label) field.label = existingField.label;
+            }
+          }
+        }
 
-        // Merge canonical JSON
-        jsonEntry.retell_agents = {
-          ...(doc.retell_agents ?? {}),
-          [agentId]: snapshot.canonicalJson,
+        // Only update fields that come from Retell — preserve everything
+        // else the user may have customized via the dashboard
+        const update: Record<string, unknown> = {
+          message_types: jsonEntry.message_types,
+          default_message_type: jsonEntry.default_message_type,
+          [`retell_agents.${agentId}`]: snapshot.canonicalJson,
         };
+        // Only update resolve_rule/resolve_rules if the doc doesn't have
+        // manually-configured resolve_rules already
+        if (!doc.resolve_rules || doc.resolve_rules.length === 0) {
+          if (jsonEntry.resolve_rule) update.resolve_rule = jsonEntry.resolve_rule;
+        }
 
-        // Write directly to MongoDB — bypass persistClient to avoid
-        // resetting last_deployed_at
-        const update: Record<string, unknown> = { ...jsonEntry };
-        delete (update as any)._id;
         await getDb()
           .collection<JsonClientEntry & { _id: string }>("clients")
           .updateOne({ _id: slug } as any, { $set: update });

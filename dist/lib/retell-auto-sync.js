@@ -51,17 +51,36 @@ async function runAutoSync() {
                     shadow_mode: doc.shadow_mode,
                 };
                 const jsonEntry = deriveNotificationConfig(snapshot.variables, clientInfo, agentId);
-                // Preserve full agent_ids array
-                jsonEntry.agent_ids = doc.agent_ids;
-                // Merge canonical JSON
-                jsonEntry.retell_agents = {
-                    ...(doc.retell_agents ?? {}),
-                    [agentId]: snapshot.canonicalJson,
+                // Preserve field-level customizations (show, label) from existing config
+                if (doc.message_types) {
+                    for (const [typeKey, newType] of Object.entries(jsonEntry.message_types)) {
+                        const existingType = doc.message_types[typeKey];
+                        if (!existingType)
+                            continue;
+                        for (const field of newType.fields) {
+                            const existingField = existingType.fields.find((f) => f.key === field.key);
+                            if (!existingField)
+                                continue;
+                            if (existingField.show === false)
+                                field.show = false;
+                            if (existingField.label !== field.label)
+                                field.label = existingField.label;
+                        }
+                    }
+                }
+                // Only update fields that come from Retell — preserve everything
+                // else the user may have customized via the dashboard
+                const update = {
+                    message_types: jsonEntry.message_types,
+                    default_message_type: jsonEntry.default_message_type,
+                    [`retell_agents.${agentId}`]: snapshot.canonicalJson,
                 };
-                // Write directly to MongoDB — bypass persistClient to avoid
-                // resetting last_deployed_at
-                const update = { ...jsonEntry };
-                delete update._id;
+                // Only update resolve_rule/resolve_rules if the doc doesn't have
+                // manually-configured resolve_rules already
+                if (!doc.resolve_rules || doc.resolve_rules.length === 0) {
+                    if (jsonEntry.resolve_rule)
+                        update.resolve_rule = jsonEntry.resolve_rule;
+                }
                 await getDb()
                     .collection("clients")
                     .updateOne({ _id: slug }, { $set: update });
