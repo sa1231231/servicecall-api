@@ -183,6 +183,15 @@
   .btn-save:hover { background: #1d4ed8; }
   .btn-save:disabled { background: #93b4f5; cursor: not-allowed; }
 
+  .override-row {
+    display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.3rem;
+  }
+  .override-row input { font-size: 0.82rem; padding: 0.3rem 0.5rem; border: 1px solid #d1d5db; border-radius: 4px; }
+  .btn-add-override {
+    font-size: 0.78rem; color: #2563eb; background: none; border: none; cursor: pointer; padding: 0.2rem 0;
+  }
+  .btn-add-override:hover { text-decoration: underline; }
+
   /* Smoke test */
   .btn-smoke {
     display: inline-flex; align-items: center; gap: 0.35rem;
@@ -707,6 +716,11 @@
 
       <dt>Dispatch Call</dt><dd><input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty"></dd>
 
+      <dt>Call Overrides</dt><dd>
+        <div id="call-overrides-container">${buildOverrideRows(doc.dispatch_call_overrides)}</div>
+        <button type="button" class="btn-add-override" onclick="addOverrideRow()">+ Add override</button>
+      </dd>
+
       <dt>Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}</dd>
 
       <dt>Dispatch CC</dt><dd><input class="edit-input" id="edit-dispatch-cc" value="${esc(doc.dispatch_cc || '')}" placeholder="CC email or empty"></dd>
@@ -765,6 +779,47 @@
     document.getElementById('detailConfig').innerHTML = html;
   }
 
+  function buildOverrideRows(overrides) {
+    if (!overrides || Object.keys(overrides).length === 0) return '';
+    return Object.entries(overrides).map(([toNum, callNum]) =>
+      `<div class="override-row">` +
+      `<input class="override-to" value="${esc(toNum)}" placeholder="To number" style="width:10em;">` +
+      ` <span style="color:#888;">\u2192</span> ` +
+      `<input class="override-call" value="${esc(callNum)}" placeholder="Dispatch to" style="width:10em;">` +
+      ` <button type="button" onclick="this.parentElement.remove()" style="border:none;background:none;color:#e55;cursor:pointer;font-size:1rem;">\u00d7</button>` +
+      `</div>`
+    ).join('');
+  }
+
+  function addOverrideRow() {
+    const container = document.getElementById('call-overrides-container');
+    const row = document.createElement('div');
+    row.className = 'override-row';
+    row.innerHTML =
+      '<input class="override-to" placeholder="To number" style="width:10em;">' +
+      ' <span style="color:#888;">\u2192</span> ' +
+      '<input class="override-call" placeholder="Dispatch to" style="width:10em;">' +
+      ' <button type="button" onclick="this.parentElement.remove()" style="border:none;background:none;color:#e55;cursor:pointer;font-size:1rem;">\u00d7</button>';
+    container.appendChild(row);
+  }
+
+  function getOverrides() {
+    const rows = document.querySelectorAll('#call-overrides-container .override-row');
+    const map = {};
+    for (const row of rows) {
+      const toNum = row.querySelector('.override-to').value.trim();
+      const callNum = row.querySelector('.override-call').value.trim();
+      if (toNum && callNum) map[toNum] = callNum;
+    }
+    return Object.keys(map).length > 0 ? map : null;
+  }
+
+  function overridesEqual(a, b) {
+    const aStr = JSON.stringify(a || {});
+    const bStr = JSON.stringify(b || {});
+    return aStr === bStr;
+  }
+
   function arraysEqual(a, b) {
     if (!a && !b) return true;
     if (!a || !b) return false;
@@ -794,6 +849,11 @@
     const origEmails = originalDoc.dispatch_email || [];
     if (!arraysEqual(newEmails, origEmails)) {
       updates.dispatch_email = newEmails.length > 0 ? newEmails : null;
+    }
+
+    const newOverrides = getOverrides();
+    if (!overridesEqual(newOverrides, originalDoc.dispatch_call_overrides)) {
+      updates.dispatch_call_overrides = newOverrides;
     }
 
     // Text fields — send null for empty strings
