@@ -175,6 +175,7 @@ export async function postHookHandler(req: Request, res: Response) {
       ).catch(() => {});
     }
 
+
     saveCallLog(buildCallLog("shadow_dry_run", typeKey, messageType.label, fieldValues)).catch(() => {});
     sendOwnerCallMonitor(call, clientConfig, "shadow_dry_run").catch(() => {});
     res.status(200).json({ success: true, outcome: "shadow_dry_run" });
@@ -249,11 +250,14 @@ export async function postHookHandler(req: Request, res: Response) {
   }
 
   // Fire-and-forget: voice call to dispatch
-  if (clientConfig.dispatch_call_number) {
-    triggerDispatchCall(clientConfig, {
-      client_name: clientConfig.name,
-      call_summary: smsMessage,
-    }).catch(() => {});
+  const effectiveCallNumber =
+    clientConfig.dispatch_call_overrides?.[call.to_number] ??
+    clientConfig.dispatch_call_number;
+  if (effectiveCallNumber) {
+    triggerDispatchCall(
+      { ...clientConfig, dispatch_call_number: effectiveCallNumber },
+      { client_name: clientConfig.name, call_summary: smsMessage },
+    ).catch(() => {});
   }
 
   saveCallLog(buildCallLog("dispatched", typeKey, messageType.label, fieldValues)).catch(() => {});

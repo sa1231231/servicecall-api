@@ -196,11 +196,10 @@ export async function postHookHandler(req, res) {
         console.warn("retell-post-hook: no notification channels configured for this client");
     }
     // Fire-and-forget: voice call to dispatch
-    if (clientConfig.dispatch_call_number) {
-        triggerDispatchCall(clientConfig, {
-            client_name: clientConfig.name,
-            call_summary: smsMessage,
-        }).catch(() => { });
+    const effectiveCallNumber = clientConfig.dispatch_call_overrides?.[call.to_number] ??
+        clientConfig.dispatch_call_number;
+    if (effectiveCallNumber) {
+        triggerDispatchCall({ ...clientConfig, dispatch_call_number: effectiveCallNumber }, { client_name: clientConfig.name, call_summary: smsMessage }).catch(() => { });
     }
     saveCallLog(buildCallLog("dispatched", typeKey, messageType.label, fieldValues)).catch(() => { });
     sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => { });
