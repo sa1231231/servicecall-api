@@ -16,6 +16,7 @@ import {
   generatePortalToken,
 } from "../../config/client-store.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
+import { getSettings, updateSettings } from "../../lib/settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -89,8 +90,9 @@ dashboardApiRouter.post("/agents/:slug/request-review", async (req, res) => {
     return;
   }
 
-  if (!config.GOOGLE_REVIEW_URL) {
-    res.status(400).json({ error: "GOOGLE_REVIEW_URL is not configured" });
+  const settings = await getSettings();
+  if (!settings.google_review_url) {
+    res.status(400).json({ error: "Google Review URL is not configured. Set it in Settings." });
     return;
   }
 
@@ -100,7 +102,10 @@ dashboardApiRouter.post("/agents/:slug/request-review", async (req, res) => {
     return;
   }
 
-  const message = `Hi! We'd love your feedback on our service. If you have a moment, please leave us a Google review:\n${config.GOOGLE_REVIEW_URL}\n\nThank you!\n— Service Call Saver`;
+  const message = settings.review_sms_message.replace(
+    /\{\{google_review_url\}\}/g,
+    settings.google_review_url,
+  );
 
   try {
     await sendSmsToAll(numbers, message);
@@ -108,5 +113,21 @@ dashboardApiRouter.post("/agents/:slug/request-review", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     res.status(502).json({ error: "Failed to send review request", details: msg });
+  }
+});
+
+// ── Global Settings ─────────────────────────────────────────────────────────
+
+dashboardApiRouter.get("/settings", async (_req, res) => {
+  res.json(await getSettings());
+});
+
+dashboardApiRouter.patch("/settings", async (req, res) => {
+  try {
+    const updated = await updateSettings(req.body);
+    res.json({ success: true, settings: updated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
   }
 });

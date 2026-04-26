@@ -415,15 +415,51 @@
     /* Modal — tighter padding on small screens */
     .modal { padding: 1rem; }
   }
+
+  /* Settings */
+  .btn-settings {
+    float: right; padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
+    background: #fff; color: #555; border: 1px solid #d1d5db; border-radius: 6px;
+    cursor: pointer;
+  }
+  .btn-settings:hover { background: #f9fafb; }
+  .settings-form { background: #fff; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .settings-form label { display: block; font-size: 0.82rem; font-weight: 600; color: #555; margin-bottom: 0.25rem; margin-top: 0.75rem; }
+  .settings-form label:first-child { margin-top: 0; }
+  .settings-form input, .settings-form textarea {
+    width: 100%; padding: 0.4rem 0.6rem; font-size: 0.82rem;
+    border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit;
+  }
+  .settings-form textarea { min-height: 100px; resize: vertical; }
+  .settings-form input:focus, .settings-form textarea:focus {
+    border-color: #93b4f5; outline: none; box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+  }
+  .settings-hint { font-size: 0.75rem; color: #888; margin-top: 0.2rem; }
 </style>
 </head>
 <body>
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
-  <h1>Agent Dashboard</h1>
+  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button></h1>
   <p class="subtitle">Click a client to view details and call history.</p>
   <div id="agentList"><div class="loading">Loading agents...</div></div>
+</div>
+
+<!-- ── Settings View ──────────────────────────────────────────────── -->
+<div id="settingsView" style="display:none;">
+  <button class="btn-back" onclick="hideSettings()">&larr; Back to all agents</button>
+  <h1>Settings</h1>
+  <div class="settings-form">
+    <label for="settings-review-url">Google Review URL</label>
+    <input type="text" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
+
+    <label for="settings-review-msg">Review SMS Message</label>
+    <textarea id="settings-review-msg" placeholder="Message template..."></textarea>
+    <p class="settings-hint">Use {{google_review_url}} where the link should appear.</p>
+
+    <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
+  </div>
 </div>
 
 <!-- ── Detail View ──────────────────────────────────────────────────── -->
@@ -1386,6 +1422,58 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Clone';
+    }
+  }
+
+  // ── SETTINGS ─────────────────────────────────────────────────────────
+
+  async function showSettings() {
+    document.getElementById('listView').style.display = 'none';
+    document.getElementById('detailView').style.display = 'none';
+    document.getElementById('settingsView').style.display = '';
+
+    try {
+      const res = await fetch('/dashboard/api/settings', { headers: { 'X-API-Key': apiKey } });
+      if (!res.ok) throw new Error('Failed: ' + res.status);
+      const settings = await res.json();
+      document.getElementById('settings-review-url').value = settings.google_review_url || '';
+      document.getElementById('settings-review-msg').value = settings.review_sms_message || '';
+    } catch (err) {
+      showToast('Failed to load settings: ' + err.message, 'error');
+    }
+  }
+
+  function hideSettings() {
+    document.getElementById('settingsView').style.display = 'none';
+    document.getElementById('listView').style.display = '';
+  }
+
+  async function saveSettings() {
+    const btn = document.getElementById('btnSaveSettings');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const updates = {
+      google_review_url: document.getElementById('settings-review-url').value.trim(),
+      review_sms_message: document.getElementById('settings-review-msg').value,
+    };
+
+    try {
+      const res = await fetch('/dashboard/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed: ' + res.status);
+      }
+      showToast('Settings saved', 'success');
+    } catch (err) {
+      showToast('Save failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save Settings';
     }
   }
 
