@@ -513,14 +513,6 @@
         <input type="text" placeholder="dispatch@example.com" onkeydown="chipKeydown(event, this)" onblur="chipBlur(this)">
       </div>
     </div>
-    <div class="modal-field">
-      <label class="modal-label">Dispatch CC</label>
-      <input class="edit-input" type="text" id="cloneCcInput" placeholder="cc@example.com">
-    </div>
-    <div class="modal-field">
-      <label class="modal-label">Outbound From Number</label>
-      <input class="edit-input" type="text" id="cloneOutboundInput" placeholder="+15551234567">
-    </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="hideCloneModal()">Cancel</button>
       <button class="btn-confirm" id="btnCloneConfirm" onclick="cloneAgent()">Clone</button>
@@ -777,23 +769,11 @@
 
       <dt>Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}</dd>
 
-      <dt>Dispatch CC</dt><dd><input class="edit-input" id="edit-dispatch-cc" value="${esc(doc.dispatch_cc || '')}" placeholder="CC email or empty"></dd>
-
-      <dt>Outbound From</dt><dd><input class="edit-input" id="edit-outbound-from" value="${esc(doc.outbound_from_number || '')}" placeholder="Outbound number or empty"></dd>
-
       <dt>Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
 
       <dt>Shadow Mode</dt><dd>
         <label class="toggle">
           <input type="checkbox" id="edit-shadow-mode" ${doc.shadow_mode ? 'checked' : ''}>
-          <span class="slider"></span>
-        </label>
-      </dd>
-
-      <dt>Phone Fallback</dt><dd>${doc.phone_fallback_to_caller ? 'Yes' : 'No'}</dd>
-      <dt>Hide Not Mentioned</dt><dd>
-        <label class="toggle">
-          <input type="checkbox" id="edit-hide-not-mentioned" ${doc.hide_not_mentioned ? 'checked' : ''}>
           <span class="slider"></span>
         </label>
       </dd>
@@ -916,16 +896,6 @@
       updates.dispatch_call_number = callNum;
     }
 
-    const cc = document.getElementById('edit-dispatch-cc').value.trim() || null;
-    if (cc !== (originalDoc.dispatch_cc || null)) {
-      updates.dispatch_cc = cc;
-    }
-
-    const outbound = document.getElementById('edit-outbound-from').value.trim() || null;
-    if (outbound !== (originalDoc.outbound_from_number || null)) {
-      updates.outbound_from_number = outbound;
-    }
-
     const summaryAgent = document.getElementById('edit-summary-agent').value.trim() || null;
     if (summaryAgent !== (originalDoc.summary_agent_id || null)) {
       updates.summary_agent_id = summaryAgent;
@@ -934,11 +904,6 @@
     const shadowMode = document.getElementById('edit-shadow-mode').checked;
     if (shadowMode !== (originalDoc.shadow_mode ?? false)) {
       updates.shadow_mode = shadowMode;
-    }
-
-    const hideNotMentioned = document.getElementById('edit-hide-not-mentioned').checked;
-    if (hideNotMentioned !== (originalDoc.hide_not_mentioned ?? false)) {
-      updates.hide_not_mentioned = hideNotMentioned;
     }
 
     // Field visibility toggles + label edits
@@ -1362,8 +1327,6 @@
     document.getElementById('cloneNameInput').value = '';
     document.getElementById('cloneFaqInput').value = '';
     document.getElementById('cloneCallInput').value = '';
-    document.getElementById('cloneCcInput').value = '';
-    document.getElementById('cloneOutboundInput').value = '';
     // Clear chip inputs
     for (const id of ['clone-chip-text', 'clone-chip-email']) {
       const el = document.getElementById(id);
@@ -1407,8 +1370,6 @@
       dispatch_text_numbers: textNums,
       dispatch_call_number: document.getElementById('cloneCallInput').value.trim() || null,
       dispatch_email: emails.length > 0 ? emails : null,
-      dispatch_cc: document.getElementById('cloneCcInput').value.trim() || null,
-      outbound_from_number: document.getElementById('cloneOutboundInput').value.trim() || null,
     };
 
     try {
