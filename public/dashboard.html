@@ -107,7 +107,7 @@
     font-size: 0.82rem; background: #fff; padding: 1rem; border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   }
-  .config-grid dt { font-weight: 600; color: #555; padding: 0.25rem 0; }
+  .config-grid dt { font-weight: 600; color: #555; padding: 0.25rem 0; cursor: help; }
   .config-grid dd { margin: 0; padding: 0.25rem 0; word-break: break-word; }
   .config-grid dd code { font-size: 0.78rem; background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 3px; }
 
@@ -754,24 +754,24 @@
     document.getElementById('smokeResults').innerHTML = '';
 
     let html = `<dl class="config-grid">
-      <dt>Slug</dt><dd><code>${esc(doc._id)}</code></dd>
+      <dt title="Unique identifier for this client, used in API routes and internal references">Slug</dt><dd><code>${esc(doc._id)}</code></dd>
 
-      <dt>Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
+      <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
 
-      <dt>Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}</dd>
+      <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}</dd>
 
-      <dt>Dispatch Call</dt><dd><input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty"></dd>
+      <dt title="Phone number called by the outbound summary agent after intake">Dispatch Call</dt><dd><input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty"></dd>
 
-      <dt>Call Overrides</dt><dd>
+      <dt title="Route dispatch calls to different numbers based on which inbound number was called">Call Overrides</dt><dd>
         <div id="call-overrides-container">${buildOverrideRows(doc.dispatch_call_overrides)}</div>
         <button type="button" class="btn-add-override" onclick="addOverrideRow()">+ Add override</button>
       </dd>
 
-      <dt>Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}</dd>
+      <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}</dd>
 
-      <dt>Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
+      <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
 
-      <dt>Shadow Mode</dt><dd>
+      <dt title="When on, notifications go to the owner instead of the client for testing">Shadow Mode</dt><dd>
         <label class="toggle">
           <input type="checkbox" id="edit-shadow-mode" ${doc.shadow_mode ? 'checked' : ''}>
           <span class="slider"></span>
