@@ -180,6 +180,7 @@ export async function updateClientField(
 }
 
 const EDITABLE_FIELDS = new Set([
+  "name",
   "agent_ids",
   "dispatch_text_numbers",
   "dispatch_call_number",

@@ -132,6 +132,9 @@ export async function postHookHandler(req: Request, res: Response) {
 
   const { typeKey, messageType, fieldValues, smsMessage, emailBody, emailHtml, emailSubject } = buildResult.payload;
 
+  // Resolve effective business name (per-number override from Retell Code node)
+  const effectiveName = allVars.business_name || clientConfig.name;
+
   console.log("retell-post-hook: extracted notification data", {
     agent_id: agentId,
     message_type: typeKey,
@@ -141,7 +144,7 @@ export async function postHookHandler(req: Request, res: Response) {
   // ── Shadow Dry-Run ─────────────────────────────────────────────────
   if (clientConfig.shadow_mode) {
     const dryRunSummary =
-      `[SHADOW DRY-RUN] client="${clientConfig.name}"\n\n` +
+      `[SHADOW DRY-RUN] client="${effectiveName}"\n\n` +
       `Original dispatch numbers: ${JSON.stringify(clientConfig.dispatch_text_numbers)}\n` +
       `Original dispatch emails:  ${JSON.stringify(clientConfig.dispatch_email)}\n\n` +
       `--- SMS PREVIEW ---\n${smsMessage}\n\n` +
@@ -151,12 +154,12 @@ export async function postHookHandler(req: Request, res: Response) {
 
     // Send the dry-run preview to owner so they can see exact formatting
     const shadowTasks: Promise<unknown>[] = [
-      sendSmsToAll([ownerConfig.phone], `[SHADOW DRY-RUN] ${clientConfig.name}\n\n--- SMS that would be sent ---\n\n${smsMessage}`),
+      sendSmsToAll([ownerConfig.phone], `[SHADOW DRY-RUN] ${effectiveName}\n\n--- SMS that would be sent ---\n\n${smsMessage}`),
       sendEmail({
         to: ownerConfig.email,
         subject: `[SHADOW DRY-RUN] ${emailSubject}`,
         body: dryRunSummary,
-        html: `<p><strong>[SHADOW DRY-RUN]</strong> for client "${escapeHtml(clientConfig.name)}"</p>` +
+        html: `<p><strong>[SHADOW DRY-RUN]</strong> for client "${escapeHtml(effectiveName)}"</p>` +
           `<p>Original dispatch numbers: ${escapeHtml(JSON.stringify(clientConfig.dispatch_text_numbers))}<br>` +
           `Original dispatch emails: ${escapeHtml(JSON.stringify(clientConfig.dispatch_email))}</p>` +
           `<hr><p><strong>SMS Preview:</strong></p><pre>${escapeHtml(smsMessage)}</pre>` +
@@ -171,7 +174,7 @@ export async function postHookHandler(req: Request, res: Response) {
     if (clientConfig.summary_agent_id) {
       triggerDispatchCall(
         { ...clientConfig, dispatch_call_number: ownerConfig.phone },
-        { client_name: clientConfig.name, call_summary: smsMessage },
+        { client_name: effectiveName, call_summary: smsMessage },
       ).catch(() => {});
     }
 
@@ -256,7 +259,7 @@ export async function postHookHandler(req: Request, res: Response) {
   if (effectiveCallNumber) {
     triggerDispatchCall(
       { ...clientConfig, dispatch_call_number: effectiveCallNumber },
-      { client_name: clientConfig.name, call_summary: smsMessage },
+      { client_name: effectiveName, call_summary: smsMessage },
     ).catch(() => {});
   }
 

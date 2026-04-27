@@ -754,6 +754,8 @@
     document.getElementById('smokeResults').innerHTML = '';
 
     let html = `<dl class="config-grid">
+      <dt title="Client display name used in notification greetings and reports">Display Name</dt><dd><input class="edit-input" id="edit-name" value="${esc(doc.name)}" placeholder="Business name"></dd>
+
       <dt title="Unique identifier for this client, used in API routes and internal references">Slug</dt><dd><code>${esc(doc._id)}</code></dd>
 
       <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
@@ -888,6 +890,12 @@
     const newOverrides = getOverrides();
     if (!overridesEqual(newOverrides, originalDoc.dispatch_call_overrides)) {
       updates.dispatch_call_overrides = newOverrides;
+    }
+
+    // Display name
+    const newName = document.getElementById('edit-name').value.trim();
+    if (newName && newName !== originalDoc.name) {
+      updates.name = newName;
     }
 
     // Text fields — send null for empty strings
