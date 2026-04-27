@@ -268,8 +268,6 @@
     const total = calls.length;
     const dispatched = calls.filter(c => c.outcome === 'dispatched').length;
     const avgMs = total > 0 ? calls.reduce((s, c) => s + (c.duration_ms || 0), 0) / total : 0;
-    const positiveCount = calls.filter(c => (c.user_sentiment || '').toLowerCase().includes('positive')).length;
-    const sentimentPct = total > 0 ? Math.round((positiveCount / total) * 100) : 0;
 
     // Stat cards
     const statsEl = document.getElementById('statsRow');
@@ -277,8 +275,7 @@
       statsEl.innerHTML =
         '<div class="stat-card"><div class="stat-value">' + total + '</div><div class="stat-label">Total Calls</div></div>' +
         '<div class="stat-card"><div class="stat-value">' + dispatched + '</div><div class="stat-label">Dispatched</div></div>' +
-        '<div class="stat-card"><div class="stat-value">' + fmtDuration(avgMs) + '</div><div class="stat-label">Avg Duration</div></div>' +
-        '<div class="stat-card"><div class="stat-value">' + sentimentPct + '%</div><div class="stat-label">Positive Sentiment</div></div>';
+        '<div class="stat-card"><div class="stat-value">' + fmtDuration(avgMs) + '</div><div class="stat-label">Avg Duration</div></div>';
     }
 
     // Build last 7 days data
