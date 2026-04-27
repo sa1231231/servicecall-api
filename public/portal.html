@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Client Portal</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   body {
@@ -86,6 +87,40 @@
   a.icon-link { color: #2563eb; text-decoration: none; font-size: 0.78rem; }
   a.icon-link:hover { text-decoration: underline; }
 
+  /* ── Analytics ────────────────────────────────────────────────── */
+  .stats-row {
+    display: flex; gap: 0.75rem; margin-bottom: 1rem;
+  }
+  .stat-card {
+    flex: 1;
+    background: #fff;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    text-align: center;
+  }
+  .stat-card .stat-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #1a1a1a;
+    line-height: 1.2;
+  }
+  .stat-card .stat-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 0.25rem;
+  }
+  .chart-container {
+    background: #fff;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    margin-bottom: 0.5rem;
+  }
+
   .footer {
     text-align: center; margin-top: 3rem; padding: 1rem;
     font-size: 0.75rem; color: #999;
@@ -107,6 +142,8 @@
     .config-grid dd {
       padding-top: 0;
     }
+    .stats-row { flex-wrap: wrap; }
+    .stat-card { flex: 1 1 calc(50% - 0.5rem); min-width: 0; }
     /* Call log table → card layout */
     #callTable thead { display: none; }
     #callTable tbody tr.clickable-row {
@@ -166,6 +203,8 @@
   const token = new URLSearchParams(window.location.search).get('token') || '';
   let callOffset = 0;
   const CALL_LIMIT = 50;
+  let allCalls = [];
+  let volumeChart = null;
 
   function esc(str) {
     const d = document.createElement('div');
@@ -224,6 +263,78 @@
     return res.json();
   }
 
+  // ── Analytics ─────────────────────────────────────────────────────
+  function buildAnalytics(calls) {
+    const total = calls.length;
+    const dispatched = calls.filter(c => c.outcome === 'dispatched').length;
+    const avgMs = total > 0 ? calls.reduce((s, c) => s + (c.duration_ms || 0), 0) / total : 0;
+    const positiveCount = calls.filter(c => (c.user_sentiment || '').toLowerCase().includes('positive')).length;
+    const sentimentPct = total > 0 ? Math.round((positiveCount / total) * 100) : 0;
+
+    // Stat cards
+    const statsEl = document.getElementById('statsRow');
+    if (statsEl) {
+      statsEl.innerHTML =
+        '<div class="stat-card"><div class="stat-value">' + total + '</div><div class="stat-label">Total Calls</div></div>' +
+        '<div class="stat-card"><div class="stat-value">' + dispatched + '</div><div class="stat-label">Dispatched</div></div>' +
+        '<div class="stat-card"><div class="stat-value">' + fmtDuration(avgMs) + '</div><div class="stat-label">Avg Duration</div></div>' +
+        '<div class="stat-card"><div class="stat-value">' + sentimentPct + '%</div><div class="stat-label">Positive Sentiment</div></div>';
+    }
+
+    // Build last 7 days data
+    const days = [];
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      d.setHours(0, 0, 0, 0);
+      days.push(d);
+    }
+
+    const dayLabels = days.map(d => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
+    const dispatchedPerDay = new Array(7).fill(0);
+    const skippedPerDay = new Array(7).fill(0);
+    const errorPerDay = new Array(7).fill(0);
+
+    for (const c of calls) {
+      const cd = new Date(c.created_at);
+      cd.setHours(0, 0, 0, 0);
+      const idx = days.findIndex(d => d.getTime() === cd.getTime());
+      if (idx === -1) continue;
+      if (c.outcome === 'dispatched') dispatchedPerDay[idx]++;
+      else if (c.outcome === 'dispatch_error') errorPerDay[idx]++;
+      else skippedPerDay[idx]++;
+    }
+
+    // Chart
+    const canvas = document.getElementById('volumeChart');
+    if (!canvas) return;
+
+    if (volumeChart) volumeChart.destroy();
+    volumeChart = new Chart(canvas, {
+      type: 'bar',
+      data: {
+        labels: dayLabels,
+        datasets: [
+          { label: 'Dispatched', data: dispatchedPerDay, backgroundColor: '#86efac', borderRadius: 3 },
+          { label: 'Skipped', data: skippedPerDay, backgroundColor: '#d1d5db', borderRadius: 3 },
+          { label: 'Error', data: errorPerDay, backgroundColor: '#fca5a5', borderRadius: 3 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { boxWidth: 12, padding: 16, font: { size: 11 } } },
+        },
+        scales: {
+          x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
+          y: { stacked: true, beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } }, grid: { color: '#f0f0f0' } },
+        },
+      },
+    });
+  }
+
   // ── Load agent details ────────────────────────────────────────────
   async function loadPortal() {
     try {
@@ -255,14 +366,19 @@
 
       html += '</dl>';
 
+      // Analytics section
+      html += '<h2>Last 7 Days</h2>';
+      html += '<div id="statsRow" class="stats-row"><div class="loading" style="padding:1rem;width:100%;">Calculating...</div></div>';
+      html += '<div class="chart-container"><canvas id="volumeChart" height="220"></canvas></div>';
+
       // Call log
       html += '<h2>Call Log</h2>';
       html += '<div id="callLogContent"><div class="loading">Loading calls...</div></div>';
 
       document.getElementById('content').innerHTML = html;
 
-      // Load calls
-      loadCalls(true);
+      // Load all calls for analytics, then render
+      await loadAllCalls();
     } catch (err) {
       if (err.message !== 'Unauthorized') {
         document.getElementById('content').innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
@@ -270,77 +386,95 @@
     }
   }
 
-  // ── Call log ──────────────────────────────────────────────────────
-  async function loadCalls(fresh) {
-    if (fresh) callOffset = 0;
-
-    try {
-      const calls = await portalFetch('calls?limit=' + CALL_LIMIT + '&offset=' + callOffset);
-
-      if (fresh && calls.length === 0) {
-        document.getElementById('callLogContent').innerHTML = '<div class="loading">No calls yet.</div>';
-        return;
-      }
-
-      let html = '';
-      if (fresh) {
-        html = `<table id="callTable"><thead><tr>
-          <th>Date</th><th>From</th><th>Duration</th><th>Type</th><th>Outcome</th><th>Summary</th><th>Recording</th>
-        </tr></thead><tbody id="callBody">`;
-      }
-
-      for (const c of calls) {
-        const sentClass = (c.user_sentiment || '').toLowerCase().includes('positive') ? 'sentiment-positive'
-          : (c.user_sentiment || '').toLowerCase().includes('negative') ? 'sentiment-negative'
-          : 'sentiment-unknown';
-        const summary = c.call_summary
-          ? (c.call_summary.length > 80 ? c.call_summary.substring(0, 80) + '...' : c.call_summary)
-          : '<span style="color:#aaa">pending</span>';
-
-        html += `<tr class="clickable-row" onclick="toggleCallExpand(this)">
-          <td data-label="Date">${fmtDate(c.created_at)}</td>
-          <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${esc(c.from_number)}</td>
-          <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
-          <td data-label="Type">${esc(c.message_type_label || '')}</td>
-          <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
-          <td data-label="Summary" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.call_summary || '')}">${summary}</td>
-          <td data-label="Recording">${c.recording_url ? '<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>' : '—'}</td>
-        </tr>
-        <tr class="call-expand-row" style="display:none;"><td colspan="7">
-          <div class="call-expand">
-            <p><strong>Message Type:</strong> ${esc(c.message_type_label || '')}</p>
-            ${c.call_summary ? '<p><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
-            <p style="margin-top:0.5rem;"><strong>Collected Data:</strong></p>
-            <p>${renderFields(c.extracted_fields)}</p>
-          </div>
-        </td></tr>`;
-      }
-
-      if (fresh) {
-        html += '</tbody></table>';
-        if (calls.length >= CALL_LIMIT) {
-          html += '<button class="btn-load-more" onclick="loadCalls(false)">Load more</button>';
-        }
-        document.getElementById('callLogContent').innerHTML = html;
-      } else {
-        document.getElementById('callBody').insertAdjacentHTML('beforeend', html);
-        const btn = document.querySelector('.btn-load-more');
-        if (btn) {
-          if (calls.length < CALL_LIMIT) {
-            btn.disabled = true;
-            btn.textContent = 'No more calls';
-          }
-        }
-      }
-
-      callOffset += calls.length;
-    } catch (err) {
-      if (err.message !== 'Unauthorized') {
-        if (fresh) {
-          document.getElementById('callLogContent').innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
-        }
-      }
+  // ── Fetch all calls for analytics ─────────────────────────────────
+  async function loadAllCalls() {
+    allCalls = [];
+    let offset = 0;
+    const batchSize = 100;
+    while (true) {
+      const batch = await portalFetch('calls?limit=' + batchSize + '&offset=' + offset);
+      allCalls = allCalls.concat(batch);
+      if (batch.length < batchSize) break;
+      offset += batch.length;
     }
+
+    // Build analytics from all calls
+    buildAnalytics(allCalls);
+
+    // Render call log table from the first page
+    renderCallTable(allCalls.slice(0, CALL_LIMIT));
+    callOffset = Math.min(CALL_LIMIT, allCalls.length);
+
+    // Show load-more if there are more
+    if (allCalls.length > CALL_LIMIT) {
+      const container = document.getElementById('callLogContent');
+      container.insertAdjacentHTML('beforeend', '<button class="btn-load-more" onclick="loadMoreCalls()">Load more</button>');
+    }
+  }
+
+  function renderCallTable(calls) {
+    if (calls.length === 0) {
+      document.getElementById('callLogContent').innerHTML = '<div class="loading">No calls yet.</div>';
+      return;
+    }
+
+    let html = `<table id="callTable"><thead><tr>
+      <th>Date</th><th>From</th><th>Duration</th><th>Type</th><th>Outcome</th><th>Summary</th><th>Recording</th>
+    </tr></thead><tbody id="callBody">`;
+
+    html += buildCallRows(calls);
+    html += '</tbody></table>';
+    document.getElementById('callLogContent').innerHTML = html;
+  }
+
+  function buildCallRows(calls) {
+    let html = '';
+    for (const c of calls) {
+      const sentClass = (c.user_sentiment || '').toLowerCase().includes('positive') ? 'sentiment-positive'
+        : (c.user_sentiment || '').toLowerCase().includes('negative') ? 'sentiment-negative'
+        : 'sentiment-unknown';
+      const summary = c.call_summary
+        ? (c.call_summary.length > 80 ? c.call_summary.substring(0, 80) + '...' : c.call_summary)
+        : '<span style="color:#aaa">pending</span>';
+
+      html += `<tr class="clickable-row" onclick="toggleCallExpand(this)">
+        <td data-label="Date">${fmtDate(c.created_at)}</td>
+        <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${esc(c.from_number)}</td>
+        <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
+        <td data-label="Type">${esc(c.message_type_label || '')}</td>
+        <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
+        <td data-label="Summary" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(c.call_summary || '')}">${summary}</td>
+        <td data-label="Recording">${c.recording_url ? '<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>' : '—'}</td>
+      </tr>
+      <tr class="call-expand-row" style="display:none;"><td colspan="7">
+        <div class="call-expand">
+          <p><strong>Message Type:</strong> ${esc(c.message_type_label || '')}</p>
+          ${c.call_summary ? '<p><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
+          <p style="margin-top:0.5rem;"><strong>Collected Data:</strong></p>
+          <p>${renderFields(c.extracted_fields)}</p>
+        </div>
+      </td></tr>`;
+    }
+    return html;
+  }
+
+  function loadMoreCalls() {
+    const nextBatch = allCalls.slice(callOffset, callOffset + CALL_LIMIT);
+    if (nextBatch.length === 0) return;
+
+    document.getElementById('callBody').insertAdjacentHTML('beforeend', buildCallRows(nextBatch));
+    callOffset += nextBatch.length;
+
+    const btn = document.querySelector('.btn-load-more');
+    if (btn && callOffset >= allCalls.length) {
+      btn.disabled = true;
+      btn.textContent = 'No more calls';
+    }
+  }
+
+  // ── Legacy loadCalls kept for compatibility ───────────────────────
+  async function loadCalls(fresh) {
+    // Now handled by loadAllCalls
   }
 
   // ── Init ──────────────────────────────────────────────────────────
