@@ -745,12 +745,12 @@
     const sl = sm ? 'Shadow' : 'Live';
     document.getElementById('detailHeader').innerHTML =
       `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
-      `<button class="btn-smoke" onclick="runSmokeTest('${esc(doc._id)}')" id="btnSmoke">Run Smoke Test</button>` +
-      `<button class="btn-test-notify" onclick="sendTestNotify('${esc(doc._id)}')" id="btnTestNotify">Send Test Notification</button>` +
-      `<button class="btn-report" onclick="sendWeeklyReport('${esc(doc._id)}')" id="btnReport">Send Weekly Report</button>` +
-      `<button class="btn-review" onclick="requestReview('${esc(doc._id)}')" id="btnReview">Request Review</button>` +
-      `<button class="btn-delete" onclick="showDeleteModal()">Delete Agent</button>` +
-      `<button class="btn-clone" onclick="showCloneModal()">Clone Agent</button></h1>`;
+      `<button class="btn-smoke" onclick="runSmokeTest('${esc(doc._id)}')" id="btnSmoke" title="Run automated test calls to verify the agent is responding correctly">Run Smoke Test</button>` +
+      `<button class="btn-test-notify" onclick="sendTestNotify('${esc(doc._id)}')" id="btnTestNotify" title="Send a sample SMS and email notification using dummy data">Send Test Notification</button>` +
+      `<button class="btn-report" onclick="sendWeeklyReport('${esc(doc._id)}')" id="btnReport" title="Generate and send the weekly call summary report for this client">Send Weekly Report</button>` +
+      `<button class="btn-review" onclick="requestReview('${esc(doc._id)}')" id="btnReview" title="Send the client a Google Review request via SMS">Request Review</button>` +
+      `<button class="btn-delete" onclick="showDeleteModal()" title="Permanently delete this agent and its configuration">Delete Agent</button>` +
+      `<button class="btn-clone" onclick="showCloneModal()" title="Create a copy of this agent with new client details">Clone Agent</button></h1>`;
     document.getElementById('smokeResults').innerHTML = '';
 
     let html = `<dl class="config-grid">
@@ -971,12 +971,12 @@
         const sl = updates.shadow_mode ? 'Shadow' : 'Live';
         document.getElementById('detailHeader').innerHTML =
           `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
-          `<button class="btn-smoke" onclick="runSmokeTest('${esc(currentSlug)}')" id="btnSmoke">Run Smoke Test</button>` +
-          `<button class="btn-test-notify" onclick="sendTestNotify('${esc(currentSlug)}')" id="btnTestNotify">Send Test Notification</button>` +
-          `<button class="btn-report" onclick="sendWeeklyReport('${esc(currentSlug)}')" id="btnReport">Send Weekly Report</button>` +
-          `<button class="btn-review" onclick="requestReview('${esc(currentSlug)}')" id="btnReview">Request Review</button>` +
-          `<button class="btn-delete" onclick="showDeleteModal()">Delete Agent</button>` +
-      `<button class="btn-clone" onclick="showCloneModal()">Clone Agent</button></h1>`;
+          `<button class="btn-smoke" onclick="runSmokeTest('${esc(currentSlug)}')" id="btnSmoke" title="Run automated test calls to verify the agent is responding correctly">Run Smoke Test</button>` +
+          `<button class="btn-test-notify" onclick="sendTestNotify('${esc(currentSlug)}')" id="btnTestNotify" title="Send a sample SMS and email notification using dummy data">Send Test Notification</button>` +
+          `<button class="btn-report" onclick="sendWeeklyReport('${esc(currentSlug)}')" id="btnReport" title="Generate and send the weekly call summary report for this client">Send Weekly Report</button>` +
+          `<button class="btn-review" onclick="requestReview('${esc(currentSlug)}')" id="btnReview" title="Send the client a Google Review request via SMS">Request Review</button>` +
+          `<button class="btn-delete" onclick="showDeleteModal()" title="Permanently delete this agent and its configuration">Delete Agent</button>` +
+      `<button class="btn-clone" onclick="showCloneModal()" title="Create a copy of this agent with new client details">Clone Agent</button></h1>`;
       }
     } catch (err) {
       showToast('Save failed: ' + err.message, 'error');
