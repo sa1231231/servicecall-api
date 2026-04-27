@@ -75,16 +75,24 @@ async function runAutoSync(): Promise<void> {
           agentId,
         );
 
-        // Preserve field-level customizations (show, label) from existing config
+        // Preserve field-level customizations (show, label) from existing config.
+        // Build a global map from ALL existing message types so customizations
+        // survive even when message_type keys change (e.g. multi-path agents).
         if (doc.message_types) {
-          for (const [typeKey, newType] of Object.entries(jsonEntry.message_types)) {
-            const existingType = doc.message_types[typeKey];
-            if (!existingType) continue;
+          const customizations = new Map<string, { show?: boolean; label: string }>();
+          for (const existingType of Object.values(doc.message_types)) {
+            for (const f of existingType.fields) {
+              if (!customizations.has(f.key)) {
+                customizations.set(f.key, { show: f.show, label: f.label });
+              }
+            }
+          }
+          for (const newType of Object.values(jsonEntry.message_types)) {
             for (const field of newType.fields) {
-              const existingField = existingType.fields.find((f) => f.key === field.key);
-              if (!existingField) continue;
-              if (existingField.show === false) field.show = false;
-              if (existingField.label !== field.label) field.label = existingField.label;
+              const existing = customizations.get(field.key);
+              if (!existing) continue;
+              if (existing.show === false) field.show = false;
+              if (existing.label !== field.label) field.label = existing.label;
             }
           }
         }
@@ -92,10 +100,18 @@ async function runAutoSync(): Promise<void> {
         // Only update fields that come from Retell — preserve everything
         // else the user may have customized via the dashboard
         const update: Record<string, unknown> = {
-          message_types: jsonEntry.message_types,
-          default_message_type: jsonEntry.default_message_type,
           [`retell_agents.${agentId}`]: snapshot.canonicalJson,
         };
+
+        // Only overwrite message_types if the keys still match the existing
+        // config. Multi-path agents have different keys than the single-path
+        // deriver produces, so skip to avoid destroying their routing structure.
+        const existingKeys = Object.keys(doc.message_types || {}).sort().join(",");
+        const newKeys = Object.keys(jsonEntry.message_types).sort().join(",");
+        if (!doc.message_types || existingKeys === newKeys) {
+          update.message_types = jsonEntry.message_types;
+          update.default_message_type = jsonEntry.default_message_type;
+        }
         // Only update resolve_rule/resolve_rules if the doc doesn't have
         // manually-configured resolve_rules already
         if (!doc.resolve_rules || doc.resolve_rules.length === 0) {
