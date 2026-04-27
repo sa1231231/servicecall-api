@@ -14,6 +14,7 @@ import {
   type DataPoint,
   type PathConfig,
 } from "../../lib/agent-generator/index.js";
+import type { HumanRequestMode } from "../../lib/agent-generator/node-builders.js";
 import {
   toLabel,
   deriveNotificationConfig,
@@ -47,7 +48,7 @@ function flattenDataPoints(resolved: DataPoint[]): VariableEntry[] {
 // ── Request Body Type ────────────────────────────────────────────────────────
 
 interface CreateAgentBody {
-  business: AgentConfig;
+  business: AgentConfig & { human_request_mode?: HumanRequestMode };
   dataPoints?: RawDataPoint[];
   paths?: Array<{
     name: string;
@@ -127,8 +128,12 @@ export async function createAgentHandler(
   try {
     // ── 1. Generate agent JSON ─────────────────────────────────────────────
     console.log(`[create-agent] generating agent for "${body.business.businessName}"`);
+    const agentConfig: AgentConfig = {
+      ...body.business,
+      humanRequestMode: body.business.human_request_mode || "callback",
+    };
     const { agent: agentJson, resolved, resolvedPaths } = generateAgent(
-      body.business,
+      agentConfig,
       body.dataPoints ?? [],
       body.paths as PathConfig[] | undefined,
     );

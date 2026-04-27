@@ -249,6 +249,17 @@
   <input type="text" id="summaryAgentId" placeholder="agent_...">
 
   <h2>Options</h2>
+
+  <label>When caller requests a human:</label>
+  <div class="toggle-row">
+    <input type="radio" name="humanRequestMode" id="humanRequestCallback" value="callback" checked>
+    <label for="humanRequestCallback">Ask caller for a callback</label>
+  </div>
+  <div class="toggle-row">
+    <input type="radio" name="humanRequestMode" id="humanRequestTransfer" value="live_transfer">
+    <label for="humanRequestTransfer">Live transfer to dispatch number</label>
+  </div>
+
   <div class="toggle-row">
     <input type="checkbox" id="phoneFallbackToCaller" checked>
     <label for="phoneFallbackToCaller">Phone fallback to caller</label>
@@ -758,6 +769,7 @@ Do not ask for any other information than what is instructed for this node.'>${v
         businessName: val('businessName'),
         faqKnowledgeBase: val('faqKnowledgeBase'),
         introFinetuneExamples: [],
+        human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked').value,
       },
       client: {
         slug: val('slug'),

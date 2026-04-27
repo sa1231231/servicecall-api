@@ -23,7 +23,10 @@ import {
   buildPoliteHangupNode,
   buildGuardrailEndNode,
   buildAgentRoot,
+  buildTransferCallNode,
+  buildTransferFailedNode,
   type AgentConfig,
+  type HumanRequestMode,
 } from "./node-builders.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -196,8 +199,13 @@ When listing anything — services, time slots, examples, options — never list
   });
 
   // Shared global + closing nodes
+  const humanMode: HumanRequestMode = agentConfig.humanRequestMode || "callback";
   allNodes.push(buildFaqNode(faqKnowledgeBase, ids, pos, f, isMultiPath));
-  allNodes.push(buildHumanRequestNode(ids, pos, f));
+  allNodes.push(buildHumanRequestNode(ids, pos, f, humanMode));
+  if (humanMode === "live_transfer") {
+    allNodes.push(buildTransferCallNode(ids, pos, f));
+    allNodes.push(buildTransferFailedNode(ids, pos, f));
+  }
   allNodes.push(buildCloseNode(businessName, ids, pos, f));
   allNodes.push(...buildClosingSequence(ids, pos, f));
   allNodes.push(buildIrrelevantGuardrailNode(ids, pos, f));

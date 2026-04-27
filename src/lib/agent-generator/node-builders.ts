@@ -17,11 +17,15 @@ export interface PathIds {
   chain: Array<{ convId: string; confirmId: string }>;
 }
 
+export type HumanRequestMode = "live_transfer" | "callback";
+
 interface Ids {
   introId: string;
   endId: string;
   faqId: string;
   humanReqId: string;
+  transferCallId: string;
+  transferFailedId: string;
   irrelevantGuardrailId: string;
   emergencyGuardrailId: string;
   politeHangupId: string;
@@ -61,6 +65,7 @@ export interface AgentConfig {
   businessName: string;
   faqKnowledgeBase: string;
   introFinetuneExamples: FinetuneExample[];
+  humanRequestMode?: HumanRequestMode;
 }
 
 export interface IntroPathConfig {
@@ -137,6 +142,8 @@ export function generateIds(f: IdFactory, pathDataPoints: DataPoint[][]): Ids {
     endId: f.nodeId(),
     faqId: f.nodeId(),
     humanReqId: f.nodeId(),
+    transferCallId: f.nodeId(),
+    transferFailedId: f.nodeId(),
     irrelevantGuardrailId: f.nodeId(),
     emergencyGuardrailId: f.nodeId(),
     politeHangupId: f.nodeId(),
@@ -354,7 +361,49 @@ ${faqKnowledgeBase}`,
   };
 }
 
-export function buildHumanRequestNode(ids: Ids, pos: Positions, f: IdFactory) {
+export function buildHumanRequestNode(
+  ids: Ids,
+  pos: Positions,
+  f: IdFactory,
+  mode: HumanRequestMode = "callback",
+) {
+  if (mode === "live_transfer") {
+    // Agent acknowledges and immediately transfers
+    return {
+      instruction: {
+        type: "prompt",
+        text: `The caller is requesting a human or live person.\n\nAcknowledge and tell them you will transfer the call.`,
+      },
+      name: "Human Request",
+      edges: [],
+      global_node_setting: {
+        condition:
+          "Jump to this node if the caller requests a live agent or a human.",
+        negative_finetune_examples: [],
+        positive_finetune_examples: [
+          {
+            transcript: [
+              { content: "can I talk to the supervisor?", role: "user" },
+              { content: "", role: "agent" },
+            ],
+          },
+        ],
+      },
+      id: ids.humanReqId,
+      type: "conversation",
+      display_position: pos.humanReq,
+      skip_response_edge: {
+        destination_node_id: ids.transferCallId,
+        id: `skip-response-edge-${f.nextTs()}-${randomSuffix(9)}`,
+        transition_condition: {
+          type: "prompt",
+          prompt: "Skip response",
+        },
+      },
+    };
+  }
+
+  // Default: callback mode
   return {
     instruction: {
       type: "prompt",
@@ -394,6 +443,61 @@ If the caller refuses and repeats the request for a human, repeat that you canno
     id: ids.humanReqId,
     type: "conversation",
     display_position: pos.humanReq,
+  };
+}
+
+export function buildTransferCallNode(ids: Ids, pos: Positions, f: IdFactory) {
+  return {
+    custom_sip_headers: {},
+    transfer_destination: {
+      type: "predefined",
+      number: "{{dispatch_number}}",
+    },
+    edge: {
+      destination_node_id: ids.transferFailedId,
+      id: f.edgeId(),
+      transition_condition: {
+        type: "prompt",
+        prompt: "Transfer failed",
+      },
+    },
+    name: "Transfer Call",
+    ignore_e164_validation: false,
+    id: ids.transferCallId,
+    transfer_option: {
+      cold_transfer_mode: "sip_invite",
+      enable_bridge_audio_cue: true,
+      type: "cold_transfer",
+      agent_detection_timeout_ms: 30000,
+      show_transferee_as_caller: false,
+    },
+    type: "transfer_call",
+    speak_during_execution: false,
+    display_position: { x: pos.humanReq.x + 360, y: pos.humanReq.y + 96 },
+  };
+}
+
+export function buildTransferFailedNode(ids: Ids, pos: Positions, f: IdFactory) {
+  return {
+    instruction: {
+      type: "prompt",
+      text: "Let the caller know you'll have their supervisor call them back as soon as possible. Do not ask them any more questions.",
+    },
+    always_edge: {
+      destination_node_id: ids.closingRemarksId,
+      id: `always-edge-${f.nextTs()}-${randomSuffix(9)}`,
+      transition_condition: { type: "prompt", prompt: "Always" },
+    },
+    model_choice: {
+      type: "cascading",
+      model: "gpt-4.1",
+      high_priority: true,
+    },
+    name: "Transfer Failed",
+    edges: [],
+    id: ids.transferFailedId,
+    type: "conversation",
+    display_position: { x: pos.humanReq.x + 720, y: pos.humanReq.y - 96 },
   };
 }
 
