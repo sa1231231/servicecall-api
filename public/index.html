@@ -221,11 +221,7 @@
   <!-- ── Client ──────────────────────────────────────────────── -->
   <h2>Client Configuration</h2>
 
-  <label for="slug">Slug <span style="color:#dc2626">*</span></label>
-  <input type="text" id="slug" required placeholder="e.g. acme-plumbing">
-  <div class="field-hint">Unique identifier. Lowercase, hyphens only.</div>
-
-  <label for="clientName">Display Name</label>
+  <label for="clientName">Display Name (used in outgoing SMS &amp; emails)</label>
   <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
 
   <label for="dispatchTextNumbers">Dispatch Text Numbers <span style="color:#dc2626">*</span></label>
@@ -238,9 +234,6 @@
   <label for="dispatchEmail">Dispatch Email(s)</label>
   <input type="text" id="dispatchEmail" placeholder="dispatch@acme.com, backup@acme.com">
   <div class="field-hint">Comma-separated email addresses.</div>
-
-  <label for="dispatchCc">Dispatch CC</label>
-  <input type="text" id="dispatchCc" placeholder="manager@acme.com">
 
   <label for="outboundFromNumber">Outbound From Number</label>
   <input type="text" id="outboundFromNumber" placeholder="+15551234567">
@@ -258,19 +251,6 @@
   <div class="toggle-row">
     <input type="radio" name="humanRequestMode" id="humanRequestTransfer" value="live_transfer">
     <label for="humanRequestTransfer">Live transfer to dispatch number</label>
-  </div>
-
-  <div class="toggle-row">
-    <input type="checkbox" id="phoneFallbackToCaller" checked>
-    <label for="phoneFallbackToCaller">Phone fallback to caller</label>
-  </div>
-  <div class="toggle-row">
-    <input type="checkbox" id="hideNotMentioned" checked>
-    <label for="hideNotMentioned">Hide "Not Mentioned" fields</label>
-  </div>
-  <div class="toggle-row">
-    <input type="checkbox" id="shadowMode" checked>
-    <label for="shadowMode">Shadow mode (notifications go to you, not the client)</label>
   </div>
 
   <button type="submit" id="submitBtn">Create Agent</button>
@@ -772,7 +752,7 @@ Do not ask for any other information than what is instructed for this node.'>${v
         human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked').value,
       },
       client: {
-        slug: val('slug'),
+        slug: val('businessName').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
         dispatch_text_numbers: dispatchTexts,
       },
     };
@@ -793,18 +773,15 @@ Do not ask for any other information than what is instructed for this node.'>${v
     const emails = csvToArray(val('dispatchEmail'));
     if (emails.length) body.client.dispatch_email = emails;
 
-    const cc = val('dispatchCc');
-    if (cc) body.client.dispatch_cc = cc;
-
     const outbound = val('outboundFromNumber');
     if (outbound) body.client.outbound_from_number = outbound;
 
     const summaryId = val('summaryAgentId');
     if (summaryId) body.client.summary_agent_id = summaryId;
 
-    body.client.phone_fallback_to_caller = document.getElementById('phoneFallbackToCaller').checked;
-    body.client.hide_not_mentioned = document.getElementById('hideNotMentioned').checked;
-    body.client.shadow_mode = document.getElementById('shadowMode').checked;
+    body.client.phone_fallback_to_caller = true;
+    body.client.hide_not_mentioned = true;
+    body.client.shadow_mode = true;
 
     submitBtn.disabled = true;
     submitBtn.textContent = 'Creating...';
