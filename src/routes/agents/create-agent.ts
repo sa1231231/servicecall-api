@@ -200,7 +200,6 @@ export async function createAgentHandler(
           dispatchCallNumber: dispatchCall,
         });
         provisionedNumber = result.phoneNumber;
-        await updateClientField(slug, "outbound_from_number", provisionedNumber);
         console.log(`[create-agent] provisioned number ${provisionedNumber} for "${slug}"`);
       } catch (provErr: unknown) {
         const msg = provErr instanceof Error ? provErr.message : String(provErr);

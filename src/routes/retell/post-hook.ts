@@ -168,7 +168,7 @@ export async function postHookHandler(req: Request, res: Response) {
     await Promise.allSettled(shadowTasks);
 
     // Shadow mode: dispatch call goes to owner instead of client
-    if (clientConfig.summary_agent_id && clientConfig.outbound_from_number) {
+    if (clientConfig.summary_agent_id) {
       triggerDispatchCall(
         { ...clientConfig, dispatch_call_number: ownerConfig.phone },
         { client_name: clientConfig.name, call_summary: smsMessage },

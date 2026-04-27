@@ -235,10 +235,7 @@
   <input type="text" id="dispatchEmail" placeholder="dispatch@acme.com, backup@acme.com">
   <div class="field-hint">Comma-separated email addresses.</div>
 
-  <label for="outboundFromNumber">Outbound From Number</label>
-  <input type="text" id="outboundFromNumber" placeholder="+15551234567">
-
-  <label for="summaryAgentId">Summary Agent ID</label>
+  <label for="summaryAgentId">Summary Agent ID (outbound dispatch agent)</label>
   <input type="text" id="summaryAgentId" placeholder="agent_...">
 
   <h2>Options</h2>
@@ -772,9 +769,6 @@ Do not ask for any other information than what is instructed for this node.'>${v
 
     const emails = csvToArray(val('dispatchEmail'));
     if (emails.length) body.client.dispatch_email = emails;
-
-    const outbound = val('outboundFromNumber');
-    if (outbound) body.client.outbound_from_number = outbound;
 
     const summaryId = val('summaryAgentId');
     if (summaryId) body.client.summary_agent_id = summaryId;
