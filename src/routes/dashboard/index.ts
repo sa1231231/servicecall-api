@@ -19,6 +19,11 @@ import { getCallLogById } from "../../lib/call-log.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { getSettings, updateSettings } from "../../lib/settings.js";
 import { runBackup } from "../../lib/backup.js";
+import {
+  getDataPointDefaults,
+  updateDataPointDefault,
+  resetDataPointDefault,
+} from "../../lib/data-point-defaults.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -178,6 +183,40 @@ dashboardApiRouter.patch("/settings", async (req, res) => {
   try {
     const updated = await updateSettings(req.body);
     res.json({ success: true, settings: updated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── Data Point Defaults ─────────────────────────────────────────────────────
+
+dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
+  res.json(await getDataPointDefaults());
+});
+
+dashboardApiRouter.patch("/data-point-defaults/:key", async (req, res) => {
+  try {
+    const updated = await updateDataPointDefault(req.params.key, req.body);
+    if (!updated) {
+      res.status(404).json({ error: `Data point "${req.params.key}" not found` });
+      return;
+    }
+    res.json({ success: true, dataPoint: updated });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
+  }
+});
+
+dashboardApiRouter.post("/data-point-defaults/:key/reset", async (req, res) => {
+  try {
+    const reset = await resetDataPointDefault(req.params.key);
+    if (!reset) {
+      res.status(404).json({ error: `Data point "${req.params.key}" not in registry` });
+      return;
+    }
+    res.json({ success: true, dataPoint: reset });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ error: msg });

@@ -44,13 +44,20 @@ export interface ResolvedPath {
 
 // ── Resolve Data Points ──────────────────────────────────────────────────────
 
-export function resolveDataPoints(rawDataPoints: RawDataPoint[]): DataPoint[] {
+export function resolveDataPoints(
+  rawDataPoints: RawDataPoint[],
+  defaults?: Record<string, DataPoint>,
+): DataPoint[] {
+  const registry = defaults && Object.keys(defaults).length > 0
+    ? defaults
+    : DATA_POINT_REGISTRY;
+
   return rawDataPoints.map((dp, i) => {
     if (typeof dp === "string") {
-      const entry = DATA_POINT_REGISTRY[dp];
+      const entry = registry[dp];
       if (!entry) {
         throw new Error(
-          `Unknown data point "${dp}". Available: ${Object.keys(DATA_POINT_REGISTRY).join(", ")}`,
+          `Unknown data point "${dp}". Available: ${Object.keys(registry).join(", ")}`,
         );
       }
       return { ...entry };
@@ -92,6 +99,7 @@ export function generateAgent(
   agentConfig: AgentConfig,
   rawDataPoints: RawDataPoint[],
   pathConfigs?: PathConfig[],
+  defaults?: Record<string, DataPoint>,
 ): {
   agent: Record<string, unknown>;
   resolved: DataPoint[];
@@ -121,7 +129,7 @@ export function generateAgent(
       throw new Error(`Path "${p.name}" has no data points`);
     }
     try {
-      return { name: p.name, resolved: resolveDataPoints(p.dataPoints) };
+      return { name: p.name, resolved: resolveDataPoints(p.dataPoints, defaults) };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       throw new Error(`Path "${p.name}": ${msg}`);

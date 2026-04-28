@@ -10,7 +10,7 @@ import { getDb } from "./db.js";
 
 const BACKUP_PREFIX = "backups/";
 const RETENTION_DAYS = 30;
-const COLLECTIONS = ["clients", "call_logs", "settings"];
+const COLLECTIONS = ["clients", "call_logs", "settings", "data_point_defaults"];
 
 function getR2Client(): S3Client | null {
   if (!config.R2_ENDPOINT || !config.R2_ACCESS_KEY_ID || !config.R2_SECRET_ACCESS_KEY) {

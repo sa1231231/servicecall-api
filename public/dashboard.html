@@ -512,6 +512,40 @@
   }
   .settings-hint { font-size: 0.75rem; color: #888; margin-top: 0.2rem; }
   .config-hint { font-size: 0.72rem; color: #999; margin-top: 0.15rem; line-height: 1.35; }
+
+  /* Data point defaults */
+  .dp-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 0.75rem; }
+  .dp-card summary { padding: 0.6rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+  .dp-card summary strong { font-size: 0.9rem; }
+  .dp-card summary .dp-var { font-family: monospace; font-size: 0.72rem; color: #999; }
+  .dp-card-body { padding: 0 1rem 1rem; }
+  .dp-card-body label { display: block; font-size: 0.78rem; font-weight: 600; color: #555; margin: 0.6rem 0 0.2rem; }
+  .dp-card-body textarea, .dp-card-body input[type="text"] {
+    width: 100%; padding: 0.4rem 0.6rem; font-size: 0.8rem;
+    border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit;
+  }
+  .dp-card-body textarea { min-height: 60px; resize: vertical; }
+  .dp-card-body textarea:focus, .dp-card-body input:focus {
+    border-color: #93b4f5; outline: none; box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+  }
+  .dp-card-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+  .dp-card-actions button { padding: 0.35rem 0.8rem; font-size: 0.78rem; border-radius: 5px; cursor: pointer; font-weight: 500; }
+  .dp-btn-save { background: #2563eb; color: #fff; border: none; }
+  .dp-btn-save:hover { background: #1d4ed8; }
+  .dp-btn-reset { background: #fff; color: #666; border: 1px solid #d1d5db; }
+  .dp-btn-reset:hover { background: #f9fafb; }
+  .ft-example { border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.5rem; margin-bottom: 0.5rem; background: #fafbff; }
+  .ft-example .ft-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+  .ft-example .ft-header select { font-size: 0.75rem; padding: 0.15rem 0.3rem; border-radius: 4px; border: 1px solid #d1d5db; }
+  .ft-example .ft-remove { margin-left: auto; color: #dc2626; background: none; border: none; cursor: pointer; font-size: 0.8rem; }
+  .ft-example .ft-remove:hover { color: #991b1b; }
+  .ft-row { display: flex; gap: 0.35rem; margin-bottom: 0.25rem; align-items: center; }
+  .ft-row select { width: 70px; font-size: 0.75rem; padding: 0.2rem; border-radius: 4px; border: 1px solid #d1d5db; }
+  .ft-row input { flex: 1; font-size: 0.78rem; padding: 0.25rem 0.4rem; border: 1px solid #d1d5db; border-radius: 4px; }
+  .ft-row input:focus { border-color: #93b4f5; outline: none; }
+  .ft-row .ft-row-remove { color: #dc2626; background: none; border: none; cursor: pointer; font-size: 0.85rem; padding: 0 0.2rem; }
+  .ft-add-row, .ft-add-example { font-size: 0.75rem; color: #2563eb; background: none; border: none; cursor: pointer; padding: 0.15rem 0; }
+  .ft-add-row:hover, .ft-add-example:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -558,6 +592,10 @@
 
     <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
   </div>
+
+  <h2>Data Point Defaults</h2>
+  <p class="settings-hint" style="margin-bottom:0.75rem;">Edit the default configuration for built-in data points. Changes apply to all future agent creations.</p>
+  <div id="dpDefaultsContainer"><div class="loading">Loading data point defaults...</div></div>
 </div>
 
 <!-- ── Detail View ──────────────────────────────────────────────────── -->
@@ -2100,6 +2138,8 @@
     } catch (err) {
       showToast('Failed to load settings: ' + err.message, 'error');
     }
+
+    loadDpDefaults();
   }
 
   function hideSettings() {
@@ -2138,6 +2178,152 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Save Settings';
+    }
+  }
+
+  // ── DATA POINT DEFAULTS ──────────────────────────────────────────────
+
+  let dpDefaults = {};
+
+  async function loadDpDefaults() {
+    const container = document.getElementById('dpDefaultsContainer');
+    try {
+      const res = await fetch('/dashboard/api/data-point-defaults', { headers: { 'X-API-Key': apiKey } });
+      if (!res.ok) throw new Error('Failed: ' + res.status);
+      dpDefaults = await res.json();
+      renderDpDefaults();
+    } catch (err) {
+      container.innerHTML = '<div class="error-msg">Error: ' + esc(err.message) + '</div>';
+    }
+  }
+
+  function renderDpDefaults() {
+    const container = document.getElementById('dpDefaultsContainer');
+    const keys = Object.keys(dpDefaults).sort((a, b) => a.localeCompare(b));
+    if (keys.length === 0) {
+      container.innerHTML = '<div class="loading">No data points found. Create an agent first to seed defaults.</div>';
+      return;
+    }
+    let html = '';
+    for (const key of keys) {
+      const dp = dpDefaults[key];
+      html += renderDpCard(key, dp);
+    }
+    container.innerHTML = html;
+  }
+
+  function renderDpCard(key, dp) {
+    const ftHtml = (dp.finetuneExamples || []).map((ex, i) => renderFtExample(key, i, ex)).join('');
+    return `<details class="dp-card" data-dp-key="${esc(key)}">
+      <summary><strong>${esc(dp.label)}</strong> <span class="dp-var">${esc(key)}</span></summary>
+      <div class="dp-card-body">
+        <label>Description</label>
+        <textarea class="dp-description">${esc(dp.description || '')}</textarea>
+        <label>Conversation Prompt</label>
+        <textarea class="dp-conv-prompt" style="min-height:100px;">${esc(dp.conversationPrompt || '')}</textarea>
+        <label>Forward Condition</label>
+        <input type="text" class="dp-fwd-condition" value="${esc(dp.forwardCondition || '')}">
+        <label>Finetune Examples</label>
+        <div class="dp-ft-list">${ftHtml}</div>
+        <button type="button" class="ft-add-example" onclick="addFtExample('${esc(key)}')">+ Add Finetune Example</button>
+        <div class="dp-card-actions">
+          <button type="button" class="dp-btn-save" onclick="saveDpDefault('${esc(key)}')">Save</button>
+          <button type="button" class="dp-btn-reset" onclick="resetDpDefault('${esc(key)}')">Reset to Default</button>
+        </div>
+      </div>
+    </details>`;
+  }
+
+  function renderFtExample(dpKey, idx, ex) {
+    const rows = (ex.transcript || []).map((t, ri) =>
+      `<div class="ft-row">
+        <select onchange="this.dataset.role=this.value"><option value="user"${t.role==='user'?' selected':''}>user</option><option value="agent"${t.role==='agent'?' selected':''}>agent</option></select>
+        <input type="text" value="${esc(t.content)}">
+        <button type="button" class="ft-row-remove" onclick="this.closest('.ft-row').remove()" title="Remove">&times;</button>
+      </div>`
+    ).join('');
+    return `<div class="ft-example">
+      <div class="ft-header">
+        <select class="ft-type"><option value="positive"${ex.type==='positive'?' selected':''}>positive</option><option value="negative"${ex.type==='negative'?' selected':''}>negative</option></select>
+        <button type="button" class="ft-remove" onclick="this.closest('.ft-example').remove()">Remove</button>
+      </div>
+      <div class="ft-rows">${rows}</div>
+      <button type="button" class="ft-add-row" onclick="addFtRow(this)">+ Add line</button>
+    </div>`;
+  }
+
+  function addFtExample(dpKey) {
+    const card = document.querySelector(`.dp-card[data-dp-key="${dpKey}"]`);
+    const list = card.querySelector('.dp-ft-list');
+    const div = document.createElement('div');
+    div.innerHTML = renderFtExample(dpKey, 0, { type: 'positive', transcript: [{ role: 'user', content: '' }] });
+    list.appendChild(div.firstElementChild);
+  }
+
+  function addFtRow(btn) {
+    const rows = btn.previousElementSibling;
+    const div = document.createElement('div');
+    div.className = 'ft-row';
+    div.innerHTML = '<select><option value="user" selected>user</option><option value="agent">agent</option></select>' +
+      '<input type="text" value="">' +
+      '<button type="button" class="ft-row-remove" onclick="this.closest(\'.ft-row\').remove()" title="Remove">&times;</button>';
+    rows.appendChild(div);
+  }
+
+  function collectDpCard(key) {
+    const card = document.querySelector(`.dp-card[data-dp-key="${key}"]`);
+    const description = card.querySelector('.dp-description').value;
+    const conversationPrompt = card.querySelector('.dp-conv-prompt').value;
+    const forwardCondition = card.querySelector('.dp-fwd-condition').value;
+    const finetuneExamples = [];
+    card.querySelectorAll('.ft-example').forEach(ex => {
+      const type = ex.querySelector('.ft-type').value;
+      const transcript = [];
+      ex.querySelectorAll('.ft-row').forEach(row => {
+        const role = row.querySelector('select').value;
+        const content = row.querySelector('input').value;
+        if (content.trim()) transcript.push({ role, content });
+      });
+      if (transcript.length > 0) finetuneExamples.push({ type, transcript });
+    });
+    return { description, conversationPrompt, forwardCondition, finetuneExamples };
+  }
+
+  async function saveDpDefault(key) {
+    const updates = collectDpCard(key);
+    try {
+      const res = await fetch('/dashboard/api/data-point-defaults/' + key, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      const data = await res.json();
+      dpDefaults[key] = { ...dpDefaults[key], ...updates };
+      showToast(key + ' defaults saved', 'success');
+    } catch (err) {
+      showToast('Save failed: ' + err.message, 'error');
+    }
+  }
+
+  async function resetDpDefault(key) {
+    if (!confirm('Reset "' + key + '" to the original hard-coded default? This cannot be undone.')) return;
+    try {
+      const res = await fetch('/dashboard/api/data-point-defaults/' + key + '/reset', {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey },
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      const data = await res.json();
+      dpDefaults[key] = data.dataPoint;
+      // Re-render just this card
+      const card = document.querySelector(`.dp-card[data-dp-key="${key}"]`);
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = renderDpCard(key, data.dataPoint);
+      card.replaceWith(wrapper.firstElementChild);
+      showToast(key + ' reset to default', 'success');
+    } catch (err) {
+      showToast('Reset failed: ' + err.message, 'error');
     }
   }
 

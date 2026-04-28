@@ -18,6 +18,7 @@ import { startAutoSync } from "./lib/retell-auto-sync.js";
 import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
 import { reportsRouter } from "./routes/reports/index.js";
 import { refreshOwnerConfig } from "./lib/settings.js";
+import { seedDataPointDefaults } from "./lib/data-point-defaults.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -149,6 +150,7 @@ app.use("/api/backup", backupRouter);
 await initDb();
 await loadClientsFromDb();
 await refreshOwnerConfig();
+await seedDataPointDefaults();
 
 app.listen(Number(config.PORT), () => {
   console.log(`ServiceCall API listening on port ${config.PORT}`);

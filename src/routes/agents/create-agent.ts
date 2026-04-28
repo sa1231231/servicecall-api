@@ -4,6 +4,7 @@ import { config } from "../../config.js";
 import { notificationClients } from "../../_cache/clients.js";
 import { persistClient, updateClientField } from "../../config/client-store.js";
 import { provisionPhoneNumber } from "../../lib/provision-number.js";
+import { getDataPointDefaults } from "../../lib/data-point-defaults.js";
 import {
   generateAgent,
   type AgentConfig,
@@ -132,10 +133,12 @@ export async function createAgentHandler(
       ...body.business,
       humanRequestMode: body.business.human_request_mode || "callback",
     };
+    const dpDefaults = await getDataPointDefaults();
     const { agent: agentJson, resolved, resolvedPaths } = generateAgent(
       agentConfig,
       body.dataPoints ?? [],
       body.paths as PathConfig[] | undefined,
+      dpDefaults,
     );
 
     const slug = body.client.slug;
