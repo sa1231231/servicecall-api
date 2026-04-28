@@ -105,6 +105,10 @@ app.get("/client", (_req, res) => {
 // ── Basic Auth for form + dashboard ─────────────────────────────────────────
 import type { Request, Response, NextFunction } from "express";
 
+// Cache verified credentials for 5 minutes to avoid scrypt on every request
+const authCache = new Map<string, { user: NonNullable<Request["user"]>; expires: number }>();
+const AUTH_CACHE_MS = 5 * 60 * 1000;
+
 async function basicAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith("Basic ")) {
@@ -112,32 +116,46 @@ async function basicAuth(req: Request, res: Response, next: NextFunction): Promi
     res.status(401).send("Authentication required");
     return;
   }
+
+  // Check cache first (keyed on the raw Authorization header)
+  const cached = authCache.get(auth);
+  if (cached && cached.expires > Date.now()) {
+    req.user = cached.user;
+    next();
+    return;
+  }
+
   const decoded = Buffer.from(auth.slice(6), "base64").toString();
   const colon = decoded.indexOf(":");
   const username = decoded.substring(0, colon).toLowerCase();
   const pass = decoded.substring(colon + 1);
 
+  let user: NonNullable<Request["user"]> | null = null;
+
   // Try DB user first
   const dbUser = await getUser(username);
   if (dbUser && verifyPassword(pass, dbUser.password_hash)) {
-    req.user = {
+    user = {
       username,
       role: dbUser.role,
       permissions: resolvePermissions(dbUser.role, dbUser.permissions),
       isRoot: false,
     };
-    next();
-    return;
   }
 
   // Fallback: ROOT_PASSWORD (always grants admin — this is root)
-  if (pass === config.ROOT_PASSWORD) {
-    req.user = {
+  if (!user && pass === config.ROOT_PASSWORD) {
+    user = {
       username: username || "admin",
       role: "admin",
       permissions: { ...DEFAULT_PERMISSIONS.admin },
       isRoot: true,
     };
+  }
+
+  if (user) {
+    authCache.set(auth, { user, expires: Date.now() + AUTH_CACHE_MS });
+    req.user = user;
     next();
     return;
   }
