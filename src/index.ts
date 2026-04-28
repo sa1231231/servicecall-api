@@ -111,6 +111,7 @@ function basicAuth(req: Request, res: Response, next: NextFunction): void {
 
 // ── Form (Basic Auth protected) ─────────────────────────────────────────────
 const formRouter = express.Router();
+formRouter.use(express.json());
 const formHtmlPath = path.join(__dirname, "..", "public", "index.html");
 formRouter.get("/", (_req, res) => {
   try {
