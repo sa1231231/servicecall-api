@@ -118,14 +118,16 @@
     padding: 0.4rem 0;
   }
   /* Routing path cards */
-  .route-path {
+  .route-path-details {
     background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
-    padding: 1rem; margin: 0.75rem 0; font-size: 0.82rem;
+    margin: 0.75rem 0; font-size: 0.82rem;
     box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   }
-  .route-path h3 {
-    margin: 0 0 0.15rem; font-size: 0.95rem; color: #1a1a1a; font-weight: 600;
+  .route-path-summary {
+    padding: 0.75rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.25rem;
   }
+  .route-path-summary strong { font-size: 0.95rem; color: #1a1a1a; }
+  .route-path-body { padding: 0 1rem 1rem; }
   .route-path .route-key {
     font-size: 0.72rem; color: #999; font-family: monospace; margin-bottom: 0.5rem;
   }
@@ -145,6 +147,7 @@
   }
   .field-table tr:last-child td { border-bottom: none; }
   .field-table .col-show { width: 3rem; text-align: center; }
+  .field-table .col-req { width: 3rem; text-align: center; }
   .field-table .col-label { }
   .field-table .col-var { font-family: monospace; font-size: 0.75rem; color: #999; }
   .field-table .label-edit {
@@ -759,6 +762,52 @@
       .map(c => c.firstChild.textContent.trim());
   }
 
+  function updatePreview(mtKey) {
+    const section = document.querySelector(`.preview-section[data-mt-key="${mtKey}"]`);
+    if (!section) return;
+
+    const greetingInput = document.getElementById('edit-greeting');
+    const greetingTemplate = greetingInput && greetingInput.value.trim()
+      ? greetingInput.value.trim()
+      : 'Hi {{business_name}}, you have a new call!';
+    const clientName = originalDoc ? originalDoc.name : 'Business';
+    const greeting = greetingTemplate.replace(/\{\{business_name\}\}/g, clientName);
+
+    // Get subject template
+    const subjectInput = document.querySelector(`.subject-template-input[data-mt-key="${mtKey}"]`);
+    const subjectTemplate = subjectInput ? subjectInput.value : '';
+
+    // Get message type label from original doc
+    const mtLabel = originalDoc?.message_types?.[mtKey]?.label || mtKey;
+
+    // Collect visible fields with current labels
+    const rows = document.querySelectorAll(`.field-toggle[data-mt-key="${mtKey}"]`);
+    const fields = [];
+    for (const toggle of rows) {
+      if (!toggle.checked) continue;
+      const fieldKey = toggle.dataset.fieldKey;
+      const labelInput = document.querySelector(`.field-label-input[data-mt-key="${mtKey}"][data-field-key="${fieldKey}"]`);
+      const label = labelInput ? labelInput.value : fieldKey;
+      fields.push({ label, key: fieldKey });
+    }
+
+    // Build sample field lines
+    const sampleValues = { full_name: 'John Doe', phone_number: '555-123-4567', street_address: '123 Main St', city: 'Springfield', email: 'john@example.com', problem_description: 'Leaking faucet in kitchen' };
+    const fieldLines = fields.map(f => `${f.label}: ${sampleValues[f.key] || 'Sample value'}`).join('\n');
+    const fieldLinesHtml = fields.map(f => `<strong>${esc(f.label)}:</strong> ${esc(sampleValues[f.key] || 'Sample value')}`).join('<br>');
+
+    // Subject with sample values
+    const subject = subjectTemplate.replace(/\{\{(\w+)\}\}/g, (_, k) => sampleValues[k] || '');
+
+    // SMS preview
+    const smsEl = section.querySelector('.preview-sms');
+    if (smsEl) smsEl.textContent = `${greeting}\n\n${mtLabel}\n\n${fieldLines}\n\n— Service Call Saver`;
+
+    // Email preview
+    const emailEl = section.querySelector('.preview-email');
+    if (emailEl) emailEl.innerHTML = `<div style="color:#666;font-size:0.7rem;margin-bottom:0.35rem;">Subject: ${esc(subject)}</div><p style="margin:0 0 0.3rem;">${esc(greeting)}</p><p style="margin:0 0 0.3rem;"><strong>${esc(mtLabel)}</strong></p><p style="margin:0;">${fieldLinesHtml}</p><br><p style="margin:0;color:#888;">—<br>Sent by Service Call Saver</p>`;
+  }
+
   function buildHeaderButtons(slug) {
     return `<div class="btn-group">` +
       `<button class="btn-group-toggle test" onclick="toggleDropdown(this)">Test &#9662;</button>` +
@@ -831,22 +880,23 @@
     <dl class="config-grid">
       <dt title="Client display name used in notification greetings and reports">Display Name</dt><dd><input class="edit-input" id="edit-name" value="${esc(doc.name)}" placeholder="Business name"></dd>
 
+      <dt title="Custom greeting for SMS/email notifications. Use {{business_name}} for the business name.">Notification Greeting</dt><dd>
+        <input class="edit-input" id="edit-greeting" value="${esc(doc.notification_greeting || '')}" placeholder="Hi {{business_name}}, you have a new call!"
+          oninput="document.querySelectorAll('.preview-section').forEach(s => updatePreview(s.dataset.mtKey))">
+        <div style="font-size:0.72rem;color:#999;margin-top:-0.5rem;">Leave blank for default. Use <code>{{business_name}}</code> for the business name.</div>
+      </dd>
+
       <dt title="When on, notifications go to the owner instead of the client for testing">Shadow Mode</dt><dd>
         <label class="toggle">
           <input type="checkbox" id="edit-shadow-mode" ${doc.shadow_mode ? 'checked' : ''}>
           <span class="slider"></span>
         </label>
       </dd>
-    </dl>
 
-    <details style="margin-top:0.5rem;">
-      <summary style="font-size:1.05rem;font-weight:600;color:#444;cursor:pointer;padding-bottom:0.5rem;border-bottom:1px solid #ddd;">Advanced</summary>
-      <dl class="config-grid" style="margin-top:0.5rem;">
-        <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
+      <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
 
-        <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
-      </dl>
-    </details>`;
+      <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
+    </dl>`;
 
     html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
 
@@ -858,23 +908,49 @@
       html += `<h2>Routing Paths (${mtKeys.length})</h2>`;
       for (const [key, val] of Object.entries(mt)) {
         const override = dbt[key] || {};
-        html += `<div class="route-path">`;
-        html += `<h3>${esc(val.label)}</h3>`;
-        html += `<div class="route-key">${esc(key)}</div>`;
-        html += `<div class="route-meta">Subject: ${esc(val.subject_template)}</div>`;
+        const fieldCount = val.fields.length;
+        const visibleCount = val.fields.filter(f => f.show !== false).length;
+        html += `<details class="route-path-details">
+        <summary class="route-path-summary">
+          <strong>${esc(val.label)}</strong>
+          <span class="route-key" style="display:inline;margin:0 0.5rem;">${esc(key)}</span>
+          <span style="color:#999;font-size:0.75rem;">${visibleCount}/${fieldCount} fields</span>
+        </summary>
+        <div class="route-path-body">`;
+        html += `<div class="route-meta" style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem;">
+          <span style="color:#666;">Subject:</span>
+          <input type="text" value="${esc(val.subject_template)}" data-mt-key="${esc(key)}" class="subject-template-input"
+            style="flex:1;font-size:0.8rem;padding:3px 6px;border:1px solid #e5e7eb;border-radius:4px;font-family:monospace;"
+            oninput="updatePreview('${esc(key)}')">
+        </div>`;
         if (val.additional_text) html += `<div class="route-meta">Note: ${esc(val.additional_text)}</div>`;
         html += `<table class="field-table"><thead><tr>
-          <th class="col-show">Show</th><th class="col-label">Label</th><th class="col-var">Variable</th>
+          <th class="col-show">Show</th><th class="col-req">Req</th><th class="col-label">Label</th><th class="col-var">Variable</th>
         </tr></thead><tbody>`;
         for (const f of val.fields) {
           const checked = f.show !== false ? 'checked' : '';
+          const reqChecked = f.required ? 'checked' : '';
           html += `<tr>
-            <td class="col-show"><input type="checkbox" ${checked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-toggle"></td>
-            <td class="col-label"><input type="text" value="${esc(f.label)}" data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-label-input label-edit"></td>
+            <td class="col-show"><input type="checkbox" ${checked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-toggle" onchange="updatePreview('${esc(key)}')"></td>
+            <td class="col-req"><input type="checkbox" ${reqChecked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-required-toggle"></td>
+            <td class="col-label"><input type="text" value="${esc(f.label)}" data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-label-input label-edit" oninput="updatePreview('${esc(key)}')"></td>
             <td class="col-var">${esc(f.key)}</td>
           </tr>`;
         }
         html += '</tbody></table>';
+        // Live preview
+        html += `<div class="preview-section" data-mt-key="${esc(key)}">
+          <div style="display:flex;gap:1rem;margin-top:0.75rem;flex-wrap:wrap;">
+            <div style="flex:1;min-width:250px;">
+              <div style="font-size:0.72rem;font-weight:600;color:#888;text-transform:uppercase;margin-bottom:0.25rem;">SMS Preview</div>
+              <pre class="preview-sms" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:0.6rem;font-size:0.75rem;white-space:pre-wrap;margin:0;font-family:inherit;"></pre>
+            </div>
+            <div style="flex:1;min-width:250px;">
+              <div style="font-size:0.72rem;font-weight:600;color:#888;text-transform:uppercase;margin-bottom:0.25rem;">Email Preview</div>
+              <div class="preview-email" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:0.6rem;font-size:0.75rem;"></div>
+            </div>
+          </div>
+        </div>`;
         // Dispatch override per path
         html += `<details style="margin-top:0.65rem;">
           <summary style="font-size:0.8rem;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">${Object.keys(override).length ? '(configured)' : '(none)'}</span></summary>
@@ -891,11 +967,16 @@
               placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">
           </div>
         </details>`;
-        html += '</div>';
+        html += '</div></details>';
       }
     }
 
     document.getElementById('detailConfig').innerHTML = html;
+
+    // Initialize previews for all routing paths
+    document.querySelectorAll('.preview-section').forEach(section => {
+      updatePreview(section.dataset.mtKey);
+    });
   }
 
   function buildOverrideRows(overrides) {
@@ -997,6 +1078,13 @@
       updates.shadow_mode = shadowMode;
     }
 
+    // Notification greeting
+    const newGreeting = document.getElementById('edit-greeting').value.trim() || null;
+    const origGreeting = originalDoc.notification_greeting || null;
+    if (newGreeting !== origGreeting) {
+      updates.notification_greeting = newGreeting;
+    }
+
     // Field visibility toggles + label edits
     const fieldToggles = document.querySelectorAll('.field-toggle');
     if (fieldToggles.length > 0) {
@@ -1029,6 +1117,33 @@
         const field = mt.fields.find(f => f.key === fieldKey);
         if (field && newLabel && newLabel !== field.label) {
           field.label = newLabel;
+          mtChanged = true;
+        }
+      }
+      // Subject template edits
+      const subjectInputs = document.querySelectorAll('.subject-template-input');
+      for (const input of subjectInputs) {
+        const mtKey = input.dataset.mtKey;
+        const newSubject = input.value.trim();
+        const mt = updatedMt[mtKey];
+        if (mt && newSubject && newSubject !== mt.subject_template) {
+          mt.subject_template = newSubject;
+          mtChanged = true;
+        }
+      }
+      // Required field toggles
+      const reqToggles = document.querySelectorAll('.field-required-toggle');
+      for (const toggle of reqToggles) {
+        const mtKey = toggle.dataset.mtKey;
+        const fieldKey = toggle.dataset.fieldKey;
+        const isRequired = toggle.checked;
+        const mt = updatedMt[mtKey];
+        if (!mt) continue;
+        const field = mt.fields.find(f => f.key === fieldKey);
+        if (!field) continue;
+        const wasRequired = !!field.required;
+        if (isRequired !== wasRequired) {
+          if (isRequired) { field.required = true; } else { delete field.required; }
           mtChanged = true;
         }
       }

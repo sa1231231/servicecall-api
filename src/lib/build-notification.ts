@@ -120,7 +120,9 @@ export function buildNotificationMessages(input: BuildNotificationInput): BuildR
 
   // Build message bodies
   const effectiveName = allVars.business_name || clientConfig.name;
-  const greeting = `Hi ${effectiveName}, you have a new call!`;
+  const greeting = clientConfig.notification_greeting
+    ? clientConfig.notification_greeting.replace(/\{\{business_name\}\}/g, effectiveName)
+    : `Hi ${effectiveName}, you have a new call!`;
   const urgentSuffix = messageType.additional_text
     ? `\n\n${messageType.additional_text}`
     : "";

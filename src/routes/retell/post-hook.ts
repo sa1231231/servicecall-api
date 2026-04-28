@@ -11,6 +11,7 @@ import { sendOwnerCallMonitor } from "../../lib/owner-monitor.js";
 import { triggerDispatchCall } from "../../lib/dispatch-call.js";
 import { saveCallLog, type CallLogDocument } from "../../lib/call-log.js";
 import { resolveDispatch } from "../../lib/resolve-dispatch.js";
+import { recordCall } from "../../lib/call-spike-monitor.js";
 
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
@@ -270,6 +271,17 @@ export async function postHookHandler(req: Request, res: Response) {
 
   saveCallLog(buildCallLog("dispatched", typeKey, messageType.label, fieldValues)).catch(() => {});
   sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => {});
+
+  // Call spike detection
+  const spike = recordCall(clientSlug);
+  if (spike.spike) {
+    sendEmail({
+      to: ownerConfig.email,
+      subject: `[SPIKE ALERT] ${effectiveName} — ${spike.count} calls in 5 minutes`,
+      body: `Call spike detected for "${effectiveName}" (${clientSlug}).\n\n${spike.count} calls received in the last 5 minutes.\n\nThis alert will not repeat for 30 minutes.\n\n— Service Call Saver Monitor`,
+    }).catch(() => {});
+  }
+
   res.status(200).json({ success: true });
 }
 
