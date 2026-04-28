@@ -2314,7 +2314,7 @@
   let dpDefaults = {};
   let dpCategoryOrder = [];
   let dpCategoryLabels = {};
-  let REGISTRY_KEYS = new Set(); // Populated from server
+  // All data points are managed in MongoDB — no hardcoded registry
 
   async function loadDpDefaults() {
     const container = document.getElementById('dpDefaultsContainer');
@@ -2325,7 +2325,7 @@
       dpDefaults = data.defaults;
       dpCategoryOrder = data.categoryOrder;
       dpCategoryLabels = data.categoryLabels;
-      REGISTRY_KEYS = new Set(data.registryKeys || []);
+      // registryKeys removed — all data points are equal now
       renderDpDefaults();
       populateCategoryDropdown();
     } catch (err) {
@@ -2411,12 +2411,8 @@
   }
 
   function renderDpCard(key, dp) {
-    const isBuiltin = REGISTRY_KEYS.has(key);
     const ftHtml = (dp.finetuneExamples || []).map((ex, i) => renderFtExample(key, i, ex)).join('');
-    let actionBtns = `<button type="button" class="dp-btn-reset" style="color:#dc2626;border-color:#fca5a5;" onclick="deleteDpDefault('${esc(key)}')">Delete</button>`;
-    if (isBuiltin) {
-      actionBtns = `<button type="button" class="dp-btn-reset" onclick="resetDpDefault('${esc(key)}')">Reset to Default</button>` + actionBtns;
-    }
+    const actionBtns = `<button type="button" class="dp-btn-reset" style="color:#dc2626;border-color:#fca5a5;" onclick="deleteDpDefault('${esc(key)}')">Delete</button>`;
     return `<details class="dp-card" data-dp-key="${esc(key)}" draggable="true">
       <summary><span class="dp-drag-handle">&#9776;</span><strong>${esc(dp.label)}</strong> <span class="dp-var">${esc(key)}</span></summary>
       <div class="dp-card-body">
@@ -2610,27 +2606,6 @@
       showToast(key + ' defaults saved', 'success');
     } catch (err) {
       showToast('Save failed: ' + err.message, 'error');
-    }
-  }
-
-  async function resetDpDefault(key) {
-    if (!confirm('Reset "' + key + '" to the original hard-coded default? This cannot be undone.')) return;
-    try {
-      const res = await fetch('/dashboard/api/data-point-defaults/' + key + '/reset', {
-        method: 'POST',
-        headers: { 'X-API-Key': apiKey },
-      });
-      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
-      const data = await res.json();
-      dpDefaults[key] = data.dataPoint;
-      // Re-render just this card
-      const card = document.querySelector(`.dp-card[data-dp-key="${key}"]`);
-      const wrapper = document.createElement('div');
-      wrapper.innerHTML = renderDpCard(key, data.dataPoint);
-      card.replaceWith(wrapper.firstElementChild);
-      showToast(key + ' reset to default', 'success');
-    } catch (err) {
-      showToast('Reset failed: ' + err.message, 'error');
     }
   }
 

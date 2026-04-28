@@ -1,6 +1,5 @@
 export { generateAgent, resolveDataPoints } from "./generate-agent.js";
 export {
-  DATA_POINT_REGISTRY,
   NOT_MENTIONED,
   CALLER_DOESNT_KNOW,
   PHONE_COLLECTED_FLAG,

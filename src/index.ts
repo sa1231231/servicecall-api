@@ -18,7 +18,7 @@ import { startAutoSync } from "./lib/retell-auto-sync.js";
 import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
 import { reportsRouter } from "./routes/reports/index.js";
 import { refreshOwnerConfig } from "./lib/settings.js";
-import { seedDataPointDefaults, getDataPointDefaultsWithCategory, CATEGORY_ORDER, CATEGORY_LABELS } from "./lib/data-point-defaults.js";
+import { getDataPointDefaultsWithCategory, CATEGORY_ORDER, CATEGORY_LABELS } from "./lib/data-point-defaults.js";
 import { ObjectId } from "mongodb";
 import { getDb } from "./lib/db.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
@@ -241,7 +241,6 @@ app.use("/api/backup", backupRouter);
 await initDb();
 await loadClientsFromDb();
 await refreshOwnerConfig();
-await seedDataPointDefaults();
 
 app.listen(Number(config.PORT), () => {
   console.log(`ServiceCall API listening on port ${config.PORT}`);

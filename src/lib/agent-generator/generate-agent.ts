@@ -1,5 +1,4 @@
 import {
-  DATA_POINT_REGISTRY,
   NOT_MENTIONED,
   CALLER_DOESNT_KNOW,
   defaultExtractEquation,
@@ -96,11 +95,15 @@ function resolveSingleDataPoint(
 
 export function resolveDataPoints(
   rawDataPoints: RawDataPoint[],
-  defaults?: Record<string, DataPoint>,
+  defaults: Record<string, DataPoint>,
 ): DataPoint[] {
-  const registry = defaults && Object.keys(defaults).length > 0
-    ? defaults
-    : DATA_POINT_REGISTRY;
+  if (!defaults || Object.keys(defaults).length === 0) {
+    throw new Error(
+      "No data point defaults provided. Ensure MongoDB data_point_defaults collection is populated.",
+    );
+  }
+
+  const registry = defaults;
 
   function flatten(
     items: RawDataPoint[],
@@ -157,8 +160,8 @@ export function resolveDataPoints(
 export function generateAgent(
   agentConfig: AgentConfig,
   rawDataPoints: RawDataPoint[],
-  pathConfigs?: PathConfig[],
-  defaults?: Record<string, DataPoint>,
+  pathConfigs: PathConfig[] | undefined,
+  defaults: Record<string, DataPoint>,
 ): {
   agent: Record<string, unknown>;
   resolved: DataPoint[];

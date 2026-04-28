@@ -22,14 +22,12 @@ import { runBackup } from "../../lib/backup.js";
 import {
   getDataPointDefaultsWithCategory,
   updateDataPointDefault,
-  resetDataPointDefault,
   createDataPointDefault,
   deleteDataPointDefault,
   reorderDataPointDefaults,
   CATEGORY_ORDER,
   CATEGORY_LABELS,
 } from "../../lib/data-point-defaults.js";
-import { DATA_POINT_REGISTRY } from "../../lib/agent-generator/data-point-registry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -199,8 +197,7 @@ dashboardApiRouter.patch("/settings", async (req, res) => {
 
 dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
   const defaults = await getDataPointDefaultsWithCategory();
-  const registryKeys = Object.keys(DATA_POINT_REGISTRY);
-  res.json({ defaults, categoryOrder: CATEGORY_ORDER, categoryLabels: CATEGORY_LABELS, registryKeys });
+  res.json({ defaults, categoryOrder: CATEGORY_ORDER, categoryLabels: CATEGORY_LABELS });
 });
 
 dashboardApiRouter.patch("/data-point-defaults/:key", async (req, res) => {
@@ -217,19 +214,6 @@ dashboardApiRouter.patch("/data-point-defaults/:key", async (req, res) => {
   }
 });
 
-dashboardApiRouter.post("/data-point-defaults/:key/reset", async (req, res) => {
-  try {
-    const reset = await resetDataPointDefault(req.params.key);
-    if (!reset) {
-      res.status(404).json({ error: `Data point "${req.params.key}" not in registry` });
-      return;
-    }
-    res.json({ success: true, dataPoint: reset });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: msg });
-  }
-});
 
 dashboardApiRouter.post("/data-point-defaults", async (req, res) => {
   try {
