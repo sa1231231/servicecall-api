@@ -578,7 +578,7 @@
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
-  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><a class="btn-create admin-only" href="https://servicecall-api-production.up.railway.app/form" target="_blank">+ Create</a><span id="userBadge" class="user-badge"></span></h1>
+  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><a class="btn-create" data-perm="create_agents" href="/form" target="_blank">+ Create</a><span id="userBadge" class="user-badge"></span></h1>
   <p class="subtitle">Click a client to view details and call history.</p>
   <div id="agentList"><div class="loading">Loading agents...</div></div>
 </div>

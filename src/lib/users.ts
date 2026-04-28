@@ -9,6 +9,7 @@ export const PERMISSION_DEFS: Array<{
   label: string;
   description: string;
 }> = [
+  { key: "create_agents",      label: "Create Agents",       description: "Access the agent creation form and deploy new agents" },
   { key: "edit_agents",        label: "Edit Agents",         description: "Edit agent config and toggle shadow mode" },
   { key: "clone_agents",       label: "Clone Agents",        description: "Clone existing agents" },
   { key: "delete_agents",      label: "Delete Agents",       description: "Delete, restore, and permanently remove agents" },
@@ -24,6 +25,7 @@ export const PERMISSION_KEYS = PERMISSION_DEFS.map((d) => d.key);
 export const DEFAULT_PERMISSIONS: Record<Role, Record<string, boolean>> = {
   admin:    Object.fromEntries(PERMISSION_KEYS.map((k) => [k, true])),
   operator: {
+    create_agents: true,
     edit_agents: true,
     clone_agents: true,
     delete_agents: false,

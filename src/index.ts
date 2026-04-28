@@ -238,7 +238,7 @@ formRouter.delete("/drafts/:id", async (req, res) => {
   }
 });
 
-app.use("/form", basicAuth, formRouter);
+app.use("/form", basicAuth, requirePermission("create_agents"), formRouter);
 
 // ── Dashboard (Basic Auth protected) ────────────────────────────────────────
 app.use("/dashboard", basicAuth, dashboardRouter);
