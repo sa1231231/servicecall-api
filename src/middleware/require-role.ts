@@ -29,3 +29,11 @@ export function requirePermission(perm: string) {
 }
 
 export const adminOnly = requireRole("admin");
+
+export function requireRoot(req: Request, res: Response, next: NextFunction): void {
+  if (!req.user || !req.user.isRoot) {
+    res.status(403).json({ error: "Root access required" });
+    return;
+  }
+  next();
+}

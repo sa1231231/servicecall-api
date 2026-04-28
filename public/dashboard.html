@@ -655,7 +655,7 @@
     </details>
   </div>
 
-  <div class="admin-only">
+  <div id="deletedAgentsSection" style="display:none;">
     <h2>Recently Deleted Agents</h2>
     <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them.</p>
     <div id="deletedAgentsContainer"><div class="loading">Loading...</div></div>
@@ -2333,7 +2333,10 @@
     }
 
     loadDpDefaults();
-    loadDeletedAgents();
+    if (currentUser && currentUser.isRoot) {
+      document.getElementById('deletedAgentsSection').style.display = '';
+      loadDeletedAgents();
+    }
     loadUsers();
   }
 

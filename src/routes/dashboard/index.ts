@@ -31,7 +31,7 @@ import {
   CATEGORY_ORDER,
   CATEGORY_LABELS,
 } from "../../lib/data-point-defaults.js";
-import { requirePermission } from "../../middleware/require-role.js";
+import { requirePermission, requireRoot } from "../../middleware/require-role.js";
 import { logAudit } from "../../lib/audit.js";
 import { alertRootIfNeeded } from "../../lib/root-alerts.js";
 import {
@@ -83,12 +83,12 @@ dashboardApiRouter.delete("/agents/:slug", requirePermission("delete_agents"), d
 
 // ── Soft-Deleted Agents (Recovery) ──────────────────────────────────────────
 
-dashboardApiRouter.get("/deleted-agents", requirePermission("delete_agents"), async (_req, res) => {
+dashboardApiRouter.get("/deleted-agents", requireRoot, async (_req, res) => {
   const deleted = await listDeletedClients();
   res.json(deleted);
 });
 
-dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("delete_agents"), async (req, res) => {
+dashboardApiRouter.post("/deleted-agents/:slug/restore", requireRoot, async (req, res) => {
   const slug = String(req.params.slug);
   try {
     await restoreClient(slug);
@@ -101,7 +101,7 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("dele
   }
 });
 
-dashboardApiRouter.delete("/deleted-agents/:slug", requirePermission("delete_agents"), async (req, res) => {
+dashboardApiRouter.delete("/deleted-agents/:slug", requireRoot, async (req, res) => {
   const slug = String(req.params.slug);
   try {
     await deleteClient(slug);
