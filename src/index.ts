@@ -11,7 +11,7 @@ import { stripeRouter } from "./routes/stripe/index.js";
 import { retellRouter } from "./routes/retell/index.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
-import { dashboardRouter, dashboardApiRouter } from "./routes/dashboard/index.js";
+import { dashboardRouter, dashboardApiRouter, backupRouter } from "./routes/dashboard/index.js";
 import { qaRouter } from "./routes/qa.js";
 import { portalRouter } from "./routes/portal/index.js";
 import { startAutoSync } from "./lib/retell-auto-sync.js";
@@ -132,6 +132,7 @@ app.use("/agents", agentsRouter);
 app.use("/qa", qaRouter);
 app.use("/dashboard/api", dashboardApiRouter);
 app.use("/api/reports", reportsRouter);
+app.use("/api/backup", backupRouter);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();

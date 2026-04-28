@@ -186,7 +186,9 @@ dashboardApiRouter.patch("/settings", async (req, res) => {
 
 // ── Manual Backup ───────────────────────────────────────────────────────────
 
-dashboardApiRouter.post("/backup", async (_req, res) => {
+// Backup endpoint exposed via backupRouter (mounted outside /dashboard basic auth)
+export const backupRouter = Router();
+backupRouter.post("/", async (_req, res) => {
   const result = await runBackup();
   if (result.success) {
     res.json({ success: true, key: result.key });
