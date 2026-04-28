@@ -490,6 +490,31 @@
     }
   }
 
+  function buildValueOptions(variableKey, selectedValue) {
+    const dp = BUILTIN_DATA[variableKey];
+    if (!dp) return '<option value="">— select variable first —</option>';
+    let options = '<option value="">— Value —</option>';
+    if (dp.type === 'boolean') {
+      options += `<option value="Yes"${'Yes' === selectedValue ? ' selected' : ''}>Yes</option>`;
+      options += `<option value="No"${'No' === selectedValue ? ' selected' : ''}>No</option>`;
+    } else if (dp.type === 'enum' && dp.choices) {
+      for (const c of dp.choices) {
+        if (c === 'Not Mentioned' || c === "Caller Doesn't Know") continue;
+        const sel = c === selectedValue ? ' selected' : '';
+        options += `<option value="${c}"${sel}>${c}</option>`;
+      }
+    }
+    return options;
+  }
+
+  function onBranchVariableChange(select) {
+    const header = select.closest('.branch-header');
+    const valueSelect = header.querySelector('.branch-value-select');
+    if (valueSelect) {
+      valueSelect.innerHTML = buildValueOptions(select.value, '');
+    }
+  }
+
   function addChainBranch(chainList, branchData) {
     const id = 'cb_' + (++chainItemCounter);
     const bd = branchData || {};
@@ -497,15 +522,16 @@
     div.className = 'chain-branch';
     div.dataset.type = 'branch';
     div.dataset.itemId = id;
+    const valueOpts = bd.variable ? buildValueOptions(bd.variable, bd.value || '') : '<option value="">— select variable first —</option>';
     div.innerHTML = `
       <div class="branch-header">
         <strong style="color:#7c3aed;font-size:0.78rem;">IF</strong>
-        <select class="branch-variable">${buildConditionVarOptions(bd.variable || '')}</select>
+        <select class="branch-variable" onchange="onBranchVariableChange(this)">${buildConditionVarOptions(bd.variable || '')}</select>
         <select class="branch-operator">
           <option value="==" ${(bd.operator||'==') === '==' ? 'selected' : ''}>equals</option>
           <option value="!=" ${bd.operator === '!=' ? 'selected' : ''}>does not equal</option>
         </select>
-        <input type="text" class="branch-value" placeholder="value" value="${bd.value || ''}">
+        <select class="branch-value-select">${valueOpts}</select>
         <button type="button" class="branch-remove" onclick="this.closest('.chain-branch').remove()">&times;</button>
       </div>
       <div class="branch-side">
@@ -652,7 +678,7 @@
       } else if (node.dataset.type === 'branch') {
         const variable = node.querySelector('.branch-variable').value;
         const operator = node.querySelector('.branch-operator').value;
-        const value = node.querySelector('.branch-value').value.trim();
+        const value = node.querySelector('.branch-value-select').value;
         if (!variable || !value) continue;
         const ifList = node.querySelector('.branch-side .chain-list[data-side="if"]') || node.querySelectorAll('.chain-list')[0];
         const elseList = node.querySelectorAll('.branch-side')[1]?.querySelector('.chain-list') || node.querySelectorAll('.chain-list')[1];
@@ -890,7 +916,7 @@
           _branch: true,
           variable: node.querySelector('.branch-variable').value,
           operator: node.querySelector('.branch-operator').value,
-          value: node.querySelector('.branch-value').value,
+          value: node.querySelector('.branch-value-select').value,
           ifChain: ifList ? serializeChain(ifList) : [],
           elseChain: elseList ? serializeChain(elseList) : [],
         });
