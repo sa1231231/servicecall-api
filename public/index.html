@@ -24,6 +24,9 @@
   }
   textarea { resize: vertical; min-height: 100px; }
   .field-hint { font-size: 0.75rem; color: #777; margin: -0.5rem 0 0.75rem; }
+  input.invalid { border-color: #f87171 !important; background: #fef2f2 !important; }
+  .field-error { font-size: 0.72rem; color: #dc2626; margin: -0.5rem 0 0.5rem; display: none; }
+  .field-error.visible { display: block; }
   .checkbox-group { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin-bottom: 0.75rem; }
   .checkbox-group label { display: flex; align-items: center; gap: 0.35rem; font-weight: 400; cursor: pointer; }
   .checkbox-group input[type="checkbox"] { margin: 0; }
@@ -497,6 +500,50 @@
 
     return errors;
   }
+
+  // ── Inline Validation on Blur ──────────────────────────────
+
+  function markField(input, valid, msg) {
+    if (valid) {
+      input.classList.remove('invalid');
+      const err = input.parentElement.querySelector('.field-error');
+      if (err) err.classList.remove('visible');
+    } else {
+      input.classList.add('invalid');
+      let err = input.parentElement.querySelector('.field-error');
+      if (!err) {
+        err = document.createElement('div');
+        err.className = 'field-error';
+        // Insert after the next field-hint if present, otherwise after input
+        const hint = input.nextElementSibling?.classList?.contains('field-hint') ? input.nextElementSibling : null;
+        if (hint) hint.after(err); else input.after(err);
+      }
+      err.textContent = msg;
+      err.classList.add('visible');
+    }
+  }
+
+  ['dispatchTextNumbers', 'dispatchCallNumber', 'dispatchEmail', 'summaryAgentId'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('blur', () => {
+      const v = el.value.trim();
+      if (!v) { markField(el, true); return; }
+      if (id === 'dispatchTextNumbers') {
+        const nums = csvToArray(v);
+        const allValid = nums.every(n => PHONE_RE.test(n));
+        markField(el, allValid, 'Each number must be +1XXXXXXXXXX format');
+      } else if (id === 'dispatchCallNumber') {
+        markField(el, PHONE_RE.test(v), 'Format: +1XXXXXXXXXX');
+      } else if (id === 'dispatchEmail') {
+        const emails = csvToArray(v);
+        const allValid = emails.every(e => EMAIL_RE.test(e));
+        markField(el, allValid, 'Invalid email format');
+      } else if (id === 'summaryAgentId') {
+        markField(el, v.startsWith('agent_'), 'Must start with "agent_"');
+      }
+    });
+  });
 
   // ── Data Point Dropdown Options ─────────────────────────────
 

@@ -260,6 +260,9 @@
     font-family: monospace;
   }
   .edit-input:focus { border-color: #93b4f5; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); outline: none; }
+  .edit-input.invalid { border-color: #f87171; background: #fef2f2; }
+  .field-error { font-size: 0.72rem; color: #dc2626; margin-top: 0.15rem; display: none; }
+  .field-error.visible { display: block; }
 
   .btn-save {
     display: inline-flex; align-items: center; gap: 0.35rem;
@@ -1576,7 +1579,7 @@
     // Validate all fields before saving
     const validationErrors = validateDashboardFields();
     if (validationErrors.length > 0) {
-      showToast(validationErrors[0], 'error');
+      alert('Please fix the following:\n\n' + validationErrors.join('\n'));
       return;
     }
 
@@ -2269,7 +2272,7 @@
     const ownerPhone = document.getElementById('settings-owner-phone').value.trim();
     if (ownerPhone && !PHONE_RE.test(ownerPhone)) settingsErrors.push('Owner phone invalid. Format: +1XXXXXXXXXX.');
     if (settingsErrors.length > 0) {
-      showToast(settingsErrors[0], 'error');
+      alert('Please fix the following:\n\n' + settingsErrors.join('\n'));
       return;
     }
 
@@ -2682,6 +2685,73 @@
       showToast('Delete failed: ' + err.message, 'error');
     }
   }
+
+  // ── Inline Validation on Blur ──────────────────────────────────────
+
+  function markField(input, valid, msg) {
+    if (valid) {
+      input.classList.remove('invalid');
+      const err = input.nextElementSibling?.classList?.contains('field-error') ? input.nextElementSibling : null;
+      if (err) err.classList.remove('visible');
+    } else {
+      input.classList.add('invalid');
+      let err = input.nextElementSibling;
+      if (!err || !err.classList.contains('field-error')) {
+        err = document.createElement('div');
+        err.className = 'field-error';
+        input.after(err);
+      }
+      err.textContent = msg;
+      err.classList.add('visible');
+    }
+  }
+
+  document.addEventListener('blur', (e) => {
+    const input = e.target;
+    if (!input.matches || !input.matches('input.edit-input, input.dbt-sms, input.dbt-email, input.dbt-call')) return;
+    const id = input.id || '';
+    const cls = input.className || '';
+    const v = input.value.trim();
+    if (!v) { markField(input, true); return; } // empty is ok (optional)
+
+    // Phone fields
+    if (id === 'edit-dispatch-call' || cls.includes('dbt-call') || cls.includes('override-from') || cls.includes('override-to')) {
+      markField(input, PHONE_RE.test(v), 'Format: +1XXXXXXXXXX');
+      return;
+    }
+    // SMS fields (comma-separated)
+    if (cls.includes('dbt-sms')) {
+      const nums = v.split(',').map(s => s.trim()).filter(Boolean);
+      const allValid = nums.every(n => PHONE_RE.test(n));
+      markField(input, allValid, 'Each number must be +1XXXXXXXXXX');
+      return;
+    }
+    // Email fields (comma-separated)
+    if (cls.includes('dbt-email')) {
+      const emails = v.split(',').map(s => s.trim()).filter(Boolean);
+      const allValid = emails.every(e => EMAIL_RE.test(e));
+      markField(input, allValid, 'Invalid email format');
+      return;
+    }
+    // Summary agent ID
+    if (id === 'edit-summary-agent') {
+      markField(input, v.startsWith('agent_'), 'Must start with "agent_"');
+      return;
+    }
+  }, true);
+
+  // Settings page inline validation
+  document.addEventListener('blur', (e) => {
+    const input = e.target;
+    const id = input.id || '';
+    const v = (input.value || '').trim();
+    if (!v) return;
+    if (id === 'settings-owner-email') {
+      markField(input, EMAIL_RE.test(v), 'Invalid email format');
+    } else if (id === 'settings-owner-phone') {
+      markField(input, PHONE_RE.test(v), 'Format: +1XXXXXXXXXX');
+    }
+  }, true);
 
   // ── INIT ───────────────────────────────────────────────────────────
   loadAgents();
