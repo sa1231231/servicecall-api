@@ -324,6 +324,7 @@
   let BUILTIN_NAMES = [];
   let BUILTIN_LABELS = {};
   let BUILTIN_CATEGORIES = {}; // key -> category string
+  let BUILTIN_SORT_ORDERS = {}; // key -> sortOrder number
   let DP_CATEGORY_ORDER = [];
   let DP_CATEGORY_LABELS = {};
 
@@ -350,17 +351,22 @@
       BUILTIN_NAMES = Object.keys(dataPoints);
       BUILTIN_LABELS = {};
       BUILTIN_CATEGORIES = {};
+      BUILTIN_SORT_ORDERS = {};
       for (const [key, dp] of Object.entries(dataPoints)) {
         BUILTIN_LABELS[key] = dp.label;
         BUILTIN_CATEGORIES[key] = dp.category || 'caller_info';
+        BUILTIN_SORT_ORDERS[key] = dp.sortOrder ?? 99;
       }
 
-      // Group by category
+      // Group by category, sorted by sortOrder within each group
       const groups = {};
       for (const [key, dp] of Object.entries(dataPoints)) {
         const cat = dp.category || 'caller_info';
         if (!groups[cat]) groups[cat] = [];
-        groups[cat].push({ key, label: dp.label });
+        groups[cat].push({ key, label: dp.label, sortOrder: dp.sortOrder ?? 99 });
+      }
+      for (const cat of Object.keys(groups)) {
+        groups[cat].sort((a, b) => a.sortOrder - b.sortOrder);
       }
 
       // Render checkbox groups using category order from server
@@ -595,13 +601,16 @@ Do not ask for any other information than what is instructed for this node.'>${v
     // Available data point map for lookup
     const dpMap = new Map(allDps.map(dp => [dp.value, dp]));
 
-    // Group by category (using real categories from server)
+    // Group by category (using real categories from server), sorted by sortOrder
     const groups = {};
     allDps.forEach(dp => {
-      const cat = dp.builtin ? (BUILTIN_CATEGORIES[dp.value] || 'general') : '_custom';
+      const cat = dp.builtin ? (BUILTIN_CATEGORIES[dp.value] || 'caller_info') : '_custom';
       if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(dp);
+      groups[cat].push({ ...dp, sortOrder: dp.builtin ? (BUILTIN_SORT_ORDERS[dp.value] ?? 99) : 99 });
     });
+    for (const cat of Object.keys(groups)) {
+      groups[cat].sort((a, b) => a.sortOrder - b.sortOrder);
+    }
 
     // Category display order (from server)
     const allCatLabels = { ...DP_CATEGORY_LABELS, _custom: 'Custom' };
