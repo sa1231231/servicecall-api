@@ -133,15 +133,22 @@ formRouter.get("/data-points", async (_req, res) => {
   }
 });
 
-// ── Agent Drafts ───────────────────────────────────────────────────────────
+// ── Agent Drafts & Templates ────────────────────────────────────────────────
 function draftsCollection() {
   return getDb().collection("agent_drafts");
 }
 
-formRouter.get("/drafts", async (_req, res) => {
+formRouter.get("/drafts", async (req, res) => {
   try {
+    const filter: any = {};
+    if (req.query.type === "template") {
+      filter.type = "template";
+    } else if (req.query.type === "draft" || !req.query.type) {
+      // Default: return drafts (including legacy docs without a type field)
+      filter.type = { $ne: "template" };
+    }
     const drafts = await draftsCollection()
-      .find({}, { projection: { name: 1, updatedAt: 1 } })
+      .find(filter, { projection: { name: 1, type: 1, updatedAt: 1 } })
       .sort({ updatedAt: -1 })
       .toArray();
     res.json(drafts);
@@ -162,11 +169,12 @@ formRouter.get("/drafts/:id", async (req, res) => {
 
 formRouter.post("/drafts", async (req, res) => {
   try {
-    const { name, formData } = req.body;
+    const { name, formData, type } = req.body;
     if (!name || !formData) { res.status(400).json({ error: "name and formData are required" }); return; }
     const result = await draftsCollection().insertOne({
       name,
       formData,
+      type: type === "template" ? "template" : "draft",
       createdAt: new Date(),
       updatedAt: new Date(),
     });

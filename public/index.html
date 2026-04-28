@@ -36,30 +36,47 @@
   button[type="submit"]:hover { background: #1d4ed8; }
   button[type="submit"]:disabled { background: #93b4f5; cursor: not-allowed; }
 
-  /* Draft bar */
-  .draft-bar {
-    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  /* Draft / template bar */
+  .save-bar {
     padding: 0.6rem 0.75rem; margin-bottom: 1rem;
     background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
   }
-  .draft-bar select {
-    flex: 1; min-width: 160px; padding: 0.35rem 0.5rem; font-size: 0.82rem;
+  .save-bar-row {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  }
+  .save-bar-row + .save-bar-row { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid #f0f0f0; }
+  .save-bar select {
+    flex: 1; min-width: 140px; padding: 0.35rem 0.5rem; font-size: 0.82rem;
     border: 1px solid #d1d5db; border-radius: 5px; margin: 0;
   }
-  .draft-bar button {
+  .save-bar button {
     padding: 0.35rem 0.75rem; font-size: 0.8rem; font-weight: 500;
     border-radius: 5px; cursor: pointer; white-space: nowrap;
   }
-  .draft-btn-save { background: #059669; color: #fff; border: none; }
-  .draft-btn-save:hover { background: #047857; }
-  .draft-btn-load { background: #2563eb; color: #fff; border: none; }
-  .draft-btn-load:hover { background: #1d4ed8; }
-  .draft-btn-delete { background: #fff; color: #dc2626; border: 1px solid #fca5a5; }
-  .draft-btn-delete:hover { background: #fef2f2; }
-  .draft-bar .draft-label { font-size: 0.78rem; font-weight: 600; color: #555; white-space: nowrap; }
-  .draft-status { font-size: 0.75rem; color: #059669; margin-left: 0.25rem; opacity: 0; transition: opacity 0.3s; }
-  .draft-status.show { opacity: 1; }
+  .sb-btn-save { background: #059669; color: #fff; border: none; }
+  .sb-btn-save:hover { background: #047857; }
+  .sb-btn-load { background: #2563eb; color: #fff; border: none; }
+  .sb-btn-load:hover { background: #1d4ed8; }
+  .sb-btn-template { background: #7c3aed; color: #fff; border: none; }
+  .sb-btn-template:hover { background: #6d28d9; }
+  .sb-btn-delete { background: #fff; color: #dc2626; border: 1px solid #fca5a5; }
+  .sb-btn-delete:hover { background: #fef2f2; }
+  .save-bar .sb-label { font-size: 0.78rem; font-weight: 600; color: #555; white-space: nowrap; min-width: 70px; }
+  .save-bar-status { font-size: 0.75rem; color: #059669; opacity: 0; transition: opacity 0.3s; }
+  .save-bar-status.show { opacity: 1; }
+  .autosave-banner {
+    padding: 0.6rem 0.75rem; margin-bottom: 0.75rem;
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+    font-size: 0.82rem; color: #92400e;
+    display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  }
+  .autosave-banner button {
+    padding: 0.3rem 0.65rem; font-size: 0.78rem; font-weight: 500;
+    border-radius: 5px; cursor: pointer;
+  }
+  .autosave-banner .ab-restore { background: #f59e0b; color: #fff; border: none; }
+  .autosave-banner .ab-discard { background: #fff; color: #666; border: 1px solid #d1d5db; }
   #result {
     margin-top: 1.25rem; padding: 1rem; border-radius: 6px;
     font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; display: none;
@@ -182,13 +199,28 @@
 <h1>Create Retell Agent</h1>
 <p style="color:#666;font-size:0.85rem;margin-top:0;">Fill in the fields below and click Create to provision a new agent.</p>
 
-<div class="draft-bar">
-  <span class="draft-label">Drafts:</span>
-  <select id="draftSelect"><option value="">— Select a draft —</option></select>
-  <button type="button" class="draft-btn-load" onclick="loadSelectedDraft()">Load</button>
-  <button type="button" class="draft-btn-save" onclick="saveDraft()">Save Draft</button>
-  <button type="button" class="draft-btn-delete" onclick="deleteSelectedDraft()">Delete</button>
-  <span class="draft-status" id="draftStatus"></span>
+<div class="autosave-banner" id="autosaveBanner">
+  <span>You have unsaved progress from a previous session.</span>
+  <button type="button" class="ab-restore" onclick="restoreAutoSave()">Restore</button>
+  <button type="button" class="ab-discard" onclick="discardAutoSave()">Discard</button>
+</div>
+
+<div class="save-bar">
+  <div class="save-bar-row">
+    <span class="sb-label">Templates:</span>
+    <select id="templateSelect"><option value="">— Select a template —</option></select>
+    <button type="button" class="sb-btn-load" onclick="loadSelected('template')">Load</button>
+    <button type="button" class="sb-btn-template" onclick="saveAsTemplate()">Save as Template</button>
+    <button type="button" class="sb-btn-delete" onclick="deleteSelected('template')">Delete</button>
+  </div>
+  <div class="save-bar-row">
+    <span class="sb-label">Drafts:</span>
+    <select id="draftSelect"><option value="">— Select a draft —</option></select>
+    <button type="button" class="sb-btn-load" onclick="loadSelected('draft')">Load</button>
+    <button type="button" class="sb-btn-save" onclick="saveDraft()">Save Draft</button>
+    <button type="button" class="sb-btn-delete" onclick="deleteSelected('draft')">Delete</button>
+  </div>
+  <span class="save-bar-status" id="saveBarStatus"></span>
 </div>
 
 <div id="result"></div>
@@ -890,6 +922,7 @@ Do not ask for any other information than what is instructed for this node.'>${v
       const data = await res.json();
 
       if (res.ok) {
+        localStorage.removeItem('agentFormAutoSave');
         showResult(
           'Agent created successfully!\n\n'
           + 'Agent ID: ' + data.agent_id + '\n'
@@ -907,26 +940,32 @@ Do not ask for any other information than what is instructed for this node.'>${v
     }
   });
 
-  // ── Drafts ─────────────────────────────────────────────────
+  // ── Drafts, Templates & Auto-Save ──────────────────────────
 
   let currentDraftId = null;
+  const AUTOSAVE_KEY = 'agentFormAutoSave';
+  let autoSaveTimer = null;
 
-  function showDraftStatus(msg) {
-    const el = document.getElementById('draftStatus');
+  function showSaveStatus(msg) {
+    const el = document.getElementById('saveBarStatus');
     el.textContent = msg;
     el.classList.add('show');
     setTimeout(() => el.classList.remove('show'), 2500);
   }
 
-  async function loadDraftList() {
+  // ── List loaders ──────────────────────────────────────────
+
+  async function loadList(type) {
     try {
-      const res = await fetch('/form/drafts', { headers: { 'X-API-Key': val('apiKey') } });
+      const res = await fetch('/form/drafts?type=' + type);
       if (!res.ok) return;
-      const drafts = await res.json();
-      const sel = document.getElementById('draftSelect');
+      const items = await res.json();
+      const sel = document.getElementById(type === 'template' ? 'templateSelect' : 'draftSelect');
       const currentVal = sel.value;
-      sel.innerHTML = '<option value="">— Select a draft —</option>';
-      for (const d of drafts) {
+      sel.innerHTML = type === 'template'
+        ? '<option value="">— Select a template —</option>'
+        : '<option value="">— Select a draft —</option>';
+      for (const d of items) {
         const date = new Date(d.updatedAt).toLocaleDateString();
         const opt = document.createElement('option');
         opt.value = d._id;
@@ -937,7 +976,13 @@ Do not ask for any other information than what is instructed for this node.'>${v
     } catch (err) { /* ignore */ }
   }
 
-  /** Collect the entire form state into a serializable object. */
+  function loadAllLists() {
+    loadList('draft');
+    loadList('template');
+  }
+
+  // ── Collect / Restore form state ──────────────────────────
+
   function collectFormState() {
     const state = {
       businessName: val('businessName'),
@@ -953,7 +998,6 @@ Do not ask for any other information than what is instructed for this node.'>${v
       humanRequestMode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
     };
 
-    // Custom data points
     customContainer.querySelectorAll('.custom-dp-card').forEach(card => {
       state.customDataPoints.push({
         variableName: card.querySelector('.cdp-variableName').value,
@@ -966,9 +1010,8 @@ Do not ask for any other information than what is instructed for this node.'>${v
       });
     });
 
-    // Routing paths
     pathsContainer.querySelectorAll('.path-card').forEach(card => {
-      const pathData = {
+      state.routingPaths.push({
         name: card.querySelector('.path-name').value,
         condition: card.querySelector('.path-condition').value,
         checkedDps: [...card.querySelectorAll('input[name="pathDp"]:checked')].map(cb => cb.value),
@@ -976,16 +1019,13 @@ Do not ask for any other information than what is instructed for this node.'>${v
         dispatchSms: card.querySelector('.path-dispatch-sms').value,
         dispatchEmail: card.querySelector('.path-dispatch-email').value,
         dispatchCall: card.querySelector('.path-dispatch-call').value,
-      };
-      state.routingPaths.push(pathData);
+      });
     });
 
     return state;
   }
 
-  /** Restore form state from a saved draft object. */
   function loadFormState(state) {
-    // Basic fields
     document.getElementById('businessName').value = state.businessName || '';
     document.getElementById('faqKnowledgeBase').value = state.faqKnowledgeBase || '';
     document.getElementById('clientName').value = state.clientName || '';
@@ -994,23 +1034,17 @@ Do not ask for any other information than what is instructed for this node.'>${v
     document.getElementById('dispatchEmail').value = state.dispatchEmail || '';
     document.getElementById('summaryAgentId').value = state.summaryAgentId || '';
 
-    // Human request mode
     const modeRadio = document.querySelector(`input[name="humanRequestMode"][value="${state.humanRequestMode || 'callback'}"]`);
     if (modeRadio) modeRadio.checked = true;
 
-    // Data point checkboxes
     document.querySelectorAll('input[name="dataPoint"]').forEach(cb => {
       cb.checked = (state.checkedDataPoints || []).includes(cb.value);
     });
 
-    // Custom data points — clear existing and recreate
     customContainer.innerHTML = '';
     cardCounter = 0;
-    (state.customDataPoints || []).forEach(cdp => {
-      addCustomCard(cdp);
-    });
+    (state.customDataPoints || []).forEach(cdp => addCustomCard(cdp));
 
-    // Routing paths — clear existing and recreate
     pathsContainer.innerHTML = '';
     pathCounter = 0;
     (state.routingPaths || []).forEach(p => {
@@ -1022,23 +1056,71 @@ Do not ask for any other information than what is instructed for this node.'>${v
       card.querySelector('.path-dispatch-email').value = p.dispatchEmail || '';
       card.querySelector('.path-dispatch-call').value = p.dispatchCall || '';
 
-      // Check the path's data points and rebuild order
       const cbContainer = card.querySelector('.path-dp-checkboxes');
-      (p.checkedDps || []).forEach(val => {
-        const cb = cbContainer.querySelector(`input[value="${val}"]`);
+      (p.checkedDps || []).forEach(v => {
+        const cb = cbContainer.querySelector(`input[value="${v}"]`);
         if (cb) cb.checked = true;
       });
 
-      // Rebuild the ordered list from saved order
       const orderList = card.querySelector('.path-dp-order');
       orderList.innerHTML = '';
       (p.orderedDps || []).forEach(dpVal => {
-        const label = BUILTIN_LABELS[dpVal] || dpVal;
-        appendOrderItem(orderList, dpVal, label);
+        appendOrderItem(orderList, dpVal, BUILTIN_LABELS[dpVal] || dpVal);
       });
       initDragDrop(orderList);
     });
   }
+
+  // ── Auto-save to localStorage ─────────────────────────────
+
+  function scheduleAutoSave() {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(() => {
+      try {
+        const state = collectFormState();
+        // Only save if there's meaningful content
+        if (state.businessName || state.faqKnowledgeBase || state.customDataPoints.length || state.routingPaths.length) {
+          localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(state));
+        }
+      } catch (e) { /* ignore */ }
+    }, 2000);
+  }
+
+  // Attach auto-save to form interactions
+  document.addEventListener('input', (e) => {
+    if (e.target.closest('#agentForm')) scheduleAutoSave();
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.closest('#agentForm')) scheduleAutoSave();
+  });
+
+  function restoreAutoSave() {
+    try {
+      const saved = localStorage.getItem(AUTOSAVE_KEY);
+      if (saved) loadFormState(JSON.parse(saved));
+    } catch (e) { /* ignore */ }
+    document.getElementById('autosaveBanner').style.display = 'none';
+  }
+
+  function discardAutoSave() {
+    localStorage.removeItem(AUTOSAVE_KEY);
+    document.getElementById('autosaveBanner').style.display = 'none';
+  }
+
+  // Check for auto-save on load (after data points have loaded)
+  function checkAutoSave() {
+    const saved = localStorage.getItem(AUTOSAVE_KEY);
+    if (saved) {
+      try {
+        const state = JSON.parse(saved);
+        if (state.businessName || state.faqKnowledgeBase) {
+          document.getElementById('autosaveBanner').style.display = 'flex';
+        }
+      } catch (e) { localStorage.removeItem(AUTOSAVE_KEY); }
+    }
+  }
+
+  // ── Draft CRUD ────────────────────────────────────────────
 
   async function saveDraft() {
     const formData = collectFormState();
@@ -1046,73 +1128,96 @@ Do not ask for any other information than what is instructed for this node.'>${v
 
     try {
       if (currentDraftId) {
-        // Update existing draft
         const res = await fetch('/form/drafts/' + currentDraftId, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-API-Key': val('apiKey') },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, formData }),
         });
         if (!res.ok) throw new Error('Failed');
-        showDraftStatus('Draft updated');
+        showSaveStatus('Draft updated');
       } else {
-        // Create new draft
         const res = await fetch('/form/drafts', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-API-Key': val('apiKey') },
-          body: JSON.stringify({ name, formData }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, formData, type: 'draft' }),
         });
         if (!res.ok) throw new Error('Failed');
         const data = await res.json();
         currentDraftId = data._id;
-        showDraftStatus('Draft saved');
+        showSaveStatus('Draft saved');
       }
-      await loadDraftList();
+      await loadList('draft');
       document.getElementById('draftSelect').value = currentDraftId || '';
     } catch (err) {
-      showDraftStatus('Save failed');
+      showSaveStatus('Save failed');
     }
   }
 
-  async function loadSelectedDraft() {
-    const sel = document.getElementById('draftSelect');
-    const id = sel.value;
-    if (!id) return;
+  async function saveAsTemplate() {
+    const formData = collectFormState();
+    const defaultName = formData.businessName || 'Untitled Template';
+    const name = prompt('Template name:', defaultName);
+    if (!name) return;
 
     try {
-      const res = await fetch('/form/drafts/' + id, { headers: { 'X-API-Key': val('apiKey') } });
-      if (!res.ok) throw new Error('Failed');
-      const draft = await res.json();
-      currentDraftId = draft._id;
-      loadFormState(draft.formData);
-      showDraftStatus('Draft loaded');
-    } catch (err) {
-      showDraftStatus('Load failed');
-    }
-  }
-
-  async function deleteSelectedDraft() {
-    const sel = document.getElementById('draftSelect');
-    const id = sel.value;
-    if (!id) return;
-    if (!confirm('Delete this draft?')) return;
-
-    try {
-      const res = await fetch('/form/drafts/' + id, {
-        method: 'DELETE',
-        headers: { 'X-API-Key': val('apiKey') },
+      const res = await fetch('/form/drafts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, formData, type: 'template' }),
       });
       if (!res.ok) throw new Error('Failed');
-      if (currentDraftId === id) currentDraftId = null;
-      sel.value = '';
-      await loadDraftList();
-      showDraftStatus('Draft deleted');
+      await loadList('template');
+      showSaveStatus('Template saved');
     } catch (err) {
-      showDraftStatus('Delete failed');
+      showSaveStatus('Save failed');
     }
   }
 
-  // Load draft list on page load (after a short delay for API key)
-  setTimeout(loadDraftList, 500);
+  async function loadSelected(type) {
+    const sel = document.getElementById(type === 'template' ? 'templateSelect' : 'draftSelect');
+    const id = sel.value;
+    if (!id) return;
+
+    try {
+      const res = await fetch('/form/drafts/' + id);
+      if (!res.ok) throw new Error('Failed');
+      const item = await res.json();
+      loadFormState(item.formData);
+
+      if (type === 'template') {
+        // Loading a template starts a fresh draft — don't link to the template ID
+        currentDraftId = null;
+        document.getElementById('draftSelect').value = '';
+        showSaveStatus('Template loaded');
+      } else {
+        currentDraftId = item._id;
+        showSaveStatus('Draft loaded');
+      }
+    } catch (err) {
+      showSaveStatus('Load failed');
+    }
+  }
+
+  async function deleteSelected(type) {
+    const sel = document.getElementById(type === 'template' ? 'templateSelect' : 'draftSelect');
+    const id = sel.value;
+    if (!id) return;
+    if (!confirm('Delete this ' + type + '?')) return;
+
+    try {
+      const res = await fetch('/form/drafts/' + id, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed');
+      if (type === 'draft' && currentDraftId === id) currentDraftId = null;
+      sel.value = '';
+      await loadList(type);
+      showSaveStatus(type === 'template' ? 'Template deleted' : 'Draft deleted');
+    } catch (err) {
+      showSaveStatus('Delete failed');
+    }
+  }
+
+  // Load lists and check auto-save after data points are ready
+  setTimeout(() => { loadAllLists(); checkAutoSave(); }, 500);
 </script>
 </body>
 </html>
