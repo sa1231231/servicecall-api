@@ -14,6 +14,9 @@ import { deleteAgentHandler } from "./delete-agent.js";
 import {
   getClientDocument,
   generatePortalToken,
+  listDeletedClients,
+  restoreClient,
+  deleteClient,
 } from "../../config/client-store.js";
 import { getCallLogById } from "../../lib/call-log.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
@@ -28,6 +31,9 @@ import {
   CATEGORY_ORDER,
   CATEGORY_LABELS,
 } from "../../lib/data-point-defaults.js";
+import { adminOnly } from "../../middleware/require-role.js";
+import { logAudit } from "../../lib/audit.js";
+import { listUsers, createUser, deleteUser } from "../../lib/users.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -44,8 +50,11 @@ dashboardRouter.get("/", (_req, res) => {
   }
 });
 
-dashboardRouter.get("/config", (_req, res) => {
-  res.json({ apiKey: config.API_KEY });
+dashboardRouter.get("/config", (req, res) => {
+  res.json({
+    apiKey: config.API_KEY,
+    user: req.user ? { username: req.user.username, role: req.user.role } : null,
+  });
 });
 
 // Authenticated API routes
@@ -58,7 +67,38 @@ dashboardApiRouter.get("/agents/:slug/calls", getCallsHandler);
 dashboardApiRouter.patch("/agents/:slug/shadow", toggleShadowHandler);
 dashboardApiRouter.patch("/agents/:slug", updateAgentHandler);
 dashboardApiRouter.post("/agents/:slug/clone", cloneAgentHandler);
-dashboardApiRouter.delete("/agents/:slug", deleteAgentHandler);
+dashboardApiRouter.delete("/agents/:slug", adminOnly, deleteAgentHandler);
+
+// ── Soft-Deleted Agents (Recovery) ──────────────────────────────────────────
+
+dashboardApiRouter.get("/deleted-agents", adminOnly, async (_req, res) => {
+  const deleted = await listDeletedClients();
+  res.json(deleted);
+});
+
+dashboardApiRouter.post("/deleted-agents/:slug/restore", adminOnly, async (req, res) => {
+  const slug = String(req.params.slug);
+  try {
+    await restoreClient(slug);
+    await logAudit(req, "restore_agent", slug);
+    res.json({ success: true, slug });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
+  }
+});
+
+dashboardApiRouter.delete("/deleted-agents/:slug", adminOnly, async (req, res) => {
+  const slug = String(req.params.slug);
+  try {
+    await deleteClient(slug);
+    await logAudit(req, "permanent_delete_agent", slug);
+    res.json({ success: true, slug });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
+  }
+});
 
 dashboardApiRouter.get("/agents/:slug/calls/:callId/transcript", async (req, res) => {
   const { slug, callId } = req.params;
@@ -183,9 +223,10 @@ dashboardApiRouter.get("/settings", async (_req, res) => {
   res.json(await getSettings());
 });
 
-dashboardApiRouter.patch("/settings", async (req, res) => {
+dashboardApiRouter.patch("/settings", adminOnly, async (req, res) => {
   try {
     const updated = await updateSettings(req.body);
+    await logAudit(req, "update_settings", "global", { fields: Object.keys(req.body) });
     res.json({ success: true, settings: updated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -200,11 +241,12 @@ dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
   res.json({ defaults, categoryOrder: CATEGORY_ORDER, categoryLabels: CATEGORY_LABELS });
 });
 
-dashboardApiRouter.patch("/data-point-defaults/:key", async (req, res) => {
+dashboardApiRouter.patch("/data-point-defaults/:key", adminOnly, async (req, res) => {
+  const key = String(req.params.key);
   try {
-    const updated = await updateDataPointDefault(req.params.key, req.body);
+    const updated = await updateDataPointDefault(key, req.body);
     if (!updated) {
-      res.status(404).json({ error: `Data point "${req.params.key}" not found` });
+      res.status(404).json({ error: `Data point "${key}" not found` });
       return;
     }
     res.json({ success: true, dataPoint: updated });
@@ -214,8 +256,7 @@ dashboardApiRouter.patch("/data-point-defaults/:key", async (req, res) => {
   }
 });
 
-
-dashboardApiRouter.post("/data-point-defaults", async (req, res) => {
+dashboardApiRouter.post("/data-point-defaults", adminOnly, async (req, res) => {
   try {
     const { key, label, category, type, choices, description, conversationPrompt, forwardCondition } = req.body;
     if (!key || !label) {
@@ -225,6 +266,7 @@ dashboardApiRouter.post("/data-point-defaults", async (req, res) => {
     const dp = await createDataPointDefault(key, {
       label, category, type, choices, description, conversationPrompt, forwardCondition,
     });
+    await logAudit(req, "create_data_point", key);
     res.json({ success: true, dataPoint: dp });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -232,7 +274,7 @@ dashboardApiRouter.post("/data-point-defaults", async (req, res) => {
   }
 });
 
-dashboardApiRouter.put("/data-point-defaults/reorder", async (req, res) => {
+dashboardApiRouter.put("/data-point-defaults/reorder", adminOnly, async (req, res) => {
   try {
     const { items } = req.body;
     if (!Array.isArray(items)) {
@@ -247,13 +289,15 @@ dashboardApiRouter.put("/data-point-defaults/reorder", async (req, res) => {
   }
 });
 
-dashboardApiRouter.delete("/data-point-defaults/:key", async (req, res) => {
+dashboardApiRouter.delete("/data-point-defaults/:key", adminOnly, async (req, res) => {
+  const key = String(req.params.key);
   try {
-    const deleted = await deleteDataPointDefault(req.params.key);
+    const deleted = await deleteDataPointDefault(key);
     if (!deleted) {
-      res.status(404).json({ error: `Data point "${req.params.key}" not found` });
+      res.status(404).json({ error: `Data point "${key}" not found` });
       return;
     }
+    await logAudit(req, "delete_data_point", key);
     res.json({ success: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -261,11 +305,62 @@ dashboardApiRouter.delete("/data-point-defaults/:key", async (req, res) => {
   }
 });
 
+// ── User Management (admin only) ─────────────────────────────────────────────
+
+dashboardApiRouter.get("/users", adminOnly, async (_req, res) => {
+  const users = await listUsers();
+  res.json(users);
+});
+
+dashboardApiRouter.post("/users", adminOnly, async (req, res) => {
+  const { username, password, role } = req.body;
+  if (!username || !password) {
+    res.status(400).json({ error: "username and password are required" });
+    return;
+  }
+  if (!/^[a-z0-9_]+$/.test(username)) {
+    res.status(400).json({ error: "Username must be lowercase letters, numbers, and underscores only" });
+    return;
+  }
+  if (password.length < 6) {
+    res.status(400).json({ error: "Password must be at least 6 characters" });
+    return;
+  }
+  if (role !== "admin" && role !== "operator") {
+    res.status(400).json({ error: "Role must be 'admin' or 'operator'" });
+    return;
+  }
+  try {
+    await createUser(username, password, role, req.user?.username ?? "unknown");
+    await logAudit(req, "create_user", username, { role });
+    res.json({ success: true, username, role });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(400).json({ error: msg });
+  }
+});
+
+dashboardApiRouter.delete("/users/:username", adminOnly, async (req, res) => {
+  const target = String(req.params.username);
+  if (target === req.user?.username) {
+    res.status(400).json({ error: "Cannot delete your own account" });
+    return;
+  }
+  const deleted = await deleteUser(target);
+  if (!deleted) {
+    res.status(404).json({ error: `User "${target}" not found` });
+    return;
+  }
+  await logAudit(req, "delete_user", target);
+  res.json({ success: true });
+});
+
 // ── Manual Backup ───────────────────────────────────────────────────────────
 
 // Backup endpoint exposed via backupRouter (mounted outside /dashboard basic auth)
 export const backupRouter = Router();
-backupRouter.post("/", async (_req, res) => {
+backupRouter.post("/", async (req, res) => {
+  await logAudit(req, "trigger_backup", "manual");
   const result = await runBackup();
   if (result.success) {
     res.json({ success: true, key: result.key });

@@ -3,8 +3,9 @@ import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import {
   getClientDocument,
-  deleteClient,
+  softDeleteClient,
 } from "../../config/client-store.js";
+import { logAudit } from "../../lib/audit.js";
 
 export async function deleteAgentHandler(
   req: Request,
@@ -63,8 +64,9 @@ export async function deleteAgentHandler(
     }
   }
 
-  // Delete from MongoDB + cache
-  await deleteClient(slug);
+  // Soft-delete: mark as deleted but keep in MongoDB for 30-day recovery
+  await softDeleteClient(slug);
+  await logAudit(req, "delete_agent", slug);
 
   res.json({ success: true, slug, warnings: warnings.length > 0 ? warnings : undefined });
 }

@@ -568,13 +568,17 @@
   .ft-row .ft-row-remove { color: #dc2626; background: none; border: none; cursor: pointer; font-size: 0.85rem; padding: 0 0.2rem; }
   .ft-add-row, .ft-add-example { font-size: 0.75rem; color: #2563eb; background: none; border: none; cursor: pointer; padding: 0.15rem 0; }
   .ft-add-row:hover, .ft-add-example:hover { text-decoration: underline; }
+
+  /* Role-based visibility */
+  .role-operator .admin-only { display: none !important; }
+  .user-badge { float: right; font-size: 0.72rem; color: #888; margin-right: 0.5rem; line-height: 2.2; }
 </style>
 </head>
 <body>
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
-  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><a class="btn-create" href="https://servicecall-api-production.up.railway.app/form" target="_blank">+ Create</a></h1>
+  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><a class="btn-create admin-only" href="https://servicecall-api-production.up.railway.app/form" target="_blank">+ Create</a><span id="userBadge" class="user-badge"></span></h1>
   <p class="subtitle">Click a client to view details and call history.</p>
   <div id="agentList"><div class="loading">Loading agents...</div></div>
 </div>
@@ -583,7 +587,7 @@
 <div id="settingsView" style="display:none;">
   <button class="btn-back" onclick="hideSettings()">&larr; Back to all agents</button>
   <h1>Settings</h1>
-  <div class="settings-form">
+  <div class="settings-form admin-only">
     <label for="settings-owner-email">Owner Email</label>
     <input type="email" id="settings-owner-email" placeholder="owner@example.com">
     <p class="settings-hint">Receives shadow mode notifications, call monitoring alerts, and weekly reports. This is your email, not the client's.</p>
@@ -615,39 +619,74 @@
     <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
   </div>
 
-  <h2>Data Point Defaults</h2>
-  <p class="settings-hint" style="margin-bottom:0.75rem;">Edit the default configuration for built-in and custom data points. Changes apply to all future agent creations.</p>
-  <div id="dpDefaultsContainer"><div class="loading">Loading data point defaults...</div></div>
+  <div class="admin-only">
+    <h2>Data Point Defaults</h2>
+    <p class="settings-hint" style="margin-bottom:0.75rem;">Edit the default configuration for built-in and custom data points. Changes apply to all future agent creations.</p>
+    <div id="dpDefaultsContainer"><div class="loading">Loading data point defaults...</div></div>
 
-  <details class="dp-card" style="margin-top:1rem;border-color:#93b4f5;">
-    <summary><strong style="color:#2563eb;">+ Create New Data Point</strong></summary>
-    <div class="dp-card-body">
-      <label>Variable Name <span style="color:#dc2626">*</span></label>
-      <input type="text" id="newDpKey" placeholder="lot_number" onblur="this.value=this.value.toLowerCase().replace(/[\s\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
-      <p class="settings-hint">Lowercase, underscores only. This is the internal key used in templates.</p>
-      <label>Label <span style="color:#dc2626">*</span></label>
-      <input type="text" id="newDpLabel" placeholder="Lot Number">
-      <label>Category</label>
-      <select id="newDpCategory" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
-      </select>
-      <p class="settings-hint">Which category section this data point will appear in.</p>
-      <label>Type</label>
-      <select id="newDpType" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
-        <option value="string">string</option>
-        <option value="enum">enum</option>
-        <option value="boolean">boolean</option>
-      </select>
-      <label>Description</label>
-      <textarea id="newDpDescription" placeholder="Optional — what this field means and how to handle missing values."></textarea>
-      <label>Conversation Prompt</label>
-      <textarea id="newDpConvPrompt" placeholder="Optional — how the agent should ask for this field."></textarea>
-      <label>Forward Condition</label>
-      <input type="text" id="newDpFwdCondition" placeholder="Optional — when to move to the next question.">
-      <div class="dp-card-actions">
-        <button type="button" class="dp-btn-save" onclick="createNewDpDefault()">Create Data Point</button>
+    <details class="dp-card" style="margin-top:1rem;border-color:#93b4f5;">
+      <summary><strong style="color:#2563eb;">+ Create New Data Point</strong></summary>
+      <div class="dp-card-body">
+        <label>Variable Name <span style="color:#dc2626">*</span></label>
+        <input type="text" id="newDpKey" placeholder="lot_number" onblur="this.value=this.value.toLowerCase().replace(/[\s\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
+        <p class="settings-hint">Lowercase, underscores only. This is the internal key used in templates.</p>
+        <label>Label <span style="color:#dc2626">*</span></label>
+        <input type="text" id="newDpLabel" placeholder="Lot Number">
+        <label>Category</label>
+        <select id="newDpCategory" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
+        </select>
+        <p class="settings-hint">Which category section this data point will appear in.</p>
+        <label>Type</label>
+        <select id="newDpType" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
+          <option value="string">string</option>
+          <option value="enum">enum</option>
+          <option value="boolean">boolean</option>
+        </select>
+        <label>Description</label>
+        <textarea id="newDpDescription" placeholder="Optional — what this field means and how to handle missing values."></textarea>
+        <label>Conversation Prompt</label>
+        <textarea id="newDpConvPrompt" placeholder="Optional — how the agent should ask for this field."></textarea>
+        <label>Forward Condition</label>
+        <input type="text" id="newDpFwdCondition" placeholder="Optional — when to move to the next question.">
+        <div class="dp-card-actions">
+          <button type="button" class="dp-btn-save" onclick="createNewDpDefault()">Create Data Point</button>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="admin-only">
+    <h2>Recently Deleted Agents</h2>
+    <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them.</p>
+    <div id="deletedAgentsContainer"><div class="loading">Loading...</div></div>
+  </div>
+
+  <div class="admin-only">
+    <h2>User Management</h2>
+    <p class="settings-hint" style="margin-bottom:0.75rem;">Create operator accounts for team members. Operators can manage agents but cannot delete them, change settings, or manage users.</p>
+    <div id="userManagementContainer"><div class="loading">Loading...</div></div>
+    <div style="margin-top:1rem;background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+      <h3 style="margin:0 0 0.5rem;font-size:0.85rem;color:#555;">Add User</h3>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end;">
+        <div>
+          <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Username</label>
+          <input type="text" id="newUserName" placeholder="sam" style="width:120px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+        </div>
+        <div>
+          <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Password</label>
+          <input type="password" id="newUserPass" placeholder="min 6 chars" style="width:140px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+        </div>
+        <div>
+          <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Role</label>
+          <select id="newUserRole" style="padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+            <option value="operator">Operator</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <button onclick="createNewUser()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:0.4rem 0.8rem;font-size:0.82rem;cursor:pointer;font-weight:500;">Add</button>
       </div>
     </div>
-  </details>
+  </div>
 </div>
 
 <!-- ── Detail View ──────────────────────────────────────────────────── -->
@@ -722,6 +761,7 @@
 
 <script>
   let apiKey = '';
+  let currentUser = null; // { username, role }
   let currentSlug = '';
   let callOffset = 0;
   const CALL_LIMIT = 50;
@@ -827,6 +867,18 @@
       const cfgRes = await fetch('/dashboard/config');
       const cfgData = await cfgRes.json();
       apiKey = cfgData.apiKey;
+      currentUser = cfgData.user;
+
+      // Apply role-based UI visibility
+      if (currentUser) {
+        const badge = document.getElementById('userBadge');
+        if (badge) badge.textContent = currentUser.username + ' (' + currentUser.role + ')';
+        if (currentUser.role !== 'admin') {
+          document.body.classList.add('role-operator');
+        } else {
+          document.body.classList.remove('role-operator');
+        }
+      }
 
       const [res, settingsRes] = await Promise.all([
         fetch('/dashboard/api/agents', { headers: { 'X-API-Key': apiKey } }),
@@ -1316,7 +1368,7 @@
       `<button class="btn-group-toggle manage" onclick="toggleDropdown(this)">Manage &#9662;</button>` +
       `<div class="btn-group-menu">` +
         `<button onclick="showCloneModal()">Clone Agent</button>` +
-        `<button class="danger" onclick="showDeleteModal()">Delete Agent</button>` +
+        (currentUser && currentUser.role === 'admin' ? `<button class="danger" onclick="showDeleteModal()">Delete Agent</button>` : '') +
       `</div></div>`;
   }
 
@@ -2257,6 +2309,8 @@
     }
 
     loadDpDefaults();
+    loadDeletedAgents();
+    loadUsers();
   }
 
   function hideSettings() {
@@ -2306,6 +2360,142 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Save Settings';
+    }
+  }
+
+  // ── DELETED AGENTS (RECOVERY) ─────────────────────────────────────────
+
+  async function loadDeletedAgents() {
+    const container = document.getElementById('deletedAgentsContainer');
+    try {
+      const res = await fetch('/dashboard/api/deleted-agents', { headers: { 'X-API-Key': apiKey } });
+      if (!res.ok) throw new Error('Failed: ' + res.status);
+      const agents = await res.json();
+      if (agents.length === 0) {
+        container.innerHTML = '<p style="color:#6b7280;font-size:0.85rem;">No recently deleted agents.</p>';
+        return;
+      }
+      const now = Date.now();
+      let html = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">';
+      html += '<tr style="text-align:left;border-bottom:2px solid #e5e7eb;"><th style="padding:0.4rem 0.5rem;">Agent</th><th style="padding:0.4rem 0.5rem;">Deleted</th><th style="padding:0.4rem 0.5rem;">Days Left</th><th style="padding:0.4rem 0.5rem;"></th></tr>';
+      for (const a of agents) {
+        const deletedDate = new Date(a.deletedAt);
+        const msRemaining = 30 * 24 * 60 * 60 * 1000 - (now - deletedDate.getTime());
+        const daysLeft = Math.max(0, Math.ceil(msRemaining / (24 * 60 * 60 * 1000)));
+        html += '<tr style="border-bottom:1px solid #f3f4f6;">';
+        html += '<td style="padding:0.4rem 0.5rem;">' + esc(a.name || a._id) + '</td>';
+        html += '<td style="padding:0.4rem 0.5rem;">' + deletedDate.toLocaleDateString() + '</td>';
+        html += '<td style="padding:0.4rem 0.5rem;">' + daysLeft + '</td>';
+        html += '<td style="padding:0.4rem 0.5rem;text-align:right;">';
+        html += '<button onclick="restoreDeletedAgent(\'' + esc(a._id) + '\')" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:0.25rem 0.6rem;cursor:pointer;font-size:0.8rem;margin-right:0.3rem;">Restore</button>';
+        html += '<button onclick="permanentlyDeleteAgent(\'' + esc(a._id) + '\')" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:0.25rem 0.6rem;cursor:pointer;font-size:0.8rem;">Delete Forever</button>';
+        html += '</td></tr>';
+      }
+      html += '</table>';
+      container.innerHTML = html;
+    } catch (err) {
+      container.innerHTML = '<div class="error-msg">Error: ' + esc(err.message) + '</div>';
+    }
+  }
+
+  async function restoreDeletedAgent(slug) {
+    try {
+      const res = await fetch('/dashboard/api/deleted-agents/' + encodeURIComponent(slug) + '/restore', {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey },
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
+      showToast('Agent restored', 'success');
+      loadDeletedAgents();
+      loadAgents();
+    } catch (err) {
+      showToast('Restore failed: ' + err.message, 'error');
+    }
+  }
+
+  async function permanentlyDeleteAgent(slug) {
+    if (!confirm('Permanently delete this agent? This cannot be undone.')) return;
+    try {
+      const res = await fetch('/dashboard/api/deleted-agents/' + encodeURIComponent(slug), {
+        method: 'DELETE',
+        headers: { 'X-API-Key': apiKey },
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
+      showToast('Agent permanently deleted', 'success');
+      loadDeletedAgents();
+    } catch (err) {
+      showToast('Delete failed: ' + err.message, 'error');
+    }
+  }
+
+  // ── USER MANAGEMENT ─────────────────────────────────────────────────
+
+  async function loadUsers() {
+    const container = document.getElementById('userManagementContainer');
+    if (!container) return;
+    try {
+      const res = await fetch('/dashboard/api/users', { headers: { 'X-API-Key': apiKey } });
+      if (!res.ok) throw new Error('Failed: ' + res.status);
+      const users = await res.json();
+      if (users.length === 0) {
+        container.innerHTML = '<p style="color:#6b7280;font-size:0.85rem;">No users created yet. Anyone with the admin password has full access.</p>';
+        return;
+      }
+      let html = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">';
+      html += '<tr style="text-align:left;border-bottom:2px solid #e5e7eb;"><th style="padding:0.4rem 0.5rem;">Username</th><th style="padding:0.4rem 0.5rem;">Role</th><th style="padding:0.4rem 0.5rem;">Created</th><th style="padding:0.4rem 0.5rem;"></th></tr>';
+      for (const u of users) {
+        const isSelf = currentUser && u._id === currentUser.username;
+        html += '<tr style="border-bottom:1px solid #f3f4f6;">';
+        html += '<td style="padding:0.4rem 0.5rem;">' + esc(u._id) + (isSelf ? ' <span style="color:#888;font-size:0.7rem;">(you)</span>' : '') + '</td>';
+        html += '<td style="padding:0.4rem 0.5rem;"><span style="background:' + (u.role === 'admin' ? '#fef3c7;color:#92400e' : '#dbeafe;color:#1e40af') + ';padding:0.1rem 0.4rem;border-radius:10px;font-size:0.75rem;">' + esc(u.role) + '</span></td>';
+        html += '<td style="padding:0.4rem 0.5rem;">' + new Date(u.created_at).toLocaleDateString() + '</td>';
+        html += '<td style="padding:0.4rem 0.5rem;text-align:right;">';
+        if (!isSelf) {
+          html += '<button onclick="deleteUserAccount(\'' + esc(u._id) + '\')" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:0.25rem 0.6rem;cursor:pointer;font-size:0.8rem;">Remove</button>';
+        }
+        html += '</td></tr>';
+      }
+      html += '</table>';
+      container.innerHTML = html;
+    } catch (err) {
+      container.innerHTML = '<div class="error-msg">Error: ' + esc(err.message) + '</div>';
+    }
+  }
+
+  async function createNewUser() {
+    const username = document.getElementById('newUserName').value.trim().toLowerCase();
+    const password = document.getElementById('newUserPass').value;
+    const role = document.getElementById('newUserRole').value;
+    if (!username || !password) { showToast('Username and password are required', 'error'); return; }
+    try {
+      const res = await fetch('/dashboard/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify({ username, password, role }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.status);
+      showToast('User "' + username + '" created', 'success');
+      document.getElementById('newUserName').value = '';
+      document.getElementById('newUserPass').value = '';
+      loadUsers();
+    } catch (err) {
+      showToast('Failed: ' + err.message, 'error');
+    }
+  }
+
+  async function deleteUserAccount(username) {
+    if (!confirm('Remove user "' + username + '"?')) return;
+    try {
+      const res = await fetch('/dashboard/api/users/' + encodeURIComponent(username), {
+        method: 'DELETE',
+        headers: { 'X-API-Key': apiKey },
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
+      showToast('User removed', 'success');
+      loadUsers();
+    } catch (err) {
+      showToast('Failed: ' + err.message, 'error');
     }
   }
 

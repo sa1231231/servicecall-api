@@ -5,7 +5,7 @@ import express from "express";
 import rateLimit from "express-rate-limit";
 import { config } from "./config.js";
 import { initDb } from "./lib/db.js";
-import { loadClientsFromDb } from "./config/client-store.js";
+import { loadClientsFromDb, purgeExpiredClients } from "./config/client-store.js";
 import { healthRouter } from "./routes/health.js";
 import { stripeRouter } from "./routes/stripe/index.js";
 import { retellRouter } from "./routes/retell/index.js";
@@ -22,6 +22,9 @@ import { getDataPointDefaultsWithCategory, CATEGORY_ORDER, CATEGORY_LABELS } fro
 import { ObjectId } from "mongodb";
 import { getDb } from "./lib/db.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
+import { getUser, verifyPassword } from "./lib/users.js";
+import { ensureAuditIndex } from "./lib/audit.js";
+import { adminOnly } from "./middleware/require-role.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -93,20 +96,35 @@ app.get("/client", (_req, res) => {
 // ── Basic Auth for form + dashboard ─────────────────────────────────────────
 import type { Request, Response, NextFunction } from "express";
 
-function basicAuth(req: Request, res: Response, next: NextFunction): void {
+async function basicAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith("Basic ")) {
     res.set("WWW-Authenticate", 'Basic realm="ServiceCall Saver"');
     res.status(401).send("Authentication required");
     return;
   }
-  const [, pass] = Buffer.from(auth.slice(6), "base64").toString().split(":");
-  if (pass !== config.ADMIN_PASSWORD) {
-    res.set("WWW-Authenticate", 'Basic realm="ServiceCall Saver"');
-    res.status(401).send("Invalid credentials");
+  const decoded = Buffer.from(auth.slice(6), "base64").toString();
+  const colon = decoded.indexOf(":");
+  const username = decoded.substring(0, colon).toLowerCase();
+  const pass = decoded.substring(colon + 1);
+
+  // Try DB user first
+  const dbUser = await getUser(username);
+  if (dbUser && verifyPassword(pass, dbUser.password_hash)) {
+    req.user = { username, role: dbUser.role };
+    next();
     return;
   }
-  next();
+
+  // Fallback: legacy ADMIN_PASSWORD (always grants admin)
+  if (pass === config.ADMIN_PASSWORD) {
+    req.user = { username: username || "admin", role: "admin" };
+    next();
+    return;
+  }
+
+  res.set("WWW-Authenticate", 'Basic realm="ServiceCall Saver"');
+  res.status(401).send("Invalid credentials");
 }
 
 // ── Form (Basic Auth protected) ─────────────────────────────────────────────
@@ -233,12 +251,14 @@ app.use((req, res, next) => {
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
 app.use("/qa", qaRouter);
-app.use("/dashboard/api", dashboardApiRouter);
+app.use("/dashboard/api", basicAuth, dashboardApiRouter);
 app.use("/api/reports", reportsRouter);
-app.use("/api/backup", backupRouter);
+app.use("/api/backup", basicAuth, adminOnly, backupRouter);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();
+await ensureAuditIndex();
+await purgeExpiredClients();
 await loadClientsFromDb();
 await refreshOwnerConfig();
 

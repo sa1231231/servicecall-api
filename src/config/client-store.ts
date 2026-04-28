@@ -134,7 +134,7 @@ function clients() {
 
 /** Load all clients from MongoDB and populate the in-memory maps. */
 export async function loadClientsFromDb(): Promise<void> {
-  const docs = await clients().find().toArray();
+  const docs = await clients().find({ deletedAt: { $exists: false } }).toArray();
 
   for (const doc of docs) {
     const slug = doc._id;
@@ -268,8 +268,8 @@ export async function updateClientFields(
   console.log(`[client-store] updated "${slug}" fields: ${Object.keys(setObj).join(", ")}`);
 }
 
-/** Delete a client from MongoDB and remove from in-memory cache. */
-export async function deleteClient(slug: string): Promise<void> {
+/** Remove a client from in-memory caches. */
+function unregisterFromMemory(slug: string): void {
   const existing = notificationClients[slug];
   if (existing) {
     for (const agentId of existing.agent_ids) {
@@ -278,7 +278,57 @@ export async function deleteClient(slug: string): Promise<void> {
     }
     delete notificationClients[slug];
   }
+}
 
+/** Soft-delete: set deletedAt timestamp and remove from caches. */
+export async function softDeleteClient(slug: string): Promise<void> {
+  unregisterFromMemory(slug);
+  await clients().updateOne(
+    { _id: slug } as any,
+    { $set: { deletedAt: new Date() } },
+  );
+  console.log(`[client-store] soft-deleted client "${slug}"`);
+}
+
+/** Restore a soft-deleted client: unset deletedAt and reload into caches. */
+export async function restoreClient(slug: string): Promise<void> {
+  await clients().updateOne(
+    { _id: slug } as any,
+    { $unset: { deletedAt: "" } },
+  );
+  const doc = await clients().findOne({ _id: slug } as any);
+  if (doc && Array.isArray(doc.agent_ids)) {
+    registerInMemory(slug, toClientConfig(doc));
+  }
+  console.log(`[client-store] restored client "${slug}"`);
+}
+
+/** List soft-deleted clients. */
+export async function listDeletedClients(): Promise<
+  Array<{ _id: string; name: string; deletedAt: Date }>
+> {
+  return clients()
+    .find({ deletedAt: { $exists: true } } as any, {
+      projection: { _id: 1, name: 1, deletedAt: 1 },
+    })
+    .toArray() as any;
+}
+
+/** Permanently delete documents where deletedAt is older than `days` days. */
+export async function purgeExpiredClients(days = 30): Promise<number> {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const result = await clients().deleteMany({
+    deletedAt: { $lt: cutoff },
+  } as any);
+  if (result.deletedCount > 0) {
+    console.log(`[client-store] purged ${result.deletedCount} expired soft-deleted client(s)`);
+  }
+  return result.deletedCount;
+}
+
+/** Permanently delete a client from MongoDB and remove from in-memory cache. */
+export async function deleteClient(slug: string): Promise<void> {
+  unregisterFromMemory(slug);
   await clients().deleteOne({ _id: slug } as any);
   console.log(`[client-store] deleted client "${slug}"`);
 }
@@ -290,11 +340,11 @@ export async function getClientDocument(
   return clients().findOne({ _id: slug } as any) as any;
 }
 
-/** Get all client documents from MongoDB. */
+/** Get all client documents from MongoDB (excludes soft-deleted). */
 export async function getAllClientDocuments(): Promise<
   Array<JsonClientEntry & { _id: string }>
 > {
-  return clients().find().toArray() as any;
+  return clients().find({ deletedAt: { $exists: false } }).toArray() as any;
 }
 
 /** Return lightweight summaries of all clients for the dashboard. */
