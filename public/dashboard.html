@@ -146,6 +146,42 @@
     padding: 0.35rem 0.5rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle;
   }
   .field-table tr:last-child td { border-bottom: none; }
+  /* Template editor — contenteditable with inline variable tags */
+  .tmpl-editor-wrap { position: relative; }
+  .tmpl-editor {
+    min-height: 2.2em; padding: 0.4rem 0.6rem; border: 1px solid #d1d5db; border-radius: 6px;
+    font-size: 0.85rem; font-family: inherit; line-height: 1.6; outline: none;
+    background: #fff; white-space: pre-wrap; word-break: break-word;
+  }
+  .tmpl-editor:focus { border-color: #93b4f5; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+  .tmpl-editor:empty::before {
+    content: attr(data-placeholder); color: #aaa;
+  }
+  .tmpl-var-tag {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: #dcfce7; color: #166534; border: 1px solid #86efac; border-radius: 4px;
+    padding: 0 0.35rem; font-size: 0.75rem; font-family: monospace; font-weight: 500;
+    vertical-align: baseline; line-height: 1.5; margin: 0 1px;
+    user-select: all; cursor: default;
+  }
+  .tmpl-var-tag .tmpl-var-x {
+    cursor: pointer; margin-left: 2px; color: #166534; font-size: 0.7rem; font-weight: bold;
+    opacity: 0.6;
+  }
+  .tmpl-var-tag .tmpl-var-x:hover { opacity: 1; color: #991b1b; }
+  .tmpl-autocomplete {
+    display: none; position: absolute; left: 0; z-index: 30;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1); min-width: 180px;
+    padding: 0.2rem 0; max-height: 160px; overflow-y: auto;
+  }
+  .tmpl-autocomplete.open { display: block; }
+  .tmpl-ac-item {
+    padding: 0.35rem 0.7rem; font-size: 0.8rem; font-family: monospace;
+    cursor: pointer; color: #333;
+  }
+  .tmpl-ac-item:hover, .tmpl-ac-item.active { background: #f3f4f6; }
+
   /* Variable validation tags */
   .var-tags { margin-top: 0.25rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }
   .var-tag {
@@ -774,6 +810,181 @@
       .map(c => c.firstChild.textContent.trim());
   }
 
+  // ── Template Editor Component ──────────────────────────────────────
+
+  function initTemplateEditor(editorEl, hiddenEl, validVars, onChange) {
+    const wrap = editorEl.closest('.tmpl-editor-wrap');
+    let acList = wrap.querySelector('.tmpl-autocomplete');
+    if (!acList) {
+      acList = document.createElement('div');
+      acList.className = 'tmpl-autocomplete';
+      wrap.appendChild(acList);
+    }
+    let acIndex = -1;
+
+    // Render template string → contenteditable HTML with tags
+    function renderToEditor(template) {
+      const parts = template.split(/(\{\{\w+\}\})/g);
+      editorEl.innerHTML = '';
+      for (const part of parts) {
+        const m = part.match(/^\{\{(\w+)\}\}$/);
+        if (m) {
+          editorEl.appendChild(createVarTag(m[1]));
+        } else if (part) {
+          editorEl.appendChild(document.createTextNode(part));
+        }
+      }
+    }
+
+    function createVarTag(varName) {
+      const tag = document.createElement('span');
+      tag.className = 'tmpl-var-tag';
+      tag.contentEditable = 'false';
+      tag.dataset.var = varName;
+      tag.innerHTML = varName + '<span class="tmpl-var-x" onclick="this.parentElement.remove(); this.closest(\'.tmpl-editor\').dispatchEvent(new Event(\'input\'))">&times;</span>';
+      return tag;
+    }
+
+    // Read back from contenteditable → template string
+    function readTemplate() {
+      let result = '';
+      for (const node of editorEl.childNodes) {
+        if (node.nodeType === 3) { // text
+          result += node.textContent;
+        } else if (node.dataset && node.dataset.var) {
+          result += '{{' + node.dataset.var + '}}';
+        }
+      }
+      return result;
+    }
+
+    function syncHidden() {
+      hiddenEl.value = readTemplate();
+      if (onChange) onChange();
+    }
+
+    function closeAc() { acList.classList.remove('open'); acIndex = -1; }
+
+    function showAc(partial, range) {
+      const vars = (typeof validVars === 'function' ? validVars() : validVars);
+      const matches = vars.filter(v => v.startsWith(partial));
+      if (matches.length === 0) { closeAc(); return; }
+      acIndex = 0;
+      acList.innerHTML = matches.map((v, i) =>
+        `<div class="tmpl-ac-item${i === 0 ? ' active' : ''}" data-var="${esc(v)}">${esc(v)}</div>`
+      ).join('');
+      acList.classList.add('open');
+
+      // Position below cursor
+      const rect = editorEl.getBoundingClientRect();
+      acList.style.top = (editorEl.offsetHeight + 2) + 'px';
+
+      // Click handler
+      acList.querySelectorAll('.tmpl-ac-item').forEach(item => {
+        item.onmousedown = (e) => {
+          e.preventDefault();
+          insertVar(item.dataset.var, range);
+        };
+      });
+    }
+
+    function insertVar(varName, range) {
+      closeAc();
+      // Delete the partial "{{par" text
+      if (range) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        // Expand range backward to find the {{
+        const textNode = range.startContainer;
+        if (textNode.nodeType === 3) {
+          const text = textNode.textContent;
+          const curPos = range.startOffset;
+          const bracePos = text.lastIndexOf('{{', curPos);
+          if (bracePos >= 0) {
+            range.setStart(textNode, bracePos);
+            range.setEnd(textNode, curPos);
+            range.deleteContents();
+          }
+        }
+      }
+      // Insert the tag at cursor
+      const sel = window.getSelection();
+      if (sel.rangeCount) {
+        const r = sel.getRangeAt(0);
+        const tag = createVarTag(varName);
+        r.insertNode(tag);
+        // Move cursor after tag
+        r.setStartAfter(tag);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      syncHidden();
+    }
+
+    editorEl.addEventListener('input', () => {
+      // Check for {{ partial
+      const sel = window.getSelection();
+      if (!sel.rangeCount) { closeAc(); syncHidden(); return; }
+      const range = sel.getRangeAt(0).cloneRange();
+      const node = range.startContainer;
+      if (node.nodeType === 3) {
+        const text = node.textContent;
+        const pos = range.startOffset;
+        const before = text.slice(0, pos);
+        const braceMatch = before.match(/\{\{(\w*)$/);
+        if (braceMatch) {
+          showAc(braceMatch[1], range);
+          syncHidden();
+          return;
+        }
+      }
+      closeAc();
+      syncHidden();
+    });
+
+    editorEl.addEventListener('keydown', (e) => {
+      if (!acList.classList.contains('open')) return;
+      const items = acList.querySelectorAll('.tmpl-ac-item');
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault();
+        const active = items[Math.max(0, acIndex)];
+        if (active) {
+          const sel = window.getSelection();
+          const range = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+          insertVar(active.dataset.var, range);
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        items[acIndex]?.classList.remove('active');
+        acIndex = Math.min(acIndex + 1, items.length - 1);
+        items[acIndex]?.classList.add('active');
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        items[acIndex]?.classList.remove('active');
+        acIndex = Math.max(acIndex - 1, 0);
+        items[acIndex]?.classList.add('active');
+      } else if (e.key === 'Escape') {
+        closeAc();
+      }
+    });
+
+    editorEl.addEventListener('blur', () => { setTimeout(closeAc, 150); });
+
+    // Paste as plain text
+    editorEl.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const text = e.clipboardData.getData('text/plain');
+      document.execCommand('insertText', false, text);
+    });
+
+    // Initial render
+    renderToEditor(hiddenEl.value);
+
+    return { readTemplate, renderToEditor, syncHidden };
+  }
+
   function validateVars(text, validSet, containerEl) {
     if (!containerEl) return;
     const matches = [...(text.matchAll(/\{\{(\w+)\}\}/g))].map(m => m[1]);
@@ -792,9 +1003,6 @@
     const text = input.value;
     const clientName = originalDoc ? originalDoc.name : 'Business';
 
-    // Validate variables
-    validateVars(text, new Set(['business_name']), document.getElementById('greeting-var-tags'));
-
     // Live preview
     const previewEl = document.getElementById('greeting-preview');
     if (previewEl) {
@@ -806,19 +1014,6 @@
 
     // Update routing path previews too
     document.querySelectorAll('.preview-section').forEach(s => updatePreview(s.dataset.mtKey));
-  }
-
-  function onSubjectInput(mtKey) {
-    const input = document.querySelector(`.subject-template-input[data-mt-key="${mtKey}"]`);
-    if (!input) return;
-    // Valid vars = field keys for this routing path
-    const fieldKeys = new Set();
-    document.querySelectorAll(`.field-label-input[data-mt-key="${mtKey}"]`).forEach(el => {
-      fieldKeys.add(el.dataset.fieldKey);
-    });
-    const tagsEl = document.querySelector(`.subject-var-tags[data-mt-key="${mtKey}"]`);
-    validateVars(input.value, fieldKeys, tagsEl);
-    updatePreview(mtKey);
   }
 
   function updatePreview(mtKey) {
@@ -942,12 +1137,17 @@
       <dt title="Client display name used in notification greetings and reports">Display Name</dt><dd><input class="edit-input" id="edit-name" value="${esc(doc.name)}" placeholder="Business name"></dd>
 
       <dt title="Custom greeting for SMS/email notifications. Use {{business_name}} for the business name.">Notification Greeting</dt><dd>
-        <textarea class="edit-input" id="edit-greeting" rows="2" placeholder="Hi {{business_name}}, you have a new call!"
-          oninput="onGreetingInput()">${esc(doc.notification_greeting || '')}</textarea>
-        <div class="var-tags" id="greeting-var-tags"></div>
+        <div class="tmpl-editor-wrap">
+          <div class="tmpl-editor" contenteditable="true" id="greeting-editor" data-placeholder="Hi {{business_name}}, you have a new call!"></div>
+          <input type="hidden" id="edit-greeting" value="${esc(doc.notification_greeting || '')}">
+        </div>
         <div class="greeting-preview" id="greeting-preview"></div>
-        <div style="font-size:0.72rem;color:#999;margin-top:0.25rem;">Leave blank for default. Available: <code>{{business_name}}</code></div>
+        <div style="font-size:0.72rem;color:#999;margin-top:0.25rem;">Leave blank for default. Type <code>{{</code> for variable suggestions.</div>
       </dd>
+
+      <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
+
+      <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
 
       <dt title="When on, notifications go to the owner instead of the client for testing">Shadow Mode</dt><dd>
         <label class="toggle">
@@ -955,10 +1155,6 @@
           <span class="slider"></span>
         </label>
       </dd>
-
-      <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
-
-      <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
     </dl>`;
 
     html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
@@ -982,12 +1178,12 @@
         <div class="route-path-body">`;
         html += `<div style="margin-top:0.5rem;">
           <div style="display:flex;align-items:center;gap:0.5rem;">
-            <span style="color:#666;font-size:0.82rem;">Subject:</span>
-            <input type="text" value="${esc(val.subject_template)}" data-mt-key="${esc(key)}" class="subject-template-input"
-              style="flex:1;font-size:0.8rem;padding:3px 6px;border:1px solid #e5e7eb;border-radius:4px;font-family:monospace;"
-              oninput="onSubjectInput('${esc(key)}')">
+            <span style="color:#666;font-size:0.82rem;flex-shrink:0;">Subject:</span>
+            <div class="tmpl-editor-wrap" style="flex:1;">
+              <div class="tmpl-editor subject-editor" contenteditable="true" data-mt-key="${esc(key)}" data-placeholder="Subject template..." style="min-height:1.6em;font-size:0.8rem;"></div>
+              <input type="hidden" class="subject-template-input" data-mt-key="${esc(key)}" value="${esc(val.subject_template)}">
+            </div>
           </div>
-          <div class="var-tags subject-var-tags" data-mt-key="${esc(key)}"></div>
         </div>`;
         if (val.additional_text) html += `<div class="route-meta">Note: ${esc(val.additional_text)}</div>`;
         html += `<table class="field-table"><thead><tr>
@@ -1039,14 +1235,27 @@
 
     document.getElementById('detailConfig').innerHTML = html;
 
-    // Initialize greeting preview + variable validation
+    // Initialize template editors
+    const greetingEditor = document.getElementById('greeting-editor');
+    const greetingHidden = document.getElementById('edit-greeting');
+    if (greetingEditor && greetingHidden) {
+      initTemplateEditor(greetingEditor, greetingHidden, ['business_name'], onGreetingInput);
+    }
     onGreetingInput();
 
-    // Initialize previews + subject validation for all routing paths
-    document.querySelectorAll('.preview-section').forEach(section => {
-      const mtKey = section.dataset.mtKey;
+    // Initialize subject template editors + previews for all routing paths
+    document.querySelectorAll('.subject-editor').forEach(editor => {
+      const mtKey = editor.dataset.mtKey;
+      const hidden = document.querySelector(`.subject-template-input[data-mt-key="${mtKey}"]`);
+      if (hidden) {
+        const getFieldKeys = () => {
+          const keys = [];
+          document.querySelectorAll(`.field-label-input[data-mt-key="${mtKey}"]`).forEach(el => keys.push(el.dataset.fieldKey));
+          return keys;
+        };
+        initTemplateEditor(editor, hidden, getFieldKeys, () => updatePreview(mtKey));
+      }
       updatePreview(mtKey);
-      onSubjectInput(mtKey);
     });
   }
 
