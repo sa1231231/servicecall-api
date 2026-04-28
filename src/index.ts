@@ -270,9 +270,9 @@ app.use((req, res, next) => {
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
 app.use("/qa", qaRouter);
-app.use("/dashboard/api", authLimiter, basicAuth, dashboardApiRouter);
+app.use("/dashboard/api", basicAuth, dashboardApiRouter);
 app.use("/api/reports", reportsRouter);
-app.use("/api/backup", authLimiter, basicAuth, requirePermission("manage_settings"), backupRouter);
+app.use("/api/backup", basicAuth, requirePermission("manage_settings"), backupRouter);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();
