@@ -923,6 +923,8 @@
 
       <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}</dd>
 
+      <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook"></dd>
+
       <dt title="Phone number called by the outbound summary agent after intake">Dispatch Call</dt><dd>
         <input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty" style="margin-bottom:0.25rem;">
         <details style="margin-top:0.25rem;">
@@ -1145,6 +1147,13 @@
     const shadowMode = document.getElementById('edit-shadow-mode').checked;
     if (shadowMode !== (originalDoc.shadow_mode ?? false)) {
       updates.shadow_mode = shadowMode;
+    }
+
+    // Webhook URL
+    const newWebhook = document.getElementById('edit-webhook-url').value.trim() || null;
+    const origWebhook = originalDoc.webhook_url || null;
+    if (newWebhook !== origWebhook) {
+      updates.webhook_url = newWebhook;
     }
 
     // Notification greeting

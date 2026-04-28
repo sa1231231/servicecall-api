@@ -272,6 +272,27 @@ export async function postHookHandler(req: Request, res: Response) {
   saveCallLog(buildCallLog("dispatched", typeKey, messageType.label, fieldValues)).catch(() => {});
   sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => {});
 
+  // Fire-and-forget: webhook
+  if (clientConfig.webhook_url) {
+    fetch(clientConfig.webhook_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        event: "call_dispatched",
+        client_slug: clientSlug,
+        client_name: effectiveName,
+        call_id: call.call_id,
+        from_number: call.from_number,
+        routing_path: typeKey,
+        routing_path_label: messageType.label,
+        fields: fieldValues,
+        timestamp: new Date().toISOString(),
+      }),
+    }).catch((err) => {
+      console.error(`retell-post-hook: webhook failed for "${clientConfig.name}": ${err.message}`);
+    });
+  }
+
   // Call spike detection
   const spike = recordCall(clientSlug);
   if (spike.spike) {

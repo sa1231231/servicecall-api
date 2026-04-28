@@ -43,6 +43,7 @@ export interface ClientNotificationConfig {
   resolve_type: (vars: Record<string, string>) => string;
   message_types: Record<string, MessageType>;
   default_message_type: string;
+  webhook_url?: string;
   notification_greeting?: string;
   phone_fallback_to_caller?: boolean;
   hide_not_mentioned?: boolean;
