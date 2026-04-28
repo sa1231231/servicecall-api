@@ -82,6 +82,8 @@ export const DATA_POINT_REGISTRY: Record<string, DataPoint> = {
     description: `Full name of the caller. If the caller does not specifically mention their name, set to "Not Mentioned". If the caller explicitly says they don't know the name, set to "Caller Doesn't Know".`,
     conversationPrompt: `Your goal is to collect the caller's full name by asking: "Can I get your name please?"
 
+Do not assume the caller's name from caller ID or any other source. Always ask.
+
 If the caller is correcting your spelling, correct the spelling and re-confirm.
 
 If the caller says they don't know or aren't sure of the name, acknowledge it and move on.`,
