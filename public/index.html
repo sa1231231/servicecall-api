@@ -138,6 +138,37 @@
   }
   .btn-add-custom:hover, .btn-add-path:hover { background: #eff6ff; }
 
+  /* Branch cards in path ordered list */
+  .branch-card {
+    border: 1px solid #c4b5fd; border-radius: 6px;
+    margin: 0.4rem 0; background: #faf5ff; padding: 0.5rem 0.65rem;
+  }
+  .branch-header {
+    display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+    font-size: 0.82rem; margin-bottom: 0.35rem;
+  }
+  .branch-header select, .branch-header input[type="text"] {
+    padding: 0.2rem 0.4rem; font-size: 0.8rem; border: 1px solid #d1d5db;
+    border-radius: 4px; margin: 0;
+  }
+  .branch-header select { width: auto; }
+  .branch-header input[type="text"] { width: 140px; }
+  .branch-header .branch-remove {
+    margin-left: auto; color: #dc2626; background: none; border: none;
+    cursor: pointer; font-size: 0.9rem; padding: 0 0.3rem;
+  }
+  .branch-section { margin: 0.3rem 0 0.3rem 0.75rem; padding-left: 0.5rem; border-left: 2px solid #c4b5fd; }
+  .branch-section-label { font-size: 0.72rem; font-weight: 600; color: #7c3aed; margin-bottom: 0.2rem; }
+  .branch-section .path-dp-order { min-height: 24px; border-color: #ddd6fe; }
+  .branch-section .path-dp-order:empty::after { content: 'Check data points above to add here.'; }
+  .branch-section .checkbox-group { margin-bottom: 0.35rem; }
+  .btn-add-branch {
+    padding: 0.3rem 0.7rem; font-size: 0.78rem; font-weight: 500;
+    background: #faf5ff; color: #7c3aed; border: 1px dashed #c4b5fd;
+    border-radius: 5px; cursor: pointer; margin-top: 0.35rem;
+  }
+  .btn-add-branch:hover { background: #f3e8ff; }
+
   /* Routing path cards */
   .path-card {
     border: 1px solid #a5b4fc;
@@ -685,6 +716,7 @@ Do not ask for any other information than what is instructed for this node.'>${v
           <div class="path-dp-checkboxes"></div>
           <label style="margin-top:0.5rem;">Collection Order <span style="font-weight:400;color:#777;">(drag to reorder)</span></label>
           <ul class="path-dp-order"></ul>
+          <button type="button" class="btn-add-branch" onclick="addBranchToPath('${id}')">+ Add If/Else Branch</button>
         </div>
         <details style="margin-top:0.75rem;">
           <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">(optional)</span></summary>
@@ -795,22 +827,15 @@ Do not ask for any other information than what is instructed for this node.'>${v
       const num = i + 1;
       const name = card.querySelector('.path-name').value.trim();
       const condition = card.querySelector('.path-condition').value.trim();
-      // Use the ordered list (not checkboxes) for data point order
-      const orderedDps = [...card.querySelectorAll('.path-dp-order li')].map(li => li.dataset.value);
+
+      // Use the new collector that handles branches
+      const dataPoints = collectOrderedDataPoints(card, customResults);
 
       if (!name) errors.push(`Path #${num}: Path Name is required.`);
       if (!condition) errors.push(`Path #${num}: Transition Condition is required.`);
-      if (orderedDps.length === 0) errors.push(`Path #${num}: Select at least one data point.`);
+      if (dataPoints.length === 0) errors.push(`Path #${num}: Select at least one data point.`);
 
       if (errors.length === 0) {
-        // Map ordered values to data point entries:
-        // built-in → string reference, custom → full object from customResults
-        const dataPoints = orderedDps.map(val => {
-          if (BUILTIN_NAMES.includes(val)) return val;
-          const custom = customResults.find(c => c.variableName === val);
-          return custom || val;
-        });
-
         // Collect optional dispatch overrides for this path
         const pathSms = csvToArray(card.querySelector('.path-dispatch-sms').value);
         const pathEmail = csvToArray(card.querySelector('.path-dispatch-email').value);
@@ -829,6 +854,152 @@ Do not ask for any other information than what is instructed for this node.'>${v
     });
 
     return { paths, errors };
+  }
+
+  // ── If/Else Branches ─────────────────────────────────────────
+
+  let branchCounter = 0;
+
+  function addBranchToPath(pathId) {
+    const pathCard = pathsContainer.querySelector(`[data-path-id="${pathId}"]`);
+    if (!pathCard) return;
+    const orderList = pathCard.querySelector('.path-dp-order');
+
+    // Get all data points available for the condition variable dropdown
+    const allDps = getAllDataPoints();
+    const varOptions = allDps.map(dp => `<option value="${dp.value}">${dp.label}</option>`).join('');
+
+    const bid = 'branch_' + (++branchCounter);
+    const html = `
+      <li class="branch-card" data-branch-id="${bid}">
+        <div class="branch-header">
+          <strong style="color:#7c3aed;font-size:0.78rem;">IF</strong>
+          <select class="branch-variable">${varOptions}</select>
+          <select class="branch-operator">
+            <option value="==">equals</option>
+            <option value="!=">does not equal</option>
+          </select>
+          <input type="text" class="branch-value" placeholder="value">
+          <button type="button" class="branch-remove" onclick="removeBranch(this)" title="Remove branch">&times;</button>
+        </div>
+        <div class="branch-section branch-if">
+          <div class="branch-section-label">THEN collect:</div>
+          <div class="branch-dp-checkboxes" data-branch="${bid}" data-side="if"></div>
+          <ul class="path-dp-order branch-order" data-branch="${bid}" data-side="if"></ul>
+        </div>
+        <div class="branch-section branch-else">
+          <div class="branch-section-label">ELSE collect:</div>
+          <div class="branch-dp-checkboxes" data-branch="${bid}" data-side="else"></div>
+          <ul class="path-dp-order branch-order" data-branch="${bid}" data-side="else"></ul>
+        </div>
+      </li>
+    `;
+    orderList.insertAdjacentHTML('beforeend', html);
+    const branchEl = orderList.querySelector(`[data-branch-id="${bid}"]`);
+    renderBranchCheckboxes(branchEl);
+  }
+
+  function removeBranch(btn) {
+    const card = btn.closest('.branch-card');
+    if (card) card.remove();
+  }
+
+  function renderBranchCheckboxes(branchEl) {
+    const allDps = getAllDataPoints();
+    ['if', 'else'].forEach(side => {
+      const cbContainer = branchEl.querySelector(`.branch-dp-checkboxes[data-side="${side}"]`);
+      const orderList = branchEl.querySelector(`.branch-order[data-side="${side}"]`);
+      const bid = branchEl.dataset.branchId;
+
+      // Remember existing checked
+      const checked = new Set();
+      orderList.querySelectorAll('li').forEach(li => checked.add(li.dataset.value));
+
+      let html = '<div class="checkbox-group" style="font-size:0.8rem;">';
+      allDps.forEach(dp => {
+        html += `<label><input type="checkbox" name="branchDp" value="${dp.value}" data-branch="${bid}" data-side="${side}" data-label="${dp.label}"${checked.has(dp.value) ? ' checked' : ''} onchange="onBranchDpToggle(this)"> ${dp.label}</label>`;
+      });
+      html += '</div>';
+      cbContainer.innerHTML = html;
+
+      // Init drag-drop on the branch order list
+      initDragDrop(orderList);
+    });
+  }
+
+  function onBranchDpToggle(checkbox) {
+    const branchEl = checkbox.closest('.branch-card');
+    const side = checkbox.dataset.side;
+    const orderList = branchEl.querySelector(`.branch-order[data-side="${side}"]`);
+    const val = checkbox.value;
+    const label = checkbox.dataset.label;
+
+    if (checkbox.checked) {
+      const exists = orderList.querySelector(`li[data-value="${val}"]`);
+      if (!exists) appendOrderItem(orderList, val, label);
+    } else {
+      const li = orderList.querySelector(`li[data-value="${val}"]`);
+      if (li) li.remove();
+    }
+  }
+
+  /** Collect data points from a path's order list, including branches. */
+  function collectOrderedDataPoints(pathCard, customResults) {
+    const orderList = pathCard.querySelector('.path-dp-order');
+    const items = [];
+
+    orderList.childNodes.forEach(node => {
+      if (node.nodeType !== 1) return; // skip text nodes
+
+      // Branch card
+      if (node.classList.contains('branch-card')) {
+        const variable = node.querySelector('.branch-variable').value;
+        const operator = node.querySelector('.branch-operator').value;
+        const value = node.querySelector('.branch-value').value.trim();
+        if (!variable || !value) return; // skip incomplete branches
+
+        const ifDps = collectBranchSideDps(node, 'if', customResults);
+        const elseDps = collectBranchSideDps(node, 'else', customResults);
+
+        items.push({
+          _branch: true,
+          variable,
+          operator,
+          value,
+          ifDataPoints: ifDps,
+          elseDataPoints: elseDps,
+        });
+        return;
+      }
+
+      // Regular data point <li>
+      if (node.tagName === 'LI' && node.dataset.value) {
+        const val = node.dataset.value;
+        if (BUILTIN_NAMES.includes(val)) {
+          items.push(val);
+        } else {
+          const custom = customResults.find(c => c.variableName === val);
+          items.push(custom || val);
+        }
+      }
+    });
+
+    return items;
+  }
+
+  function collectBranchSideDps(branchEl, side, customResults) {
+    const orderList = branchEl.querySelector(`.branch-order[data-side="${side}"]`);
+    const dps = [];
+    orderList.querySelectorAll('li').forEach(li => {
+      const val = li.dataset.value;
+      if (BUILTIN_NAMES.includes(val)) {
+        dps.push(val);
+      } else {
+        const custom = customResults.find(c => c.variableName === val);
+        dps.push(custom || val);
+      }
+    });
+    return dps;
   }
 
   // ── Form Submission ─────────────────────────────────────────
@@ -1021,11 +1192,31 @@ Do not ask for any other information than what is instructed for this node.'>${v
     });
 
     pathsContainer.querySelectorAll('.path-card').forEach(card => {
+      // Serialize order list items including branches
+      const orderItems = [];
+      card.querySelector('.path-dp-order').childNodes.forEach(node => {
+        if (node.nodeType !== 1) return;
+        if (node.classList.contains('branch-card')) {
+          const ifDps = [...node.querySelectorAll('.branch-order[data-side="if"] li')].map(li => li.dataset.value);
+          const elseDps = [...node.querySelectorAll('.branch-order[data-side="else"] li')].map(li => li.dataset.value);
+          orderItems.push({
+            _branch: true,
+            variable: node.querySelector('.branch-variable').value,
+            operator: node.querySelector('.branch-operator').value,
+            value: node.querySelector('.branch-value').value,
+            ifDps,
+            elseDps,
+          });
+        } else if (node.tagName === 'LI' && node.dataset.value) {
+          orderItems.push(node.dataset.value);
+        }
+      });
+
       state.routingPaths.push({
         name: card.querySelector('.path-name').value,
         condition: card.querySelector('.path-condition').value,
         checkedDps: [...card.querySelectorAll('input[name="pathDp"]:checked')].map(cb => cb.value),
-        orderedDps: [...card.querySelectorAll('.path-dp-order li')].map(li => li.dataset.value),
+        orderedDps: orderItems,
         dispatchSms: card.querySelector('.path-dispatch-sms').value,
         dispatchEmail: card.querySelector('.path-dispatch-email').value,
         dispatchCall: card.querySelector('.path-dispatch-call').value,
@@ -1074,8 +1265,36 @@ Do not ask for any other information than what is instructed for this node.'>${v
 
       const orderList = card.querySelector('.path-dp-order');
       orderList.innerHTML = '';
-      (p.orderedDps || []).forEach(dpVal => {
-        appendOrderItem(orderList, dpVal, BUILTIN_LABELS[dpVal] || dpVal);
+      (p.orderedDps || []).forEach(item => {
+        if (typeof item === 'object' && item._branch) {
+          // Restore a branch card
+          const pathId = card.dataset.pathId;
+          addBranchToPath(pathId);
+          const branchEl = orderList.querySelector('.branch-card:last-child');
+          if (branchEl) {
+            branchEl.querySelector('.branch-variable').value = item.variable || '';
+            branchEl.querySelector('.branch-operator').value = item.operator || '==';
+            branchEl.querySelector('.branch-value').value = item.value || '';
+            // Restore IF side
+            const ifList = branchEl.querySelector('.branch-order[data-side="if"]');
+            (item.ifDps || []).forEach(dpVal => {
+              appendOrderItem(ifList, dpVal, BUILTIN_LABELS[dpVal] || dpVal);
+              const cb = branchEl.querySelector(`input[data-side="if"][value="${dpVal}"]`);
+              if (cb) cb.checked = true;
+            });
+            initDragDrop(ifList);
+            // Restore ELSE side
+            const elseList = branchEl.querySelector('.branch-order[data-side="else"]');
+            (item.elseDps || []).forEach(dpVal => {
+              appendOrderItem(elseList, dpVal, BUILTIN_LABELS[dpVal] || dpVal);
+              const cb = branchEl.querySelector(`input[data-side="else"][value="${dpVal}"]`);
+              if (cb) cb.checked = true;
+            });
+            initDragDrop(elseList);
+          }
+        } else {
+          appendOrderItem(orderList, item, BUILTIN_LABELS[item] || item);
+        }
       });
       initDragDrop(orderList);
     });

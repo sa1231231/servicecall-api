@@ -5,6 +5,8 @@ import {
   defaultExtractEquation,
   type DataPoint,
   type RawDataPoint,
+  type BranchNode,
+  type BranchCondition,
 } from "./data-point-registry.js";
 import {
   makeIdFactory,
@@ -44,6 +46,54 @@ export interface ResolvedPath {
 
 // ── Resolve Data Points ──────────────────────────────────────────────────────
 
+function isBranchNode(dp: RawDataPoint): dp is BranchNode {
+  return typeof dp === "object" && "_branch" in dp && dp._branch === true;
+}
+
+function resolveSingleDataPoint(
+  dp: RawDataPoint,
+  index: number,
+  registry: Record<string, DataPoint>,
+): DataPoint {
+  if (typeof dp === "string") {
+    const entry = registry[dp];
+    if (!entry) {
+      throw new Error(
+        `Unknown data point "${dp}". Available: ${Object.keys(registry).join(", ")}`,
+      );
+    }
+    return { ...entry };
+  }
+  if ((dp as any).composite) {
+    return dp as DataPoint;
+  }
+  const obj = dp as Partial<DataPoint> & { variableName?: string };
+  if (!obj.variableName)
+    throw new Error(`dataPoints[${index}] missing required field: variableName`);
+  return {
+    label:
+      obj.label ||
+      obj.variableName
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c: string) => c.toUpperCase()),
+    variableName: obj.variableName,
+    type: obj.type || "string",
+    choices: obj.choices || [],
+    description:
+      obj.description ||
+      `${obj.variableName}. If not mentioned, set to "${NOT_MENTIONED}". If the caller explicitly says they don't know, set to "${CALLER_DOESNT_KNOW}".`,
+    conversationPrompt:
+      obj.conversationPrompt ||
+      `Ask the caller for their ${obj.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know, acknowledge it and move on.`,
+    forwardCondition:
+      obj.forwardCondition ||
+      `The caller has provided their ${obj.variableName.replace(/_/g, " ")} or has indicated they don't know it`,
+    finetuneExamples: obj.finetuneExamples || [],
+    extractSuccessEquation: obj.extractSuccessEquation ||
+      defaultExtractEquation(obj.variableName),
+  };
+}
+
 export function resolveDataPoints(
   rawDataPoints: RawDataPoint[],
   defaults?: Record<string, DataPoint>,
@@ -52,45 +102,49 @@ export function resolveDataPoints(
     ? defaults
     : DATA_POINT_REGISTRY;
 
-  return rawDataPoints.map((dp, i) => {
-    if (typeof dp === "string") {
-      const entry = registry[dp];
-      if (!entry) {
-        throw new Error(
-          `Unknown data point "${dp}". Available: ${Object.keys(registry).join(", ")}`,
-        );
+  const result: DataPoint[] = [];
+
+  for (let i = 0; i < rawDataPoints.length; i++) {
+    const dp = rawDataPoints[i];
+
+    if (isBranchNode(dp)) {
+      const ifCondition: BranchCondition = {
+        variable: dp.variable,
+        operator: dp.operator,
+        value: dp.value,
+      };
+      const elseOperator = dp.operator === "==" ? "!=" : "==" as const;
+      const elseCondition: BranchCondition = {
+        variable: dp.variable,
+        operator: elseOperator,
+        value: dp.value,
+      };
+
+      // Resolve IF-branch data points with branch condition
+      for (const ifDp of dp.ifDataPoints) {
+        if (isBranchNode(ifDp)) {
+          throw new Error("Nested branches are not supported");
+        }
+        const resolved = resolveSingleDataPoint(ifDp, i, registry);
+        resolved._branchCondition = ifCondition;
+        result.push(resolved);
       }
-      return { ...entry };
+
+      // Resolve ELSE-branch data points with inverted condition
+      for (const elseDp of dp.elseDataPoints) {
+        if (isBranchNode(elseDp)) {
+          throw new Error("Nested branches are not supported");
+        }
+        const resolved = resolveSingleDataPoint(elseDp, i, registry);
+        resolved._branchCondition = elseCondition;
+        result.push(resolved);
+      }
+    } else {
+      result.push(resolveSingleDataPoint(dp, i, registry));
     }
-    // Composite data points have a variables array instead of variableName
-    if (dp.composite) {
-      return dp as DataPoint;
-    }
-    if (!dp.variableName)
-      throw new Error(`dataPoints[${i}] missing required field: variableName`);
-    return {
-      label:
-        dp.label ||
-        dp.variableName
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (c) => c.toUpperCase()),
-      variableName: dp.variableName,
-      type: dp.type || "string",
-      choices: dp.choices || [],
-      description:
-        dp.description ||
-        `${dp.variableName}. If not mentioned, set to "${NOT_MENTIONED}". If the caller explicitly says they don't know, set to "${CALLER_DOESNT_KNOW}".`,
-      conversationPrompt:
-        dp.conversationPrompt ||
-        `Ask the caller for their ${dp.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know, acknowledge it and move on.`,
-      forwardCondition:
-        dp.forwardCondition ||
-        `The caller has provided their ${dp.variableName.replace(/_/g, " ")} or has indicated they don't know it`,
-      finetuneExamples: dp.finetuneExamples || [],
-      extractSuccessEquation: dp.extractSuccessEquation ||
-        defaultExtractEquation(dp.variableName),
-    };
-  });
+  }
+
+  return result;
 }
 
 // ── Main Generator ───────────────────────────────────────────────────────────

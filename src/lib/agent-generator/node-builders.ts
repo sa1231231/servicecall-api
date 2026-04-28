@@ -694,59 +694,75 @@ export function buildDataChain(
     display_position: pathPos.frontExtract,
   });
 
-  // Variables Router: check each variable, route to first missing one
+  // Variables Router: check each variable, route to first missing one.
+  // If a data point has _branchCondition, AND the condition into the edge.
   const routerEdges = resolvedDataPoints.map((dp, i) => {
+    let missingEquations: any[];
+    let missingOperator: string;
+
     if (dp.variableName === "phone_number") {
+      missingEquations = [
+        {
+          left: `{{phone_number}}`,
+          operator: "==",
+          right: NOT_MENTIONED,
+        },
+        {
+          left: `{{${PHONE_COLLECTED_FLAG}}}`,
+          operator: "!=",
+          right: "true",
+        },
+      ];
+      missingOperator = "&&";
+    } else if (dp.composite && dp.variables) {
+      missingEquations = dp.variables.flatMap((v) => [
+        { left: `{{${v.variableName}}}`, operator: "not_exist" },
+        { left: `{{${v.variableName}}}`, operator: "==", right: NOT_MENTIONED },
+      ]);
+      missingOperator = "||";
+    } else {
+      missingEquations = [
+        { left: `{{${dp.variableName}}}`, operator: "not_exist" },
+        {
+          left: `{{${dp.variableName}}}`,
+          operator: "==",
+          right: NOT_MENTIONED,
+        },
+      ];
+      missingOperator = "||";
+    }
+
+    // If this data point is inside a branch, AND the branch condition
+    if (dp._branchCondition) {
+      const bc = dp._branchCondition;
+      const branchEq = {
+        left: `{{${bc.variable}}}`,
+        operator: bc.operator,
+        right: bc.value,
+      };
+      // Wrap: (missing check) AND (branch condition)
+      // We nest the missing check as a group and add the branch condition
       return {
         destination_node_id: pathIds.chain[i].convId,
         id: f.edgeId(),
         transition_condition: {
           type: "equation",
           equations: [
-            {
-              left: `{{phone_number}}`,
-              operator: "==",
-              right: NOT_MENTIONED,
-            },
-            {
-              left: `{{${PHONE_COLLECTED_FLAG}}}`,
-              operator: "!=",
-              right: "true",
-            },
+            ...missingEquations,
+            branchEq,
           ],
           operator: "&&",
         },
       };
     }
-    if (dp.composite && dp.variables) {
-      const equations = dp.variables.flatMap((v) => [
-        { left: `{{${v.variableName}}}`, operator: "not_exist" },
-        { left: `{{${v.variableName}}}`, operator: "==", right: NOT_MENTIONED },
-      ]);
-      return {
-        destination_node_id: pathIds.chain[i].convId,
-        id: f.edgeId(),
-        transition_condition: {
-          type: "equation",
-          equations,
-          operator: "||",
-        },
-      };
-    }
+
     return {
       destination_node_id: pathIds.chain[i].convId,
       id: f.edgeId(),
       transition_condition: {
         type: "equation",
-        equations: [
-          { left: `{{${dp.variableName}}}`, operator: "not_exist" },
-          {
-            left: `{{${dp.variableName}}}`,
-            operator: "==",
-            right: NOT_MENTIONED,
-          },
-        ],
-        operator: "||",
+        equations: missingEquations,
+        operator: missingOperator,
       },
     };
   });
