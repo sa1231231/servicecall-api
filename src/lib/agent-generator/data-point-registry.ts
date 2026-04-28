@@ -33,8 +33,8 @@ export interface DataPoint {
   extractSuccessEquation: ExtractEquation[];
   // Composite-only
   variables?: VariableDef[];
-  // Set internally by resolveDataPoints when inside a branch
-  _branchCondition?: BranchCondition;
+  // Set internally by resolveDataPoints when inside a branch (can be nested)
+  _branchConditions?: BranchCondition[];
 }
 
 export interface BranchCondition {
@@ -48,8 +48,8 @@ export interface BranchNode {
   variable: string;
   operator: "==" | "!=";
   value: string;
-  ifDataPoints: RawDataPoint[];
-  elseDataPoints: RawDataPoint[];
+  ifChain: RawDataPoint[];
+  elseChain: RawDataPoint[];
 }
 
 export type RawDataPoint = string | BranchNode | Partial<DataPoint> & { variableName?: string; composite?: boolean; variables?: VariableDef[] };

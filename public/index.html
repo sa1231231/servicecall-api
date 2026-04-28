@@ -138,36 +138,70 @@
   }
   .btn-add-custom:hover, .btn-add-path:hover { background: #eff6ff; }
 
-  /* Branch cards in path ordered list */
-  .branch-card {
-    border: 1px solid #c4b5fd; border-radius: 6px;
-    margin: 0.4rem 0; background: #faf5ff; padding: 0.5rem 0.65rem;
+  /* Chain builder */
+  .chain-list { min-height: 8px; }
+  .chain-item {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.35rem 0.5rem; margin-bottom: 0.35rem;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 6px;
+    font-size: 0.85rem;
   }
-  .branch-header {
+  .chain-item .chain-handle { cursor: grab; color: #aaa; font-size: 1rem; }
+  .chain-item .chain-handle:active { cursor: grabbing; }
+  .chain-item select.chain-dp-select {
+    flex: 1; padding: 0.25rem 0.4rem; font-size: 0.82rem;
+    border: 1px solid #d1d5db; border-radius: 4px; margin: 0; min-width: 0;
+  }
+  .chain-item .chain-remove {
+    color: #dc2626; background: none; border: none;
+    cursor: pointer; font-size: 0.9rem; padding: 0 0.2rem; flex-shrink: 0;
+  }
+  .chain-item.custom-expanded {
+    flex-direction: column; align-items: stretch;
+  }
+  .chain-custom-fields { margin-top: 0.4rem; font-size: 0.8rem; }
+  .chain-custom-fields label { font-size: 0.75rem; margin-bottom: 0.15rem; }
+  .chain-custom-fields input, .chain-custom-fields textarea, .chain-custom-fields select {
+    font-size: 0.8rem; padding: 0.3rem 0.5rem; margin-bottom: 0.4rem;
+  }
+  .chain-custom-fields textarea { min-height: 50px; }
+
+  /* Branch blocks */
+  .chain-branch {
+    display: block; padding: 0.5rem 0.65rem;
+    border: 1px solid #c4b5fd; border-radius: 6px;
+    background: #faf5ff; margin-bottom: 0.35rem;
+  }
+  .chain-branch .branch-header {
     display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
     font-size: 0.82rem; margin-bottom: 0.35rem;
   }
-  .branch-header select, .branch-header input[type="text"] {
+  .chain-branch .branch-header select,
+  .chain-branch .branch-header input[type="text"] {
     padding: 0.2rem 0.4rem; font-size: 0.8rem; border: 1px solid #d1d5db;
     border-radius: 4px; margin: 0;
   }
-  .branch-header select { width: auto; }
-  .branch-header input[type="text"] { width: 140px; }
-  .branch-header .branch-remove {
+  .chain-branch .branch-header select { width: auto; }
+  .chain-branch .branch-header input[type="text"] { width: 140px; }
+  .chain-branch .branch-remove {
     margin-left: auto; color: #dc2626; background: none; border: none;
     cursor: pointer; font-size: 0.9rem; padding: 0 0.3rem;
   }
-  .branch-section { margin: 0.3rem 0 0.3rem 0.75rem; padding-left: 0.5rem; border-left: 2px solid #c4b5fd; }
-  .branch-section-label { font-size: 0.72rem; font-weight: 600; color: #7c3aed; margin-bottom: 0.2rem; }
-  .branch-section .path-dp-order { min-height: 24px; border-color: #ddd6fe; }
-  .branch-section .path-dp-order:empty::after { content: 'Check data points above to add here.'; }
-  .branch-section .checkbox-group { margin-bottom: 0.35rem; }
-  .btn-add-branch {
-    padding: 0.3rem 0.7rem; font-size: 0.78rem; font-weight: 500;
-    background: #faf5ff; color: #7c3aed; border: 1px dashed #c4b5fd;
-    border-radius: 5px; cursor: pointer; margin-top: 0.35rem;
+  .branch-side { margin: 0.3rem 0 0.3rem 0.5rem; padding-left: 0.5rem; border-left: 2px solid #c4b5fd; }
+  .branch-side-label { font-size: 0.72rem; font-weight: 600; color: #7c3aed; margin-bottom: 0.2rem; }
+  .chain-add-btns { display: flex; gap: 0.4rem; margin-top: 0.3rem; }
+  .btn-chain-add {
+    padding: 0.25rem 0.6rem; font-size: 0.75rem; font-weight: 500;
+    background: #fff; color: #2563eb; border: 1px dashed #93b4f5;
+    border-radius: 4px; cursor: pointer;
   }
-  .btn-add-branch:hover { background: #f3e8ff; }
+  .btn-chain-add:hover { background: #eff6ff; }
+  .btn-chain-branch {
+    padding: 0.25rem 0.6rem; font-size: 0.75rem; font-weight: 500;
+    background: #faf5ff; color: #7c3aed; border: 1px dashed #c4b5fd;
+    border-radius: 4px; cursor: pointer;
+  }
+  .btn-chain-branch:hover { background: #f3e8ff; }
 
   /* Routing path cards */
   .path-card {
@@ -272,24 +306,11 @@
   <textarea id="faqKnowledgeBase" required placeholder="Paste the business FAQ or knowledge base content here..."></textarea>
   <div class="field-hint">The agent uses this to answer caller questions (hours, pricing, service areas, etc.). Pasted into a dedicated FAQ node in the conversation flow — if a caller asks something off-topic from data collection, the agent checks here first.</div>
 
-  <!-- ── Data Points ─────────────────────────────────────────── -->
-  <h2>Data Points to Collect</h2>
-  <p style="font-size:0.8rem;color:#666;margin-top:-0.5rem;">Each checked field becomes a question the agent asks during the call. Collected values appear in the SMS/email dispatch notification sent to your team.</p>
-
-  <div id="dataPointCheckboxes"><div style="color:#888;font-size:0.8rem;">Loading data points...</div></div>
-
-  <!-- ── Custom Data Points ───────────────────────────────────── -->
-  <h2>Custom Data Points</h2>
-  <p style="font-size:0.8rem;color:#666;margin-top:-0.5rem;">Add custom fields for the agent to collect. Each becomes a conversation node in the Retell flow and a line item in dispatch notifications.</p>
-  <div id="customDataPoints"></div>
-  <button type="button" class="btn-add-custom" onclick="addCustomCard()">+ Add Custom Field</button>
-
   <!-- ── Routing Paths ─────────────────────────────────────────── -->
   <h2>Routing Paths</h2>
   <p style="font-size:0.8rem;color:#666;margin-top:-0.5rem;">
-    Paths let the agent branch based on caller intent. Each path has its own set of questions.
-    Example: "Emergency Dispatch" vs "Schedule Service". The path name also appears as the message type in notifications.
-    If no paths are defined, all selected data points above are collected in a single flow.
+    Each path represents a caller intent branch. Build the data collection chain by adding data points in order.
+    Use branches for conditional logic. A single "Default" path works for simple agents.
   </p>
   <div id="routingPaths"></div>
   <button type="button" class="btn-add-path" onclick="addPathCard()">+ Add Routing Path</button>
@@ -337,7 +358,6 @@
   const form = document.getElementById('agentForm');
   const resultDiv = document.getElementById('result');
   const submitBtn = document.getElementById('submitBtn');
-  const customContainer = document.getElementById('customDataPoints');
   const pathsContainer = document.getElementById('routingPaths');
 
   function showResult(message, type) {
@@ -354,16 +374,14 @@
   // Populated dynamically from /form/data-points
   let BUILTIN_NAMES = [];
   let BUILTIN_LABELS = {};
-  let BUILTIN_CATEGORIES = {}; // key -> category string
-  let BUILTIN_SORT_ORDERS = {}; // key -> sortOrder number
+  let BUILTIN_CATEGORIES = {};
+  let BUILTIN_SORT_ORDERS = {};
+  let BUILTIN_DATA = {}; // full data point objects
   let DP_CATEGORY_ORDER = [];
   let DP_CATEGORY_LABELS = {};
 
-  // Default checked data points (general basics)
-  const DEFAULT_CHECKED = new Set(['full_name', 'phone_number', 'street_address', 'city']);
-
-  let cardCounter = 0;
   let pathCounter = 0;
+  let chainItemCounter = 0;
 
   // Auto-load API key from server environment
   fetch('/form/config')
@@ -371,11 +389,11 @@
     .then(data => { document.getElementById('apiKey').value = data.apiKey; })
     .catch(() => { /* key will be empty — POST will fail with 401 */ });
 
-  // Load data points dynamically and render checkboxes
+  // Load data points dynamically
   fetch('/form/data-points')
     .then(r => r.json())
     .then(response => {
-      const dataPoints = response.dataPoints || response; // backwards compat
+      const dataPoints = response.dataPoints || response;
       DP_CATEGORY_ORDER = response.categoryOrder || [];
       DP_CATEGORY_LABELS = response.categoryLabels || {};
 
@@ -383,49 +401,20 @@
       BUILTIN_LABELS = {};
       BUILTIN_CATEGORIES = {};
       BUILTIN_SORT_ORDERS = {};
+      BUILTIN_DATA = dataPoints;
       for (const [key, dp] of Object.entries(dataPoints)) {
         BUILTIN_LABELS[key] = dp.label;
         BUILTIN_CATEGORIES[key] = dp.category || 'caller_info';
         BUILTIN_SORT_ORDERS[key] = dp.sortOrder ?? 99;
       }
 
-      // Group by category, sorted by sortOrder within each group
-      const groups = {};
-      for (const [key, dp] of Object.entries(dataPoints)) {
-        const cat = dp.category || 'caller_info';
-        if (!groups[cat]) groups[cat] = [];
-        groups[cat].push({ key, label: dp.label, sortOrder: dp.sortOrder ?? 99 });
+      // Auto-create default path
+      if (pathsContainer.children.length === 0) {
+        addPathCard('Default');
       }
-      for (const cat of Object.keys(groups)) {
-        groups[cat].sort((a, b) => a.sortOrder - b.sortOrder);
-      }
-
-      // Render checkbox groups using category order from server
-      const container = document.getElementById('dataPointCheckboxes');
-      let html = '';
-      const sortedCats = [...DP_CATEGORY_ORDER.filter(c => groups[c]), ...Object.keys(groups).filter(c => !DP_CATEGORY_ORDER.includes(c)).sort()];
-      for (const cat of sortedCats) {
-        const items = groups[cat];
-        if (!items) continue;
-        const catLabel = DP_CATEGORY_LABELS[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-        html += '<h3>' + catLabel + '</h3>';
-        html += '<div class="checkbox-group">';
-        for (const item of items) {
-          const checked = DEFAULT_CHECKED.has(item.key) ? ' checked' : '';
-          html += '<label><input type="checkbox" name="dataPoint" value="' + item.key + '"' + checked + '> ' + item.label + '</label>';
-        }
-        html += '</div>';
-      }
-      container.innerHTML = html;
-
-      // Re-bind change listeners for routing path refresh
-      document.querySelectorAll('input[name="dataPoint"]').forEach(cb => {
-        cb.addEventListener('change', refreshPathCheckboxes);
-      });
     })
-    .catch(() => {
-      document.getElementById('dataPointCheckboxes').innerHTML =
-        '<div style="color:#991b1b;font-size:0.8rem;">Failed to load data points.</div>';
+    .catch(err => {
+      console.error('Failed to load data points:', err);
     });
 
   function csvToArray(value) {
@@ -438,265 +427,140 @@
     return str.toLowerCase().replace(/[\s\-]+/g, '_').replace(/[^a-z0-9_]/g, '');
   }
 
-  // ── Custom Data Points ──────────────────────────────────────
+  // ── Data Point Dropdown Options ─────────────────────────────
 
-  function createCardHtml(id, values) {
-    const v = values || {};
-    return `
-      <div class="custom-dp-card" data-card-id="${id}">
-        <div class="card-header">
-          <span>Custom Field #<span class="card-num"></span></span>
-          <div class="card-actions">
-            <button type="button" class="btn-duplicate" onclick="duplicateCard('${id}')">Duplicate</button>
-            <button type="button" class="btn-remove" onclick="removeCard('${id}')">Remove</button>
-          </div>
-        </div>
-        <div class="custom-dp-row">
-          <div>
-            <label>Variable Name <span style="color:#dc2626">*</span></label>
-            <input type="text" class="cdp-variableName" placeholder="property_type" value="${v.variableName || ''}"
-              onblur="this.value = slugify(this.value); refreshPathCheckboxes()">
-            <div class="field-hint">Internal key used in templates and notifications. Must be unique, lowercase, underscores only.</div>
-          </div>
-          <div>
-            <label>Label <span style="color:#dc2626">*</span></label>
-            <input type="text" class="cdp-label" placeholder="Property Type" value="${v.label || ''}"
-              onblur="refreshPathCheckboxes()">
-            <div class="field-hint">Display name shown in the dispatch notification and dashboard.</div>
-          </div>
-          <div class="type-col">
-            <label>Type <span style="color:#dc2626">*</span></label>
-            <select class="cdp-type" onchange="toggleChoices(this)">
-              <option value="string"${(v.type || 'string') === 'string' ? ' selected' : ''}>string</option>
-              <option value="enum"${v.type === 'enum' ? ' selected' : ''}>enum</option>
-              <option value="boolean"${v.type === 'boolean' ? ' selected' : ''}>boolean</option>
-            </select>
-            <div class="field-hint">"string" = free text, "enum" = pick from choices, "boolean" = yes/no.</div>
-          </div>
-        </div>
-        <div class="choices-row${v.type === 'enum' ? ' visible' : ''}">
-          <label>Choices <span style="color:#dc2626">*</span></label>
-          <input type="text" class="cdp-choices" placeholder="Residential, Commercial, Industrial" value="${v.choices || ''}">
-          <div class="field-hint">Comma-separated list of valid options.</div>
-        </div>
-        <label>Description <span style="color:#dc2626">*</span></label>
-        <textarea class="cdp-description" placeholder='The type of property the caller is inquiring about. If not mentioned, set to "Not Mentioned".'>${v.description || ''}</textarea>
-        <div class="field-hint">Tells the AI what this field means and what to store if the caller doesn't mention it (e.g. set to "Not Mentioned"). This is the Retell node description.</div>
-        <label>Conversation Prompt <span style="color:#dc2626">*</span></label>
-        <textarea class="cdp-conversationPrompt" placeholder='Ask the caller what type of property they need service for.
-
-Do not ask for any other information than what is instructed for this node.'>${v.conversationPrompt || ''}</textarea>
-        <div class="field-hint">Exact instructions the agent follows when asking for this field. This becomes the node prompt in the Retell conversation flow. Be specific.</div>
-        <label>Forward Condition <span style="color:#dc2626">*</span></label>
-        <input type="text" class="cdp-forwardCondition" placeholder="The caller has provided their property type" value="${v.forwardCondition || ''}">
-        <div class="field-hint">The condition that triggers moving to the next question. The agent stays on this question until this condition is met.</div>
-      </div>
-    `;
-  }
-
-  function addCustomCard(values) {
-    const id = 'cdp_' + (++cardCounter);
-    customContainer.insertAdjacentHTML('beforeend', createCardHtml(id, values));
-    renumberCards();
-    refreshPathCheckboxes();
-  }
-
-  function duplicateCard(cardId) {
-    const card = document.querySelector(`[data-card-id="${cardId}"]`);
-    if (!card) return;
-    const values = {
-      variableName: '',
-      label: '',
-      type: card.querySelector('.cdp-type').value,
-      choices: card.querySelector('.cdp-choices').value,
-      description: card.querySelector('.cdp-description').value,
-      conversationPrompt: card.querySelector('.cdp-conversationPrompt').value,
-      forwardCondition: card.querySelector('.cdp-forwardCondition').value,
-    };
-    const id = 'cdp_' + (++cardCounter);
-    card.insertAdjacentHTML('afterend', createCardHtml(id, values));
-    renumberCards();
-    refreshPathCheckboxes();
-  }
-
-  function removeCard(cardId) {
-    const card = document.querySelector(`[data-card-id="${cardId}"]`);
-    if (card) card.remove();
-    renumberCards();
-    refreshPathCheckboxes();
-  }
-
-  function renumberCards() {
-    customContainer.querySelectorAll('.custom-dp-card').forEach((card, i) => {
-      card.querySelector('.card-num').textContent = i + 1;
-    });
-  }
-
-  function toggleChoices(select) {
-    const row = select.closest('.custom-dp-card').querySelector('.choices-row');
-    if (select.value === 'enum') {
-      row.classList.add('visible');
-    } else {
-      row.classList.remove('visible');
-    }
-  }
-
-  function collectCustomDataPoints() {
-    const cards = customContainer.querySelectorAll('.custom-dp-card');
-    const results = [];
-    const errors = [];
-    const seenNames = new Set();
-
-    cards.forEach((card, i) => {
-      const num = i + 1;
-      const variableName = slugify(card.querySelector('.cdp-variableName').value.trim());
-      const label = card.querySelector('.cdp-label').value.trim();
-      const type = card.querySelector('.cdp-type').value;
-      const choicesRaw = card.querySelector('.cdp-choices').value.trim();
-      const description = card.querySelector('.cdp-description').value.trim();
-      const conversationPrompt = card.querySelector('.cdp-conversationPrompt').value.trim();
-      const forwardCondition = card.querySelector('.cdp-forwardCondition').value.trim();
-
-      if (!variableName) errors.push(`Custom field #${num}: Variable Name is required.`);
-      if (!label) errors.push(`Custom field #${num}: Label is required.`);
-      if (!description) errors.push(`Custom field #${num}: Description is required.`);
-      if (!conversationPrompt) errors.push(`Custom field #${num}: Conversation Prompt is required.`);
-      if (!forwardCondition) errors.push(`Custom field #${num}: Forward Condition is required.`);
-
-      if (variableName && BUILTIN_NAMES.includes(variableName)) {
-        errors.push(`Custom field #${num}: "${variableName}" is a built-in data point name. Use a different name.`);
-      }
-      if (variableName && seenNames.has(variableName)) {
-        errors.push(`Custom field #${num}: Duplicate variable name "${variableName}".`);
-      }
-      seenNames.add(variableName);
-
-      const choices = type === 'enum' ? csvToArray(choicesRaw) : [];
-      if (type === 'enum' && choices.length === 0) {
-        errors.push(`Custom field #${num}: Enum type requires at least one choice.`);
-      }
-
-      if (errors.length === 0) {
-        results.push({
-          variableName,
-          label,
-          type,
-          choices,
-          description,
-          conversationPrompt,
-          forwardCondition,
-          finetuneExamples: [],
-          extractSuccessEquation: [
-            { left: `{{${variableName}}}`, operator: 'exists' },
-            { left: `{{${variableName}}}`, operator: '!=', right: 'Not Mentioned' },
-          ],
-        });
-      }
-    });
-
-    return { results, errors };
-  }
-
-  // ── Routing Paths ───────────────────────────────────────────
-
-  /** Build the list of all available data points (built-in checked + custom defined). */
-  function getAllDataPoints() {
-    const points = [];
-    // Built-in: include all that are checked in the form
-    document.querySelectorAll('input[name="dataPoint"]:checked').forEach(cb => {
-      points.push({ value: cb.value, label: BUILTIN_LABELS[cb.value] || cb.value, builtin: true });
-    });
-    // Custom: include all that have a variableName
-    customContainer.querySelectorAll('.custom-dp-card').forEach(card => {
-      const vn = slugify(card.querySelector('.cdp-variableName').value.trim());
-      const lb = card.querySelector('.cdp-label').value.trim();
-      if (vn) points.push({ value: vn, label: lb || vn, builtin: false });
-    });
-    return points;
-  }
-
-  /** Render data-point checkboxes inside a path card, preserving prior selections + order. */
-  function renderPathCheckboxes(pathCard) {
-    const cbContainer = pathCard.querySelector('.path-dp-checkboxes');
-    const orderList = pathCard.querySelector('.path-dp-order');
-    const allDps = getAllDataPoints();
-
-    // Remember previously ordered items (by value)
-    const orderedValues = [...orderList.querySelectorAll('li')].map(li => li.dataset.value);
-    // Remember checked state from checkboxes
-    const checked = new Set();
-    cbContainer.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => checked.add(cb.value));
-    // Also include anything in the order list
-    orderedValues.forEach(v => checked.add(v));
-
-    // Available data point map for lookup
-    const dpMap = new Map(allDps.map(dp => [dp.value, dp]));
-
-    // Group by category (using real categories from server), sorted by sortOrder
+  function buildDpOptions(selectedValue) {
+    // Group built-in data points by category, sorted
     const groups = {};
-    allDps.forEach(dp => {
-      const cat = dp.builtin ? (BUILTIN_CATEGORIES[dp.value] || 'caller_info') : '_custom';
+    for (const [key, dp] of Object.entries(BUILTIN_DATA)) {
+      const cat = dp.category || 'caller_info';
       if (!groups[cat]) groups[cat] = [];
-      groups[cat].push({ ...dp, sortOrder: dp.builtin ? (BUILTIN_SORT_ORDERS[dp.value] ?? 99) : 99 });
-    });
+      groups[cat].push({ key, label: dp.label, sortOrder: dp.sortOrder ?? 99 });
+    }
     for (const cat of Object.keys(groups)) {
       groups[cat].sort((a, b) => a.sortOrder - b.sortOrder);
     }
 
-    // Category display order (from server)
-    const allCatLabels = { ...DP_CATEGORY_LABELS, _custom: 'Custom' };
-    const orderedCats = [...DP_CATEGORY_ORDER.filter(c => groups[c]), ...Object.keys(groups).filter(c => !DP_CATEGORY_ORDER.includes(c))];
+    const orderedCats = [...DP_CATEGORY_ORDER.filter(c => groups[c]), ...Object.keys(groups).filter(c => !DP_CATEGORY_ORDER.includes(c)).sort()];
 
-    const pathId = pathCard.dataset.pathId;
-    let html = '';
+    let html = '<option value="">— Select data point —</option>';
     for (const cat of orderedCats) {
       const items = groups[cat];
-      if (!items || !items.length) continue;
-      const catLabel = allCatLabels[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      html += `<h3>${catLabel}</h3><div class="checkbox-group">`;
-      items.forEach(dp => {
-        html += `<label><input type="checkbox" name="pathDp" value="${dp.value}" data-path="${pathId}" data-label="${dp.label}"${checked.has(dp.value) ? ' checked' : ''} onchange="onPathDpToggle(this)"> ${dp.label}</label>`;
-      });
-      html += '</div>';
-    }
-
-    if (!html) {
-      html = '<p style="font-size:0.8rem;color:#999;">No data points selected above. Check some data points first.</p>';
-    }
-    cbContainer.innerHTML = html;
-
-    // Rebuild order list: keep existing order, remove stale, don't add unchecked
-    const availableValues = new Set(allDps.map(dp => dp.value));
-    // Remove items that are no longer available or no longer checked
-    orderList.querySelectorAll('li').forEach(li => {
-      if (!availableValues.has(li.dataset.value) || !checked.has(li.dataset.value)) {
-        li.remove();
+      if (!items) continue;
+      const catLabel = DP_CATEGORY_LABELS[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      html += `<optgroup label="${catLabel}">`;
+      for (const item of items) {
+        const sel = item.key === selectedValue ? ' selected' : '';
+        html += `<option value="${item.key}"${sel}>${item.label}</option>`;
       }
-    });
-    // Add newly checked items at the end (if not already in list)
-    const inList = new Set([...orderList.querySelectorAll('li')].map(li => li.dataset.value));
-    checked.forEach(val => {
-      if (availableValues.has(val) && !inList.has(val)) {
-        const dp = dpMap.get(val);
-        if (dp) appendOrderItem(orderList, dp.value, dp.label);
-      }
-    });
-
-    initDragDrop(orderList);
+      html += '</optgroup>';
+    }
+    html += '<optgroup label="Custom"><option value="__custom__">+ Create custom data point...</option></optgroup>';
+    return html;
   }
 
-  /** Refresh checkboxes in all path cards (called when data points change). */
-  function refreshPathCheckboxes() {
-    pathsContainer.querySelectorAll('.path-card').forEach(card => renderPathCheckboxes(card));
+  function buildConditionVarOptions(selectedValue) {
+    let html = '<option value="">— Variable —</option>';
+    for (const key of BUILTIN_NAMES) {
+      const sel = key === selectedValue ? ' selected' : '';
+      html += `<option value="${key}"${sel}>${BUILTIN_LABELS[key]}</option>`;
+    }
+    return html;
   }
 
-  // Re-render path checkboxes when built-in checkboxes change
-  document.querySelectorAll('input[name="dataPoint"]').forEach(cb => {
-    cb.addEventListener('change', refreshPathCheckboxes);
-  });
+  // ── Chain Builder ──────────────────────────────────────────
 
-  function addPathCard() {
+  function addChainItem(chainList, value) {
+    const id = 'ci_' + (++chainItemCounter);
+    const div = document.createElement('div');
+    div.className = 'chain-item';
+    div.dataset.type = 'datapoint';
+    div.dataset.itemId = id;
+    div.innerHTML = `<span class="chain-handle">&#9776;</span>
+      <select class="chain-dp-select" onchange="onChainDpChange(this)">${buildDpOptions(value || '')}</select>
+      <button type="button" class="chain-remove" onclick="this.closest('.chain-item').remove()">&times;</button>`;
+    chainList.appendChild(div);
+
+    if (value === '__custom__') {
+      onChainDpChange(div.querySelector('.chain-dp-select'));
+    }
+  }
+
+  function addChainBranch(chainList, branchData) {
+    const id = 'cb_' + (++chainItemCounter);
+    const bd = branchData || {};
+    const div = document.createElement('div');
+    div.className = 'chain-branch';
+    div.dataset.type = 'branch';
+    div.dataset.itemId = id;
+    div.innerHTML = `
+      <div class="branch-header">
+        <strong style="color:#7c3aed;font-size:0.78rem;">IF</strong>
+        <select class="branch-variable">${buildConditionVarOptions(bd.variable || '')}</select>
+        <select class="branch-operator">
+          <option value="==" ${(bd.operator||'==') === '==' ? 'selected' : ''}>equals</option>
+          <option value="!=" ${bd.operator === '!=' ? 'selected' : ''}>does not equal</option>
+        </select>
+        <input type="text" class="branch-value" placeholder="value" value="${bd.value || ''}">
+        <button type="button" class="branch-remove" onclick="this.closest('.chain-branch').remove()">&times;</button>
+      </div>
+      <div class="branch-side">
+        <div class="branch-side-label">THEN:</div>
+        <div class="chain-list" data-side="if"></div>
+        <div class="chain-add-btns">
+          <button type="button" class="btn-chain-add" onclick="addChainItem(this.closest('.branch-side').querySelector('.chain-list'))">+ Data Point</button>
+          <button type="button" class="btn-chain-branch" onclick="addChainBranch(this.closest('.branch-side').querySelector('.chain-list'))">+ Branch</button>
+        </div>
+      </div>
+      <div class="branch-side">
+        <div class="branch-side-label">ELSE:</div>
+        <div class="chain-list" data-side="else"></div>
+        <div class="chain-add-btns">
+          <button type="button" class="btn-chain-add" onclick="addChainItem(this.closest('.branch-side').querySelector('.chain-list'))">+ Data Point</button>
+          <button type="button" class="btn-chain-branch" onclick="addChainBranch(this.closest('.branch-side').querySelector('.chain-list'))">+ Branch</button>
+        </div>
+      </div>`;
+    chainList.appendChild(div);
+    return div;
+  }
+
+  function onChainDpChange(select) {
+    const item = select.closest('.chain-item');
+    if (select.value === '__custom__') {
+      item.classList.add('custom-expanded');
+      if (!item.querySelector('.chain-custom-fields')) {
+        const fields = document.createElement('div');
+        fields.className = 'chain-custom-fields';
+        fields.innerHTML = `
+          <label>Variable Name <span style="color:#dc2626">*</span></label>
+          <input type="text" class="cc-variableName" placeholder="property_type" onblur="this.value=slugify(this.value)">
+          <label>Label <span style="color:#dc2626">*</span></label>
+          <input type="text" class="cc-label" placeholder="Property Type">
+          <label>Type</label>
+          <select class="cc-type" style="width:auto;"><option value="string">string</option><option value="enum">enum</option><option value="boolean">boolean</option></select>
+          <label>Choices <span style="font-weight:400;color:#999;">(comma-separated, for enum)</span></label>
+          <input type="text" class="cc-choices" placeholder="Residential, Commercial">
+          <label>Description <span style="color:#dc2626">*</span></label>
+          <textarea class="cc-description" placeholder='What this field means...'></textarea>
+          <label>Conversation Prompt <span style="color:#dc2626">*</span></label>
+          <textarea class="cc-conversationPrompt" placeholder='How the agent asks for this...'></textarea>
+          <label>Forward Condition <span style="color:#dc2626">*</span></label>
+          <input type="text" class="cc-forwardCondition" placeholder="The caller has provided...">
+        `;
+        item.appendChild(fields);
+      }
+    } else {
+      item.classList.remove('custom-expanded');
+      const fields = item.querySelector('.chain-custom-fields');
+      if (fields) fields.remove();
+    }
+  }
+
+  // ── Routing Paths ──────────────────────────────────────────
+
+  function addPathCard(defaultName) {
     const id = 'path_' + (++pathCounter);
+    const isDefault = defaultName === 'Default';
     const html = `
       <div class="path-card" data-path-id="${id}">
         <div class="card-header">
@@ -706,22 +570,23 @@ Do not ask for any other information than what is instructed for this node.'>${v
           </div>
         </div>
         <label>Path Name <span style="color:#dc2626">*</span></label>
-        <input type="text" class="path-name" placeholder="e.g. Emergency Dispatch">
-        <div class="field-hint">Shown as the message type header in dispatch notifications (e.g. "Emergency Dispatch").</div>
-        <label>Transition Condition <span style="color:#dc2626">*</span></label>
-        <input type="text" class="path-condition" placeholder="e.g. The caller has a truck that is broken down and needs a technician dispatched">
-        <div class="field-hint">The condition the AI evaluates after the intro to route into this path.</div>
-        <div class="path-dp-group">
-          <label>Data Points for this Path</label>
-          <div class="path-dp-checkboxes"></div>
-          <label style="margin-top:0.5rem;">Collection Order <span style="font-weight:400;color:#777;">(drag to reorder)</span></label>
-          <ul class="path-dp-order"></ul>
-          <button type="button" class="btn-add-branch" onclick="addBranchToPath('${id}')">+ Add If/Else Branch</button>
+        <input type="text" class="path-name" placeholder="e.g. Emergency Dispatch" value="${defaultName || ''}">
+        <div class="field-hint">Shown as the message type header in dispatch notifications.</div>
+        ${isDefault ? '' : `<label>Transition Condition <span style="color:#dc2626">*</span></label>
+        <input type="text" class="path-condition" placeholder="e.g. The caller has a truck that is broken down">
+        <div class="field-hint">The condition the AI evaluates after the intro to route into this path.</div>`}
+        ${isDefault ? '<input type="hidden" class="path-condition" value="">' : ''}
+        <label style="margin-top:0.5rem;">Data Collection Chain</label>
+        <div class="field-hint" style="margin-top:-0.25rem;">Add data points in the order the agent should ask them. Use branches for conditional logic.</div>
+        <div class="chain-list" data-chain-root="${id}"></div>
+        <div class="chain-add-btns">
+          <button type="button" class="btn-chain-add" onclick="addChainItem(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Data Point</button>
+          <button type="button" class="btn-chain-branch" onclick="addChainBranch(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Branch</button>
         </div>
         <details style="margin-top:0.75rem;">
           <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">(optional)</span></summary>
           <div style="margin-top:0.5rem;">
-            <div class="field-hint" style="margin-bottom:0.5rem;">Override who gets notified for this specific path. If blank, falls back to the client-level dispatch numbers/emails above.</div>
+            <div class="field-hint" style="margin-bottom:0.5rem;">Override who gets notified for this specific path.</div>
             <label>SMS Numbers</label>
             <input type="text" class="path-dispatch-sms" placeholder="+15551234567, +15559876543">
             <label>Email(s)</label>
@@ -734,74 +599,6 @@ Do not ask for any other information than what is instructed for this node.'>${v
     `;
     pathsContainer.insertAdjacentHTML('beforeend', html);
     renumberPaths();
-    renderPathCheckboxes(pathsContainer.lastElementChild);
-  }
-
-  /** Add an item to the ordered list. */
-  function appendOrderItem(orderList, value, label) {
-    const li = document.createElement('li');
-    li.dataset.value = value;
-    li.draggable = true;
-    li.innerHTML = `<span class="dp-handle">&#9776;</span> ${label} <button type="button" class="dp-remove" onclick="removeOrderItem(this)" title="Remove">&times;</button>`;
-    orderList.appendChild(li);
-  }
-
-  /** When a checkbox is toggled inside a path card, update the order list. */
-  function onPathDpToggle(checkbox) {
-    const pathCard = checkbox.closest('.path-card');
-    const orderList = pathCard.querySelector('.path-dp-order');
-    const val = checkbox.value;
-    const label = checkbox.dataset.label;
-
-    if (checkbox.checked) {
-      // Add to end of order list if not already there
-      const exists = orderList.querySelector(`li[data-value="${val}"]`);
-      if (!exists) appendOrderItem(orderList, val, label);
-    } else {
-      // Remove from order list
-      const li = orderList.querySelector(`li[data-value="${val}"]`);
-      if (li) li.remove();
-    }
-  }
-
-  /** Remove an item from the order list and uncheck the corresponding checkbox. */
-  function removeOrderItem(btn) {
-    const li = btn.closest('li');
-    const pathCard = li.closest('.path-card');
-    const val = li.dataset.value;
-    li.remove();
-    // Uncheck the checkbox
-    const cb = pathCard.querySelector(`input[name="pathDp"][value="${val}"]`);
-    if (cb) cb.checked = false;
-  }
-
-  /** Initialize drag-and-drop on an order list. */
-  function initDragDrop(orderList) {
-    let draggedItem = null;
-
-    orderList.addEventListener('dragstart', (e) => {
-      draggedItem = e.target.closest('li');
-      if (draggedItem) draggedItem.classList.add('dragging');
-    });
-
-    orderList.addEventListener('dragend', () => {
-      if (draggedItem) draggedItem.classList.remove('dragging');
-      draggedItem = null;
-    });
-
-    orderList.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      const target = e.target.closest('li');
-      if (target && target !== draggedItem) {
-        const rect = target.getBoundingClientRect();
-        const midY = rect.top + rect.height / 2;
-        if (e.clientY < midY) {
-          orderList.insertBefore(draggedItem, target);
-        } else {
-          orderList.insertBefore(draggedItem, target.nextSibling);
-        }
-      }
-    });
   }
 
   function removePathCard(pathId) {
@@ -816,7 +613,59 @@ Do not ask for any other information than what is instructed for this node.'>${v
     });
   }
 
-  function collectPaths(customResults) {
+  // ── Collect Chain (recursive) ─────────────────────────────
+
+  function collectChain(chainList) {
+    const items = [];
+    for (const node of chainList.children) {
+      if (node.dataset.type === 'datapoint') {
+        const select = node.querySelector('.chain-dp-select');
+        if (!select) continue;
+        const dpValue = select.value;
+        if (!dpValue || dpValue === '__custom__') {
+          // Custom data point
+          const fields = node.querySelector('.chain-custom-fields');
+          if (!fields) continue;
+          const variableName = slugify(fields.querySelector('.cc-variableName').value.trim());
+          if (!variableName) continue;
+          items.push({
+            variableName,
+            label: fields.querySelector('.cc-label').value.trim() || variableName,
+            type: fields.querySelector('.cc-type').value,
+            choices: fields.querySelector('.cc-type').value === 'enum' ? csvToArray(fields.querySelector('.cc-choices').value) : [],
+            description: fields.querySelector('.cc-description').value.trim(),
+            conversationPrompt: fields.querySelector('.cc-conversationPrompt').value.trim(),
+            forwardCondition: fields.querySelector('.cc-forwardCondition').value.trim(),
+            finetuneExamples: [],
+            extractSuccessEquation: [
+              { left: `{{${variableName}}}`, operator: 'exists' },
+              { left: `{{${variableName}}}`, operator: '!=', right: 'Not Mentioned' },
+            ],
+          });
+        } else {
+          items.push(dpValue); // built-in ref
+        }
+      } else if (node.dataset.type === 'branch') {
+        const variable = node.querySelector('.branch-variable').value;
+        const operator = node.querySelector('.branch-operator').value;
+        const value = node.querySelector('.branch-value').value.trim();
+        if (!variable || !value) continue;
+        const ifList = node.querySelector('.branch-side .chain-list[data-side="if"]') || node.querySelectorAll('.chain-list')[0];
+        const elseList = node.querySelectorAll('.branch-side')[1]?.querySelector('.chain-list') || node.querySelectorAll('.chain-list')[1];
+        items.push({
+          _branch: true,
+          variable,
+          operator,
+          value,
+          ifChain: ifList ? collectChain(ifList) : [],
+          elseChain: elseList ? collectChain(elseList) : [],
+        });
+      }
+    }
+    return items;
+  }
+
+  function collectPaths() {
     const cards = pathsContainer.querySelectorAll('.path-card');
     if (cards.length === 0) return { paths: null, errors: [] };
 
@@ -827,16 +676,16 @@ Do not ask for any other information than what is instructed for this node.'>${v
       const num = i + 1;
       const name = card.querySelector('.path-name').value.trim();
       const condition = card.querySelector('.path-condition').value.trim();
-
-      // Use the new collector that handles branches
-      const dataPoints = collectOrderedDataPoints(card, customResults);
+      const chainRoot = card.querySelector('.chain-list[data-chain-root]');
+      const dataPoints = chainRoot ? collectChain(chainRoot) : [];
 
       if (!name) errors.push(`Path #${num}: Path Name is required.`);
-      if (!condition) errors.push(`Path #${num}: Transition Condition is required.`);
-      if (dataPoints.length === 0) errors.push(`Path #${num}: Select at least one data point.`);
+      // Condition not required for single default path
+      const isSingleDefault = cards.length === 1 && name === 'Default';
+      if (!isSingleDefault && !condition) errors.push(`Path #${num}: Transition Condition is required.`);
+      if (dataPoints.length === 0) errors.push(`Path #${num}: Add at least one data point.`);
 
       if (errors.length === 0) {
-        // Collect optional dispatch overrides for this path
         const pathSms = csvToArray(card.querySelector('.path-dispatch-sms').value);
         const pathEmail = csvToArray(card.querySelector('.path-dispatch-email').value);
         const pathCall = card.querySelector('.path-dispatch-call').value.trim();
@@ -856,180 +705,21 @@ Do not ask for any other information than what is instructed for this node.'>${v
     return { paths, errors };
   }
 
-  // ── If/Else Branches ─────────────────────────────────────────
-
-  let branchCounter = 0;
-
-  function addBranchToPath(pathId) {
-    const pathCard = pathsContainer.querySelector(`[data-path-id="${pathId}"]`);
-    if (!pathCard) return;
-    const orderList = pathCard.querySelector('.path-dp-order');
-
-    // Get all data points available for the condition variable dropdown
-    const allDps = getAllDataPoints();
-    const varOptions = allDps.map(dp => `<option value="${dp.value}">${dp.label}</option>`).join('');
-
-    const bid = 'branch_' + (++branchCounter);
-    const html = `
-      <li class="branch-card" data-branch-id="${bid}">
-        <div class="branch-header">
-          <strong style="color:#7c3aed;font-size:0.78rem;">IF</strong>
-          <select class="branch-variable">${varOptions}</select>
-          <select class="branch-operator">
-            <option value="==">equals</option>
-            <option value="!=">does not equal</option>
-          </select>
-          <input type="text" class="branch-value" placeholder="value">
-          <button type="button" class="branch-remove" onclick="removeBranch(this)" title="Remove branch">&times;</button>
-        </div>
-        <div class="branch-section branch-if">
-          <div class="branch-section-label">THEN collect:</div>
-          <div class="branch-dp-checkboxes" data-branch="${bid}" data-side="if"></div>
-          <ul class="path-dp-order branch-order" data-branch="${bid}" data-side="if"></ul>
-        </div>
-        <div class="branch-section branch-else">
-          <div class="branch-section-label">ELSE collect:</div>
-          <div class="branch-dp-checkboxes" data-branch="${bid}" data-side="else"></div>
-          <ul class="path-dp-order branch-order" data-branch="${bid}" data-side="else"></ul>
-        </div>
-      </li>
-    `;
-    orderList.insertAdjacentHTML('beforeend', html);
-    const branchEl = orderList.querySelector(`[data-branch-id="${bid}"]`);
-    renderBranchCheckboxes(branchEl);
-  }
-
-  function removeBranch(btn) {
-    const card = btn.closest('.branch-card');
-    if (card) card.remove();
-  }
-
-  function renderBranchCheckboxes(branchEl) {
-    const allDps = getAllDataPoints();
-    ['if', 'else'].forEach(side => {
-      const cbContainer = branchEl.querySelector(`.branch-dp-checkboxes[data-side="${side}"]`);
-      const orderList = branchEl.querySelector(`.branch-order[data-side="${side}"]`);
-      const bid = branchEl.dataset.branchId;
-
-      // Remember existing checked
-      const checked = new Set();
-      orderList.querySelectorAll('li').forEach(li => checked.add(li.dataset.value));
-
-      let html = '<div class="checkbox-group" style="font-size:0.8rem;">';
-      allDps.forEach(dp => {
-        html += `<label><input type="checkbox" name="branchDp" value="${dp.value}" data-branch="${bid}" data-side="${side}" data-label="${dp.label}"${checked.has(dp.value) ? ' checked' : ''} onchange="onBranchDpToggle(this)"> ${dp.label}</label>`;
-      });
-      html += '</div>';
-      cbContainer.innerHTML = html;
-
-      // Init drag-drop on the branch order list
-      initDragDrop(orderList);
-    });
-  }
-
-  function onBranchDpToggle(checkbox) {
-    const branchEl = checkbox.closest('.branch-card');
-    const side = checkbox.dataset.side;
-    const orderList = branchEl.querySelector(`.branch-order[data-side="${side}"]`);
-    const val = checkbox.value;
-    const label = checkbox.dataset.label;
-
-    if (checkbox.checked) {
-      const exists = orderList.querySelector(`li[data-value="${val}"]`);
-      if (!exists) appendOrderItem(orderList, val, label);
-    } else {
-      const li = orderList.querySelector(`li[data-value="${val}"]`);
-      if (li) li.remove();
-    }
-  }
-
-  /** Collect data points from a path's order list, including branches. */
-  function collectOrderedDataPoints(pathCard, customResults) {
-    const orderList = pathCard.querySelector('.path-dp-order');
-    const items = [];
-
-    orderList.childNodes.forEach(node => {
-      if (node.nodeType !== 1) return; // skip text nodes
-
-      // Branch card
-      if (node.classList.contains('branch-card')) {
-        const variable = node.querySelector('.branch-variable').value;
-        const operator = node.querySelector('.branch-operator').value;
-        const value = node.querySelector('.branch-value').value.trim();
-        if (!variable || !value) return; // skip incomplete branches
-
-        const ifDps = collectBranchSideDps(node, 'if', customResults);
-        const elseDps = collectBranchSideDps(node, 'else', customResults);
-
-        items.push({
-          _branch: true,
-          variable,
-          operator,
-          value,
-          ifDataPoints: ifDps,
-          elseDataPoints: elseDps,
-        });
-        return;
-      }
-
-      // Regular data point <li>
-      if (node.tagName === 'LI' && node.dataset.value) {
-        const val = node.dataset.value;
-        if (BUILTIN_NAMES.includes(val)) {
-          items.push(val);
-        } else {
-          const custom = customResults.find(c => c.variableName === val);
-          items.push(custom || val);
-        }
-      }
-    });
-
-    return items;
-  }
-
-  function collectBranchSideDps(branchEl, side, customResults) {
-    const orderList = branchEl.querySelector(`.branch-order[data-side="${side}"]`);
-    const dps = [];
-    orderList.querySelectorAll('li').forEach(li => {
-      const val = li.dataset.value;
-      if (BUILTIN_NAMES.includes(val)) {
-        dps.push(val);
-      } else {
-        const custom = customResults.find(c => c.variableName === val);
-        dps.push(custom || val);
-      }
-    });
-    return dps;
-  }
-
   // ── Form Submission ─────────────────────────────────────────
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     clearResult();
 
-    // Gather built-in data points
-    const checked = [...document.querySelectorAll('input[name="dataPoint"]:checked')].map(cb => cb.value);
-
-    // Gather custom data points
-    const custom = collectCustomDataPoints();
-    if (custom.errors.length > 0) {
-      showResult(custom.errors.join('\n'), 'error');
-      return;
-    }
-
-    // Gather routing paths
-    const pathData = collectPaths(custom.results);
+    // Gather routing paths (which now contain all data points)
+    const pathData = collectPaths();
     if (pathData.errors.length > 0) {
       showResult(pathData.errors.join('\n'), 'error');
       return;
     }
 
-    const hasPaths = pathData.paths && pathData.paths.length > 0;
-
-    // Validate: must have data points (single-path) or paths (multi-path)
-    if (!hasPaths && checked.length === 0 && custom.results.length === 0) {
-      showResult('Please select at least one data point or add a routing path.', 'error');
+    if (!pathData.paths || pathData.paths.length === 0) {
+      showResult('Add at least one routing path with data points.', 'error');
       return;
     }
 
@@ -1052,22 +742,24 @@ Do not ask for any other information than what is instructed for this node.'>${v
       },
     };
 
-    if (hasPaths) {
-      // Build dispatch_by_type from path-level dispatch overrides
+    // Single default path → send as flat dataPoints (no routing)
+    const isSingleDefault = pathData.paths.length === 1 && pathData.paths[0].name === 'Default';
+    if (isSingleDefault) {
+      body.dataPoints = pathData.paths[0].dataPoints;
+    } else {
+      // Multi-path: build dispatch_by_type from path-level overrides
       const dispatchByType = {};
       for (const p of pathData.paths) {
         if (p.dispatchOverride) {
           const typeKey = slugify(p.name);
           dispatchByType[typeKey] = p.dispatchOverride;
         }
-        delete p.dispatchOverride; // Don't send to backend
+        delete p.dispatchOverride;
       }
       if (Object.keys(dispatchByType).length > 0) {
         body.client.dispatch_by_type = dispatchByType;
       }
       body.paths = pathData.paths;
-    } else {
-      body.dataPoints = [...checked, ...custom.results];
     }
 
     // Optional client fields
@@ -1164,12 +856,80 @@ Do not ask for any other information than what is instructed for this node.'>${v
 
   // ── Collect / Restore form state ──────────────────────────
 
+  /** Serialize a chain-list element recursively. */
+  function serializeChain(chainList) {
+    const items = [];
+    for (const node of chainList.children) {
+      if (node.dataset.type === 'datapoint') {
+        const sel = node.querySelector('.chain-dp-select');
+        if (sel && sel.value && sel.value !== '__custom__') {
+          items.push(sel.value);
+        } else if (sel && sel.value === '__custom__') {
+          const f = node.querySelector('.chain-custom-fields');
+          if (f) {
+            items.push({
+              _custom: true,
+              variableName: f.querySelector('.cc-variableName').value,
+              label: f.querySelector('.cc-label').value,
+              type: f.querySelector('.cc-type').value,
+              choices: f.querySelector('.cc-choices').value,
+              description: f.querySelector('.cc-description').value,
+              conversationPrompt: f.querySelector('.cc-conversationPrompt').value,
+              forwardCondition: f.querySelector('.cc-forwardCondition').value,
+            });
+          }
+        }
+      } else if (node.dataset.type === 'branch') {
+        const ifList = node.querySelectorAll('.chain-list')[0];
+        const elseList = node.querySelectorAll('.chain-list')[1];
+        items.push({
+          _branch: true,
+          variable: node.querySelector('.branch-variable').value,
+          operator: node.querySelector('.branch-operator').value,
+          value: node.querySelector('.branch-value').value,
+          ifChain: ifList ? serializeChain(ifList) : [],
+          elseChain: elseList ? serializeChain(elseList) : [],
+        });
+      }
+    }
+    return items;
+  }
+
+  /** Restore chain items into a chain-list element recursively. */
+  function restoreChain(chainList, items) {
+    if (!items || !Array.isArray(items)) return;
+    for (const item of items) {
+      if (typeof item === 'string') {
+        addChainItem(chainList, item);
+      } else if (item._branch) {
+        const branchEl = addChainBranch(chainList, item);
+        if (branchEl) {
+          const ifList = branchEl.querySelectorAll('.chain-list')[0];
+          const elseList = branchEl.querySelectorAll('.chain-list')[1];
+          if (ifList) restoreChain(ifList, item.ifChain || item.ifDps || []);
+          if (elseList) restoreChain(elseList, item.elseChain || item.elseDps || []);
+        }
+      } else if (item._custom) {
+        addChainItem(chainList, '__custom__');
+        const lastItem = chainList.lastElementChild;
+        const f = lastItem.querySelector('.chain-custom-fields');
+        if (f) {
+          f.querySelector('.cc-variableName').value = item.variableName || '';
+          f.querySelector('.cc-label').value = item.label || '';
+          f.querySelector('.cc-type').value = item.type || 'string';
+          f.querySelector('.cc-choices').value = item.choices || '';
+          f.querySelector('.cc-description').value = item.description || '';
+          f.querySelector('.cc-conversationPrompt').value = item.conversationPrompt || '';
+          f.querySelector('.cc-forwardCondition').value = item.forwardCondition || '';
+        }
+      }
+    }
+  }
+
   function collectFormState() {
     const state = {
       businessName: val('businessName'),
       faqKnowledgeBase: val('faqKnowledgeBase'),
-      checkedDataPoints: [...document.querySelectorAll('input[name="dataPoint"]:checked')].map(cb => cb.value),
-      customDataPoints: [],
       routingPaths: [],
       clientName: val('clientName'),
       dispatchTextNumbers: val('dispatchTextNumbers'),
@@ -1179,44 +939,12 @@ Do not ask for any other information than what is instructed for this node.'>${v
       humanRequestMode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
     };
 
-    customContainer.querySelectorAll('.custom-dp-card').forEach(card => {
-      state.customDataPoints.push({
-        variableName: card.querySelector('.cdp-variableName').value,
-        label: card.querySelector('.cdp-label').value,
-        type: card.querySelector('.cdp-type').value,
-        choices: card.querySelector('.cdp-choices').value,
-        description: card.querySelector('.cdp-description').value,
-        conversationPrompt: card.querySelector('.cdp-conversationPrompt').value,
-        forwardCondition: card.querySelector('.cdp-forwardCondition').value,
-      });
-    });
-
     pathsContainer.querySelectorAll('.path-card').forEach(card => {
-      // Serialize order list items including branches
-      const orderItems = [];
-      card.querySelector('.path-dp-order').childNodes.forEach(node => {
-        if (node.nodeType !== 1) return;
-        if (node.classList.contains('branch-card')) {
-          const ifDps = [...node.querySelectorAll('.branch-order[data-side="if"] li')].map(li => li.dataset.value);
-          const elseDps = [...node.querySelectorAll('.branch-order[data-side="else"] li')].map(li => li.dataset.value);
-          orderItems.push({
-            _branch: true,
-            variable: node.querySelector('.branch-variable').value,
-            operator: node.querySelector('.branch-operator').value,
-            value: node.querySelector('.branch-value').value,
-            ifDps,
-            elseDps,
-          });
-        } else if (node.tagName === 'LI' && node.dataset.value) {
-          orderItems.push(node.dataset.value);
-        }
-      });
-
+      const chainRoot = card.querySelector('.chain-list[data-chain-root]');
       state.routingPaths.push({
         name: card.querySelector('.path-name').value,
         condition: card.querySelector('.path-condition').value,
-        checkedDps: [...card.querySelectorAll('input[name="pathDp"]:checked')].map(cb => cb.value),
-        orderedDps: orderItems,
+        chain: chainRoot ? serializeChain(chainRoot) : [],
         dispatchSms: card.querySelector('.path-dispatch-sms').value,
         dispatchEmail: card.querySelector('.path-dispatch-email').value,
         dispatchCall: card.querySelector('.path-dispatch-call').value,
@@ -1238,18 +966,10 @@ Do not ask for any other information than what is instructed for this node.'>${v
     const modeRadio = document.querySelector(`input[name="humanRequestMode"][value="${state.humanRequestMode || 'callback'}"]`);
     if (modeRadio) modeRadio.checked = true;
 
-    document.querySelectorAll('input[name="dataPoint"]').forEach(cb => {
-      cb.checked = (state.checkedDataPoints || []).includes(cb.value);
-    });
-
-    customContainer.innerHTML = '';
-    cardCounter = 0;
-    (state.customDataPoints || []).forEach(cdp => addCustomCard(cdp));
-
     pathsContainer.innerHTML = '';
     pathCounter = 0;
     (state.routingPaths || []).forEach(p => {
-      addPathCard();
+      addPathCard(p.name || '');
       const card = pathsContainer.lastElementChild;
       card.querySelector('.path-name').value = p.name || '';
       card.querySelector('.path-condition').value = p.condition || '';
@@ -1257,47 +977,17 @@ Do not ask for any other information than what is instructed for this node.'>${v
       card.querySelector('.path-dispatch-email').value = p.dispatchEmail || '';
       card.querySelector('.path-dispatch-call').value = p.dispatchCall || '';
 
-      const cbContainer = card.querySelector('.path-dp-checkboxes');
-      (p.checkedDps || []).forEach(v => {
-        const cb = cbContainer.querySelector(`input[value="${v}"]`);
-        if (cb) cb.checked = true;
-      });
-
-      const orderList = card.querySelector('.path-dp-order');
-      orderList.innerHTML = '';
-      (p.orderedDps || []).forEach(item => {
-        if (typeof item === 'object' && item._branch) {
-          // Restore a branch card
-          const pathId = card.dataset.pathId;
-          addBranchToPath(pathId);
-          const branchEl = orderList.querySelector('.branch-card:last-child');
-          if (branchEl) {
-            branchEl.querySelector('.branch-variable').value = item.variable || '';
-            branchEl.querySelector('.branch-operator').value = item.operator || '==';
-            branchEl.querySelector('.branch-value').value = item.value || '';
-            // Restore IF side
-            const ifList = branchEl.querySelector('.branch-order[data-side="if"]');
-            (item.ifDps || []).forEach(dpVal => {
-              appendOrderItem(ifList, dpVal, BUILTIN_LABELS[dpVal] || dpVal);
-              const cb = branchEl.querySelector(`input[data-side="if"][value="${dpVal}"]`);
-              if (cb) cb.checked = true;
-            });
-            initDragDrop(ifList);
-            // Restore ELSE side
-            const elseList = branchEl.querySelector('.branch-order[data-side="else"]');
-            (item.elseDps || []).forEach(dpVal => {
-              appendOrderItem(elseList, dpVal, BUILTIN_LABELS[dpVal] || dpVal);
-              const cb = branchEl.querySelector(`input[data-side="else"][value="${dpVal}"]`);
-              if (cb) cb.checked = true;
-            });
-            initDragDrop(elseList);
-          }
-        } else {
-          appendOrderItem(orderList, item, BUILTIN_LABELS[item] || item);
-        }
-      });
-      initDragDrop(orderList);
+      const chainRoot = card.querySelector('.chain-list[data-chain-root]');
+      if (chainRoot) {
+        // Support both new format (chain) and old format (orderedDps)
+        restoreChain(chainRoot, p.chain || p.orderedDps || []);
+      }
     });
+
+    // If no paths were restored, ensure default exists
+    if (pathsContainer.children.length === 0) {
+      addPathCard('Default');
+    }
   }
 
   // ── Auto-save to localStorage ─────────────────────────────

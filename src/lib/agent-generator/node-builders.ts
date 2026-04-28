@@ -732,16 +732,13 @@ export function buildDataChain(
       missingOperator = "||";
     }
 
-    // If this data point is inside a branch, AND the branch condition
-    if (dp._branchCondition) {
-      const bc = dp._branchCondition;
-      const branchEq = {
+    // If this data point is inside a branch, AND all branch conditions
+    if (dp._branchConditions && dp._branchConditions.length > 0) {
+      const branchEqs = dp._branchConditions.map(bc => ({
         left: `{{${bc.variable}}}`,
         operator: bc.operator,
         right: bc.value,
-      };
-      // Wrap: (missing check) AND (branch condition)
-      // We nest the missing check as a group and add the branch condition
+      }));
       return {
         destination_node_id: pathIds.chain[i].convId,
         id: f.edgeId(),
@@ -749,7 +746,7 @@ export function buildDataChain(
           type: "equation",
           equations: [
             ...missingEquations,
-            branchEq,
+            ...branchEqs,
           ],
           operator: "&&",
         },

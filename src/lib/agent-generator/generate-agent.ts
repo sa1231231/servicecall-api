@@ -102,49 +102,54 @@ export function resolveDataPoints(
     ? defaults
     : DATA_POINT_REGISTRY;
 
-  const result: DataPoint[] = [];
+  function flatten(
+    items: RawDataPoint[],
+    parentConditions: BranchCondition[],
+  ): DataPoint[] {
+    const result: DataPoint[] = [];
 
-  for (let i = 0; i < rawDataPoints.length; i++) {
-    const dp = rawDataPoints[i];
+    for (let i = 0; i < items.length; i++) {
+      const dp = items[i];
 
-    if (isBranchNode(dp)) {
-      const ifCondition: BranchCondition = {
-        variable: dp.variable,
-        operator: dp.operator,
-        value: dp.value,
-      };
-      const elseOperator = dp.operator === "==" ? "!=" : "==" as const;
-      const elseCondition: BranchCondition = {
-        variable: dp.variable,
-        operator: elseOperator,
-        value: dp.value,
-      };
+      if (isBranchNode(dp)) {
+        const ifCondition: BranchCondition = {
+          variable: dp.variable,
+          operator: dp.operator,
+          value: dp.value,
+        };
+        const elseOperator = dp.operator === "==" ? "!=" : "==" as const;
+        const elseCondition: BranchCondition = {
+          variable: dp.variable,
+          operator: elseOperator,
+          value: dp.value,
+        };
 
-      // Resolve IF-branch data points with branch condition
-      for (const ifDp of dp.ifDataPoints) {
-        if (isBranchNode(ifDp)) {
-          throw new Error("Nested branches are not supported");
+        // Recursively resolve IF chain with accumulated conditions
+        const ifItems = flatten(
+          dp.ifChain || (dp as any).ifDataPoints || [],
+          [...parentConditions, ifCondition],
+        );
+        result.push(...ifItems);
+
+        // Recursively resolve ELSE chain with inverted condition
+        const elseItems = flatten(
+          dp.elseChain || (dp as any).elseDataPoints || [],
+          [...parentConditions, elseCondition],
+        );
+        result.push(...elseItems);
+      } else {
+        const resolved = resolveSingleDataPoint(dp, i, registry);
+        if (parentConditions.length > 0) {
+          resolved._branchConditions = [...parentConditions];
         }
-        const resolved = resolveSingleDataPoint(ifDp, i, registry);
-        resolved._branchCondition = ifCondition;
         result.push(resolved);
       }
-
-      // Resolve ELSE-branch data points with inverted condition
-      for (const elseDp of dp.elseDataPoints) {
-        if (isBranchNode(elseDp)) {
-          throw new Error("Nested branches are not supported");
-        }
-        const resolved = resolveSingleDataPoint(elseDp, i, registry);
-        resolved._branchCondition = elseCondition;
-        result.push(resolved);
-      }
-    } else {
-      result.push(resolveSingleDataPoint(dp, i, registry));
     }
+
+    return result;
   }
 
-  return result;
+  return flatten(rawDataPoints, []);
 }
 
 // ── Main Generator ───────────────────────────────────────────────────────────
