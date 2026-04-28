@@ -280,6 +280,14 @@
   }
   .btn-review:hover { background: #f0fdfa; }
   .btn-review:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
+  .btn-payment {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
+    background: #fff; color: #7c3aed; border: 1px solid #c4b5fd; border-radius: 6px;
+    cursor: pointer; margin-left: 0.5rem; vertical-align: middle;
+  }
+  .btn-payment:hover { background: #f5f3ff; }
+  .btn-payment:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
 
   /* Clone modal */
   .modal-overlay {
@@ -353,6 +361,7 @@
     #detailHeader .btn-clone,
     #detailHeader .btn-report,
     #detailHeader .btn-review,
+    #detailHeader .btn-payment,
     #detailHeader .btn-delete {
       margin-left: 0;
       font-size: 0.75rem;
@@ -465,6 +474,13 @@
     <label for="settings-review-msg">Review SMS Message</label>
     <textarea id="settings-review-msg" placeholder="Message template..."></textarea>
     <p class="settings-hint">Use {{google_review_url}} where the link should appear.</p>
+
+    <label for="settings-payment-url">Stripe Payment URL</label>
+    <input type="text" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
+
+    <label for="settings-payment-msg">Payment SMS Message</label>
+    <textarea id="settings-payment-msg" placeholder="Message template..."></textarea>
+    <p class="settings-hint">Use {{stripe_payment_url}} where the link should appear.</p>
 
     <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
   </div>
@@ -749,6 +765,7 @@
       `<button class="btn-test-notify" onclick="sendTestNotify('${esc(doc._id)}')" id="btnTestNotify" title="Send a sample SMS and email notification using dummy data">Send Test Notification</button>` +
       `<button class="btn-report" onclick="sendWeeklyReport('${esc(doc._id)}')" id="btnReport" title="Generate and send the weekly call summary report for this client">Send Weekly Report</button>` +
       `<button class="btn-review" onclick="requestReview('${esc(doc._id)}')" id="btnReview" title="Send the client a Google Review request via SMS">Request Review</button>` +
+      `<button class="btn-payment" onclick="sendPaymentLink('${esc(doc._id)}')" id="btnPayment" title="Send the client a Stripe payment/subscription link via SMS">Send Payment Link</button>` +
       `<button class="btn-delete" onclick="showDeleteModal()" title="Permanently delete this agent and its configuration">Delete Agent</button>` +
       `<button class="btn-clone" onclick="showCloneModal()" title="Create a copy of this agent with new client details">Clone Agent</button></h1>`;
     document.getElementById('smokeResults').innerHTML = '';
@@ -1027,6 +1044,7 @@
           `<button class="btn-test-notify" onclick="sendTestNotify('${esc(currentSlug)}')" id="btnTestNotify" title="Send a sample SMS and email notification using dummy data">Send Test Notification</button>` +
           `<button class="btn-report" onclick="sendWeeklyReport('${esc(currentSlug)}')" id="btnReport" title="Generate and send the weekly call summary report for this client">Send Weekly Report</button>` +
           `<button class="btn-review" onclick="requestReview('${esc(currentSlug)}')" id="btnReview" title="Send the client a Google Review request via SMS">Request Review</button>` +
+          `<button class="btn-payment" onclick="sendPaymentLink('${esc(currentSlug)}')" id="btnPayment" title="Send the client a Stripe payment/subscription link via SMS">Send Payment Link</button>` +
           `<button class="btn-delete" onclick="showDeleteModal()" title="Permanently delete this agent and its configuration">Delete Agent</button>` +
       `<button class="btn-clone" onclick="showCloneModal()" title="Create a copy of this agent with new client details">Clone Agent</button></h1>`;
       }
@@ -1273,6 +1291,30 @@
     }
   }
 
+  // ── SEND PAYMENT LINK ───────────────────────────────────────────────
+
+  async function sendPaymentLink(slug) {
+    const btn = document.getElementById('btnPayment');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/send-payment-link', {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed: ' + res.status);
+
+      showToast('Payment link sent to ' + data.sent_to.length + ' number(s)!', 'success');
+    } catch (err) {
+      showToast('Payment link failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send Payment Link';
+    }
+  }
+
   // ── PORTAL LINK ────────────────────────────────────────────────────
 
   async function loadPortalLink(slug) {
@@ -1461,6 +1503,8 @@
       document.getElementById('settings-owner-phone').value = settings.owner_phone || '';
       document.getElementById('settings-review-url').value = settings.google_review_url || '';
       document.getElementById('settings-review-msg').value = settings.review_sms_message || '';
+      document.getElementById('settings-payment-url').value = settings.stripe_payment_url || '';
+      document.getElementById('settings-payment-msg').value = settings.payment_sms_message || '';
     } catch (err) {
       showToast('Failed to load settings: ' + err.message, 'error');
     }
@@ -1481,6 +1525,8 @@
       owner_phone: document.getElementById('settings-owner-phone').value.trim(),
       google_review_url: document.getElementById('settings-review-url').value.trim(),
       review_sms_message: document.getElementById('settings-review-msg').value,
+      stripe_payment_url: document.getElementById('settings-payment-url').value.trim(),
+      payment_sms_message: document.getElementById('settings-payment-msg').value,
     };
 
     try {

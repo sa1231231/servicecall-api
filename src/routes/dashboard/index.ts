@@ -116,6 +116,40 @@ dashboardApiRouter.post("/agents/:slug/request-review", async (req, res) => {
   }
 });
 
+dashboardApiRouter.post("/agents/:slug/send-payment-link", async (req, res) => {
+  const slug = String(req.params.slug);
+  const doc = await getClientDocument(slug);
+  if (!doc) {
+    res.status(404).json({ error: `Client "${slug}" not found` });
+    return;
+  }
+
+  const settings = await getSettings();
+  if (!settings.stripe_payment_url) {
+    res.status(400).json({ error: "Stripe Payment URL is not configured. Set it in Settings." });
+    return;
+  }
+
+  const numbers = doc.dispatch_text_numbers ?? [];
+  if (numbers.length === 0) {
+    res.status(400).json({ error: "No dispatch text numbers configured for this client" });
+    return;
+  }
+
+  const message = settings.payment_sms_message.replace(
+    /\{\{stripe_payment_url\}\}/g,
+    settings.stripe_payment_url,
+  );
+
+  try {
+    await sendSmsToAll(numbers, message);
+    res.json({ success: true, sent_to: numbers });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(502).json({ error: "Failed to send payment link", details: msg });
+  }
+});
+
 // ── Global Settings ─────────────────────────────────────────────────────────
 
 dashboardApiRouter.get("/settings", async (_req, res) => {
