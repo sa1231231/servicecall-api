@@ -736,6 +736,64 @@
     setTimeout(() => { t.className = 'toast'; }, 3000);
   }
 
+  // ── Validation Helpers ──────────────────────────────────────
+  const PHONE_RE = /^\+1\d{10}$/;
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function validateDashboardFields() {
+    const errors = [];
+    // Dispatch text numbers
+    const textNums = getChipValues('chip-dispatch-text');
+    for (const n of textNums) {
+      if (!PHONE_RE.test(n)) errors.push(`Dispatch text number "${n}" invalid. Format: +1XXXXXXXXXX.`);
+    }
+    // Dispatch call number
+    const callNum = document.getElementById('edit-dispatch-call').value.trim();
+    if (callNum && !PHONE_RE.test(callNum)) {
+      errors.push(`Dispatch call number "${callNum}" invalid. Format: +1XXXXXXXXXX.`);
+    }
+    // Dispatch emails
+    const emails = getChipValues('chip-dispatch-email');
+    for (const e of emails) {
+      if (!EMAIL_RE.test(e)) errors.push(`Dispatch email "${e}" invalid.`);
+    }
+    // Agent IDs
+    const agentIds = getChipValues('chip-agent-ids');
+    for (const id of agentIds) {
+      if (!id.startsWith('agent_')) errors.push(`Agent ID "${id}" invalid. Must start with "agent_".`);
+    }
+    // Summary agent ID
+    const summaryAgent = document.getElementById('edit-summary-agent').value.trim();
+    if (summaryAgent && !summaryAgent.startsWith('agent_')) {
+      errors.push(`Summary Agent ID "${summaryAgent}" invalid. Must start with "agent_".`);
+    }
+    // Call overrides
+    document.querySelectorAll('.override-row').forEach((row, i) => {
+      const from = row.querySelector('.override-from')?.value?.trim();
+      const to = row.querySelector('.override-to')?.value?.trim();
+      if (from && !PHONE_RE.test(from)) errors.push(`Call override #${i+1} "from" number "${from}" invalid.`);
+      if (to && !PHONE_RE.test(to)) errors.push(`Call override #${i+1} "to" number "${to}" invalid.`);
+    });
+    // Dispatch-by-type overrides (per routing path)
+    document.querySelectorAll('.dbt-sms').forEach(input => {
+      const nums = input.value.split(',').map(s => s.trim()).filter(Boolean);
+      for (const n of nums) {
+        if (!PHONE_RE.test(n)) errors.push(`Path dispatch SMS "${n}" invalid. Format: +1XXXXXXXXXX.`);
+      }
+    });
+    document.querySelectorAll('.dbt-email').forEach(input => {
+      const emails = input.value.split(',').map(s => s.trim()).filter(Boolean);
+      for (const e of emails) {
+        if (!EMAIL_RE.test(e)) errors.push(`Path dispatch email "${e}" invalid.`);
+      }
+    });
+    document.querySelectorAll('.dbt-call').forEach(input => {
+      const n = input.value.trim();
+      if (n && !PHONE_RE.test(n)) errors.push(`Path dispatch call "${n}" invalid. Format: +1XXXXXXXXXX.`);
+    });
+    return errors;
+  }
+
   function fmtDuration(ms) {
     if (!ms) return '0:00';
     const s = Math.round(ms / 1000);
@@ -1515,6 +1573,13 @@
   }
 
   async function saveChanges() {
+    // Validate all fields before saving
+    const validationErrors = validateDashboardFields();
+    if (validationErrors.length > 0) {
+      showToast(validationErrors[0], 'error');
+      return;
+    }
+
     const btn = document.getElementById('btnSave');
     btn.disabled = true;
     btn.textContent = 'Saving...';
@@ -2197,13 +2262,24 @@
   }
 
   async function saveSettings() {
+    // Validate settings fields
+    const settingsErrors = [];
+    const ownerEmail = document.getElementById('settings-owner-email').value.trim();
+    if (ownerEmail && !EMAIL_RE.test(ownerEmail)) settingsErrors.push('Owner email is invalid.');
+    const ownerPhone = document.getElementById('settings-owner-phone').value.trim();
+    if (ownerPhone && !PHONE_RE.test(ownerPhone)) settingsErrors.push('Owner phone invalid. Format: +1XXXXXXXXXX.');
+    if (settingsErrors.length > 0) {
+      showToast(settingsErrors[0], 'error');
+      return;
+    }
+
     const btn = document.getElementById('btnSaveSettings');
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
     const updates = {
-      owner_email: document.getElementById('settings-owner-email').value.trim(),
-      owner_phone: document.getElementById('settings-owner-phone').value.trim(),
+      owner_email: ownerEmail,
+      owner_phone: ownerPhone,
       google_review_url: document.getElementById('settings-review-url').value.trim(),
       review_sms_message: document.getElementById('settings-review-msg').value,
       free_trial_days: parseInt(document.getElementById('settings-trial-days').value) || 14,
