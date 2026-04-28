@@ -4,34 +4,51 @@ import { DATA_POINT_REGISTRY } from "../agent-generator/data-point-registry.js";
 // We test the module's pure logic by verifying the category mapping and
 // the shape of data returned, without needing a real MongoDB connection.
 
+// Mirror the CATEGORY_MAP from data-point-defaults.ts for testing
+const CATEGORY_KEYS: Record<string, string[]> = {
+  caller_info: [
+    "full_name", "phone_number", "email", "company_name",
+    "callback_number", "existing_customer", "caller_role",
+  ],
+  location: [
+    "street_address", "city", "state", "zip_code", "unit_number", "gate_code",
+  ],
+  service_details: [
+    "service_type", "issue_description", "urgency_level",
+    "special_instructions", "how_did_you_hear",
+  ],
+  scheduling: ["scheduling"],
+  property: ["property_type", "number_of_stories", "year_built", "has_pets"],
+  home_services: ["equipment_brand", "equipment_age", "warranty_status"],
+  legal_intake: [
+    "case_type", "opposing_party_name", "case_jurisdiction",
+    "incident_date", "incident_location", "injury_description",
+    "has_attorney", "medical_treatment",
+  ],
+  trucking: [
+    "truck_number", "driver_name", "driver_phone", "breakdown_location",
+    "problem_description", "vehicle_type", "vehicle_manufacturer", "vehicle_color",
+  ],
+  billing: [
+    "whos_paying", "payment_method", "insurance_provider",
+    "policy_number", "account_number",
+  ],
+};
+
 describe("data-point-defaults module", () => {
   // ── Category mapping ────────────────────────────────────────────────────
 
   describe("category mapping", () => {
-    const GENERAL_KEYS = [
-      "full_name", "phone_number", "email", "street_address",
-      "city", "company_name", "scheduling",
-    ];
-    const TRUCKING_KEYS = [
-      "truck_number", "driver_name", "driver_phone", "breakdown_location",
-      "problem_description", "vehicle_type", "vehicle_manufacturer",
-      "vehicle_color", "whos_paying", "payment_method",
-    ];
-
-    it("all general keys exist in DATA_POINT_REGISTRY", () => {
-      GENERAL_KEYS.forEach(key => {
-        expect(DATA_POINT_REGISTRY[key], `${key} should exist`).toBeDefined();
+    for (const [category, keys] of Object.entries(CATEGORY_KEYS)) {
+      it(`all ${category} keys exist in DATA_POINT_REGISTRY`, () => {
+        keys.forEach(key => {
+          expect(DATA_POINT_REGISTRY[key], `${key} should exist`).toBeDefined();
+        });
       });
-    });
+    }
 
-    it("all trucking keys exist in DATA_POINT_REGISTRY", () => {
-      TRUCKING_KEYS.forEach(key => {
-        expect(DATA_POINT_REGISTRY[key], `${key} should exist`).toBeDefined();
-      });
-    });
-
-    it("general + trucking covers all registry keys", () => {
-      const allMapped = new Set([...GENERAL_KEYS, ...TRUCKING_KEYS]);
+    it("category keys cover all registry keys", () => {
+      const allMapped = new Set(Object.values(CATEGORY_KEYS).flat());
       const registryKeys = Object.keys(DATA_POINT_REGISTRY);
       registryKeys.forEach(key => {
         expect(allMapped.has(key), `${key} should be mapped to a category`).toBe(true);
@@ -74,7 +91,7 @@ describe("data-point-defaults module", () => {
   // ── Data points with finetune examples ──────────────────────────────────
 
   describe("finetune examples coverage", () => {
-    const WITH_EXAMPLES = ["full_name", "phone_number", "driver_phone", "whos_paying", "scheduling"];
+    const WITH_EXAMPLES = ["full_name", "phone_number", "driver_phone", "whos_paying", "scheduling", "case_type", "opposing_party_name"];
     const WITHOUT_EXAMPLES = [
       "email", "street_address", "city", "company_name",
       "truck_number", "driver_name", "breakdown_location", "problem_description",
@@ -112,6 +129,21 @@ describe("data-point-defaults module", () => {
       const neg = dp.finetuneExamples!.find(ex => ex.type === "negative");
       expect(neg).toBeDefined();
       expect(neg!.transcript.some(t => t.content.includes("last name"))).toBe(true);
+    });
+  });
+
+  // ── New data point counts ──────────────────────────────────────────────
+
+  describe("registry completeness", () => {
+    it("has at least 43 data points (16 original + 27 new)", () => {
+      expect(Object.keys(DATA_POINT_REGISTRY).length).toBeGreaterThanOrEqual(43);
+    });
+
+    it("all legal intake data points exist", () => {
+      const legalKeys = CATEGORY_KEYS.legal_intake;
+      legalKeys.forEach(key => {
+        expect(DATA_POINT_REGISTRY[key], `${key} should exist`).toBeDefined();
+      });
     });
   });
 });

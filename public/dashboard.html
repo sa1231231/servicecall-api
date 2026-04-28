@@ -514,8 +514,27 @@
   .config-hint { font-size: 0.72rem; color: #999; margin-top: 0.15rem; line-height: 1.35; }
 
   /* Data point defaults */
+  .dp-category-section { margin-bottom: 1.25rem; }
+  .dp-category-header {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0.75rem; background: #f1f5f9; border-radius: 6px;
+    margin-bottom: 0.5rem; cursor: pointer; user-select: none;
+  }
+  .dp-category-header h3 { margin: 0; font-size: 0.85rem; color: #334155; }
+  .dp-category-header .dp-cat-count {
+    font-size: 0.7rem; color: #64748b; background: #e2e8f0;
+    padding: 0.1rem 0.4rem; border-radius: 10px;
+  }
+  .dp-category-header .dp-cat-toggle { margin-left: auto; color: #94a3b8; font-size: 0.75rem; }
+  .dp-category-body { min-height: 4px; padding: 2px 0; }
+  .dp-category-body.collapsed { display: none; }
+  .dp-category-section.drag-target .dp-category-header { background: #dbeafe; border: 1px dashed #60a5fa; }
   .dp-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 0.75rem; }
+  .dp-card.dragging { opacity: 0.4; }
+  .dp-card.drag-over { border-top: 2px solid #2563eb; }
   .dp-card summary { padding: 0.6rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
+  .dp-card summary .dp-drag-handle { cursor: grab; color: #94a3b8; font-size: 0.85rem; margin-right: 0.15rem; }
+  .dp-card summary .dp-drag-handle:active { cursor: grabbing; }
   .dp-card summary strong { font-size: 0.9rem; }
   .dp-card summary .dp-var { font-family: monospace; font-size: 0.72rem; color: #999; }
   .dp-card-body { padding: 0 1rem 1rem; }
@@ -606,8 +625,9 @@
       <label>Label <span style="color:#dc2626">*</span></label>
       <input type="text" id="newDpLabel" placeholder="Lot Number">
       <label>Category</label>
-      <input type="text" id="newDpCategory" placeholder="general" value="custom">
-      <p class="settings-hint">Group name shown on the create form (e.g. "general", "trucking", or a custom name).</p>
+      <select id="newDpCategory" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
+      </select>
+      <p class="settings-hint">Which category section this data point will appear in.</p>
       <label>Type</label>
       <select id="newDpType" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
         <option value="string">string</option>
@@ -2213,10 +2233,20 @@
   // ── DATA POINT DEFAULTS ──────────────────────────────────────────────
 
   let dpDefaults = {};
+  let dpCategoryOrder = [];
+  let dpCategoryLabels = {};
   const REGISTRY_KEYS = new Set([
     'full_name', 'phone_number', 'email', 'street_address', 'city', 'company_name', 'scheduling',
+    'callback_number', 'existing_customer', 'caller_role',
+    'state', 'zip_code', 'unit_number', 'gate_code',
+    'service_type', 'issue_description', 'urgency_level', 'special_instructions', 'how_did_you_hear',
+    'property_type', 'number_of_stories', 'year_built', 'has_pets',
+    'equipment_brand', 'equipment_age', 'warranty_status',
+    'case_type', 'opposing_party_name', 'case_jurisdiction', 'incident_date', 'incident_location',
+    'injury_description', 'has_attorney', 'medical_treatment',
     'truck_number', 'driver_name', 'driver_phone', 'breakdown_location', 'problem_description',
     'vehicle_type', 'vehicle_manufacturer', 'vehicle_color', 'whos_paying', 'payment_method',
+    'insurance_provider', 'policy_number', 'account_number',
   ]);
 
   async function loadDpDefaults() {
@@ -2224,37 +2254,103 @@
     try {
       const res = await fetch('/dashboard/api/data-point-defaults', { headers: { 'X-API-Key': apiKey } });
       if (!res.ok) throw new Error('Failed: ' + res.status);
-      dpDefaults = await res.json();
+      const data = await res.json();
+      dpDefaults = data.defaults;
+      dpCategoryOrder = data.categoryOrder;
+      dpCategoryLabels = data.categoryLabels;
       renderDpDefaults();
+      populateCategoryDropdown();
     } catch (err) {
       container.innerHTML = '<div class="error-msg">Error: ' + esc(err.message) + '</div>';
     }
   }
 
+  function populateCategoryDropdown() {
+    const sel = document.getElementById('newDpCategory');
+    if (!sel) return;
+    sel.innerHTML = '';
+    const allCats = [...dpCategoryOrder];
+    // Add any extra categories from existing data points
+    for (const dp of Object.values(dpDefaults)) {
+      if (dp.category && !allCats.includes(dp.category)) allCats.push(dp.category);
+    }
+    allCats.push('custom');
+    const seen = new Set();
+    for (const cat of allCats) {
+      if (seen.has(cat)) continue;
+      seen.add(cat);
+      const label = dpCategoryLabels[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      const opt = document.createElement('option');
+      opt.value = cat;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    }
+  }
+
   function renderDpDefaults() {
     const container = document.getElementById('dpDefaultsContainer');
-    const keys = Object.keys(dpDefaults).sort((a, b) => a.localeCompare(b));
+    const keys = Object.keys(dpDefaults);
     if (keys.length === 0) {
       container.innerHTML = '<div class="loading">No data points found. Create an agent first to seed defaults.</div>';
       return;
     }
-    let html = '';
+
+    // Group by category
+    const groups = {};
     for (const key of keys) {
       const dp = dpDefaults[key];
-      html += renderDpCard(key, dp);
+      const cat = dp.category || 'custom';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push({ key, dp });
+    }
+
+    // Sort within each group by sortOrder
+    for (const cat of Object.keys(groups)) {
+      groups[cat].sort((a, b) => (a.dp.sortOrder ?? 99) - (b.dp.sortOrder ?? 99));
+    }
+
+    // Build ordered category list
+    const orderedCats = [...dpCategoryOrder];
+    for (const cat of Object.keys(groups)) {
+      if (!orderedCats.includes(cat)) orderedCats.push(cat);
+    }
+
+    let html = '';
+    for (const cat of orderedCats) {
+      if (!groups[cat] || groups[cat].length === 0) continue;
+      const label = dpCategoryLabels[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      html += `<div class="dp-category-section" data-category="${esc(cat)}">
+        <div class="dp-category-header" onclick="toggleDpCategory(this)">
+          <h3>${esc(label)}</h3>
+          <span class="dp-cat-count">${groups[cat].length}</span>
+          <span class="dp-cat-toggle">&#9660;</span>
+        </div>
+        <div class="dp-category-body">`;
+      for (const { key, dp } of groups[cat]) {
+        html += renderDpCard(key, dp);
+      }
+      html += `</div></div>`;
     }
     container.innerHTML = html;
+    initDpDragDrop();
+  }
+
+  function toggleDpCategory(header) {
+    const body = header.nextElementSibling;
+    const toggle = header.querySelector('.dp-cat-toggle');
+    body.classList.toggle('collapsed');
+    toggle.innerHTML = body.classList.contains('collapsed') ? '&#9654;' : '&#9660;';
   }
 
   function renderDpCard(key, dp) {
     const isBuiltin = REGISTRY_KEYS.has(key);
-    const cat = dp.category || (isBuiltin ? 'built-in' : 'custom');
     const ftHtml = (dp.finetuneExamples || []).map((ex, i) => renderFtExample(key, i, ex)).join('');
-    const actionBtns = isBuiltin
-      ? `<button type="button" class="dp-btn-reset" onclick="resetDpDefault('${esc(key)}')">Reset to Default</button>`
-      : `<button type="button" class="dp-btn-reset" style="color:#dc2626;border-color:#fca5a5;" onclick="deleteDpDefault('${esc(key)}')">Delete</button>`;
-    return `<details class="dp-card" data-dp-key="${esc(key)}">
-      <summary><strong>${esc(dp.label)}</strong> <span class="dp-var">${esc(key)}</span> <span style="font-size:0.7rem;color:#888;margin-left:0.25rem;">${esc(cat)}</span></summary>
+    let actionBtns = `<button type="button" class="dp-btn-reset" style="color:#dc2626;border-color:#fca5a5;" onclick="deleteDpDefault('${esc(key)}')">Delete</button>`;
+    if (isBuiltin) {
+      actionBtns = `<button type="button" class="dp-btn-reset" onclick="resetDpDefault('${esc(key)}')">Reset to Default</button>` + actionBtns;
+    }
+    return `<details class="dp-card" data-dp-key="${esc(key)}" draggable="true">
+      <summary><span class="dp-drag-handle">&#9776;</span><strong>${esc(dp.label)}</strong> <span class="dp-var">${esc(key)}</span></summary>
       <div class="dp-card-body">
         <label>Description</label>
         <textarea class="dp-description">${esc(dp.description || '')}</textarea>
@@ -2271,6 +2367,110 @@
         </div>
       </div>
     </details>`;
+  }
+
+  // ── Drag and Drop for Data Point Cards ──────────────────────────────
+  let dpDraggedCard = null;
+
+  function initDpDragDrop() {
+    const container = document.getElementById('dpDefaultsContainer');
+
+    container.addEventListener('dragstart', (e) => {
+      const card = e.target.closest('.dp-card');
+      if (!card) return;
+      dpDraggedCard = card;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    container.addEventListener('dragend', () => {
+      if (dpDraggedCard) dpDraggedCard.classList.remove('dragging');
+      container.querySelectorAll('.dp-card').forEach(c => c.classList.remove('drag-over'));
+      container.querySelectorAll('.dp-category-section').forEach(s => s.classList.remove('drag-target'));
+      dpDraggedCard = null;
+    });
+
+    container.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!dpDraggedCard) return;
+
+      // Highlight target category section
+      const section = e.target.closest('.dp-category-section');
+      container.querySelectorAll('.dp-category-section').forEach(s => s.classList.remove('drag-target'));
+      if (section) {
+        const draggedSection = dpDraggedCard.closest('.dp-category-section');
+        if (section !== draggedSection) section.classList.add('drag-target');
+      }
+
+      // Highlight target card for positioning
+      const targetCard = e.target.closest('.dp-card');
+      container.querySelectorAll('.dp-card').forEach(c => c.classList.remove('drag-over'));
+      if (targetCard && targetCard !== dpDraggedCard) {
+        targetCard.classList.add('drag-over');
+      }
+    });
+
+    container.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (!dpDraggedCard) return;
+
+      const targetCard = e.target.closest('.dp-card');
+      const targetSection = e.target.closest('.dp-category-section');
+      if (!targetSection) return;
+
+      const targetBody = targetSection.querySelector('.dp-category-body');
+      // Expand collapsed section on drop
+      targetBody.classList.remove('collapsed');
+      const toggle = targetSection.querySelector('.dp-cat-toggle');
+      if (toggle) toggle.innerHTML = '&#9660;';
+
+      if (targetCard && targetCard !== dpDraggedCard) {
+        const rect = targetCard.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        if (e.clientY < midY) {
+          targetBody.insertBefore(dpDraggedCard, targetCard);
+        } else {
+          targetBody.insertBefore(dpDraggedCard, targetCard.nextSibling);
+        }
+      } else if (!targetCard) {
+        // Dropped on category header or empty area — append to end
+        targetBody.appendChild(dpDraggedCard);
+      }
+
+      container.querySelectorAll('.dp-card').forEach(c => c.classList.remove('drag-over'));
+      container.querySelectorAll('.dp-category-section').forEach(s => s.classList.remove('drag-target'));
+
+      // Persist the new order
+      saveDpOrder();
+    });
+  }
+
+  async function saveDpOrder() {
+    const items = [];
+    document.querySelectorAll('.dp-category-section').forEach(section => {
+      const category = section.dataset.category;
+      section.querySelectorAll('.dp-card').forEach((card, idx) => {
+        const key = card.dataset.dpKey;
+        items.push({ key, category, sortOrder: idx });
+        // Update local state
+        if (dpDefaults[key]) {
+          dpDefaults[key].category = category;
+          dpDefaults[key].sortOrder = idx;
+        }
+      });
+      // Update count badge
+      const countBadge = section.querySelector('.dp-cat-count');
+      if (countBadge) countBadge.textContent = section.querySelectorAll('.dp-card').length;
+    });
+    try {
+      await fetch('/dashboard/api/data-point-defaults/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify({ items }),
+      });
+    } catch (err) {
+      showToast('Failed to save order: ' + err.message, 'error');
+    }
   }
 
   function renderFtExample(dpKey, idx, ex) {
@@ -2373,7 +2573,7 @@
     const body = {
       key,
       label,
-      category: document.getElementById('newDpCategory').value.trim() || 'custom',
+      category: document.getElementById('newDpCategory').value || 'custom',
       type: document.getElementById('newDpType').value,
       description: document.getElementById('newDpDescription').value,
       conversationPrompt: document.getElementById('newDpConvPrompt').value,
@@ -2403,7 +2603,7 @@
   }
 
   async function deleteDpDefault(key) {
-    if (!confirm('Delete custom data point "' + key + '"? This cannot be undone.')) return;
+    if (!confirm('Delete data point "' + key + '"? This cannot be undone.')) return;
     try {
       const res = await fetch('/dashboard/api/data-point-defaults/' + key, {
         method: 'DELETE',

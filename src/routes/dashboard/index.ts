@@ -20,11 +20,14 @@ import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { getSettings, updateSettings } from "../../lib/settings.js";
 import { runBackup } from "../../lib/backup.js";
 import {
-  getDataPointDefaults,
+  getDataPointDefaultsWithCategory,
   updateDataPointDefault,
   resetDataPointDefault,
   createDataPointDefault,
   deleteDataPointDefault,
+  reorderDataPointDefaults,
+  CATEGORY_ORDER,
+  CATEGORY_LABELS,
 } from "../../lib/data-point-defaults.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -194,7 +197,8 @@ dashboardApiRouter.patch("/settings", async (req, res) => {
 // ── Data Point Defaults ─────────────────────────────────────────────────────
 
 dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
-  res.json(await getDataPointDefaults());
+  const defaults = await getDataPointDefaultsWithCategory();
+  res.json({ defaults, categoryOrder: CATEGORY_ORDER, categoryLabels: CATEGORY_LABELS });
 });
 
 dashboardApiRouter.patch("/data-point-defaults/:key", async (req, res) => {
@@ -239,6 +243,21 @@ dashboardApiRouter.post("/data-point-defaults", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     res.status(400).json({ error: msg });
+  }
+});
+
+dashboardApiRouter.put("/data-point-defaults/reorder", async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items)) {
+      res.status(400).json({ error: "items array is required" });
+      return;
+    }
+    await reorderDataPointDefaults(items);
+    res.json({ success: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
   }
 });
 
