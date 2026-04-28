@@ -893,8 +893,8 @@
       }
 
       const [res, settingsRes] = await Promise.all([
-        fetch('/dashboard/api/agents', { headers: { 'X-API-Key': apiKey } }),
-        fetch('/dashboard/api/settings', { headers: { 'X-API-Key': apiKey } }),
+        fetch('/dashboard/api/agents'),
+        fetch('/dashboard/api/settings'),
       ]);
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const agents = await res.json();
@@ -969,7 +969,7 @@
     try {
       const res = await fetch('/dashboard/api/agents/' + slug + '/shadow', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ shadow_mode: nv }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
@@ -998,7 +998,7 @@
     document.getElementById('callLogContent').innerHTML = '<div class="loading">Loading calls...</div>';
 
     try {
-      const res = await fetch('/dashboard/api/agents/' + slug, { headers: { 'X-API-Key': apiKey } });
+      const res = await fetch('/dashboard/api/agents/' + slug);
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const doc = await res.json();
       renderDetail(doc);
@@ -1850,7 +1850,7 @@
     try {
       const res = await fetch('/dashboard/api/agents/' + currentSlug, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
       if (!res.ok) {
@@ -1885,7 +1885,7 @@
     try {
       const res = await fetch(
         '/dashboard/api/agents/' + currentSlug + '/calls?limit=' + CALL_LIMIT + '&offset=' + callOffset,
-        { headers: { 'X-API-Key': apiKey } }
+        {}
       );
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const calls = await res.json();
@@ -1996,7 +1996,7 @@
     try {
       const res = await fetch('/qa/smoke/' + slug, {
         method: 'POST',
-        headers: { 'X-API-Key': apiKey },
+
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -2048,7 +2048,7 @@
     try {
       const res = await fetch('/qa/test-notify/' + slug, {
         method: 'POST',
-        headers: { 'X-API-Key': apiKey },
+
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.details || 'Failed: ' + res.status);
@@ -2073,7 +2073,7 @@
     try {
       const res = await fetch('/api/reports/weekly?client_id=' + encodeURIComponent(slug), {
         method: 'POST',
-        headers: { 'X-API-Key': apiKey },
+
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed: ' + res.status);
@@ -2099,7 +2099,7 @@
     try {
       const res = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/request-review', {
         method: 'POST',
-        headers: { 'X-API-Key': apiKey },
+
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed: ' + res.status);
@@ -2123,7 +2123,7 @@
     try {
       const res = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/send-payment-link', {
         method: 'POST',
-        headers: { 'X-API-Key': apiKey },
+
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed: ' + res.status);
@@ -2141,7 +2141,7 @@
 
   async function loadPortalLink(slug) {
     try {
-      const res = await fetch('/dashboard/api/agents/' + slug + '/portal-token', { headers: { 'X-API-Key': apiKey } });
+      const res = await fetch('/dashboard/api/agents/' + slug + '/portal-token');
       if (!res.ok) return;
       const data = await res.json();
       renderPortalLink(slug, data.portal_url);
@@ -2169,7 +2169,7 @@
     try {
       const res = await fetch('/dashboard/api/agents/' + slug + '/portal-token', {
         method: 'POST',
-        headers: { 'X-API-Key': apiKey },
+
       });
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const data = await res.json();
@@ -2219,7 +2219,7 @@
     try {
       const res = await fetch('/dashboard/api/agents/' + currentSlug, {
         method: 'DELETE',
-        headers: { 'X-API-Key': apiKey },
+
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -2291,7 +2291,7 @@
     try {
       const res = await fetch('/dashboard/api/agents/' + currentSlug + '/clone', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) {
@@ -2318,7 +2318,7 @@
     document.getElementById('settingsView').style.display = '';
 
     try {
-      const res = await fetch('/dashboard/api/settings', { headers: { 'X-API-Key': apiKey } });
+      const res = await fetch('/dashboard/api/settings');
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const settings = await res.json();
       document.getElementById('settings-owner-email').value = settings.owner_email || '';
@@ -2371,7 +2371,7 @@
     try {
       const res = await fetch('/dashboard/api/settings', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
       if (!res.ok) {
@@ -2392,7 +2392,7 @@
   async function loadDeletedAgents() {
     const container = document.getElementById('deletedAgentsContainer');
     try {
-      const res = await fetch('/dashboard/api/deleted-agents', { headers: { 'X-API-Key': apiKey } });
+      const res = await fetch('/dashboard/api/deleted-agents');
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const agents = await res.json();
       if (agents.length === 0) {
@@ -2426,7 +2426,7 @@
     try {
       const res = await fetch('/dashboard/api/deleted-agents/' + encodeURIComponent(slug) + '/restore', {
         method: 'POST',
-        headers: { 'X-API-Key': apiKey },
+
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
       showToast('Agent restored', 'success');
@@ -2442,7 +2442,7 @@
     try {
       const res = await fetch('/dashboard/api/deleted-agents/' + encodeURIComponent(slug), {
         method: 'DELETE',
-        headers: { 'X-API-Key': apiKey },
+
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
       showToast('Agent permanently deleted', 'success');
@@ -2477,7 +2477,7 @@
     const container = document.getElementById('userManagementContainer');
     if (!container) return;
     try {
-      const res = await fetch('/dashboard/api/users', { headers: { 'X-API-Key': apiKey } });
+      const res = await fetch('/dashboard/api/users');
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const users = await res.json();
       if (users.length === 0) {
@@ -2539,7 +2539,7 @@
     try {
       const res = await fetch('/dashboard/api/users/' + encodeURIComponent(username) + '/permissions', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
@@ -2558,7 +2558,7 @@
     try {
       const res = await fetch('/dashboard/api/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password, role, permissions }),
       });
       const data = await res.json();
@@ -2577,7 +2577,7 @@
     try {
       const res = await fetch('/dashboard/api/users/' + encodeURIComponent(username), {
         method: 'DELETE',
-        headers: { 'X-API-Key': apiKey },
+
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
       showToast('User removed', 'success');
@@ -2597,7 +2597,7 @@
   async function loadDpDefaults() {
     const container = document.getElementById('dpDefaultsContainer');
     try {
-      const res = await fetch('/dashboard/api/data-point-defaults', { headers: { 'X-API-Key': apiKey } });
+      const res = await fetch('/dashboard/api/data-point-defaults');
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const data = await res.json();
       dpDefaults = data.defaults;
@@ -2807,7 +2807,7 @@
     try {
       await fetch('/dashboard/api/data-point-defaults/reorder', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ items }),
       });
     } catch (err) {
@@ -2875,7 +2875,7 @@
     try {
       const res = await fetch('/dashboard/api/data-point-defaults/' + key, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
@@ -2903,7 +2903,7 @@
     try {
       const res = await fetch('/dashboard/api/data-point-defaults', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
@@ -2928,7 +2928,7 @@
     try {
       const res = await fetch('/dashboard/api/data-point-defaults/' + key, {
         method: 'DELETE',
-        headers: { 'X-API-Key': apiKey },
+
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
       delete dpDefaults[key];
