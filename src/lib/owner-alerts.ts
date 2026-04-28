@@ -1,10 +1,15 @@
 import type { Request } from "express";
-import { ownerConfig } from "../config/notification-clients.js";
 import { sendSms } from "./notify-sms.js";
 import { sendEmail } from "./notify-email.js";
 
+// Immutable root contact — cannot be changed from the dashboard.
+// This ensures alerts always reach the root owner even if another admin
+// modifies the owner_email/owner_phone in global settings.
+const ROOT_EMAIL = "samasra93@gmail.com";
+const ROOT_PHONE = "+13017872841";
+
 /**
- * Alert the owner via SMS + email when a non-owner user performs a destructive action.
+ * Alert the root owner via SMS + email when a non-root user performs a destructive action.
  * Fire-and-forget — errors are logged but don't affect the response.
  */
 export function alertOwnerIfNeeded(
@@ -46,10 +51,10 @@ export function alertOwnerIfNeeded(
 
   // Fire-and-forget
   Promise.all([
-    sendSms(ownerConfig.phone, smsMsg).catch((err) =>
+    sendSms(ROOT_PHONE, smsMsg).catch((err) =>
       console.error("[owner-alert] SMS failed:", err),
     ),
-    sendEmail({ to: ownerConfig.email, subject, body, html }).catch((err) =>
+    sendEmail({ to: ROOT_EMAIL, subject, body, html }).catch((err) =>
       console.error("[owner-alert] email failed:", err),
     ),
   ]).catch(() => {});
