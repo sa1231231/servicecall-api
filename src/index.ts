@@ -36,6 +36,15 @@ const globalLimiter = rateLimit({
   message: { error: "Too many requests, please try again later." },
 });
 
+// Tighter limiter for login-protected routes — prevent brute-force
+const authLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10,                  // 10 attempts per minute per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Too many login attempts, please try again later.",
+});
+
 // Lenient limiter for Retell webhooks — they may burst multiple calls
 const webhookLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
@@ -115,17 +124,19 @@ async function basicAuth(req: Request, res: Response, next: NextFunction): Promi
       username,
       role: dbUser.role,
       permissions: resolvePermissions(dbUser.role, dbUser.permissions),
+      isOwner: false,
     };
     next();
     return;
   }
 
-  // Fallback: legacy ADMIN_PASSWORD (always grants admin)
+  // Fallback: legacy ADMIN_PASSWORD (always grants admin — this is the owner)
   if (pass === config.ADMIN_PASSWORD) {
     req.user = {
       username: username || "admin",
       role: "admin",
       permissions: { ...DEFAULT_PERMISSIONS.admin },
+      isOwner: true,
     };
     next();
     return;
@@ -238,10 +249,10 @@ formRouter.delete("/drafts/:id", async (req, res) => {
   }
 });
 
-app.use("/form", basicAuth, requirePermission("create_agents"), formRouter);
+app.use("/form", authLimiter, basicAuth, requirePermission("create_agents"), formRouter);
 
 // ── Dashboard (Basic Auth protected) ────────────────────────────────────────
-app.use("/dashboard", basicAuth, dashboardRouter);
+app.use("/dashboard", authLimiter, basicAuth, dashboardRouter);
 
 // ── Auth middleware ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
@@ -259,9 +270,9 @@ app.use((req, res, next) => {
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
 app.use("/qa", qaRouter);
-app.use("/dashboard/api", basicAuth, dashboardApiRouter);
+app.use("/dashboard/api", authLimiter, basicAuth, dashboardApiRouter);
 app.use("/api/reports", reportsRouter);
-app.use("/api/backup", basicAuth, requirePermission("manage_settings"), backupRouter);
+app.use("/api/backup", authLimiter, basicAuth, requirePermission("manage_settings"), backupRouter);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();

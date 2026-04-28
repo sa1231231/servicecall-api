@@ -33,6 +33,7 @@ import {
 } from "../../lib/data-point-defaults.js";
 import { requirePermission } from "../../middleware/require-role.js";
 import { logAudit } from "../../lib/audit.js";
+import { alertOwnerIfNeeded } from "../../lib/owner-alerts.js";
 import {
   listUsers,
   createUser,
@@ -92,6 +93,7 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("dele
   try {
     await restoreClient(slug);
     await logAudit(req, "restore_agent", slug);
+    alertOwnerIfNeeded(req, "restore_agent", slug);
     res.json({ success: true, slug });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -104,6 +106,7 @@ dashboardApiRouter.delete("/deleted-agents/:slug", requirePermission("delete_age
   try {
     await deleteClient(slug);
     await logAudit(req, "permanent_delete_agent", slug);
+    alertOwnerIfNeeded(req, "permanent_delete_agent", slug);
     res.json({ success: true, slug });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -238,6 +241,7 @@ dashboardApiRouter.patch("/settings", requirePermission("manage_settings"), asyn
   try {
     const updated = await updateSettings(req.body);
     await logAudit(req, "update_settings", "global", { fields: Object.keys(req.body) });
+    alertOwnerIfNeeded(req, "update_settings", "global", Object.keys(req.body).join(", "));
     res.json({ success: true, settings: updated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -278,6 +282,7 @@ dashboardApiRouter.post("/data-point-defaults", requirePermission("manage_data_p
       label, category, type, choices, description, conversationPrompt, forwardCondition,
     });
     await logAudit(req, "create_data_point", key);
+    alertOwnerIfNeeded(req, "create_data_point", key);
     res.json({ success: true, dataPoint: dp });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -309,6 +314,7 @@ dashboardApiRouter.delete("/data-point-defaults/:key", requirePermission("manage
       return;
     }
     await logAudit(req, "delete_data_point", key);
+    alertOwnerIfNeeded(req, "delete_data_point", key);
     res.json({ success: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -344,6 +350,7 @@ dashboardApiRouter.post("/users", requirePermission("manage_users"), async (req,
   try {
     await createUser(username, password, role, req.user?.username ?? "unknown", permissions);
     await logAudit(req, "create_user", username, { role });
+    alertOwnerIfNeeded(req, "create_user", username, `role: ${role}`);
     res.json({ success: true, username, role });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -364,6 +371,7 @@ dashboardApiRouter.patch("/users/:username/permissions", requirePermission("mana
     return;
   }
   await logAudit(req, "update_user_permissions", target, { permissions });
+  alertOwnerIfNeeded(req, "update_user_permissions", target);
   res.json({ success: true });
 });
 
@@ -379,6 +387,7 @@ dashboardApiRouter.delete("/users/:username", requirePermission("manage_users"),
     return;
   }
   await logAudit(req, "delete_user", target);
+  alertOwnerIfNeeded(req, "delete_user", target);
   res.json({ success: true });
 });
 
@@ -388,6 +397,7 @@ dashboardApiRouter.delete("/users/:username", requirePermission("manage_users"),
 export const backupRouter = Router();
 backupRouter.post("/", async (req, res) => {
   await logAudit(req, "trigger_backup", "manual");
+  alertOwnerIfNeeded(req, "trigger_backup", "manual");
   const result = await runBackup();
   if (result.success) {
     res.json({ success: true, key: result.key });
