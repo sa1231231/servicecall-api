@@ -192,23 +192,40 @@
   }
   .btn-add-override:hover { text-decoration: underline; }
 
-  /* Smoke test */
-  .btn-smoke {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
-    background: #fff; color: #2563eb; border: 1px solid #93b4f5; border-radius: 6px;
-    cursor: pointer; margin-left: 0.75rem; vertical-align: middle;
+  /* Button group dropdowns */
+  .btn-group {
+    position: relative; display: inline-block; margin-left: 0.5rem; vertical-align: middle;
   }
-  .btn-smoke:hover { background: #eff6ff; }
-  .btn-smoke:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
-  .btn-test-notify {
-    display: inline-flex; align-items: center; gap: 0.35rem;
+  .btn-group-toggle {
+    display: inline-flex; align-items: center; gap: 0.3rem;
     padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
-    background: #fff; color: #059669; border: 1px solid #6ee7b7; border-radius: 6px;
-    cursor: pointer; margin-left: 0.5rem; vertical-align: middle;
+    background: #fff; border: 1px solid #d1d5db; border-radius: 6px;
+    cursor: pointer; color: #444;
   }
-  .btn-test-notify:hover { background: #ecfdf5; }
-  .btn-test-notify:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
+  .btn-group-toggle:hover { background: #f9fafb; }
+  .btn-group-toggle.test { color: #2563eb; border-color: #93b4f5; }
+  .btn-group-toggle.test:hover { background: #eff6ff; }
+  .btn-group-toggle.send { color: #0d9488; border-color: #5eead4; }
+  .btn-group-toggle.send:hover { background: #f0fdfa; }
+  .btn-group-toggle.manage { color: #6b7280; border-color: #d1d5db; }
+  .btn-group-toggle.manage:hover { background: #f9fafb; }
+  .btn-group-menu {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 20; min-width: 180px;
+    padding: 0.25rem 0; overflow: hidden;
+  }
+  .btn-group.open .btn-group-menu { display: block; }
+  .btn-group-menu button {
+    display: block; width: 100%; text-align: left;
+    padding: 0.45rem 0.85rem; font-size: 0.82rem; font-weight: 400;
+    border: none; background: none; cursor: pointer; color: #333;
+  }
+  .btn-group-menu button:hover { background: #f3f4f6; }
+  .btn-group-menu button:disabled { color: #aaa; cursor: not-allowed; }
+  .btn-group-menu button:disabled:hover { background: none; }
+  .btn-group-menu button.danger { color: #dc2626; }
+  .btn-group-menu button.danger:hover { background: #fef2f2; }
   .portal-link-box {
     background: #fff; border-radius: 8px; padding: 0.75rem 1rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1rem;
@@ -249,45 +266,6 @@
   .smoke-icon.skip { color: #6b7280; }
   .smoke-name { font-weight: 600; color: #444; min-width: 200px; }
   .smoke-msg { color: #555; }
-
-  /* Delete button */
-  .btn-delete {
-    float: right; margin-left: 0.5rem; padding: 0.3rem 0.75rem; font-size: 0.75rem;
-    border: 1px solid #fca5a5; border-radius: 6px; background: #fff; color: #dc2626; cursor: pointer;
-  }
-  .btn-delete:hover { background: #fef2f2; }
-  /* Clone button */
-  .btn-clone {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
-    background: #fff; color: #059669; border: 1px solid #6ee7b7; border-radius: 6px;
-    cursor: pointer; margin-left: 0.5rem; vertical-align: middle;
-  }
-  .btn-clone:hover { background: #ecfdf5; }
-  .btn-report {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
-    background: #fff; color: #9333ea; border: 1px solid #c4b5fd; border-radius: 6px;
-    cursor: pointer; margin-left: 0.5rem; vertical-align: middle;
-  }
-  .btn-report:hover { background: #f5f3ff; }
-  .btn-report:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
-  .btn-review {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
-    background: #fff; color: #0d9488; border: 1px solid #5eead4; border-radius: 6px;
-    cursor: pointer; margin-left: 0.5rem; vertical-align: middle;
-  }
-  .btn-review:hover { background: #f0fdfa; }
-  .btn-review:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
-  .btn-payment {
-    display: inline-flex; align-items: center; gap: 0.35rem;
-    padding: 0.4rem 0.9rem; font-size: 0.82rem; font-weight: 500;
-    background: #fff; color: #7c3aed; border: 1px solid #c4b5fd; border-radius: 6px;
-    cursor: pointer; margin-left: 0.5rem; vertical-align: middle;
-  }
-  .btn-payment:hover { background: #f5f3ff; }
-  .btn-payment:disabled { color: #aaa; border-color: #ddd; cursor: not-allowed; }
 
   /* Clone modal */
   .modal-overlay {
@@ -356,14 +334,10 @@
       align-items: center;
       gap: 0.4rem;
     }
-    #detailHeader .btn-smoke,
-    #detailHeader .btn-test-notify,
-    #detailHeader .btn-clone,
-    #detailHeader .btn-report,
-    #detailHeader .btn-review,
-    #detailHeader .btn-payment,
-    #detailHeader .btn-delete {
+    #detailHeader .btn-group {
       margin-left: 0;
+    }
+    #detailHeader .btn-group-toggle {
       font-size: 0.75rem;
       padding: 0.35rem 0.6rem;
     }
@@ -753,6 +727,45 @@
       .map(c => c.firstChild.textContent.trim());
   }
 
+  function buildHeaderButtons(slug) {
+    return `<div class="btn-group">` +
+      `<button class="btn-group-toggle test" onclick="toggleDropdown(this)">Test &#9662;</button>` +
+      `<div class="btn-group-menu">` +
+        `<button onclick="runSmokeTest('${esc(slug)}')" id="btnSmoke">Run Smoke Test</button>` +
+        `<button onclick="sendTestNotify('${esc(slug)}')" id="btnTestNotify">Send Test Notification</button>` +
+      `</div></div>` +
+      `<div class="btn-group">` +
+      `<button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send to Client &#9662;</button>` +
+      `<div class="btn-group-menu">` +
+        `<button onclick="sendWeeklyReport('${esc(slug)}')" id="btnReport">Weekly Report</button>` +
+        `<button onclick="requestReview('${esc(slug)}')" id="btnReview">Request Review</button>` +
+        `<button onclick="sendPaymentLink('${esc(slug)}')" id="btnPayment">Send Payment Link</button>` +
+      `</div></div>` +
+      `<div class="btn-group">` +
+      `<button class="btn-group-toggle manage" onclick="toggleDropdown(this)">Manage &#9662;</button>` +
+      `<div class="btn-group-menu">` +
+        `<button onclick="showCloneModal()">Clone Agent</button>` +
+        `<button class="danger" onclick="showDeleteModal()">Delete Agent</button>` +
+      `</div></div>`;
+  }
+
+  function toggleDropdown(btn) {
+    const group = btn.closest('.btn-group');
+    const wasOpen = group.classList.contains('open');
+    // Close all dropdowns first
+    document.querySelectorAll('.btn-group.open').forEach(g => g.classList.remove('open'));
+    if (!wasOpen) group.classList.add('open');
+  }
+
+  // Close dropdowns when clicking outside or clicking a menu item
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('.btn-group-menu button')) {
+      document.querySelectorAll('.btn-group.open').forEach(g => g.classList.remove('open'));
+    } else if (!e.target.closest('.btn-group')) {
+      document.querySelectorAll('.btn-group.open').forEach(g => g.classList.remove('open'));
+    }
+  });
+
   function renderDetail(doc) {
     originalDoc = JSON.parse(JSON.stringify(doc));
 
@@ -761,13 +774,7 @@
     const sl = sm ? 'Shadow' : 'Live';
     document.getElementById('detailHeader').innerHTML =
       `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
-      `<button class="btn-smoke" onclick="runSmokeTest('${esc(doc._id)}')" id="btnSmoke" title="Run automated test calls to verify the agent is responding correctly">Run Smoke Test</button>` +
-      `<button class="btn-test-notify" onclick="sendTestNotify('${esc(doc._id)}')" id="btnTestNotify" title="Send a sample SMS and email notification using dummy data">Send Test Notification</button>` +
-      `<button class="btn-report" onclick="sendWeeklyReport('${esc(doc._id)}')" id="btnReport" title="Generate and send the weekly call summary report for this client">Send Weekly Report</button>` +
-      `<button class="btn-review" onclick="requestReview('${esc(doc._id)}')" id="btnReview" title="Send the client a Google Review request via SMS">Request Review</button>` +
-      `<button class="btn-payment" onclick="sendPaymentLink('${esc(doc._id)}')" id="btnPayment" title="Send the client a Stripe payment/subscription link via SMS">Send Payment Link</button>` +
-      `<button class="btn-delete" onclick="showDeleteModal()" title="Permanently delete this agent and its configuration">Delete Agent</button>` +
-      `<button class="btn-clone" onclick="showCloneModal()" title="Create a copy of this agent with new client details">Clone Agent</button></h1>`;
+      buildHeaderButtons(doc._id) + `</h1>`;
     document.getElementById('smokeResults').innerHTML = '';
 
     let html = `<dl class="config-grid">
@@ -1040,13 +1047,7 @@
         const sl = updates.shadow_mode ? 'Shadow' : 'Live';
         document.getElementById('detailHeader').innerHTML =
           `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
-          `<button class="btn-smoke" onclick="runSmokeTest('${esc(currentSlug)}')" id="btnSmoke" title="Run automated test calls to verify the agent is responding correctly">Run Smoke Test</button>` +
-          `<button class="btn-test-notify" onclick="sendTestNotify('${esc(currentSlug)}')" id="btnTestNotify" title="Send a sample SMS and email notification using dummy data">Send Test Notification</button>` +
-          `<button class="btn-report" onclick="sendWeeklyReport('${esc(currentSlug)}')" id="btnReport" title="Generate and send the weekly call summary report for this client">Send Weekly Report</button>` +
-          `<button class="btn-review" onclick="requestReview('${esc(currentSlug)}')" id="btnReview" title="Send the client a Google Review request via SMS">Request Review</button>` +
-          `<button class="btn-payment" onclick="sendPaymentLink('${esc(currentSlug)}')" id="btnPayment" title="Send the client a Stripe payment/subscription link via SMS">Send Payment Link</button>` +
-          `<button class="btn-delete" onclick="showDeleteModal()" title="Permanently delete this agent and its configuration">Delete Agent</button>` +
-      `<button class="btn-clone" onclick="showCloneModal()" title="Create a copy of this agent with new client details">Clone Agent</button></h1>`;
+          buildHeaderButtons(currentSlug) + `</h1>`;
       }
     } catch (err) {
       showToast('Save failed: ' + err.message, 'error');
