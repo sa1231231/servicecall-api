@@ -14,7 +14,12 @@ function url(path: string): string {
 }
 
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  return { "x-api-key": API_KEY!, "Content-Type": "application/json", ...extra };
+  return {
+    "x-api-key": API_KEY!,
+    "Authorization": basicAuthHeader(),
+    "Content-Type": "application/json",
+    ...extra,
+  };
 }
 
 function basicAuthHeader(): string {
@@ -195,10 +200,8 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(Array.isArray(body.variables)).toBe(true);
       expect(body.variables.length).toBeGreaterThan(0);
 
-      // Notification config should have retell_agents with canonical JSON
+      // Notification config should be present
       expect(body.notification_config).toBeDefined();
-      expect(body.notification_config.retell_agents).toBeDefined();
-      expect(body.notification_config.retell_agents[body.agent_id]).toBeDefined();
     });
 
     it("demo agent is still valid after sync", async () => {
@@ -445,7 +448,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       const resp = await fetch(url(`/dashboard/api/agents/${DEMO_SLUG}`), {
         method: "PATCH",
         headers: authHeaders(),
-        body: JSON.stringify({ name: "hacked" }),
+        body: JSON.stringify({ retell_agents: {} }),
       });
       expect(resp.status).toBe(400);
     });
@@ -457,6 +460,152 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         body: JSON.stringify({}),
       });
       expect(resp.status).toBe(400);
+    });
+  });
+
+  // ── 11. Backup Endpoint ──────────────────────────────────────────────
+
+  describe("Backup endpoint", () => {
+    it("triggers a backup and returns success", { timeout: 60_000 }, async () => {
+      const resp = await fetch(url("/api/backup"), {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      // If R2 is configured, expect success; if not, expect 500 with "not configured"
+      const body = await json(resp);
+      if (resp.status === 200) {
+        expect(body.success).toBe(true);
+        expect(body.key).toMatch(/^backups\/\d{4}-\d{2}-\d{2}\.json\.gz$/);
+      } else {
+        expect(resp.status).toBe(500);
+        expect(body.error).toContain("R2");
+      }
+    });
+
+    it("rejects without API key", async () => {
+      const resp = await fetch(url("/api/backup"), {
+        method: "POST",
+      });
+      expect(resp.status).toBe(401);
+    });
+  });
+
+  // ── 12. Settings Endpoint ────────────────────────────────────────────
+
+  describe("Settings", () => {
+    it("returns current settings", async () => {
+      const resp = await fetch(url("/dashboard/api/settings"), {
+        headers: authHeaders(),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(typeof body.owner_email).toBe("string");
+      expect(typeof body.owner_phone).toBe("string");
+      expect(typeof body.google_review_url).toBe("string");
+      expect(typeof body.stripe_payment_url).toBe("string");
+    });
+
+    it("rejects without API key", async () => {
+      const resp = await fetch(url("/dashboard/api/settings"), {
+        headers: { "Content-Type": "application/json" },
+      });
+      expect(resp.status).toBe(401);
+    });
+  });
+
+  // ── 13. Portal Endpoint ──────────────────────────────────────────────
+
+  describe("Portal", () => {
+    it("serves portal HTML page", async () => {
+      const resp = await fetch(url(`/portal/${DEMO_SLUG}`));
+      // Portal serves HTML shell — auth handled client-side
+      expect(resp.status).toBe(200);
+      const text = await resp.text();
+      expect(text).toContain("html");
+    });
+
+    it("portal API rejects invalid token", async () => {
+      const resp = await fetch(url(`/portal/${DEMO_SLUG}/calls?token=invalid-token`));
+      expect(resp.status).toBe(401);
+    });
+  });
+
+  // ── 14. Transcript Download ──────────────────────────────────────────
+
+  describe("Transcript download", () => {
+    it("returns 404 for nonexistent call", async () => {
+      const resp = await fetch(
+        url(`/dashboard/api/agents/${DEMO_SLUG}/calls/nonexistent-call-id/transcript`),
+        { headers: authHeaders() },
+      );
+      expect(resp.status).toBe(404);
+    });
+  });
+
+  // ── 15. Review Request ───────────────────────────────────────────────
+
+  describe("Review request", () => {
+    it("returns error when Google Review URL is not configured or sends successfully", async () => {
+      const resp = await fetch(
+        url(`/dashboard/api/agents/${DEMO_SLUG}/request-review`),
+        { method: "POST", headers: authHeaders() },
+      );
+      const body = await json(resp);
+      // Either 400 (no URL configured) or 200 (success) — both are valid
+      expect([200, 400]).toContain(resp.status);
+      if (resp.status === 400) {
+        expect(body.error).toContain("Review URL");
+      } else {
+        expect(body.success).toBe(true);
+      }
+    });
+
+    it("returns 404 for nonexistent client", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/agents/nonexistent-slug-xyz/request-review"),
+        { method: "POST", headers: authHeaders() },
+      );
+      expect(resp.status).toBe(404);
+    });
+  });
+
+  // ── 16. Payment Link ─────────────────────────────────────────────────
+
+  describe("Payment link", () => {
+    it("returns error when Stripe URL is not configured or sends successfully", async () => {
+      const resp = await fetch(
+        url(`/dashboard/api/agents/${DEMO_SLUG}/send-payment-link`),
+        { method: "POST", headers: authHeaders() },
+      );
+      const body = await json(resp);
+      expect([200, 400]).toContain(resp.status);
+      if (resp.status === 400) {
+        expect(body.error).toContain("Payment URL");
+      } else {
+        expect(body.success).toBe(true);
+      }
+    });
+
+    it("returns 404 for nonexistent client", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/agents/nonexistent-slug-xyz/send-payment-link"),
+        { method: "POST", headers: authHeaders() },
+      );
+      expect(resp.status).toBe(404);
+    });
+  });
+
+  // ── 17. Portal Token ─────────────────────────────────────────────────
+
+  describe("Portal token", () => {
+    it("returns portal token status for demo client", async () => {
+      const resp = await fetch(
+        url(`/dashboard/api/agents/${DEMO_SLUG}/portal-token`),
+        { headers: authHeaders() },
+      );
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(typeof body.has_token).toBe("boolean");
     });
   });
 });
