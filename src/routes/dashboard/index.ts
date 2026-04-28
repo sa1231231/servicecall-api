@@ -29,6 +29,7 @@ import {
   CATEGORY_ORDER,
   CATEGORY_LABELS,
 } from "../../lib/data-point-defaults.js";
+import { DATA_POINT_REGISTRY } from "../../lib/agent-generator/data-point-registry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -198,7 +199,8 @@ dashboardApiRouter.patch("/settings", async (req, res) => {
 
 dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
   const defaults = await getDataPointDefaultsWithCategory();
-  res.json({ defaults, categoryOrder: CATEGORY_ORDER, categoryLabels: CATEGORY_LABELS });
+  const registryKeys = Object.keys(DATA_POINT_REGISTRY);
+  res.json({ defaults, categoryOrder: CATEGORY_ORDER, categoryLabels: CATEGORY_LABELS, registryKeys });
 });
 
 dashboardApiRouter.patch("/data-point-defaults/:key", async (req, res) => {

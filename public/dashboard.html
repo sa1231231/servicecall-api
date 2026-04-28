@@ -2235,19 +2235,7 @@
   let dpDefaults = {};
   let dpCategoryOrder = [];
   let dpCategoryLabels = {};
-  const REGISTRY_KEYS = new Set([
-    'full_name', 'phone_number', 'email', 'street_address', 'city', 'company_name', 'scheduling',
-    'callback_number', 'existing_customer', 'caller_role',
-    'state', 'zip_code', 'unit_number', 'gate_code',
-    'service_type', 'issue_description', 'urgency_level', 'special_instructions', 'how_did_you_hear',
-    'property_type', 'number_of_stories', 'year_built', 'has_pets',
-    'equipment_brand', 'equipment_age', 'warranty_status',
-    'case_type', 'opposing_party_name', 'case_jurisdiction', 'incident_date', 'incident_location',
-    'injury_description', 'has_attorney', 'medical_treatment',
-    'truck_number', 'driver_name', 'driver_phone', 'breakdown_location', 'problem_description',
-    'vehicle_type', 'vehicle_manufacturer', 'vehicle_color', 'whos_paying', 'payment_method',
-    'insurance_provider', 'policy_number', 'account_number',
-  ]);
+  let REGISTRY_KEYS = new Set(); // Populated from server
 
   async function loadDpDefaults() {
     const container = document.getElementById('dpDefaultsContainer');
@@ -2258,6 +2246,7 @@
       dpDefaults = data.defaults;
       dpCategoryOrder = data.categoryOrder;
       dpCategoryLabels = data.categoryLabels;
+      REGISTRY_KEYS = new Set(data.registryKeys || []);
       renderDpDefaults();
       populateCategoryDropdown();
     } catch (err) {

@@ -18,7 +18,7 @@ import { startAutoSync } from "./lib/retell-auto-sync.js";
 import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
 import { reportsRouter } from "./routes/reports/index.js";
 import { refreshOwnerConfig } from "./lib/settings.js";
-import { seedDataPointDefaults, getDataPointDefaultsWithCategory } from "./lib/data-point-defaults.js";
+import { seedDataPointDefaults, getDataPointDefaultsWithCategory, CATEGORY_ORDER, CATEGORY_LABELS } from "./lib/data-point-defaults.js";
 import { ObjectId } from "mongodb";
 import { getDb } from "./lib/db.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
@@ -127,7 +127,7 @@ formRouter.get("/config", (_req, res) => {
 formRouter.get("/data-points", async (_req, res) => {
   try {
     const all = await getDataPointDefaultsWithCategory();
-    res.json(all);
+    res.json({ dataPoints: all, categoryOrder: CATEGORY_ORDER, categoryLabels: CATEGORY_LABELS });
   } catch (err) {
     res.status(500).json({ error: "Failed to load data points" });
   }

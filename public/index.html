@@ -323,6 +323,9 @@
   // Populated dynamically from /form/data-points
   let BUILTIN_NAMES = [];
   let BUILTIN_LABELS = {};
+  let BUILTIN_CATEGORIES = {}; // key -> category string
+  let DP_CATEGORY_ORDER = [];
+  let DP_CATEGORY_LABELS = {};
 
   // Default checked data points (general basics)
   const DEFAULT_CHECKED = new Set(['full_name', 'phone_number', 'street_address', 'city']);
@@ -339,31 +342,36 @@
   // Load data points dynamically and render checkboxes
   fetch('/form/data-points')
     .then(r => r.json())
-    .then(dataPoints => {
+    .then(response => {
+      const dataPoints = response.dataPoints || response; // backwards compat
+      DP_CATEGORY_ORDER = response.categoryOrder || [];
+      DP_CATEGORY_LABELS = response.categoryLabels || {};
+
       BUILTIN_NAMES = Object.keys(dataPoints);
       BUILTIN_LABELS = {};
+      BUILTIN_CATEGORIES = {};
       for (const [key, dp] of Object.entries(dataPoints)) {
         BUILTIN_LABELS[key] = dp.label;
+        BUILTIN_CATEGORIES[key] = dp.category || 'caller_info';
       }
 
       // Group by category
       const groups = {};
       for (const [key, dp] of Object.entries(dataPoints)) {
-        const cat = dp.category || 'general';
+        const cat = dp.category || 'caller_info';
         if (!groups[cat]) groups[cat] = [];
         groups[cat].push({ key, label: dp.label });
       }
 
-      // Render checkbox groups
+      // Render checkbox groups using category order from server
       const container = document.getElementById('dataPointCheckboxes');
       let html = '';
-      // Show "general" first, then "trucking", then the rest alphabetically
-      const order = ['general', 'trucking'];
-      const sortedCats = [...new Set([...order.filter(c => groups[c]), ...Object.keys(groups).sort()])];
+      const sortedCats = [...DP_CATEGORY_ORDER.filter(c => groups[c]), ...Object.keys(groups).filter(c => !DP_CATEGORY_ORDER.includes(c)).sort()];
       for (const cat of sortedCats) {
         const items = groups[cat];
         if (!items) continue;
-        html += '<h3>' + cat.charAt(0).toUpperCase() + cat.slice(1) + '</h3>';
+        const catLabel = DP_CATEGORY_LABELS[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        html += '<h3>' + catLabel + '</h3>';
         html += '<div class="checkbox-group">';
         for (const item of items) {
           const checked = DEFAULT_CHECKED.has(item.key) ? ' checked' : '';
@@ -587,33 +595,26 @@ Do not ask for any other information than what is instructed for this node.'>${v
     // Available data point map for lookup
     const dpMap = new Map(allDps.map(dp => [dp.value, dp]));
 
-    // Group into General / Trucking / Custom
-    const generalKeys = new Set(['full_name','phone_number','email','street_address','city','company_name','scheduling']);
-    const truckingKeys = new Set(['truck_number','driver_name','driver_phone','breakdown_location','problem_description','vehicle_type','vehicle_manufacturer','vehicle_color','whos_paying','payment_method']);
+    // Group by category (using real categories from server)
+    const groups = {};
+    allDps.forEach(dp => {
+      const cat = dp.builtin ? (BUILTIN_CATEGORIES[dp.value] || 'general') : '_custom';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(dp);
+    });
 
-    const general = allDps.filter(dp => dp.builtin && generalKeys.has(dp.value));
-    const trucking = allDps.filter(dp => dp.builtin && truckingKeys.has(dp.value));
-    const custom = allDps.filter(dp => !dp.builtin);
+    // Category display order (from server)
+    const allCatLabels = { ...DP_CATEGORY_LABELS, _custom: 'Custom' };
+    const orderedCats = [...DP_CATEGORY_ORDER.filter(c => groups[c]), ...Object.keys(groups).filter(c => !DP_CATEGORY_ORDER.includes(c))];
 
     const pathId = pathCard.dataset.pathId;
     let html = '';
-    if (general.length) {
-      html += '<h3>General</h3><div class="checkbox-group">';
-      general.forEach(dp => {
-        html += `<label><input type="checkbox" name="pathDp" value="${dp.value}" data-path="${pathId}" data-label="${dp.label}"${checked.has(dp.value) ? ' checked' : ''} onchange="onPathDpToggle(this)"> ${dp.label}</label>`;
-      });
-      html += '</div>';
-    }
-    if (trucking.length) {
-      html += '<h3>Trucking</h3><div class="checkbox-group">';
-      trucking.forEach(dp => {
-        html += `<label><input type="checkbox" name="pathDp" value="${dp.value}" data-path="${pathId}" data-label="${dp.label}"${checked.has(dp.value) ? ' checked' : ''} onchange="onPathDpToggle(this)"> ${dp.label}</label>`;
-      });
-      html += '</div>';
-    }
-    if (custom.length) {
-      html += '<h3>Custom</h3><div class="checkbox-group">';
-      custom.forEach(dp => {
+    for (const cat of orderedCats) {
+      const items = groups[cat];
+      if (!items || !items.length) continue;
+      const catLabel = allCatLabels[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      html += `<h3>${catLabel}</h3><div class="checkbox-group">`;
+      items.forEach(dp => {
         html += `<label><input type="checkbox" name="pathDp" value="${dp.value}" data-path="${pathId}" data-label="${dp.label}"${checked.has(dp.value) ? ' checked' : ''} onchange="onPathDpToggle(this)"> ${dp.label}</label>`;
       });
       html += '</div>';
