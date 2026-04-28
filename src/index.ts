@@ -270,7 +270,7 @@ formRouter.delete("/drafts/:id", async (req, res) => {
 app.use("/form", authLimiter, basicAuth, requirePermission("create_agents"), formRouter);
 
 // ── Dashboard (Basic Auth protected) ────────────────────────────────────────
-app.use("/dashboard", authLimiter, basicAuth, dashboardRouter);
+app.use("/dashboard", basicAuth, dashboardRouter);
 
 // ── Auth middleware ──────────────────────────────────────────────────────────
 app.use((req, res, next) => {
