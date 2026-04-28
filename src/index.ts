@@ -18,7 +18,7 @@ import { startAutoSync } from "./lib/retell-auto-sync.js";
 import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
 import { reportsRouter } from "./routes/reports/index.js";
 import { refreshOwnerConfig } from "./lib/settings.js";
-import { seedDataPointDefaults } from "./lib/data-point-defaults.js";
+import { seedDataPointDefaults, getDataPointDefaultsWithCategory } from "./lib/data-point-defaults.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -120,6 +120,14 @@ formRouter.get("/", (_req, res) => {
 });
 formRouter.get("/config", (_req, res) => {
   res.json({ apiKey: config.API_KEY });
+});
+formRouter.get("/data-points", async (_req, res) => {
+  try {
+    const all = await getDataPointDefaultsWithCategory();
+    res.json(all);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load data points" });
+  }
 });
 app.use("/form", basicAuth, formRouter);
 

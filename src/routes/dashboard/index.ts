@@ -23,6 +23,8 @@ import {
   getDataPointDefaults,
   updateDataPointDefault,
   resetDataPointDefault,
+  createDataPointDefault,
+  deleteDataPointDefault,
 } from "../../lib/data-point-defaults.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -220,6 +222,37 @@ dashboardApiRouter.post("/data-point-defaults/:key/reset", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ error: msg });
+  }
+});
+
+dashboardApiRouter.post("/data-point-defaults", async (req, res) => {
+  try {
+    const { key, label, category, type, choices, description, conversationPrompt, forwardCondition } = req.body;
+    if (!key || !label) {
+      res.status(400).json({ error: "key and label are required" });
+      return;
+    }
+    const dp = await createDataPointDefault(key, {
+      label, category, type, choices, description, conversationPrompt, forwardCondition,
+    });
+    res.json({ success: true, dataPoint: dp });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(400).json({ error: msg });
+  }
+});
+
+dashboardApiRouter.delete("/data-point-defaults/:key", async (req, res) => {
+  try {
+    const deleted = await deleteDataPointDefault(req.params.key);
+    if (!deleted) {
+      res.status(404).json({ error: `Data point "${req.params.key}" not found` });
+      return;
+    }
+    res.json({ success: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(400).json({ error: msg });
   }
 });
 

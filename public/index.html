@@ -179,30 +179,7 @@
   <h2>Data Points to Collect</h2>
   <p style="font-size:0.8rem;color:#666;margin-top:-0.5rem;">Each checked field becomes a question the agent asks during the call. Collected values appear in the SMS/email dispatch notification sent to your team.</p>
 
-  <h3>General</h3>
-  <div class="checkbox-group">
-    <label><input type="checkbox" name="dataPoint" value="full_name" checked> Full Name</label>
-    <label><input type="checkbox" name="dataPoint" value="phone_number" checked> Phone Number</label>
-    <label><input type="checkbox" name="dataPoint" value="email"> Email</label>
-    <label><input type="checkbox" name="dataPoint" value="street_address" checked> Street Address</label>
-    <label><input type="checkbox" name="dataPoint" value="city" checked> City</label>
-    <label><input type="checkbox" name="dataPoint" value="company_name"> Company Name</label>
-    <label><input type="checkbox" name="dataPoint" value="scheduling"> Scheduling (Day/Time)</label>
-  </div>
-
-  <h3>Trucking</h3>
-  <div class="checkbox-group">
-    <label><input type="checkbox" name="dataPoint" value="truck_number"> Truck Number</label>
-    <label><input type="checkbox" name="dataPoint" value="driver_name"> Driver Name</label>
-    <label><input type="checkbox" name="dataPoint" value="driver_phone"> Driver Phone Number</label>
-    <label><input type="checkbox" name="dataPoint" value="breakdown_location"> Breakdown Location</label>
-    <label><input type="checkbox" name="dataPoint" value="problem_description"> Problem Description</label>
-    <label><input type="checkbox" name="dataPoint" value="vehicle_type"> Vehicle Type</label>
-    <label><input type="checkbox" name="dataPoint" value="vehicle_manufacturer"> Vehicle Manufacturer</label>
-    <label><input type="checkbox" name="dataPoint" value="vehicle_color"> Vehicle Color</label>
-    <label><input type="checkbox" name="dataPoint" value="whos_paying"> Who's Paying</label>
-    <label><input type="checkbox" name="dataPoint" value="payment_method"> Payment Method</label>
-  </div>
+  <div id="dataPointCheckboxes"><div style="color:#888;font-size:0.8rem;">Loading data points...</div></div>
 
   <!-- ── Custom Data Points ───────────────────────────────────── -->
   <h2>Custom Data Points</h2>
@@ -277,21 +254,12 @@
     resultDiv.style.display = 'none';
   }
 
-  const BUILTIN_NAMES = [
-    'full_name', 'phone_number', 'email', 'street_address', 'city', 'company_name', 'scheduling',
-    'truck_number', 'driver_name', 'driver_phone', 'breakdown_location', 'problem_description',
-    'vehicle_type', 'vehicle_manufacturer', 'vehicle_color', 'whos_paying', 'payment_method',
-  ];
+  // Populated dynamically from /form/data-points
+  let BUILTIN_NAMES = [];
+  let BUILTIN_LABELS = {};
 
-  const BUILTIN_LABELS = {
-    full_name: 'Full Name', phone_number: 'Phone Number', email: 'Email',
-    street_address: 'Street Address', city: 'City', company_name: 'Company Name',
-    scheduling: 'Scheduling (Day/Time)',
-    truck_number: 'Truck Number', driver_name: 'Driver Name', driver_phone: 'Driver Phone Number',
-    breakdown_location: 'Breakdown Location', problem_description: 'Problem Description',
-    vehicle_type: 'Vehicle Type', vehicle_manufacturer: 'Vehicle Manufacturer',
-    vehicle_color: 'Vehicle Color', whos_paying: "Who's Paying", payment_method: 'Payment Method',
-  };
+  // Default checked data points (general basics)
+  const DEFAULT_CHECKED = new Set(['full_name', 'phone_number', 'street_address', 'city']);
 
   let cardCounter = 0;
   let pathCounter = 0;
@@ -301,6 +269,53 @@
     .then(r => r.json())
     .then(data => { document.getElementById('apiKey').value = data.apiKey; })
     .catch(() => { /* key will be empty — POST will fail with 401 */ });
+
+  // Load data points dynamically and render checkboxes
+  fetch('/form/data-points')
+    .then(r => r.json())
+    .then(dataPoints => {
+      BUILTIN_NAMES = Object.keys(dataPoints);
+      BUILTIN_LABELS = {};
+      for (const [key, dp] of Object.entries(dataPoints)) {
+        BUILTIN_LABELS[key] = dp.label;
+      }
+
+      // Group by category
+      const groups = {};
+      for (const [key, dp] of Object.entries(dataPoints)) {
+        const cat = dp.category || 'general';
+        if (!groups[cat]) groups[cat] = [];
+        groups[cat].push({ key, label: dp.label });
+      }
+
+      // Render checkbox groups
+      const container = document.getElementById('dataPointCheckboxes');
+      let html = '';
+      // Show "general" first, then "trucking", then the rest alphabetically
+      const order = ['general', 'trucking'];
+      const sortedCats = [...new Set([...order.filter(c => groups[c]), ...Object.keys(groups).sort()])];
+      for (const cat of sortedCats) {
+        const items = groups[cat];
+        if (!items) continue;
+        html += '<h3>' + cat.charAt(0).toUpperCase() + cat.slice(1) + '</h3>';
+        html += '<div class="checkbox-group">';
+        for (const item of items) {
+          const checked = DEFAULT_CHECKED.has(item.key) ? ' checked' : '';
+          html += '<label><input type="checkbox" name="dataPoint" value="' + item.key + '"' + checked + '> ' + item.label + '</label>';
+        }
+        html += '</div>';
+      }
+      container.innerHTML = html;
+
+      // Re-bind change listeners for routing path refresh
+      document.querySelectorAll('input[name="dataPoint"]').forEach(cb => {
+        cb.addEventListener('change', refreshPathCheckboxes);
+      });
+    })
+    .catch(() => {
+      document.getElementById('dataPointCheckboxes').innerHTML =
+        '<div style="color:#991b1b;font-size:0.8rem;">Failed to load data points.</div>';
+    });
 
   function csvToArray(value) {
     return value.split(',').map(s => s.trim()).filter(Boolean);
