@@ -124,7 +124,7 @@ async function basicAuth(req: Request, res: Response, next: NextFunction): Promi
       username,
       role: dbUser.role,
       permissions: resolvePermissions(dbUser.role, dbUser.permissions),
-      isOwner: false,
+      isRoot: false,
     };
     next();
     return;
@@ -136,7 +136,7 @@ async function basicAuth(req: Request, res: Response, next: NextFunction): Promi
       username: username || "admin",
       role: "admin",
       permissions: { ...DEFAULT_PERMISSIONS.admin },
-      isOwner: true,
+      isRoot: true,
     };
     next();
     return;

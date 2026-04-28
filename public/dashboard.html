@@ -878,7 +878,7 @@
       // Apply permission-based UI visibility
       if (currentUser) {
         const badge = document.getElementById('userBadge');
-        if (badge) badge.textContent = currentUser.username + ' (' + currentUser.role + ')';
+        if (badge) badge.textContent = currentUser.username + ' (' + (currentUser.isRoot ? 'root' : currentUser.role) + ')';
         // Hide elements based on permissions
         document.body.classList.remove('role-operator');
         if (currentUser.role !== 'admin') {

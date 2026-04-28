@@ -62,7 +62,7 @@ dashboardRouter.get("/config", (req, res) => {
   res.json({
     apiKey: config.API_KEY,
     user: req.user
-      ? { username: req.user.username, role: req.user.role, permissions: req.user.permissions }
+      ? { username: req.user.username, role: req.user.role, permissions: req.user.permissions, isRoot: req.user.isRoot }
       : null,
     permissionDefs: PERMISSION_DEFS,
     defaultPermissions: DEFAULT_PERMISSIONS,

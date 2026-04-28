@@ -5,7 +5,7 @@ declare global {
         username: string;
         role: "admin" | "operator" | "viewer";
         permissions: Record<string, boolean>;
-        isOwner: boolean;
+        isRoot: boolean;
       };
     }
   }

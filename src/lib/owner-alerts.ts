@@ -13,7 +13,7 @@ export function alertOwnerIfNeeded(
   target: string,
   details?: string,
 ): void {
-  if (!req.user || req.user.isOwner) return;
+  if (!req.user || req.user.isRoot) return;
 
   const { username, role } = req.user;
   const time = new Date().toLocaleString("en-US", { timeZone: "America/New_York" });
