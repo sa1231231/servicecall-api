@@ -229,3 +229,223 @@ describe("edge cases", () => {
     expect(router.edges).toHaveLength(1);
   });
 });
+
+// ── Branch logic ────────────────────────────────────────────────────────────
+
+describe("if/else branch support", () => {
+  it("resolveDataPoints flattens a simple branch", () => {
+    const raw = [
+      "full_name",
+      {
+        _branch: true as const,
+        variable: "vehicle_type",
+        operator: "==" as const,
+        value: "Semi",
+        ifChain: ["phone_number"],
+        elseChain: ["city"],
+      },
+    ];
+    const resolved = resolveDataPoints(raw, TEST_DEFAULTS);
+    expect(resolved).toHaveLength(3);
+    expect(resolved[0].variableName).toBe("full_name");
+    expect(resolved[0]._branchConditions).toBeUndefined();
+
+    // IF branch data point
+    expect(resolved[1].variableName).toBe("phone_number");
+    expect(resolved[1]._branchConditions).toHaveLength(1);
+    expect(resolved[1]._branchConditions![0]).toEqual({
+      variable: "vehicle_type", operator: "==", value: "Semi",
+    });
+
+    // ELSE branch data point
+    expect(resolved[2].variableName).toBe("city");
+    expect(resolved[2]._branchConditions).toHaveLength(1);
+    expect(resolved[2]._branchConditions![0]).toEqual({
+      variable: "vehicle_type", operator: "!=", value: "Semi",
+    });
+  });
+
+  it("resolveDataPoints flattens nested branches", () => {
+    const raw = [
+      {
+        _branch: true as const,
+        variable: "vehicle_type",
+        operator: "==" as const,
+        value: "Semi",
+        ifChain: [
+          {
+            _branch: true as const,
+            variable: "vehicle_type",
+            operator: "==" as const,
+            value: "Box truck", // nested condition
+            ifChain: ["city"],
+            elseChain: [],
+          },
+        ],
+        elseChain: ["full_name"],
+      },
+    ];
+    const resolved = resolveDataPoints(raw, TEST_DEFAULTS);
+    expect(resolved).toHaveLength(2);
+
+    // Nested IF: has both parent + child conditions
+    expect(resolved[0].variableName).toBe("city");
+    expect(resolved[0]._branchConditions).toHaveLength(2);
+    expect(resolved[0]._branchConditions![0].variable).toBe("vehicle_type");
+    expect(resolved[0]._branchConditions![0].operator).toBe("==");
+    expect(resolved[0]._branchConditions![0].value).toBe("Semi");
+    expect(resolved[0]._branchConditions![1].value).toBe("Box truck");
+
+    // ELSE branch
+    expect(resolved[1].variableName).toBe("full_name");
+    expect(resolved[1]._branchConditions).toHaveLength(1);
+    expect(resolved[1]._branchConditions![0].operator).toBe("!=");
+  });
+
+  it("generateAgent builds router edges with branch conditions", () => {
+    const dataPoints = [
+      "full_name",
+      {
+        _branch: true as const,
+        variable: "vehicle_type",
+        operator: "==" as const,
+        value: "Semi",
+        ifChain: ["phone_number"],
+        elseChain: ["city"],
+      },
+    ];
+    const { agent } = generateAgent(baseConfig, dataPoints as any[], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const router = flow.nodes.find((n: any) => n.name === "Variables Router");
+
+    expect(router.edges).toHaveLength(3); // full_name + phone_number (IF) + city (ELSE)
+
+    // First edge: full_name — no branch condition, uses || operator
+    const nameEdge = router.edges[0];
+    expect(nameEdge.transition_condition.operator).toBe("||");
+
+    // Second edge: phone_number (IF branch) — has branch condition, uses && operator
+    const ifEdge = router.edges[1];
+    expect(ifEdge.transition_condition.operator).toBe("&&");
+    const ifEqs = ifEdge.transition_condition.equations;
+    const branchEq = ifEqs.find((eq: any) => eq.left === "{{vehicle_type}}" && eq.operator === "==");
+    expect(branchEq).toBeDefined();
+    expect(branchEq.right).toBe("Semi");
+
+    // Third edge: city (ELSE branch) — has inverted condition + sentinel guards
+    const elseEdge = router.edges[2];
+    expect(elseEdge.transition_condition.operator).toBe("&&");
+    const elseEqs = elseEdge.transition_condition.equations;
+    const invertedEq = elseEqs.find((eq: any) => eq.left === "{{vehicle_type}}" && eq.operator === "!=" && eq.right === "Semi");
+    expect(invertedEq).toBeDefined();
+    // Sentinel guards
+    const notMentionedGuard = elseEqs.find((eq: any) => eq.left === "{{vehicle_type}}" && eq.operator === "!=" && eq.right === NOT_MENTIONED);
+    expect(notMentionedGuard).toBeDefined();
+    const dontKnowGuard = elseEqs.find((eq: any) => eq.left === "{{vehicle_type}}" && eq.operator === "!=" && eq.right === "Caller Doesn't Know");
+    expect(dontKnowGuard).toBeDefined();
+  });
+
+  it("branch data points get Collect and Confirm nodes", () => {
+    const dataPoints = [
+      {
+        _branch: true as const,
+        variable: "vehicle_type",
+        operator: "==" as const,
+        value: "Semi",
+        ifChain: ["phone_number"],
+        elseChain: ["city"],
+      },
+    ];
+    const { agent } = generateAgent(baseConfig, dataPoints as any[], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+
+    // Both branch data points should have Collect + Confirm nodes
+    expect(flow.nodes.find((n: any) => n.name === "Collect Phone Number")).toBeDefined();
+    expect(flow.nodes.find((n: any) => n.name === "Confirm Phone Number")).toBeDefined();
+    expect(flow.nodes.find((n: any) => n.name === "Collect City")).toBeDefined();
+    expect(flow.nodes.find((n: any) => n.name === "Confirm City")).toBeDefined();
+  });
+
+  it("data points after a branch have no branch conditions", () => {
+    const dataPoints = [
+      {
+        _branch: true as const,
+        variable: "vehicle_type",
+        operator: "==" as const,
+        value: "Semi",
+        ifChain: ["phone_number"],
+        elseChain: [],
+      },
+      "city", // after the branch
+    ];
+    const resolved = resolveDataPoints(dataPoints as any[], TEST_DEFAULTS);
+    const cityDp = resolved.find(dp => dp.variableName === "city");
+    expect(cityDp).toBeDefined();
+    expect(cityDp!._branchConditions).toBeUndefined();
+  });
+
+  it("composite data points inside branches get correct router edges", () => {
+    const dataPoints = [
+      {
+        _branch: true as const,
+        variable: "vehicle_type",
+        operator: "==" as const,
+        value: "Semi",
+        ifChain: ["scheduling"],
+        elseChain: [],
+      },
+    ];
+    const { agent } = generateAgent(baseConfig, dataPoints as any[], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const router = flow.nodes.find((n: any) => n.name === "Variables Router");
+    // scheduling edge should have composite OR equations + branch AND
+    const schedEdge = router.edges[0];
+    expect(schedEdge.transition_condition.operator).toBe("&&");
+    // Should contain equations for both preferred_day and preferred_time
+    const eqs = schedEdge.transition_condition.equations;
+    const dayEq = eqs.find((eq: any) => eq.left === "{{preferred_day}}");
+    expect(dayEq).toBeDefined();
+  });
+
+  it("phone_number inside a branch gets both phone_collected flag and branch condition", () => {
+    const dataPoints = [
+      {
+        _branch: true as const,
+        variable: "vehicle_type",
+        operator: "==" as const,
+        value: "Semi",
+        ifChain: ["phone_number"],
+        elseChain: [],
+      },
+    ];
+    const { agent } = generateAgent(baseConfig, dataPoints as any[], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const router = flow.nodes.find((n: any) => n.name === "Variables Router");
+    const phoneEdge = router.edges[0];
+    // Should be AND with phone-specific equations + branch condition
+    expect(phoneEdge.transition_condition.operator).toBe("&&");
+    const eqs = phoneEdge.transition_condition.equations;
+    // Has phone_number == Not Mentioned check
+    expect(eqs.find((eq: any) => eq.left === "{{phone_number}}" && eq.operator === "==")).toBeDefined();
+    // Has phone_number_collected != true check
+    expect(eqs.find((eq: any) => eq.left === "{{phone_number_collected}}" && eq.operator === "!=")).toBeDefined();
+    // Has branch condition
+    expect(eqs.find((eq: any) => eq.left === "{{vehicle_type}}" && eq.operator === "==" && eq.right === "Semi")).toBeDefined();
+  });
+
+  it("empty branch sides produce no data points", () => {
+    const raw = [
+      {
+        _branch: true as const,
+        variable: "vehicle_type",
+        operator: "==" as const,
+        value: "Semi",
+        ifChain: ["full_name"],
+        elseChain: [], // empty ELSE
+      },
+    ];
+    const resolved = resolveDataPoints(raw, TEST_DEFAULTS);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].variableName).toBe("full_name");
+  });
+});
