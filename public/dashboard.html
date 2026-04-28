@@ -146,6 +146,18 @@
     padding: 0.35rem 0.5rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle;
   }
   .field-table tr:last-child td { border-bottom: none; }
+  /* Variable validation tags */
+  .var-tags { margin-top: 0.25rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .var-tag {
+    display: inline-block; padding: 0.1rem 0.45rem; border-radius: 999px;
+    font-size: 0.7rem; font-family: monospace; font-weight: 500;
+  }
+  .var-tag.valid { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+  .var-tag.invalid { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+  .greeting-preview {
+    margin-top: 0.35rem; padding: 0.4rem 0.6rem; background: #f9fafb; border: 1px solid #e5e7eb;
+    border-radius: 6px; font-size: 0.78rem; color: #555; font-style: italic;
+  }
   .field-table .col-show { width: 3rem; text-align: center; }
   .field-table .col-req { width: 3rem; text-align: center; }
   .field-table .col-label { }
@@ -762,6 +774,53 @@
       .map(c => c.firstChild.textContent.trim());
   }
 
+  function validateVars(text, validSet, containerEl) {
+    if (!containerEl) return;
+    const matches = [...(text.matchAll(/\{\{(\w+)\}\}/g))].map(m => m[1]);
+    if (matches.length === 0) {
+      containerEl.innerHTML = '';
+      return;
+    }
+    containerEl.innerHTML = matches.map(v => {
+      const cls = validSet.has(v) ? 'valid' : 'invalid';
+      return `<span class="var-tag ${cls}">{{${esc(v)}}}</span>`;
+    }).join('');
+  }
+
+  function onGreetingInput() {
+    const input = document.getElementById('edit-greeting');
+    const text = input.value;
+    const clientName = originalDoc ? originalDoc.name : 'Business';
+
+    // Validate variables
+    validateVars(text, new Set(['business_name']), document.getElementById('greeting-var-tags'));
+
+    // Live preview
+    const previewEl = document.getElementById('greeting-preview');
+    if (previewEl) {
+      const resolved = text.trim()
+        ? text.replace(/\{\{business_name\}\}/g, clientName)
+        : `Hi ${clientName}, you have a new call!`;
+      previewEl.textContent = 'Preview: ' + resolved;
+    }
+
+    // Update routing path previews too
+    document.querySelectorAll('.preview-section').forEach(s => updatePreview(s.dataset.mtKey));
+  }
+
+  function onSubjectInput(mtKey) {
+    const input = document.querySelector(`.subject-template-input[data-mt-key="${mtKey}"]`);
+    if (!input) return;
+    // Valid vars = field keys for this routing path
+    const fieldKeys = new Set();
+    document.querySelectorAll(`.field-label-input[data-mt-key="${mtKey}"]`).forEach(el => {
+      fieldKeys.add(el.dataset.fieldKey);
+    });
+    const tagsEl = document.querySelector(`.subject-var-tags[data-mt-key="${mtKey}"]`);
+    validateVars(input.value, fieldKeys, tagsEl);
+    updatePreview(mtKey);
+  }
+
   function updatePreview(mtKey) {
     const section = document.querySelector(`.preview-section[data-mt-key="${mtKey}"]`);
     if (!section) return;
@@ -881,9 +940,11 @@
       <dt title="Client display name used in notification greetings and reports">Display Name</dt><dd><input class="edit-input" id="edit-name" value="${esc(doc.name)}" placeholder="Business name"></dd>
 
       <dt title="Custom greeting for SMS/email notifications. Use {{business_name}} for the business name.">Notification Greeting</dt><dd>
-        <input class="edit-input" id="edit-greeting" value="${esc(doc.notification_greeting || '')}" placeholder="Hi {{business_name}}, you have a new call!"
-          oninput="document.querySelectorAll('.preview-section').forEach(s => updatePreview(s.dataset.mtKey))">
-        <div style="font-size:0.72rem;color:#999;margin-top:-0.5rem;">Leave blank for default. Use <code>{{business_name}}</code> for the business name.</div>
+        <textarea class="edit-input" id="edit-greeting" rows="2" placeholder="Hi {{business_name}}, you have a new call!"
+          oninput="onGreetingInput()">${esc(doc.notification_greeting || '')}</textarea>
+        <div class="var-tags" id="greeting-var-tags"></div>
+        <div class="greeting-preview" id="greeting-preview"></div>
+        <div style="font-size:0.72rem;color:#999;margin-top:0.25rem;">Leave blank for default. Available: <code>{{business_name}}</code></div>
       </dd>
 
       <dt title="When on, notifications go to the owner instead of the client for testing">Shadow Mode</dt><dd>
@@ -917,11 +978,14 @@
           <span style="color:#999;font-size:0.75rem;">${visibleCount}/${fieldCount} fields</span>
         </summary>
         <div class="route-path-body">`;
-        html += `<div class="route-meta" style="display:flex;align-items:center;gap:0.5rem;margin-top:0.5rem;">
-          <span style="color:#666;">Subject:</span>
-          <input type="text" value="${esc(val.subject_template)}" data-mt-key="${esc(key)}" class="subject-template-input"
-            style="flex:1;font-size:0.8rem;padding:3px 6px;border:1px solid #e5e7eb;border-radius:4px;font-family:monospace;"
-            oninput="updatePreview('${esc(key)}')">
+        html += `<div style="margin-top:0.5rem;">
+          <div style="display:flex;align-items:center;gap:0.5rem;">
+            <span style="color:#666;font-size:0.82rem;">Subject:</span>
+            <input type="text" value="${esc(val.subject_template)}" data-mt-key="${esc(key)}" class="subject-template-input"
+              style="flex:1;font-size:0.8rem;padding:3px 6px;border:1px solid #e5e7eb;border-radius:4px;font-family:monospace;"
+              oninput="onSubjectInput('${esc(key)}')">
+          </div>
+          <div class="var-tags subject-var-tags" data-mt-key="${esc(key)}"></div>
         </div>`;
         if (val.additional_text) html += `<div class="route-meta">Note: ${esc(val.additional_text)}</div>`;
         html += `<table class="field-table"><thead><tr>
@@ -973,9 +1037,14 @@
 
     document.getElementById('detailConfig').innerHTML = html;
 
-    // Initialize previews for all routing paths
+    // Initialize greeting preview + variable validation
+    onGreetingInput();
+
+    // Initialize previews + subject validation for all routing paths
     document.querySelectorAll('.preview-section').forEach(section => {
-      updatePreview(section.dataset.mtKey);
+      const mtKey = section.dataset.mtKey;
+      updatePreview(mtKey);
+      onSubjectInput(mtKey);
     });
   }
 
