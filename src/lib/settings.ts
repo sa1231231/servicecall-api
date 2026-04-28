@@ -6,6 +6,7 @@ export interface GlobalSettings {
   review_sms_message: string;
   stripe_payment_url: string;
   payment_sms_message: string;
+  free_trial_days: number;
   owner_email: string;
   owner_phone: string;
 }
@@ -15,6 +16,7 @@ const DEFAULTS: GlobalSettings = {
   review_sms_message: "Hi! We'd love your feedback on our service. If you have a moment, please leave us a Google review:\n{{google_review_url}}\n\nThank you!\n— Service Call Saver",
   stripe_payment_url: "",
   payment_sms_message: "Hi! Here's your link to subscribe to Service Call Saver:\n{{stripe_payment_url}}\n\nThank you!\n— Service Call Saver",
+  free_trial_days: 14,
   owner_email: "samasra93@gmail.com",
   owner_phone: "+13017872841",
 };
@@ -31,6 +33,7 @@ export async function getSettings(): Promise<GlobalSettings> {
     review_sms_message: doc.review_sms_message ?? DEFAULTS.review_sms_message,
     stripe_payment_url: doc.stripe_payment_url ?? DEFAULTS.stripe_payment_url,
     payment_sms_message: doc.payment_sms_message ?? DEFAULTS.payment_sms_message,
+    free_trial_days: doc.free_trial_days ?? DEFAULTS.free_trial_days,
     owner_email: doc.owner_email ?? DEFAULTS.owner_email,
     owner_phone: doc.owner_phone ?? DEFAULTS.owner_phone,
   };
@@ -44,6 +47,7 @@ export async function updateSettings(
   if (updates.review_sms_message !== undefined) setObj.review_sms_message = updates.review_sms_message;
   if (updates.stripe_payment_url !== undefined) setObj.stripe_payment_url = updates.stripe_payment_url;
   if (updates.payment_sms_message !== undefined) setObj.payment_sms_message = updates.payment_sms_message;
+  if (updates.free_trial_days !== undefined) setObj.free_trial_days = updates.free_trial_days;
   if (updates.owner_email !== undefined) setObj.owner_email = updates.owner_email;
   if (updates.owner_phone !== undefined) setObj.owner_phone = updates.owner_phone;
 

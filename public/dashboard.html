@@ -58,6 +58,7 @@
   }
   .badge-live { background: #dcfce7; color: #166534; }
   .badge-shadow { background: #fef3c7; color: #92400e; }
+  .badge-expired { background: #fee2e2; color: #991b1b; }
   .badge-dispatched { background: #dcfce7; color: #166534; }
   .badge-shadow_dry_run { background: #fef3c7; color: #92400e; }
   .badge-skipped_required_field, .badge-skipped_empty_call { background: #e5e7eb; color: #6b7280; }
@@ -535,6 +536,9 @@
     <textarea id="settings-review-msg" placeholder="Message template..."></textarea>
     <p class="settings-hint">Use {{google_review_url}} where the link should appear.</p>
 
+    <label for="settings-trial-days">Free Trial Length (days)</label>
+    <input type="number" id="settings-trial-days" min="1" max="90" placeholder="14" style="width:80px;">
+
     <label for="settings-payment-url">Stripe Payment URL</label>
     <input type="text" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
 
@@ -662,9 +666,14 @@
       const cfgData = await cfgRes.json();
       apiKey = cfgData.apiKey;
 
-      const res = await fetch('/dashboard/api/agents', { headers: { 'X-API-Key': apiKey } });
+      const [res, settingsRes] = await Promise.all([
+        fetch('/dashboard/api/agents', { headers: { 'X-API-Key': apiKey } }),
+        fetch('/dashboard/api/settings', { headers: { 'X-API-Key': apiKey } }),
+      ]);
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const agents = await res.json();
+      const globalSettings = settingsRes.ok ? await settingsRes.json() : {};
+      const trialDays = globalSettings.free_trial_days || 14;
 
       if (agents.length === 0) {
         document.getElementById('agentList').innerHTML = '<div class="loading">No agents found.</div>';
@@ -677,7 +686,7 @@
       });
 
       let html = `<table><thead><tr>
-        <th>Name</th><th>Slug</th><th>Agent IDs</th><th>Status</th><th>Shadow Mode</th>
+        <th>Name</th><th>Slug</th><th>Agent IDs</th><th>Trial</th><th>Status</th><th>Shadow Mode</th>
       </tr></thead><tbody>`;
 
       for (const a of agents) {
@@ -687,10 +696,26 @@
           ? a.agent_ids.map(id => id.substring(0, 16) + '...').join(', ')
           : '<span style="color:#aaa">none</span>';
 
+        // Trial badge
+        let trialHtml = '<span style="color:#aaa">—</span>';
+        if (a.trial_start_date) {
+          const start = new Date(a.trial_start_date);
+          const end = new Date(start.getTime() + trialDays * 86400000);
+          const remaining = Math.ceil((end - Date.now()) / 86400000);
+          if (remaining > 4) {
+            trialHtml = `<span class="badge badge-live">${remaining}d left</span>`;
+          } else if (remaining > 0) {
+            trialHtml = `<span class="badge badge-shadow">${remaining}d left</span>`;
+          } else {
+            trialHtml = `<span class="badge badge-expired">Expired</span>`;
+          }
+        }
+
         html += `<tr class="clickable-row" onclick="showDetail('${esc(a.slug)}')" data-slug="${esc(a.slug)}">
           <td><strong>${esc(a.name)}</strong></td>
           <td style="font-family:monospace;font-size:0.78rem;">${esc(a.slug)}</td>
           <td class="agent-ids" title="${esc(a.agent_ids.join(', '))}">${ids}</td>
+          <td>${trialHtml}</td>
           <td><span class="badge ${sc}" data-status>${sl}</span></td>
           <td onclick="event.stopPropagation()">
             <label class="toggle">
@@ -1202,6 +1227,10 @@
 
       <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
 
+      <dt title="When the client's free trial started">Trial Start Date</dt><dd>
+        <input type="date" class="edit-input" id="edit-trial-start" value="${doc.trial_start_date ? doc.trial_start_date.slice(0, 10) : ''}" style="width:auto;">
+      </dd>
+
       <dt title="When on, notifications go to the owner instead of the client for testing">Shadow Mode</dt><dd>
         <label class="toggle">
           <input type="checkbox" id="edit-shadow-mode" ${doc.shadow_mode ? 'checked' : ''}>
@@ -1415,6 +1444,13 @@
     const summaryAgent = document.getElementById('edit-summary-agent').value.trim() || null;
     if (summaryAgent !== (originalDoc.summary_agent_id || null)) {
       updates.summary_agent_id = summaryAgent;
+    }
+
+    // Trial start date
+    const newTrialStart = document.getElementById('edit-trial-start').value || null;
+    const origTrialStart = originalDoc.trial_start_date ? originalDoc.trial_start_date.slice(0, 10) : null;
+    if (newTrialStart !== origTrialStart) {
+      updates.trial_start_date = newTrialStart;
     }
 
     const shadowMode = document.getElementById('edit-shadow-mode').checked;
@@ -2031,6 +2067,7 @@
       document.getElementById('settings-owner-phone').value = settings.owner_phone || '';
       document.getElementById('settings-review-url').value = settings.google_review_url || '';
       document.getElementById('settings-review-msg').value = settings.review_sms_message || '';
+      document.getElementById('settings-trial-days').value = settings.free_trial_days || 14;
       document.getElementById('settings-payment-url').value = settings.stripe_payment_url || '';
       document.getElementById('settings-payment-msg').value = settings.payment_sms_message || '';
     } catch (err) {
@@ -2053,6 +2090,7 @@
       owner_phone: document.getElementById('settings-owner-phone').value.trim(),
       google_review_url: document.getElementById('settings-review-url').value.trim(),
       review_sms_message: document.getElementById('settings-review-msg').value,
+      free_trial_days: parseInt(document.getElementById('settings-trial-days').value) || 14,
       stripe_payment_url: document.getElementById('settings-payment-url').value.trim(),
       payment_sms_message: document.getElementById('settings-payment-msg').value,
     };

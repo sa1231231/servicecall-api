@@ -1,6 +1,14 @@
 import type { Request, Response } from "express";
-import { getAllClientSummaries } from "../../config/client-store.js";
+import { getAllClientDocuments } from "../../config/client-store.js";
 
-export function listAgentsHandler(_req: Request, res: Response): void {
-  res.json(getAllClientSummaries());
+export async function listAgentsHandler(_req: Request, res: Response): Promise<void> {
+  const docs = await getAllClientDocuments();
+  const summaries = docs.map((doc) => ({
+    slug: doc._id,
+    name: doc.name,
+    shadow_mode: doc.shadow_mode ?? false,
+    agent_ids: doc.agent_ids,
+    trial_start_date: doc.trial_start_date ?? null,
+  }));
+  res.json(summaries);
 }
