@@ -30,6 +30,12 @@ export interface ClientNotificationConfig {
   dispatch_text_numbers: string[];
   dispatch_call_number: string | null;
   dispatch_call_overrides?: Record<string, string>;
+  dispatch_by_type?: Record<string, {
+    dispatch_text_numbers?: string[];
+    dispatch_email?: string[];
+    dispatch_cc?: string | null;
+    dispatch_call_number?: string | null;
+  }>;
   summary_agent_id: string | null;
   outbound_from_number: string | null;
   dispatch_email: string[] | null;

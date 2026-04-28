@@ -10,6 +10,7 @@ import { buildNotificationMessages } from "../../lib/build-notification.js";
 import { sendOwnerCallMonitor } from "../../lib/owner-monitor.js";
 import { triggerDispatchCall } from "../../lib/dispatch-call.js";
 import { saveCallLog, type CallLogDocument } from "../../lib/call-log.js";
+import { resolveDispatch } from "../../lib/resolve-dispatch.js";
 
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
@@ -135,6 +136,9 @@ export async function postHookHandler(req: Request, res: Response) {
   // Resolve effective business name (per-number override from Retell Code node)
   const effectiveName = allVars.business_name || clientConfig.name;
 
+  // Resolve per-type dispatch targets (falls back to client-level defaults)
+  const dispatch = resolveDispatch(clientConfig, typeKey);
+
   console.log("retell-post-hook: extracted notification data", {
     agent_id: agentId,
     message_type: typeKey,
@@ -145,8 +149,8 @@ export async function postHookHandler(req: Request, res: Response) {
   if (clientConfig.shadow_mode) {
     const dryRunSummary =
       `[SHADOW DRY-RUN] client="${effectiveName}"\n\n` +
-      `Original dispatch numbers: ${JSON.stringify(clientConfig.dispatch_text_numbers)}\n` +
-      `Original dispatch emails:  ${JSON.stringify(clientConfig.dispatch_email)}\n\n` +
+      `Dispatch numbers: ${JSON.stringify(dispatch.text_numbers)}\n` +
+      `Dispatch emails:  ${JSON.stringify(dispatch.email)}\n\n` +
       `--- SMS PREVIEW ---\n${smsMessage}\n\n` +
       `--- EMAIL PREVIEW ---\nSubject: ${emailSubject}\n\n${emailBody}`;
 
@@ -160,8 +164,8 @@ export async function postHookHandler(req: Request, res: Response) {
         subject: `[SHADOW DRY-RUN] ${emailSubject}`,
         body: dryRunSummary,
         html: `<p><strong>[SHADOW DRY-RUN]</strong> for client "${escapeHtml(effectiveName)}"</p>` +
-          `<p>Original dispatch numbers: ${escapeHtml(JSON.stringify(clientConfig.dispatch_text_numbers))}<br>` +
-          `Original dispatch emails: ${escapeHtml(JSON.stringify(clientConfig.dispatch_email))}</p>` +
+          `<p>Dispatch numbers: ${escapeHtml(JSON.stringify(dispatch.text_numbers))}<br>` +
+          `Dispatch emails: ${escapeHtml(JSON.stringify(dispatch.email))}</p>` +
           `<hr><p><strong>SMS Preview:</strong></p><pre>${escapeHtml(smsMessage)}</pre>` +
           `<hr><p><strong>Email Preview (as client would see it):</strong></p>` +
           `<p>Subject: ${escapeHtml(emailSubject)}</p>${emailHtml}`,
@@ -192,19 +196,19 @@ export async function postHookHandler(req: Request, res: Response) {
   const tasks: Promise<unknown>[] = [];
   const emailResendIds: string[] = [];
 
-  if (clientConfig.dispatch_text_numbers.length > 0) {
-    tasks.push(sendSmsToAll(clientConfig.dispatch_text_numbers, smsMessage));
+  if (dispatch.text_numbers.length > 0) {
+    tasks.push(sendSmsToAll(dispatch.text_numbers, smsMessage));
   } else {
     console.log(
       "retell-post-hook: no dispatch numbers configured, skipping SMS",
     );
   }
 
-  if (clientConfig.dispatch_email && clientConfig.dispatch_email.length > 0) {
-    for (const email of clientConfig.dispatch_email) {
+  if (dispatch.email && dispatch.email.length > 0) {
+    for (const email of dispatch.email) {
       const emailTask = sendEmail({
         to: email,
-        cc: clientConfig.dispatch_cc,
+        cc: dispatch.cc,
         subject: emailSubject,
         body: emailBody,
         html: emailHtml,
@@ -235,8 +239,8 @@ export async function postHookHandler(req: Request, res: Response) {
     }
 
     // Summary log
-    const smsCount = clientConfig.dispatch_text_numbers.length;
-    const emailCount = clientConfig.dispatch_email?.length ?? 0;
+    const smsCount = dispatch.text_numbers.length;
+    const emailCount = dispatch.email?.length ?? 0;
     const callId = call?.call_id ?? "unknown";
     console.log(
       `retell-post-hook: notification summary | client="${clientConfig.name}" | call_id=${callId} | sms=${smsCount}/${smsCount} sent | email=${emailCount}/${emailCount} sent`,
@@ -254,8 +258,9 @@ export async function postHookHandler(req: Request, res: Response) {
 
   // Fire-and-forget: voice call to dispatch
   const effectiveCallNumber =
+    dispatch.call_number ??
     clientConfig.dispatch_call_overrides?.[call.to_number] ??
-    clientConfig.dispatch_call_number;
+    null;
   if (effectiveCallNumber) {
     triggerDispatchCall(
       { ...clientConfig, dispatch_call_number: effectiveCallNumber },
