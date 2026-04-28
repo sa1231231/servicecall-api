@@ -511,6 +511,7 @@
     border-color: #93b4f5; outline: none; box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
   }
   .settings-hint { font-size: 0.75rem; color: #888; margin-top: 0.2rem; }
+  .config-hint { font-size: 0.72rem; color: #999; margin-top: 0.15rem; line-height: 1.35; }
 </style>
 </head>
 <body>
@@ -529,28 +530,31 @@
   <div class="settings-form">
     <label for="settings-owner-email">Owner Email</label>
     <input type="email" id="settings-owner-email" placeholder="owner@example.com">
-    <p class="settings-hint">Shadow mode notifications, call monitoring alerts, and weekly reports go here.</p>
+    <p class="settings-hint">Receives shadow mode notifications, call monitoring alerts, and weekly reports. This is your email, not the client's.</p>
 
     <label for="settings-owner-phone">Owner Phone</label>
     <input type="tel" id="settings-owner-phone" placeholder="+15551234567">
-    <p class="settings-hint">Shadow mode SMS and problem call alerts go here.</p>
+    <p class="settings-hint">Receives shadow mode SMS and problem call alerts. When an agent is in shadow mode, dispatch goes here instead of the client.</p>
 
     <label for="settings-review-url">Google Review URL</label>
     <input type="text" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
+    <p class="settings-hint">Your Google Business review link. Used in the review request SMS sent to clients via "Send to Client &gt; Request Review".</p>
 
     <label for="settings-review-msg">Review SMS Message</label>
     <textarea id="settings-review-msg" placeholder="Message template..."></textarea>
-    <p class="settings-hint">Use {{google_review_url}} where the link should appear.</p>
+    <p class="settings-hint">Template for the review request SMS. Use {{google_review_url}} where the link should appear.</p>
 
     <label for="settings-trial-days">Free Trial Length (days)</label>
     <input type="number" id="settings-trial-days" min="1" max="90" placeholder="14" style="width:80px;">
+    <p class="settings-hint">Global trial duration for all clients. Each client's trial starts from their individual Trial Start Date on the agent detail page.</p>
 
     <label for="settings-payment-url">Stripe Payment URL</label>
     <input type="text" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
+    <p class="settings-hint">Stripe checkout link sent to clients when their trial expires. Used in the payment SMS via "Send to Client &gt; Send Payment Link".</p>
 
     <label for="settings-payment-msg">Payment SMS Message</label>
     <textarea id="settings-payment-msg" placeholder="Message template..."></textarea>
-    <p class="settings-hint">Use {{stripe_payment_url}} where the link should appear.</p>
+    <p class="settings-hint">Template for the payment link SMS. Use {{stripe_payment_url}} where the link should appear.</p>
 
     <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
   </div>
@@ -578,20 +582,24 @@
     <div class="modal-field">
       <label class="modal-label">Business Name *</label>
       <input class="edit-input" type="text" id="cloneNameInput" placeholder="e.g. Smith's Plumbing">
+      <div class="config-hint">The new agent's business name. Used in the agent greeting and as the Retell phone label.</div>
     </div>
     <div class="modal-field">
       <label class="modal-label">FAQ / Knowledge Base *</label>
       <textarea id="cloneFaqInput" placeholder="Paste FAQ content for the new business..."></textarea>
+      <div class="config-hint">FAQ content for the new business. The agent's conversation flow, routing paths, and data points are copied from the original.</div>
     </div>
     <div class="modal-field">
       <label class="modal-label">Dispatch Text Numbers</label>
       <div class="chip-input" id="clone-chip-text" onclick="this.querySelector('input').focus()">
         <input type="text" placeholder="+15551234567" onkeydown="chipKeydown(event, this)" onblur="chipBlur(this)">
       </div>
+      <div class="config-hint">SMS numbers for the new client. If blank, copies from the original agent.</div>
     </div>
     <div class="modal-field">
       <label class="modal-label">Dispatch Call Number</label>
       <input class="edit-input" type="text" id="cloneCallInput" placeholder="+15551234567">
+      <div class="config-hint">Outbound dispatch call number for the new client. Leave blank to skip.</div>
     </div>
     <div class="modal-field">
       <label class="modal-label">Dispatch Email</label>
@@ -1194,15 +1202,19 @@
 
     let html = `<h2>Default Dispatch</h2>
     <dl class="config-grid">
-      <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}</dd>
+      <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}
+        <div class="config-hint">These numbers receive an SMS with the call summary after every call. Routing path overrides (below) take priority when configured.</div></dd>
 
-      <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}</dd>
+      <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}
+        <div class="config-hint">These addresses receive an email with the full call summary after every call.</div></dd>
 
       <dt title="Phone number called by the outbound summary agent after intake">Dispatch Call</dt><dd>
         <input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty" style="margin-bottom:0.25rem;">
+        <div class="config-hint">If set with a Summary Agent, an AI outbound call is placed to this number after each call to deliver the summary by voice.</div>
         <details style="margin-top:0.25rem;">
           <summary style="font-size:0.78rem;color:#888;cursor:pointer;">Call Overrides <span style="font-weight:400;">${Object.keys(doc.dispatch_call_overrides || {}).length ? '(' + Object.keys(doc.dispatch_call_overrides).length + ' configured)' : '(none)'}</span></summary>
           <div style="margin-top:0.35rem;">
+            <div class="config-hint" style="margin-bottom:0.35rem;">Route dispatch calls to different numbers based on the caller's number. Left = caller number, Right = dispatch to.</div>
             <div id="call-overrides-container">${buildOverrideRows(doc.dispatch_call_overrides)}</div>
             <button type="button" class="btn-add-override" onclick="addOverrideRow()">+ Add override</button>
           </div>
@@ -1212,13 +1224,15 @@
     <details style="margin-top:0.25rem;">
       <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Advanced Dispatch <span style="font-weight:400;color:#999;">${doc.webhook_url ? '(webhook configured)' : ''}</span></summary>
       <dl class="config-grid" style="margin-top:0.5rem;">
-        <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook"></dd>
+        <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook">
+          <div class="config-hint">Call data is POSTed as JSON to this URL after each dispatch. Use for CRM integrations, Zapier, etc.</div></dd>
       </dl>
     </details>
 
     <h2>Agent Settings</h2>
     <dl class="config-grid">
-      <dt title="Client display name used in notification greetings and reports">Display Name</dt><dd><input class="edit-input" id="edit-name" value="${esc(doc.name)}" placeholder="Business name"></dd>
+      <dt title="Client display name used in notification greetings and reports">Display Name</dt><dd><input class="edit-input" id="edit-name" value="${esc(doc.name)}" placeholder="Business name">
+        <div class="config-hint">Appears in SMS/email notifications as the business identity — e.g. "Hi Acme Plumbing, you have a new call!"</div></dd>
 
       <dt title="Custom greeting for SMS/email notifications. Use {{business_name}} for the business name.">Notification Greeting</dt><dd>
         <div class="tmpl-editor-wrap">
@@ -1226,15 +1240,18 @@
           <input type="hidden" id="edit-greeting" value="${esc(doc.notification_greeting || '')}">
         </div>
         <div class="greeting-preview" id="greeting-preview"></div>
-        <div style="font-size:0.72rem;color:#999;margin-top:0.25rem;">Leave blank for default. Type <code>{{</code> for variable suggestions.</div>
+        <div class="config-hint">First line of every SMS and email notification. Leave blank for default. Type <code>{{</code> for variable suggestions.</div>
       </dd>
 
-      <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
+      <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}
+        <div class="config-hint">Retell agent IDs linked to this client. Inbound calls from these agents trigger dispatch notifications.</div></dd>
 
-      <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
+      <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty">
+        <div class="config-hint">The Retell agent that makes outbound dispatch calls. Its bound phone number is used as the caller ID. Works with Dispatch Call above.</div></dd>
 
       <dt title="When the client's free trial started">Trial Start Date</dt><dd>
         <input type="date" class="edit-input" id="edit-trial-start" value="${doc.trial_start_date ? doc.trial_start_date.slice(0, 10) : ''}" style="width:auto;">
+        <div class="config-hint">When this client's free trial started. Trial length is set globally in Settings.</div>
       </dd>
 
       <dt title="When on, notifications go to the owner instead of the client for testing">Shadow Mode</dt><dd>
@@ -1242,6 +1259,7 @@
           <input type="checkbox" id="edit-shadow-mode" ${doc.shadow_mode ? 'checked' : ''}>
           <span class="slider"></span>
         </label>
+        <div class="config-hint">When on, dispatch notifications go to the owner (you) instead of the client. Use for testing before going live.</div>
       </dd>
 
       <dt title="Send automated weekly call summary reports for this client">Weekly Reports</dt><dd>
@@ -1249,6 +1267,7 @@
           <input type="checkbox" id="edit-weekly-report" ${doc.weekly_report_enabled !== false ? 'checked' : ''}>
           <span class="slider"></span>
         </label>
+        <div class="config-hint">Sends an automated weekly call summary email to the client's dispatch email addresses.</div>
       </dd>
     </dl>`;
 
@@ -1259,7 +1278,8 @@
     const dbt = doc.dispatch_by_type || {};
     const mtKeys = Object.keys(mt);
     if (mtKeys.length > 0) {
-      html += `<h2>Routing Paths (${mtKeys.length})</h2>`;
+      html += `<h2>Routing Paths (${mtKeys.length})</h2>
+      <div class="config-hint" style="margin-top:-0.5rem;margin-bottom:0.75rem;">Each path represents a caller intent branch. Fields control what appears in dispatch notifications. Drag to reorder, toggle Show/Req to control visibility and required status.</div>`;
       for (const [key, val] of Object.entries(mt)) {
         const override = dbt[key] || {};
         const fieldCount = val.fields.length;
@@ -1279,6 +1299,7 @@
               <input type="hidden" class="subject-template-input" data-mt-key="${esc(key)}" value="${esc(val.subject_template)}">
             </div>
           </div>
+          <div class="config-hint">Email subject line for this path's notifications. Type <code>{{</code> to insert collected field values.</div>
         </div>`;
         if (val.additional_text) html += `<div class="route-meta">Note: ${esc(val.additional_text)}</div>`;
         html += `<table class="field-table" data-mt-key="${esc(key)}"><thead><tr>
@@ -1313,7 +1334,7 @@
         html += `<details style="margin-top:0.65rem;">
           <summary style="font-size:0.8rem;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">${Object.keys(override).length ? '(configured)' : '(none)'}</span></summary>
           <div style="margin-top:0.35rem;font-size:0.8rem;">
-            <div style="color:#888;margin-bottom:0.35rem;">Override dispatch targets for this path. Leave blank to use client defaults.</div>
+            <div style="color:#888;margin-bottom:0.35rem;">Override who gets notified for this specific path. If blank, falls back to the Default Dispatch settings above.</div>
             <label style="font-size:0.78rem;font-weight:600;">SMS Numbers</label>
             <input type="text" class="dbt-sms" data-mt-key="${esc(key)}" value="${esc((override.dispatch_text_numbers || []).join(', '))}"
               placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">
