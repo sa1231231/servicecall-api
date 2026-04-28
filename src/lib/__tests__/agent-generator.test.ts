@@ -169,6 +169,101 @@ describe("custom data point defaults include 'Caller Doesn\\'t Know' handling", 
   });
 });
 
+// ── resolveDataPoints with custom defaults map ──────────────────────────────
+
+describe("resolveDataPoints with custom defaults map", () => {
+  const customDefaults: Record<string, DataPoint> = {
+    full_name: {
+      ...DATA_POINT_REGISTRY.full_name,
+      description: "Custom full name description",
+      finetuneExamples: [
+        { type: "positive", transcript: [{ role: "user", content: "My name is Bob" }] },
+      ],
+    },
+    lot_number: {
+      label: "Lot Number",
+      variableName: "lot_number",
+      type: "string",
+      description: "The lot number for the property",
+      conversationPrompt: "Ask the caller for their lot number.",
+      forwardCondition: "The caller has provided the lot number or indicated they don't know it",
+      finetuneExamples: [],
+      extractSuccessEquation: [
+        { left: "{{lot_number}}", operator: "exists" },
+        { left: "{{lot_number}}", operator: "!=", right: "Not Mentioned" },
+      ],
+    },
+  };
+
+  it("uses custom defaults instead of registry when provided", () => {
+    const resolved = resolveDataPoints(["full_name"], customDefaults);
+    expect(resolved[0].description).toBe("Custom full name description");
+    expect(resolved[0].finetuneExamples).toHaveLength(1);
+    expect(resolved[0].finetuneExamples![0].type).toBe("positive");
+  });
+
+  it("resolves custom data points from defaults map", () => {
+    const resolved = resolveDataPoints(["lot_number"], customDefaults);
+    expect(resolved[0].variableName).toBe("lot_number");
+    expect(resolved[0].label).toBe("Lot Number");
+    expect(resolved[0].description).toContain("lot number");
+  });
+
+  it("throws on unknown key not in custom defaults", () => {
+    expect(() => resolveDataPoints(["nonexistent"], customDefaults)).toThrow(
+      /Unknown data point "nonexistent"/,
+    );
+  });
+
+  it("falls back to registry when defaults map is empty", () => {
+    const resolved = resolveDataPoints(["full_name"], {});
+    expect(resolved[0].description).toBe(DATA_POINT_REGISTRY.full_name.description);
+  });
+
+  it("falls back to registry when defaults map is undefined", () => {
+    const resolved = resolveDataPoints(["full_name"], undefined);
+    expect(resolved[0].description).toBe(DATA_POINT_REGISTRY.full_name.description);
+  });
+
+  it("custom data point objects bypass the defaults map", () => {
+    const resolved = resolveDataPoints(
+      [{ variableName: "inline_field", label: "Inline", type: "string", description: "inline desc", conversationPrompt: "ask", forwardCondition: "done" }],
+      customDefaults,
+    );
+    expect(resolved[0].variableName).toBe("inline_field");
+    expect(resolved[0].description).toBe("inline desc");
+  });
+});
+
+describe("generateAgent with custom defaults", () => {
+  const customDefaults: Record<string, DataPoint> = {
+    full_name: {
+      ...DATA_POINT_REGISTRY.full_name,
+      finetuneExamples: [
+        { type: "negative", transcript: [{ role: "user", content: "Just call me Bob" }, { role: "agent", content: "Got it, Bob." }] },
+      ],
+    },
+    city: { ...DATA_POINT_REGISTRY.city },
+  };
+
+  it("passes defaults through to generated agent", () => {
+    const { resolved } = generateAgent(baseConfig, ["full_name", "city"], undefined, customDefaults);
+    expect(resolved[0].finetuneExamples).toHaveLength(1);
+    expect(resolved[0].finetuneExamples![0].transcript[0].content).toBe("Just call me Bob");
+  });
+
+  it("multi-path generation works with custom defaults", () => {
+    const paths = [
+      { name: "Path A", transitionCondition: "A", dataPoints: ["full_name"] as any[] },
+      { name: "Path B", transitionCondition: "B", dataPoints: ["city"] as any[] },
+    ];
+    const { resolvedPaths } = generateAgent(baseConfig, [], paths, customDefaults);
+    expect(resolvedPaths).toHaveLength(2);
+    expect(resolvedPaths![0].resolved[0].variableName).toBe("full_name");
+    expect(resolvedPaths![1].resolved[0].variableName).toBe("city");
+  });
+});
+
 // ── Edge cases ──────────────────────────────────────────────────────────────
 
 describe("edge cases", () => {

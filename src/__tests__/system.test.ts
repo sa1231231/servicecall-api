@@ -608,4 +608,285 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(typeof body.has_token).toBe("boolean");
     });
   });
+
+  // ── 18. Portal Magic Link ──────────────────────────────────────────
+
+  describe("Portal magic link", () => {
+    it("POST /portal/request-link returns success for any email (no enumeration)", async () => {
+      const resp = await fetch(url("/portal/request-link"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "nonexistent@example.com" }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+      expect(body.message).toContain("associated with an account");
+    });
+
+    it("POST /portal/request-link returns success for empty email", async () => {
+      const resp = await fetch(url("/portal/request-link"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "" }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+    });
+
+    it("POST /portal/request-link returns success for invalid email", async () => {
+      const resp = await fetch(url("/portal/request-link"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "not-an-email" }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+    });
+  });
+
+  // ── 19. Client Login Page ──────────────────────────────────────────
+
+  describe("Client login page", () => {
+    it("GET /client serves login HTML without auth", async () => {
+      const resp = await fetch(url("/client"));
+      expect(resp.status).toBe(200);
+      const text = await resp.text();
+      expect(text).toContain("Client Portal");
+      expect(text).toContain("Send Login Link");
+    });
+  });
+
+  // ── 20. Data Point Defaults API ────────────────────────────────────
+
+  describe("Data point defaults", () => {
+    it("GET /dashboard/api/data-point-defaults returns all defaults", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults"),
+        { headers: authHeaders() },
+      );
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(typeof body).toBe("object");
+      // Should have at least the built-in data points
+      expect(body.full_name).toBeDefined();
+      expect(body.full_name.label).toBe("Full Name");
+      expect(body.phone_number).toBeDefined();
+      expect(body.city).toBeDefined();
+    });
+
+    it("all built-in data points are present after seeding", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults"),
+        { headers: authHeaders() },
+      );
+      const body = await json(resp);
+      const expected = [
+        "full_name", "phone_number", "email", "street_address", "city",
+        "company_name", "scheduling", "truck_number", "driver_name",
+        "driver_phone", "breakdown_location", "problem_description",
+        "vehicle_type", "vehicle_manufacturer", "vehicle_color",
+        "whos_paying", "payment_method",
+      ];
+      expected.forEach(key => {
+        expect(body[key], `${key} should exist`).toBeDefined();
+      });
+    });
+
+    it("data points have category field", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults"),
+        { headers: authHeaders() },
+      );
+      const body = await json(resp);
+      expect(body.full_name.category).toBe("general");
+      expect(body.truck_number.category).toBe("trucking");
+    });
+
+    it("PATCH updates a data point", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults/full_name"),
+        {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({ description: "Test description override" }),
+        },
+      );
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+
+      // Verify it persisted
+      const getResp = await fetch(
+        url("/dashboard/api/data-point-defaults"),
+        { headers: authHeaders() },
+      );
+      const all = await json(getResp);
+      expect(all.full_name.description).toBe("Test description override");
+
+      // Reset it back
+      await fetch(
+        url("/dashboard/api/data-point-defaults/full_name/reset"),
+        { method: "POST", headers: authHeaders() },
+      );
+    });
+
+    it("PATCH returns 404 for nonexistent data point", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults/nonexistent_xyz"),
+        {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({ description: "test" }),
+        },
+      );
+      expect(resp.status).toBe(404);
+    });
+
+    it("POST /reset restores registry default", async () => {
+      // First modify it
+      await fetch(
+        url("/dashboard/api/data-point-defaults/city"),
+        {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({ description: "Temporary change" }),
+        },
+      );
+
+      // Then reset
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults/city/reset"),
+        { method: "POST", headers: authHeaders() },
+      );
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+      expect(body.dataPoint.description).not.toBe("Temporary change");
+    });
+
+    it("POST /reset returns 404 for non-registry data point", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults/nonexistent_xyz/reset"),
+        { method: "POST", headers: authHeaders() },
+      );
+      expect(resp.status).toBe(404);
+    });
+
+    // ── Custom data point CRUD ─────────────────────────────────────
+
+    let createdTestDp = false;
+
+    it("POST creates a custom data point", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults"),
+        {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            key: "_test_lot_number",
+            label: "Test Lot Number",
+            category: "custom",
+            type: "string",
+          }),
+        },
+      );
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+      expect(body.dataPoint.label).toBe("Test Lot Number");
+      expect(body.dataPoint.category).toBe("custom");
+      createdTestDp = true;
+    });
+
+    it("POST rejects duplicate key", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults"),
+        {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ key: "full_name", label: "Duplicate" }),
+        },
+      );
+      expect(resp.status).toBe(400);
+      const body = await json(resp);
+      expect(body.error).toContain("already exists");
+    });
+
+    it("POST rejects missing key or label", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults"),
+        {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify({ key: "", label: "" }),
+        },
+      );
+      expect(resp.status).toBe(400);
+    });
+
+    it("created custom data point appears in GET", async () => {
+      if (!createdTestDp) return;
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults"),
+        { headers: authHeaders() },
+      );
+      const body = await json(resp);
+      expect(body._test_lot_number).toBeDefined();
+      expect(body._test_lot_number.label).toBe("Test Lot Number");
+    });
+
+    it("DELETE removes custom data point", async () => {
+      if (!createdTestDp) return;
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults/_test_lot_number"),
+        { method: "DELETE", headers: authHeaders() },
+      );
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+    });
+
+    it("DELETE blocks deleting built-in data point", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults/full_name"),
+        { method: "DELETE", headers: authHeaders() },
+      );
+      expect(resp.status).toBe(400);
+      const body = await json(resp);
+      expect(body.error).toContain("built-in");
+    });
+
+    it("DELETE returns 404 for nonexistent data point", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/data-point-defaults/nonexistent_xyz"),
+        { method: "DELETE", headers: authHeaders() },
+      );
+      expect(resp.status).toBe(404);
+    });
+  });
+
+  // ── 21. Form Data Points Endpoint ──────────────────────────────────
+
+  describe("Form data points", () => {
+    it("GET /form/data-points returns data points with categories (requires auth)", async () => {
+      const resp = await fetch(url("/form/data-points"), {
+        headers: { Authorization: basicAuthHeader() },
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(typeof body).toBe("object");
+      expect(body.full_name).toBeDefined();
+      expect(body.full_name.label).toBe("Full Name");
+      expect(body.full_name.category).toBeDefined();
+      expect(body.truck_number.category).toBe("trucking");
+    });
+
+    it("GET /form/data-points rejects without auth", async () => {
+      const resp = await fetch(url("/form/data-points"));
+      expect(resp.status).toBe(401);
+    });
+  });
 });
