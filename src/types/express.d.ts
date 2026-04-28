@@ -3,7 +3,8 @@ declare global {
     interface Request {
       user?: {
         username: string;
-        role: "admin" | "operator";
+        role: "admin" | "operator" | "viewer";
+        permissions: Record<string, boolean>;
       };
     }
   }

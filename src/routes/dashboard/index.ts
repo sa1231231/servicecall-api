@@ -31,9 +31,16 @@ import {
   CATEGORY_ORDER,
   CATEGORY_LABELS,
 } from "../../lib/data-point-defaults.js";
-import { adminOnly } from "../../middleware/require-role.js";
+import { requirePermission } from "../../middleware/require-role.js";
 import { logAudit } from "../../lib/audit.js";
-import { listUsers, createUser, deleteUser } from "../../lib/users.js";
+import {
+  listUsers,
+  createUser,
+  deleteUser,
+  updateUserPermissions,
+  PERMISSION_DEFS,
+  DEFAULT_PERMISSIONS,
+} from "../../lib/users.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -53,7 +60,11 @@ dashboardRouter.get("/", (_req, res) => {
 dashboardRouter.get("/config", (req, res) => {
   res.json({
     apiKey: config.API_KEY,
-    user: req.user ? { username: req.user.username, role: req.user.role } : null,
+    user: req.user
+      ? { username: req.user.username, role: req.user.role, permissions: req.user.permissions }
+      : null,
+    permissionDefs: PERMISSION_DEFS,
+    defaultPermissions: DEFAULT_PERMISSIONS,
   });
 });
 
@@ -64,19 +75,19 @@ dashboardApiRouter.use(express.json());
 dashboardApiRouter.get("/agents", listAgentsHandler);
 dashboardApiRouter.get("/agents/:slug", getAgentHandler);
 dashboardApiRouter.get("/agents/:slug/calls", getCallsHandler);
-dashboardApiRouter.patch("/agents/:slug/shadow", toggleShadowHandler);
-dashboardApiRouter.patch("/agents/:slug", updateAgentHandler);
-dashboardApiRouter.post("/agents/:slug/clone", cloneAgentHandler);
-dashboardApiRouter.delete("/agents/:slug", adminOnly, deleteAgentHandler);
+dashboardApiRouter.patch("/agents/:slug/shadow", requirePermission("edit_agents"), toggleShadowHandler);
+dashboardApiRouter.patch("/agents/:slug", requirePermission("edit_agents"), updateAgentHandler);
+dashboardApiRouter.post("/agents/:slug/clone", requirePermission("clone_agents"), cloneAgentHandler);
+dashboardApiRouter.delete("/agents/:slug", requirePermission("delete_agents"), deleteAgentHandler);
 
 // ── Soft-Deleted Agents (Recovery) ──────────────────────────────────────────
 
-dashboardApiRouter.get("/deleted-agents", adminOnly, async (_req, res) => {
+dashboardApiRouter.get("/deleted-agents", requirePermission("delete_agents"), async (_req, res) => {
   const deleted = await listDeletedClients();
   res.json(deleted);
 });
 
-dashboardApiRouter.post("/deleted-agents/:slug/restore", adminOnly, async (req, res) => {
+dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("delete_agents"), async (req, res) => {
   const slug = String(req.params.slug);
   try {
     await restoreClient(slug);
@@ -88,7 +99,7 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", adminOnly, async (req, 
   }
 });
 
-dashboardApiRouter.delete("/deleted-agents/:slug", adminOnly, async (req, res) => {
+dashboardApiRouter.delete("/deleted-agents/:slug", requirePermission("delete_agents"), async (req, res) => {
   const slug = String(req.params.slug);
   try {
     await deleteClient(slug);
@@ -149,7 +160,7 @@ dashboardApiRouter.post("/agents/:slug/portal-token", async (req, res) => {
   }
 });
 
-dashboardApiRouter.post("/agents/:slug/request-review", async (req, res) => {
+dashboardApiRouter.post("/agents/:slug/request-review", requirePermission("send_comms"), async (req, res) => {
   const slug = String(req.params.slug);
   const doc = await getClientDocument(slug);
   if (!doc) {
@@ -183,7 +194,7 @@ dashboardApiRouter.post("/agents/:slug/request-review", async (req, res) => {
   }
 });
 
-dashboardApiRouter.post("/agents/:slug/send-payment-link", async (req, res) => {
+dashboardApiRouter.post("/agents/:slug/send-payment-link", requirePermission("send_comms"), async (req, res) => {
   const slug = String(req.params.slug);
   const doc = await getClientDocument(slug);
   if (!doc) {
@@ -223,7 +234,7 @@ dashboardApiRouter.get("/settings", async (_req, res) => {
   res.json(await getSettings());
 });
 
-dashboardApiRouter.patch("/settings", adminOnly, async (req, res) => {
+dashboardApiRouter.patch("/settings", requirePermission("manage_settings"), async (req, res) => {
   try {
     const updated = await updateSettings(req.body);
     await logAudit(req, "update_settings", "global", { fields: Object.keys(req.body) });
@@ -241,7 +252,7 @@ dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
   res.json({ defaults, categoryOrder: CATEGORY_ORDER, categoryLabels: CATEGORY_LABELS });
 });
 
-dashboardApiRouter.patch("/data-point-defaults/:key", adminOnly, async (req, res) => {
+dashboardApiRouter.patch("/data-point-defaults/:key", requirePermission("manage_data_points"), async (req, res) => {
   const key = String(req.params.key);
   try {
     const updated = await updateDataPointDefault(key, req.body);
@@ -256,7 +267,7 @@ dashboardApiRouter.patch("/data-point-defaults/:key", adminOnly, async (req, res
   }
 });
 
-dashboardApiRouter.post("/data-point-defaults", adminOnly, async (req, res) => {
+dashboardApiRouter.post("/data-point-defaults", requirePermission("manage_data_points"), async (req, res) => {
   try {
     const { key, label, category, type, choices, description, conversationPrompt, forwardCondition } = req.body;
     if (!key || !label) {
@@ -274,7 +285,7 @@ dashboardApiRouter.post("/data-point-defaults", adminOnly, async (req, res) => {
   }
 });
 
-dashboardApiRouter.put("/data-point-defaults/reorder", adminOnly, async (req, res) => {
+dashboardApiRouter.put("/data-point-defaults/reorder", requirePermission("manage_data_points"), async (req, res) => {
   try {
     const { items } = req.body;
     if (!Array.isArray(items)) {
@@ -289,7 +300,7 @@ dashboardApiRouter.put("/data-point-defaults/reorder", adminOnly, async (req, re
   }
 });
 
-dashboardApiRouter.delete("/data-point-defaults/:key", adminOnly, async (req, res) => {
+dashboardApiRouter.delete("/data-point-defaults/:key", requirePermission("manage_data_points"), async (req, res) => {
   const key = String(req.params.key);
   try {
     const deleted = await deleteDataPointDefault(key);
@@ -307,13 +318,13 @@ dashboardApiRouter.delete("/data-point-defaults/:key", adminOnly, async (req, re
 
 // ── User Management (admin only) ─────────────────────────────────────────────
 
-dashboardApiRouter.get("/users", adminOnly, async (_req, res) => {
+dashboardApiRouter.get("/users", requirePermission("manage_users"), async (_req, res) => {
   const users = await listUsers();
   res.json(users);
 });
 
-dashboardApiRouter.post("/users", adminOnly, async (req, res) => {
-  const { username, password, role } = req.body;
+dashboardApiRouter.post("/users", requirePermission("manage_users"), async (req, res) => {
+  const { username, password, role, permissions } = req.body;
   if (!username || !password) {
     res.status(400).json({ error: "username and password are required" });
     return;
@@ -326,12 +337,12 @@ dashboardApiRouter.post("/users", adminOnly, async (req, res) => {
     res.status(400).json({ error: "Password must be at least 6 characters" });
     return;
   }
-  if (role !== "admin" && role !== "operator") {
-    res.status(400).json({ error: "Role must be 'admin' or 'operator'" });
+  if (role !== "admin" && role !== "operator" && role !== "viewer") {
+    res.status(400).json({ error: "Role must be 'admin', 'operator', or 'viewer'" });
     return;
   }
   try {
-    await createUser(username, password, role, req.user?.username ?? "unknown");
+    await createUser(username, password, role, req.user?.username ?? "unknown", permissions);
     await logAudit(req, "create_user", username, { role });
     res.json({ success: true, username, role });
   } catch (err) {
@@ -340,7 +351,23 @@ dashboardApiRouter.post("/users", adminOnly, async (req, res) => {
   }
 });
 
-dashboardApiRouter.delete("/users/:username", adminOnly, async (req, res) => {
+dashboardApiRouter.patch("/users/:username/permissions", requirePermission("manage_users"), async (req, res) => {
+  const target = String(req.params.username);
+  const { permissions } = req.body;
+  if (!permissions || typeof permissions !== "object") {
+    res.status(400).json({ error: "permissions object is required" });
+    return;
+  }
+  const updated = await updateUserPermissions(target, permissions);
+  if (!updated) {
+    res.status(404).json({ error: `User "${target}" not found` });
+    return;
+  }
+  await logAudit(req, "update_user_permissions", target, { permissions });
+  res.json({ success: true });
+});
+
+dashboardApiRouter.delete("/users/:username", requirePermission("manage_users"), async (req, res) => {
   const target = String(req.params.username);
   if (target === req.user?.username) {
     res.status(400).json({ error: "Cannot delete your own account" });

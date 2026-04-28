@@ -663,7 +663,7 @@
 
   <div class="admin-only">
     <h2>User Management</h2>
-    <p class="settings-hint" style="margin-bottom:0.75rem;">Create operator accounts for team members. Operators can manage agents but cannot delete them, change settings, or manage users.</p>
+    <p class="settings-hint" style="margin-bottom:0.75rem;">Create accounts for team members and control what each user can do with the permissions matrix.</p>
     <div id="userManagementContainer"><div class="loading">Loading...</div></div>
     <div style="margin-top:1rem;background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
       <h3 style="margin:0 0 0.5rem;font-size:0.85rem;color:#555;">Add User</h3>
@@ -678,13 +678,15 @@
         </div>
         <div>
           <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Role</label>
-          <select id="newUserRole" style="padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+          <select id="newUserRole" onchange="updateNewUserPermDefaults()" style="padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
             <option value="operator">Operator</option>
+            <option value="viewer">Viewer (read-only)</option>
             <option value="admin">Admin</option>
           </select>
         </div>
         <button onclick="createNewUser()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:0.4rem 0.8rem;font-size:0.82rem;cursor:pointer;font-weight:500;">Add</button>
       </div>
+      <div id="newUserPermsContainer" style="margin-top:0.75rem;"></div>
     </div>
   </div>
 </div>
@@ -761,7 +763,9 @@
 
 <script>
   let apiKey = '';
-  let currentUser = null; // { username, role }
+  let currentUser = null; // { username, role, permissions }
+  let permissionDefs = [];
+  let defaultPermissions = {};
   let currentSlug = '';
   let callOffset = 0;
   const CALL_LIMIT = 50;
@@ -868,16 +872,24 @@
       const cfgData = await cfgRes.json();
       apiKey = cfgData.apiKey;
       currentUser = cfgData.user;
+      permissionDefs = cfgData.permissionDefs || [];
+      defaultPermissions = cfgData.defaultPermissions || {};
 
-      // Apply role-based UI visibility
+      // Apply permission-based UI visibility
       if (currentUser) {
         const badge = document.getElementById('userBadge');
         if (badge) badge.textContent = currentUser.username + ' (' + currentUser.role + ')';
+        // Hide elements based on permissions
+        document.body.classList.remove('role-operator');
         if (currentUser.role !== 'admin') {
           document.body.classList.add('role-operator');
-        } else {
-          document.body.classList.remove('role-operator');
         }
+        // Per-permission visibility: elements with data-perm="xxx" hidden if user lacks that permission
+        document.querySelectorAll('[data-perm]').forEach(el => {
+          const perm = el.getAttribute('data-perm');
+          if (!currentUser.permissions[perm]) el.style.display = 'none';
+          else el.style.removeProperty('display');
+        });
       }
 
       const [res, settingsRes] = await Promise.all([
@@ -1350,26 +1362,36 @@
     });
   }
 
+  function hasPerm(key) {
+    return currentUser && currentUser.permissions && currentUser.permissions[key];
+  }
+
   function buildHeaderButtons(slug) {
-    return `<div class="btn-group">` +
+    const p = currentUser ? currentUser.permissions : {};
+
+    const testMenu = `<div class="btn-group">` +
       `<button class="btn-group-toggle test" onclick="toggleDropdown(this)">Test &#9662;</button>` +
       `<div class="btn-group-menu">` +
         `<button onclick="runSmokeTest('${esc(slug)}')" id="btnSmoke">Run Smoke Test</button>` +
         `<button onclick="sendTestNotify('${esc(slug)}')" id="btnTestNotify">Send Test Notification</button>` +
-      `</div></div>` +
-      `<div class="btn-group">` +
-      `<button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send to Client &#9662;</button>` +
-      `<div class="btn-group-menu">` +
-        `<button onclick="sendWeeklyReport('${esc(slug)}')" id="btnReport">Weekly Report</button>` +
-        `<button onclick="requestReview('${esc(slug)}')" id="btnReview">Request Review</button>` +
-        `<button onclick="sendPaymentLink('${esc(slug)}')" id="btnPayment">Send Payment Link</button>` +
-      `</div></div>` +
-      `<div class="btn-group">` +
-      `<button class="btn-group-toggle manage" onclick="toggleDropdown(this)">Manage &#9662;</button>` +
-      `<div class="btn-group-menu">` +
-        `<button onclick="showCloneModal()">Clone Agent</button>` +
-        (currentUser && currentUser.role === 'admin' ? `<button class="danger" onclick="showDeleteModal()">Delete Agent</button>` : '') +
       `</div></div>`;
+
+    const sendItems =
+      `<button onclick="sendWeeklyReport('${esc(slug)}')" id="btnReport">Weekly Report</button>` +
+      `<button onclick="requestReview('${esc(slug)}')" id="btnReview">Request Review</button>` +
+      `<button onclick="sendPaymentLink('${esc(slug)}')" id="btnPayment">Send Payment Link</button>`;
+    const sendMenu = p.send_comms
+      ? `<div class="btn-group"><button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send to Client &#9662;</button><div class="btn-group-menu">${sendItems}</div></div>`
+      : '';
+
+    const manageItems =
+      (p.clone_agents ? `<button onclick="showCloneModal()">Clone Agent</button>` : '') +
+      (p.delete_agents ? `<button class="danger" onclick="showDeleteModal()">Delete Agent</button>` : '');
+    const manageMenu = manageItems
+      ? `<div class="btn-group"><button class="btn-group-toggle manage" onclick="toggleDropdown(this)">Manage &#9662;</button><div class="btn-group-menu">${manageItems}</div></div>`
+      : '';
+
+    return testMenu + sendMenu + manageMenu;
   }
 
   function toggleDropdown(btn) {
@@ -1471,7 +1493,9 @@
       </dd>
     </dl>`;
 
-    html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
+    if (hasPerm('edit_agents')) {
+      html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
+    }
 
     // Routing paths (formerly "message types")
     const mt = doc.message_types || {};
@@ -2430,6 +2454,25 @@
 
   // ── USER MANAGEMENT ─────────────────────────────────────────────────
 
+  function roleBadgeColor(role) {
+    if (role === 'admin') return 'background:#fef3c7;color:#92400e';
+    if (role === 'viewer') return 'background:#f3e8ff;color:#6b21a8';
+    return 'background:#dbeafe;color:#1e40af';
+  }
+
+  function renderPermChecks(perms, prefix, disabled) {
+    let html = '<div style="display:flex;flex-wrap:wrap;gap:0.3rem 1rem;margin-top:0.4rem;">';
+    for (const def of permissionDefs) {
+      const checked = perms[def.key] ? 'checked' : '';
+      const dis = disabled ? 'disabled' : '';
+      html += '<label style="font-size:0.78rem;display:flex;align-items:center;gap:0.25rem;cursor:' + (disabled ? 'default' : 'pointer') + ';" title="' + esc(def.description) + '">';
+      html += '<input type="checkbox" ' + checked + ' ' + dis + ' data-perm-key="' + def.key + '" data-perm-prefix="' + prefix + '" style="margin:0;">';
+      html += esc(def.label) + '</label>';
+    }
+    html += '</div>';
+    return html;
+  }
+
   async function loadUsers() {
     const container = document.getElementById('userManagementContainer');
     if (!container) return;
@@ -2439,26 +2482,70 @@
       const users = await res.json();
       if (users.length === 0) {
         container.innerHTML = '<p style="color:#6b7280;font-size:0.85rem;">No users created yet. Anyone with the admin password has full access.</p>';
+        updateNewUserPermDefaults();
         return;
       }
-      let html = '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">';
-      html += '<tr style="text-align:left;border-bottom:2px solid #e5e7eb;"><th style="padding:0.4rem 0.5rem;">Username</th><th style="padding:0.4rem 0.5rem;">Role</th><th style="padding:0.4rem 0.5rem;">Created</th><th style="padding:0.4rem 0.5rem;"></th></tr>';
+      let html = '';
       for (const u of users) {
         const isSelf = currentUser && u._id === currentUser.username;
-        html += '<tr style="border-bottom:1px solid #f3f4f6;">';
-        html += '<td style="padding:0.4rem 0.5rem;">' + esc(u._id) + (isSelf ? ' <span style="color:#888;font-size:0.7rem;">(you)</span>' : '') + '</td>';
-        html += '<td style="padding:0.4rem 0.5rem;"><span style="background:' + (u.role === 'admin' ? '#fef3c7;color:#92400e' : '#dbeafe;color:#1e40af') + ';padding:0.1rem 0.4rem;border-radius:10px;font-size:0.75rem;">' + esc(u.role) + '</span></td>';
-        html += '<td style="padding:0.4rem 0.5rem;">' + new Date(u.created_at).toLocaleDateString() + '</td>';
-        html += '<td style="padding:0.4rem 0.5rem;text-align:right;">';
+        const isAdmin = u.role === 'admin';
+        const perms = u.permissions || (defaultPermissions[u.role] || {});
+        html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;">';
+        html += '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">';
+        html += '<strong style="font-size:0.85rem;">' + esc(u._id) + '</strong>';
+        if (isSelf) html += '<span style="color:#888;font-size:0.7rem;">(you)</span>';
+        html += '<span style="' + roleBadgeColor(u.role) + ';padding:0.1rem 0.4rem;border-radius:10px;font-size:0.72rem;">' + esc(u.role) + '</span>';
+        html += '<span style="color:#aaa;font-size:0.72rem;margin-left:auto;">' + new Date(u.created_at).toLocaleDateString() + '</span>';
         if (!isSelf) {
-          html += '<button onclick="deleteUserAccount(\'' + esc(u._id) + '\')" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:0.25rem 0.6rem;cursor:pointer;font-size:0.8rem;">Remove</button>';
+          html += '<button onclick="deleteUserAccount(\'' + esc(u._id) + '\')" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;font-size:0.75rem;margin-left:0.25rem;">Remove</button>';
         }
-        html += '</td></tr>';
+        html += '</div>';
+        // Permission matrix (disabled for admins — they always have everything)
+        html += renderPermChecks(perms, 'user-' + u._id, isAdmin);
+        if (!isAdmin) {
+          html += '<button onclick="saveUserPerms(\'' + esc(u._id) + '\')" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:0.2rem 0.6rem;cursor:pointer;font-size:0.75rem;margin-top:0.4rem;">Save Permissions</button>';
+        }
+        html += '</div>';
       }
-      html += '</table>';
       container.innerHTML = html;
+      updateNewUserPermDefaults();
     } catch (err) {
       container.innerHTML = '<div class="error-msg">Error: ' + esc(err.message) + '</div>';
+    }
+  }
+
+  function updateNewUserPermDefaults() {
+    const role = document.getElementById('newUserRole')?.value || 'operator';
+    const container = document.getElementById('newUserPermsContainer');
+    if (!container) return;
+    if (role === 'admin') {
+      container.innerHTML = '<p style="font-size:0.75rem;color:#888;margin:0;">Admins have all permissions.</p>';
+      return;
+    }
+    const perms = defaultPermissions[role] || {};
+    container.innerHTML = '<p style="font-size:0.75rem;color:#666;margin:0 0 0.25rem;font-weight:600;">Permissions:</p>' + renderPermChecks(perms, 'new-user', false);
+  }
+
+  function collectPermsFromCheckboxes(prefix) {
+    const perms = {};
+    document.querySelectorAll('input[data-perm-prefix="' + prefix + '"]').forEach(cb => {
+      perms[cb.getAttribute('data-perm-key')] = cb.checked;
+    });
+    return perms;
+  }
+
+  async function saveUserPerms(username) {
+    const permissions = collectPermsFromCheckboxes('user-' + username);
+    try {
+      const res = await fetch('/dashboard/api/users/' + encodeURIComponent(username) + '/permissions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+        body: JSON.stringify({ permissions }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
+      showToast('Permissions updated for ' + username, 'success');
+    } catch (err) {
+      showToast('Failed: ' + err.message, 'error');
     }
   }
 
@@ -2467,11 +2554,12 @@
     const password = document.getElementById('newUserPass').value;
     const role = document.getElementById('newUserRole').value;
     if (!username || !password) { showToast('Username and password are required', 'error'); return; }
+    const permissions = role !== 'admin' ? collectPermsFromCheckboxes('new-user') : undefined;
     try {
       const res = await fetch('/dashboard/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
-        body: JSON.stringify({ username, password, role }),
+        body: JSON.stringify({ username, password, role, permissions }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.status);

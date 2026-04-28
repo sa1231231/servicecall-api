@@ -22,9 +22,9 @@ import { getDataPointDefaultsWithCategory, CATEGORY_ORDER, CATEGORY_LABELS } fro
 import { ObjectId } from "mongodb";
 import { getDb } from "./lib/db.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
-import { getUser, verifyPassword } from "./lib/users.js";
+import { getUser, verifyPassword, resolvePermissions, DEFAULT_PERMISSIONS } from "./lib/users.js";
 import { ensureAuditIndex } from "./lib/audit.js";
-import { adminOnly } from "./middleware/require-role.js";
+import { requirePermission } from "./middleware/require-role.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -111,14 +111,22 @@ async function basicAuth(req: Request, res: Response, next: NextFunction): Promi
   // Try DB user first
   const dbUser = await getUser(username);
   if (dbUser && verifyPassword(pass, dbUser.password_hash)) {
-    req.user = { username, role: dbUser.role };
+    req.user = {
+      username,
+      role: dbUser.role,
+      permissions: resolvePermissions(dbUser.role, dbUser.permissions),
+    };
     next();
     return;
   }
 
   // Fallback: legacy ADMIN_PASSWORD (always grants admin)
   if (pass === config.ADMIN_PASSWORD) {
-    req.user = { username: username || "admin", role: "admin" };
+    req.user = {
+      username: username || "admin",
+      role: "admin",
+      permissions: { ...DEFAULT_PERMISSIONS.admin },
+    };
     next();
     return;
   }
@@ -253,7 +261,7 @@ app.use("/agents", agentsRouter);
 app.use("/qa", qaRouter);
 app.use("/dashboard/api", basicAuth, dashboardApiRouter);
 app.use("/api/reports", reportsRouter);
-app.use("/api/backup", basicAuth, adminOnly, backupRouter);
+app.use("/api/backup", basicAuth, requirePermission("manage_settings"), backupRouter);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();
