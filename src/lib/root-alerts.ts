@@ -12,7 +12,7 @@ const ROOT_PHONE = "+13017872841";
  * Alert the root owner via SMS + email when a non-root user performs a destructive action.
  * Fire-and-forget — errors are logged but don't affect the response.
  */
-export function alertOwnerIfNeeded(
+export function alertRootIfNeeded(
   req: Request,
   action: string,
   target: string,
