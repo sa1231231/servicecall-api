@@ -783,11 +783,15 @@
 
       <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}</dd>
 
-      <dt title="Phone number called by the outbound summary agent after intake">Dispatch Call</dt><dd><input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty"></dd>
-
-      <dt title="Route dispatch calls to different numbers based on which inbound number was called">Call Overrides</dt><dd>
-        <div id="call-overrides-container">${buildOverrideRows(doc.dispatch_call_overrides)}</div>
-        <button type="button" class="btn-add-override" onclick="addOverrideRow()">+ Add override</button>
+      <dt title="Phone number called by the outbound summary agent after intake">Dispatch Call</dt><dd>
+        <input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty" style="margin-bottom:0.25rem;">
+        <details style="margin-top:0.25rem;">
+          <summary style="font-size:0.78rem;color:#888;cursor:pointer;">Call Overrides <span style="font-weight:400;">${Object.keys(doc.dispatch_call_overrides || {}).length ? '(' + Object.keys(doc.dispatch_call_overrides).length + ' configured)' : '(none)'}</span></summary>
+          <div style="margin-top:0.35rem;">
+            <div id="call-overrides-container">${buildOverrideRows(doc.dispatch_call_overrides)}</div>
+            <button type="button" class="btn-add-override" onclick="addOverrideRow()">+ Add override</button>
+          </div>
+        </details>
       </dd>
     </dl>
 
@@ -806,8 +810,6 @@
     <details style="margin-top:0.5rem;">
       <summary style="font-size:1.05rem;font-weight:600;color:#444;cursor:pointer;padding-bottom:0.5rem;border-bottom:1px solid #ddd;">Advanced</summary>
       <dl class="config-grid" style="margin-top:0.5rem;">
-        <dt title="Unique identifier for this client, used in API routes and internal references">Slug</dt><dd><code>${esc(doc._id)}</code></dd>
-
         <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}</dd>
 
         <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty"></dd>
