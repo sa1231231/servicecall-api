@@ -111,17 +111,49 @@
   .config-grid dd { margin: 0; padding: 0.25rem 0; word-break: break-word; }
   .config-grid dd code { font-size: 0.78rem; background: #f3f4f6; padding: 0.1rem 0.3rem; border-radius: 3px; }
 
-  /* Message types collapsible */
+  /* Collapsible details */
   details { margin-top: 0.5rem; }
   details summary {
     cursor: pointer; font-weight: 600; font-size: 0.82rem; color: #555;
     padding: 0.4rem 0;
   }
-  .mt-block {
-    background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;
-    padding: 0.75rem; margin: 0.5rem 0; font-size: 0.8rem;
+  /* Routing path cards */
+  .route-path {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+    padding: 1rem; margin: 0.75rem 0; font-size: 0.82rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   }
-  .mt-block strong { font-size: 0.82rem; }
+  .route-path h3 {
+    margin: 0 0 0.15rem; font-size: 0.95rem; color: #1a1a1a; font-weight: 600;
+  }
+  .route-path .route-key {
+    font-size: 0.72rem; color: #999; font-family: monospace; margin-bottom: 0.5rem;
+  }
+  .route-path .route-meta {
+    font-size: 0.78rem; color: #666; margin-bottom: 0.2rem;
+  }
+  .field-table {
+    width: 100%; border-collapse: collapse; margin-top: 0.5rem; font-size: 0.82rem;
+  }
+  .field-table th {
+    text-align: left; font-size: 0.72rem; font-weight: 600; color: #888;
+    text-transform: uppercase; letter-spacing: 0.03em;
+    padding: 0.3rem 0.5rem; border-bottom: 2px solid #e5e7eb;
+  }
+  .field-table td {
+    padding: 0.35rem 0.5rem; border-bottom: 1px solid #f0f0f0; vertical-align: middle;
+  }
+  .field-table tr:last-child td { border-bottom: none; }
+  .field-table .col-show { width: 3rem; text-align: center; }
+  .field-table .col-label { }
+  .field-table .col-var { font-family: monospace; font-size: 0.75rem; color: #999; }
+  .field-table .label-edit {
+    border: 1px solid transparent; border-radius: 3px; background: transparent;
+    font-size: 0.82rem; padding: 2px 4px; font-family: inherit; width: 100%;
+  }
+  .field-table .label-edit:focus {
+    border-color: #93b5ff; background: #fff; outline: none;
+  }
 
   /* Call log expand */
   .call-expand {
@@ -818,37 +850,36 @@
 
     html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
 
-    // Message types
+    // Routing paths (formerly "message types")
     const mt = doc.message_types || {};
     const dbt = doc.dispatch_by_type || {};
-    if (Object.keys(mt).length > 0) {
-      html += '<details><summary>Message Types (' + Object.keys(mt).length + ')</summary>';
+    const mtKeys = Object.keys(mt);
+    if (mtKeys.length > 0) {
+      html += `<h2>Routing Paths (${mtKeys.length})</h2>`;
       for (const [key, val] of Object.entries(mt)) {
         const override = dbt[key] || {};
-        html += `<div class="mt-block">
-          <strong>${esc(key)}</strong> &mdash; ${esc(val.label)}<br>
-          <span style="color:#666;">Subject:</span> ${esc(val.subject_template)}<br>`;
-        if (val.additional_text) html += `<span style="color:#666;">Note:</span> ${esc(val.additional_text)}<br>`;
-        html += `<span style="color:#666;display:block;margin-top:0.4rem;">Fields (toggle visibility in outgoing messages):</span>`;
-        html += '<div style="margin-top:0.25rem;">';
+        html += `<div class="route-path">`;
+        html += `<h3>${esc(val.label)}</h3>`;
+        html += `<div class="route-key">${esc(key)}</div>`;
+        html += `<div class="route-meta">Subject: ${esc(val.subject_template)}</div>`;
+        if (val.additional_text) html += `<div class="route-meta">Note: ${esc(val.additional_text)}</div>`;
+        html += `<table class="field-table"><thead><tr>
+          <th class="col-show">Show</th><th class="col-label">Label</th><th class="col-var">Variable</th>
+        </tr></thead><tbody>`;
         for (const f of val.fields) {
           const checked = f.show !== false ? 'checked' : '';
-          html += `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 12px 2px 0;font-size:0.8rem;cursor:pointer;">
-            <input type="checkbox" ${checked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-toggle">
-            <input type="text" value="${esc(f.label)}" data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-label-input"
-              style="width:${Math.max(4, f.label.length + 1)}ch;font-size:0.8rem;padding:1px 4px;border:1px solid transparent;border-radius:3px;background:transparent;font-family:inherit;"
-              onfocus="this.style.borderColor='#93b5ff';this.style.background='#fff'"
-              onblur="this.style.borderColor='transparent';this.style.background='transparent'"
-              onclick="event.stopPropagation()"
-              oninput="this.style.width=Math.max(4,this.value.length+1)+'ch'">
-          </label>`;
+          html += `<tr>
+            <td class="col-show"><input type="checkbox" ${checked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-toggle"></td>
+            <td class="col-label"><input type="text" value="${esc(f.label)}" data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-label-input label-edit"></td>
+            <td class="col-var">${esc(f.key)}</td>
+          </tr>`;
         }
-        html += '</div>';
-        // Dispatch override per message type
-        html += `<details style="margin-top:0.5rem;">
+        html += '</tbody></table>';
+        // Dispatch override per path
+        html += `<details style="margin-top:0.65rem;">
           <summary style="font-size:0.8rem;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">${Object.keys(override).length ? '(configured)' : '(none)'}</span></summary>
           <div style="margin-top:0.35rem;font-size:0.8rem;">
-            <div style="color:#888;margin-bottom:0.35rem;">Override dispatch targets for this message type. Leave blank to use client defaults.</div>
+            <div style="color:#888;margin-bottom:0.35rem;">Override dispatch targets for this path. Leave blank to use client defaults.</div>
             <label style="font-size:0.78rem;font-weight:600;">SMS Numbers</label>
             <input type="text" class="dbt-sms" data-mt-key="${esc(key)}" value="${esc((override.dispatch_text_numbers || []).join(', '))}"
               placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">
@@ -862,7 +893,6 @@
         </details>`;
         html += '</div>';
       }
-      html += '</details>';
     }
 
     document.getElementById('detailConfig').innerHTML = html;
@@ -1119,7 +1149,7 @@
           <div class="call-expand">
             <p><strong>Call ID:</strong> <code>${esc(c._id)}</code></p>
             <p><strong>Disconnection:</strong> ${esc(c.disconnection_reason)}</p>
-            <p><strong>Message Type:</strong> ${esc(c.message_type_label || c.message_type_key)}</p>
+            <p><strong>Routing Path:</strong> ${esc(c.message_type_label || c.message_type_key)}</p>
             ${c.call_summary ? '<p><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
             <p style="margin-top:0.5rem;"><strong>Extracted Fields:</strong></p>
             <p>${renderFields(c.extracted_fields)}</p>
