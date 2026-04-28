@@ -130,7 +130,7 @@ async function basicAuth(req: Request, res: Response, next: NextFunction): Promi
     return;
   }
 
-  // Fallback: legacy ADMIN_PASSWORD (always grants admin — this is the owner)
+  // Fallback: ADMIN_PASSWORD (always grants admin — this is root)
   if (pass === config.ADMIN_PASSWORD) {
     req.user = {
       username: username || "admin",

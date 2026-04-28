@@ -14,7 +14,7 @@ export const PERMISSION_DEFS: Array<{
   { key: "clone_agents",       label: "Clone Agents",        description: "Clone existing agents" },
   { key: "delete_agents",      label: "Delete Agents",       description: "Delete, restore, and permanently remove agents" },
   { key: "send_comms",         label: "Send Client Comms",   description: "Send review requests and payment links" },
-  { key: "manage_settings",    label: "Manage Settings",     description: "Edit global settings (owner email, SMS templates, etc.)" },
+  { key: "manage_settings",    label: "Manage Settings",     description: "Edit global settings (business contact, SMS templates, etc.)" },
   { key: "manage_data_points", label: "Manage Data Points",  description: "Create, edit, delete, and reorder data point defaults" },
   { key: "manage_users",       label: "Manage Users",        description: "Create and remove user accounts" },
 ];
