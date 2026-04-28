@@ -253,8 +253,9 @@ formRouter.delete("/drafts/:id", async (req, res) => {
 app.use("/form", authLimiter, basicAuth, requirePermission("create_agents"), formRouter);
 
 // ── Dashboard (Basic Auth protected) ────────────────────────────────────────
-app.use("/dashboard", basicAuth, dashboardRouter);
-app.use("/dashboard/api", basicAuth, dashboardApiRouter);
+app.use("/dashboard", basicAuth);
+app.use("/dashboard", dashboardRouter);
+app.use("/dashboard/api", dashboardApiRouter);
 app.use("/api/backup", basicAuth, requirePermission("manage_settings"), backupRouter);
 
 // ── API Key middleware (external/machine routes only) ────────────────────────
