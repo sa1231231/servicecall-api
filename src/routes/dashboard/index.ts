@@ -15,6 +15,7 @@ import {
   getClientDocument,
   generatePortalToken,
 } from "../../config/client-store.js";
+import { getCallLogById } from "../../lib/call-log.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { getSettings, updateSettings } from "../../lib/settings.js";
 
@@ -48,6 +49,22 @@ dashboardApiRouter.patch("/agents/:slug/shadow", toggleShadowHandler);
 dashboardApiRouter.patch("/agents/:slug", updateAgentHandler);
 dashboardApiRouter.post("/agents/:slug/clone", cloneAgentHandler);
 dashboardApiRouter.delete("/agents/:slug", deleteAgentHandler);
+
+dashboardApiRouter.get("/agents/:slug/calls/:callId/transcript", async (req, res) => {
+  const { slug, callId } = req.params;
+  const callLog = await getCallLogById(callId);
+  if (!callLog || callLog.client_slug !== slug) {
+    res.status(404).json({ error: "Call not found" });
+    return;
+  }
+  if (!callLog.transcript) {
+    res.status(404).json({ error: "Transcript not available yet" });
+    return;
+  }
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="transcript-${callId}.txt"`);
+  res.send(callLog.transcript);
+});
 
 dashboardApiRouter.get("/agents/:slug/portal-token", async (req, res) => {
   const slug = String(req.params.slug);

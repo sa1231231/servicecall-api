@@ -1135,6 +1135,7 @@
         const links = [];
         if (c.recording_url) links.push('<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>');
         if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
+        if (c.transcript) links.push('<a class="icon-link" href="/dashboard/api/agents/' + esc(currentSlug) + '/calls/' + esc(c._id) + '/transcript" download>Transcript</a>');
 
         html += `<tr class="clickable-row" onclick="toggleCallExpand(this)">
           <td data-label="Date">${fmtDate(c.created_at)}</td>

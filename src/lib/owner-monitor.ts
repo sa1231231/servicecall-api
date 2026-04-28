@@ -83,6 +83,7 @@ export async function sendOwnerCallMonitor(
       in_voicemail: inVoicemail,
       recording_url: recordingUrl ?? undefined,
       public_log_url: publicLogUrl ?? undefined,
+      transcript: transcript !== "(no transcript)" ? transcript : undefined,
     }).catch(() => {});
   }
 

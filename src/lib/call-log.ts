@@ -20,6 +20,7 @@ export interface CallLogDocument {
   in_voicemail?: boolean;
   recording_url?: string;
   public_log_url?: string;
+  transcript?: string;
   created_at: Date;
 }
 
@@ -51,6 +52,7 @@ export async function enrichCallLog(
     in_voicemail?: boolean;
     recording_url?: string;
     public_log_url?: string;
+    transcript?: string;
   },
 ): Promise<void> {
   try {
@@ -70,6 +72,13 @@ export async function enrichCallLog(
   } catch (err: any) {
     console.error(`[call-log] failed to enrich call ${callId}:`, err.message);
   }
+}
+
+/** Get a single call log by ID. */
+export async function getCallLogById(
+  callId: string,
+): Promise<CallLogDocument | null> {
+  return callLogs().findOne({ _id: callId }) as any;
 }
 
 /** Get call logs for a client, sorted newest first. */
