@@ -38,8 +38,8 @@ const globalLimiter = rateLimit({
 
 // Tighter limiter for login-protected routes — prevent brute-force
 const authLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 10,                  // 10 attempts per minute per IP
+  windowMs: 5 * 60 * 1000, // 5 minutes
+  max: 30,                  // 30 attempts per 5 minutes per IP
   standardHeaders: true,
   legacyHeaders: false,
   message: "Too many login attempts, please try again later.",
