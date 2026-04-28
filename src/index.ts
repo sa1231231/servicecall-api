@@ -102,26 +102,65 @@ app.get("/client", (_req, res) => {
   }
 });
 
-// ── Basic Auth for form + dashboard ─────────────────────────────────────────
+// ── Session auth (cookie-based) for form + dashboard ────────────────────────
 import type { Request, Response, NextFunction } from "express";
+import crypto from "crypto";
 
-// Cache verified credentials for 5 minutes to avoid scrypt on every request
-const authCache = new Map<string, { user: NonNullable<Request["user"]>; expires: number }>();
-const AUTH_CACHE_MS = 5 * 60 * 1000;
+const SESSION_COOKIE = "scs_session";
+const SESSION_MAX_AGE = 8 * 60 * 60; // 8 hours in seconds
+const COOKIE_SECRET = config.ROOT_PASSWORD; // Use root password as HMAC key
 
-async function basicAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+function signSession(payload: object): string {
+  const json = JSON.stringify(payload);
+  const b64 = Buffer.from(json).toString("base64url");
+  const sig = crypto.createHmac("sha256", COOKIE_SECRET).update(b64).digest("base64url");
+  return b64 + "." + sig;
+}
+
+function verifySession(cookie: string): NonNullable<Request["user"]> | null {
+  const dot = cookie.indexOf(".");
+  if (dot < 0) return null;
+  const b64 = cookie.substring(0, dot);
+  const sig = cookie.substring(dot + 1);
+  const expected = crypto.createHmac("sha256", COOKIE_SECRET).update(b64).digest("base64url");
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return null;
+  try {
+    return JSON.parse(Buffer.from(b64, "base64url").toString());
+  } catch {
+    return null;
+  }
+}
+
+function setSessionCookie(res: Response, user: NonNullable<Request["user"]>): void {
+  const value = signSession(user);
+  res.cookie(SESSION_COOKIE, value, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: SESSION_MAX_AGE * 1000,
+    path: "/",
+  });
+}
+
+/** Authenticate via session cookie or Basic Auth. Sets cookie on successful Basic Auth. */
+async function sessionAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
+  // 1. Check session cookie first
+  const raw = req.headers.cookie ?? "";
+  const match = raw.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`));
+  if (match) {
+    const user = verifySession(match[1]);
+    if (user) {
+      req.user = user;
+      next();
+      return;
+    }
+  }
+
+  // 2. Fall back to Basic Auth (initial login)
   const auth = req.headers.authorization;
   if (!auth || !auth.startsWith("Basic ")) {
     res.set("WWW-Authenticate", 'Basic realm="ServiceCall Saver"');
     res.status(401).send("Authentication required");
-    return;
-  }
-
-  // Check cache first (keyed on the raw Authorization header)
-  const cached = authCache.get(auth);
-  if (cached && cached.expires > Date.now()) {
-    req.user = cached.user;
-    next();
     return;
   }
 
@@ -154,7 +193,7 @@ async function basicAuth(req: Request, res: Response, next: NextFunction): Promi
   }
 
   if (user) {
-    authCache.set(auth, { user, expires: Date.now() + AUTH_CACHE_MS });
+    setSessionCookie(res, user);
     req.user = user;
     next();
     return;
@@ -268,13 +307,13 @@ formRouter.delete("/drafts/:id", async (req, res) => {
   }
 });
 
-app.use("/form", authLimiter, basicAuth, requirePermission("create_agents"), formRouter);
+app.use("/form", authLimiter, sessionAuth, requirePermission("create_agents"), formRouter);
 
 // ── Dashboard (Basic Auth protected) ────────────────────────────────────────
-app.use("/dashboard", basicAuth);
+app.use("/dashboard", sessionAuth);
 app.use("/dashboard", dashboardRouter);
 app.use("/dashboard/api", dashboardApiRouter);
-app.use("/api/backup", basicAuth, requirePermission("manage_settings"), backupRouter);
+app.use("/api/backup", sessionAuth, requirePermission("manage_settings"), backupRouter);
 
 // ── API Key middleware (external/machine routes only) ────────────────────────
 app.use((req, res, next) => {
