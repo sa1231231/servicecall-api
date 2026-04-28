@@ -252,6 +252,10 @@ async function scheduledCheck(): Promise<void> {
   for (const doc of docs as Array<JsonClientEntry & { _id: string }>) {
     const slug = doc._id;
     if (!Array.isArray(doc.agent_ids)) continue;
+    if (doc.weekly_report_enabled === false) {
+      console.log(`[weekly-report] skipping "${slug}" (weekly reports disabled)`);
+      continue;
+    }
 
     // Dedupe: skip if already sent within the last 6 days
     const lastSent = await getLastReportSent(slug);

@@ -1208,6 +1208,13 @@
           <span class="slider"></span>
         </label>
       </dd>
+
+      <dt title="Send automated weekly call summary reports for this client">Weekly Reports</dt><dd>
+        <label class="toggle">
+          <input type="checkbox" id="edit-weekly-report" ${doc.weekly_report_enabled !== false ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+      </dd>
     </dl>`;
 
     html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
@@ -1413,6 +1420,11 @@
     const shadowMode = document.getElementById('edit-shadow-mode').checked;
     if (shadowMode !== (originalDoc.shadow_mode ?? false)) {
       updates.shadow_mode = shadowMode;
+    }
+
+    const weeklyReport = document.getElementById('edit-weekly-report').checked;
+    if (weeklyReport !== (originalDoc.weekly_report_enabled !== false)) {
+      updates.weekly_report_enabled = weeklyReport;
     }
 
     // Webhook URL

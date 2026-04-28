@@ -59,6 +59,7 @@ export interface JsonClientEntry {
   default_message_type: string;
   webhook_url?: string;
   notification_greeting?: string;
+  weekly_report_enabled?: boolean;
   phone_fallback_to_caller?: boolean;
   hide_not_mentioned?: boolean;
   shadow_mode?: boolean;
@@ -205,6 +206,7 @@ const EDITABLE_FIELDS = new Set([
   "hide_not_mentioned",
   "notification_greeting",
   "webhook_url",
+  "weekly_report_enabled",
   "message_types",
   "resolve_rules",
 ]);
