@@ -734,11 +734,22 @@ export function buildDataChain(
 
     // If this data point is inside a branch, AND all branch conditions
     if (dp._branchConditions && dp._branchConditions.length > 0) {
-      const branchEqs = dp._branchConditions.map(bc => ({
-        left: `{{${bc.variable}}}`,
-        operator: bc.operator,
-        right: bc.value,
-      }));
+      const branchEqs: any[] = [];
+      for (const bc of dp._branchConditions) {
+        branchEqs.push({
+          left: `{{${bc.variable}}}`,
+          operator: bc.operator,
+          right: bc.value,
+        });
+        // Guard ELSE conditions (!=) against sentinel values so they
+        // don't fire when the variable is "Not Mentioned" or "Caller Doesn't Know"
+        if (bc.operator === "!=") {
+          branchEqs.push(
+            { left: `{{${bc.variable}}}`, operator: "!=", right: NOT_MENTIONED },
+            { left: `{{${bc.variable}}}`, operator: "!=", right: "Caller Doesn't Know" },
+          );
+        }
+      }
       return {
         destination_node_id: pathIds.chain[i].convId,
         id: f.edgeId(),

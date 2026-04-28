@@ -462,8 +462,12 @@
   function buildConditionVarOptions(selectedValue) {
     let html = '<option value="">— Variable —</option>';
     for (const key of BUILTIN_NAMES) {
-      const sel = key === selectedValue ? ' selected' : '';
-      html += `<option value="${key}"${sel}>${BUILTIN_LABELS[key]}</option>`;
+      const dp = BUILTIN_DATA[key];
+      // Only enum and boolean fields are reliable for branch conditions
+      if (dp && (dp.type === 'enum' || dp.type === 'boolean')) {
+        const sel = key === selectedValue ? ' selected' : '';
+        html += `<option value="${key}"${sel}>${BUILTIN_LABELS[key]}</option>`;
+      }
     }
     return html;
   }
