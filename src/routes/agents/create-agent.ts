@@ -62,6 +62,12 @@ interface CreateAgentBody {
     dispatch_call_number?: string | null;
     dispatch_email?: string[] | null;
     dispatch_cc?: string | null;
+    dispatch_by_type?: Record<string, {
+      dispatch_text_numbers?: string[];
+      dispatch_email?: string[];
+      dispatch_cc?: string | null;
+      dispatch_call_number?: string | null;
+    }>;
     outbound_from_number?: string | null;
     summary_agent_id?: string | null;
     phone_fallback_to_caller?: boolean;
@@ -182,6 +188,11 @@ export async function createAgentHandler(
     // Store canonical agent JSON on the client document
     const canonicalJson = { ...agentJson, agent_id: agentId };
     jsonEntry.retell_agents = { [agentId]: canonicalJson };
+
+    // Apply per-path dispatch overrides if provided
+    if (body.client.dispatch_by_type) {
+      jsonEntry.dispatch_by_type = body.client.dispatch_by_type;
+    }
 
     await persistClient(slug, jsonEntry);
 

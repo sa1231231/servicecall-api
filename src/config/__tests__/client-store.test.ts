@@ -148,4 +148,20 @@ describe("toClientConfig", () => {
     expect(config.resolve_type({ type: "B" })).toBe("type_b");
     expect(config.resolve_type({})).toBe("service_request");
   });
+
+  it("passes through dispatch_by_type when present", () => {
+    const byType = {
+      automotive: {
+        dispatch_text_numbers: ["+15559999999"],
+        dispatch_email: ["auto@test.com"],
+      },
+    };
+    const config = toClientConfig(makeEntry({ dispatch_by_type: byType }));
+    expect(config.dispatch_by_type).toEqual(byType);
+  });
+
+  it("dispatch_by_type is undefined when not set", () => {
+    const config = toClientConfig(makeEntry());
+    expect(config.dispatch_by_type).toBeUndefined();
+  });
 });

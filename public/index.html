@@ -585,6 +585,18 @@ Do not ask for any other information than what is instructed for this node.'>${v
           <label style="margin-top:0.5rem;">Collection Order <span style="font-weight:400;color:#777;">(drag to reorder)</span></label>
           <ul class="path-dp-order"></ul>
         </div>
+        <details style="margin-top:0.75rem;">
+          <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">(optional)</span></summary>
+          <div style="margin-top:0.5rem;">
+            <div class="field-hint" style="margin-bottom:0.5rem;">Override dispatch targets for this path. Leave blank to use the client-level defaults.</div>
+            <label>SMS Numbers</label>
+            <input type="text" class="path-dispatch-sms" placeholder="+15551234567, +15559876543">
+            <label>Email(s)</label>
+            <input type="text" class="path-dispatch-email" placeholder="auto-team@shop.com">
+            <label>Dispatch Call Number</label>
+            <input type="text" class="path-dispatch-call" placeholder="+15551234567">
+          </div>
+        </details>
       </div>
     `;
     pathsContainer.insertAdjacentHTML('beforeend', html);
@@ -697,7 +709,21 @@ Do not ask for any other information than what is instructed for this node.'>${v
           const custom = customResults.find(c => c.variableName === val);
           return custom || val;
         });
-        paths.push({ name, transitionCondition: condition, dataPoints });
+
+        // Collect optional dispatch overrides for this path
+        const pathSms = csvToArray(card.querySelector('.path-dispatch-sms').value);
+        const pathEmail = csvToArray(card.querySelector('.path-dispatch-email').value);
+        const pathCall = card.querySelector('.path-dispatch-call').value.trim();
+
+        const pathEntry = { name, transitionCondition: condition, dataPoints };
+        if (pathSms.length || pathEmail.length || pathCall) {
+          pathEntry.dispatchOverride = {};
+          if (pathSms.length) pathEntry.dispatchOverride.dispatch_text_numbers = pathSms;
+          if (pathEmail.length) pathEntry.dispatchOverride.dispatch_email = pathEmail;
+          if (pathCall) pathEntry.dispatchOverride.dispatch_call_number = pathCall;
+        }
+
+        paths.push(pathEntry);
       }
     });
 
@@ -755,6 +781,18 @@ Do not ask for any other information than what is instructed for this node.'>${v
     };
 
     if (hasPaths) {
+      // Build dispatch_by_type from path-level dispatch overrides
+      const dispatchByType = {};
+      for (const p of pathData.paths) {
+        if (p.dispatchOverride) {
+          const typeKey = slugify(p.name);
+          dispatchByType[typeKey] = p.dispatchOverride;
+        }
+        delete p.dispatchOverride; // Don't send to backend
+      }
+      if (Object.keys(dispatchByType).length > 0) {
+        body.client.dispatch_by_type = dispatchByType;
+      }
       body.paths = pathData.paths;
     } else {
       body.dataPoints = [...checked, ...custom.results];
