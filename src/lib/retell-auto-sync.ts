@@ -75,15 +75,15 @@ async function runAutoSync(): Promise<void> {
           agentId,
         );
 
-        // Preserve field-level customizations (show, label) from existing config.
+        // Preserve field-level customizations (show, label, required) from existing config.
         // Build a global map from ALL existing message types so customizations
         // survive even when message_type keys change (e.g. multi-path agents).
         if (doc.message_types) {
-          const customizations = new Map<string, { show?: boolean; label: string }>();
+          const customizations = new Map<string, { show?: boolean; label: string; required?: true | { equals: string | string[] } }>();
           for (const existingType of Object.values(doc.message_types)) {
             for (const f of existingType.fields) {
               if (!customizations.has(f.key)) {
-                customizations.set(f.key, { show: f.show, label: f.label });
+                customizations.set(f.key, { show: f.show, label: f.label, required: f.required });
               }
             }
           }
@@ -93,6 +93,21 @@ async function runAutoSync(): Promise<void> {
               if (!existing) continue;
               if (existing.show === false) field.show = false;
               if (existing.label !== field.label) field.label = existing.label;
+              if (existing.required) field.required = existing.required;
+            }
+          }
+        }
+
+        // Preserve message-type-level customizations (subject_template, additional_text)
+        if (doc.message_types) {
+          for (const [mtKey, newType] of Object.entries(jsonEntry.message_types)) {
+            const existingType = doc.message_types[mtKey];
+            if (!existingType) continue;
+            if (existingType.subject_template !== newType.subject_template) {
+              newType.subject_template = existingType.subject_template;
+            }
+            if (existingType.additional_text) {
+              newType.additional_text = existingType.additional_text;
             }
           }
         }
