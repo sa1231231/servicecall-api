@@ -146,6 +146,24 @@ async function basicAuth(req: Request, res: Response, next: NextFunction): Promi
   res.status(401).send("Invalid credentials");
 }
 
+/** Like basicAuth but doesn't block — attaches user if credentials are valid, skips if not. */
+async function optionalBasicAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const auth = req.headers.authorization;
+  if (!auth || !auth.startsWith("Basic ")) { next(); return; }
+  const decoded = Buffer.from(auth.slice(6), "base64").toString();
+  const colon = decoded.indexOf(":");
+  const username = decoded.substring(0, colon).toLowerCase();
+  const pass = decoded.substring(colon + 1);
+
+  const dbUser = await getUser(username);
+  if (dbUser && verifyPassword(pass, dbUser.password_hash)) {
+    req.user = { username, role: dbUser.role, permissions: resolvePermissions(dbUser.role, dbUser.permissions), isRoot: false };
+  } else if (pass === config.ROOT_PASSWORD) {
+    req.user = { username: username || "admin", role: "admin", permissions: { ...DEFAULT_PERMISSIONS.admin }, isRoot: true };
+  }
+  next();
+}
+
 // ── Form (Basic Auth protected) ─────────────────────────────────────────────
 const formRouter = express.Router();
 formRouter.use(express.json());
@@ -270,9 +288,9 @@ app.use((req, res, next) => {
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
 app.use("/qa", qaRouter);
-app.use("/dashboard/api", basicAuth, dashboardApiRouter);
+app.use("/dashboard/api", optionalBasicAuth, dashboardApiRouter);
 app.use("/api/reports", reportsRouter);
-app.use("/api/backup", basicAuth, requirePermission("manage_settings"), backupRouter);
+app.use("/api/backup", optionalBasicAuth, requirePermission("manage_settings"), backupRouter);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();
