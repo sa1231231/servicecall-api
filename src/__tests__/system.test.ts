@@ -6,7 +6,7 @@ import { describe, it, expect, afterAll } from "vitest";
 // Use SYSTEM_TEST_URL to avoid collision with Vite's built-in BASE_URL
 const BASE_URL = process.env.SYSTEM_TEST_URL ?? process.env.BASE_URL;
 const API_KEY = process.env.API_KEY;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_PASSWORD = process.env.ROOT_PASSWORD ?? process.env.ADMIN_PASSWORD;
 const DEMO_SLUG = "demo-530e570";
 
 function url(path: string): string {
