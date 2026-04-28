@@ -1,7 +1,4 @@
 import type { Request, Response } from "express";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import { notificationClients } from "../../_cache/clients.js";
@@ -25,9 +22,6 @@ import {
   extractFlowParams,
   extractAgentParams,
 } from "../../lib/retell-sync.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OUTPUT_DIR = path.join(__dirname, "../../lib/agent-generator/output");
 
 // ── DataPoint → VariableEntry flattening ─────────────────────────────────────
 
@@ -144,16 +138,9 @@ export async function createAgentHandler(
       body.paths as PathConfig[] | undefined,
     );
 
-    // ── 2. Save generated JSON to output ───────────────────────────────────
-    if (!fs.existsSync(OUTPUT_DIR)) {
-      fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    }
     const slug = body.client.slug;
-    const outputPath = path.join(OUTPUT_DIR, `${slug}.json`);
-    fs.writeFileSync(outputPath, JSON.stringify(agentJson, null, 2), "utf8");
-    console.log(`[create-agent] saved agent JSON to ${outputPath}`);
 
-    // ── 3. Create conversation flow in Retell ──────────────────────────────
+    // ── 2. Create conversation flow in Retell ──────────────────────────────
     const conversationFlow = agentJson.conversationFlow as Record<string, unknown>;
     const flowParams = extractFlowParams(conversationFlow);
 
