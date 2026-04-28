@@ -326,6 +326,18 @@ export async function generatePortalToken(slug: string): Promise<string> {
   return token;
 }
 
+/** Find all clients that have a given email in their dispatch_email array. */
+export async function findClientsByEmail(
+  email: string,
+): Promise<Array<{ _id: string; name: string; portal_token: string | null }>> {
+  return clients()
+    .find(
+      { dispatch_email: email } as any,
+      { projection: { _id: 1, name: 1, portal_token: 1 } },
+    )
+    .toArray() as any;
+}
+
 /** Validate a portal token against a client slug. */
 export async function validatePortalToken(
   slug: string,

@@ -76,6 +76,17 @@ app.use("/health", healthRouter);
 app.use("/retell", webhookLimiter, retellRouter);
 app.use("/portal", portalLimiter, portalRouter);
 
+// ── Client login (public, no auth) ──────────────────────────────────────────
+const clientLoginHtmlPath = path.join(__dirname, "..", "public", "client-login.html");
+app.get("/client", (_req, res) => {
+  try {
+    res.type("html").send(fs.readFileSync(clientLoginHtmlPath, "utf8"));
+  } catch (err) {
+    console.error("[client] failed to read client-login.html:", err);
+    res.status(500).send("Page not found");
+  }
+});
+
 // ── Basic Auth for form + dashboard ─────────────────────────────────────────
 import type { Request, Response, NextFunction } from "express";
 
