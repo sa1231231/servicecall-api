@@ -194,6 +194,9 @@
     margin-top: 0.35rem; padding: 0.4rem 0.6rem; background: #f9fafb; border: 1px solid #e5e7eb;
     border-radius: 6px; font-size: 0.78rem; color: #555; font-style: italic;
   }
+  .field-table .col-drag { width: 1.5rem; text-align: center; color: #ccc; cursor: grab; font-size: 0.9rem; }
+  .field-table tr.dragging { opacity: 0.4; }
+  .field-table tr.drag-over td { border-top: 2px solid #2563eb; }
   .field-table .col-show { width: 3rem; text-align: center; }
   .field-table .col-req { width: 3rem; text-align: center; }
   .field-table .col-label { }
@@ -1062,6 +1065,52 @@
     if (emailEl) emailEl.innerHTML = `<div style="color:#666;font-size:0.7rem;margin-bottom:0.35rem;">Subject: ${esc(subject)}</div><p style="margin:0 0 0.3rem;">${esc(greeting)}</p><p style="margin:0 0 0.3rem;"><strong>${esc(mtLabel)}</strong></p><p style="margin:0;">${fieldLinesHtml}</p><br><p style="margin:0;color:#888;">—<br>Sent by Service Call Saver</p>`;
   }
 
+  // ── Field Table Drag-and-Drop ───────────────────────────────────────
+
+  function initFieldDragDrop(table) {
+    const tbody = table.querySelector('tbody');
+    if (!tbody) return;
+    const mtKey = table.dataset.mtKey;
+    let draggedRow = null;
+
+    tbody.addEventListener('dragstart', (e) => {
+      draggedRow = e.target.closest('tr');
+      if (draggedRow) {
+        draggedRow.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      }
+    });
+
+    tbody.addEventListener('dragend', () => {
+      if (draggedRow) draggedRow.classList.remove('dragging');
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      draggedRow = null;
+      if (mtKey) updatePreview(mtKey);
+    });
+
+    tbody.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      const target = e.target.closest('tr');
+      if (!target || target === draggedRow) return;
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      target.classList.add('drag-over');
+    });
+
+    tbody.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const target = e.target.closest('tr');
+      if (!target || target === draggedRow || !draggedRow) return;
+      const rect = target.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (e.clientY < midY) {
+        tbody.insertBefore(draggedRow, target);
+      } else {
+        tbody.insertBefore(draggedRow, target.nextSibling);
+      }
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+    });
+  }
+
   function buildHeaderButtons(slug) {
     return `<div class="btn-group">` +
       `<button class="btn-group-toggle test" onclick="toggleDropdown(this)">Test &#9662;</button>` +
@@ -1118,8 +1167,6 @@
 
       <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}</dd>
 
-      <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook"></dd>
-
       <dt title="Phone number called by the outbound summary agent after intake">Dispatch Call</dt><dd>
         <input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty" style="margin-bottom:0.25rem;">
         <details style="margin-top:0.25rem;">
@@ -1131,6 +1178,12 @@
         </details>
       </dd>
     </dl>
+    <details style="margin-top:0.25rem;">
+      <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Advanced Dispatch <span style="font-weight:400;color:#999;">${doc.webhook_url ? '(webhook configured)' : ''}</span></summary>
+      <dl class="config-grid" style="margin-top:0.5rem;">
+        <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook"></dd>
+      </dl>
+    </details>
 
     <h2>Agent Settings</h2>
     <dl class="config-grid">
@@ -1186,13 +1239,14 @@
           </div>
         </div>`;
         if (val.additional_text) html += `<div class="route-meta">Note: ${esc(val.additional_text)}</div>`;
-        html += `<table class="field-table"><thead><tr>
-          <th class="col-show">Show</th><th class="col-req">Req</th><th class="col-label">Label</th><th class="col-var">Variable</th>
+        html += `<table class="field-table" data-mt-key="${esc(key)}"><thead><tr>
+          <th class="col-drag"></th><th class="col-show">Show</th><th class="col-req">Req</th><th class="col-label">Label</th><th class="col-var">Variable</th>
         </tr></thead><tbody>`;
         for (const f of val.fields) {
           const checked = f.show !== false ? 'checked' : '';
           const reqChecked = f.required ? 'checked' : '';
-          html += `<tr>
+          html += `<tr draggable="true" data-field-key="${esc(f.key)}">
+            <td class="col-drag">&#9776;</td>
             <td class="col-show"><input type="checkbox" ${checked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-toggle" onchange="updatePreview('${esc(key)}')"></td>
             <td class="col-req"><input type="checkbox" ${reqChecked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-required-toggle"></td>
             <td class="col-label"><input type="text" value="${esc(f.label)}" data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-label-input label-edit" oninput="updatePreview('${esc(key)}')"></td>
@@ -1242,6 +1296,9 @@
       initTemplateEditor(greetingEditor, greetingHidden, ['business_name'], onGreetingInput);
     }
     onGreetingInput();
+
+    // Initialize field table drag-drop
+    document.querySelectorAll('.field-table').forEach(table => initFieldDragDrop(table));
 
     // Initialize subject template editors + previews for all routing paths
     document.querySelectorAll('.subject-editor').forEach(editor => {
@@ -1434,6 +1491,20 @@
           mtChanged = true;
         }
       }
+      // Field reordering — rebuild fields array in DOM row order
+      document.querySelectorAll('.field-table[data-mt-key]').forEach(table => {
+        const mtKey = table.dataset.mtKey;
+        const mt = updatedMt[mtKey];
+        if (!mt) return;
+        const domOrder = [...table.querySelectorAll('tbody tr[data-field-key]')].map(tr => tr.dataset.fieldKey);
+        const origOrder = mt.fields.map(f => f.key);
+        if (domOrder.join(',') !== origOrder.join(',')) {
+          const fieldMap = new Map(mt.fields.map(f => [f.key, f]));
+          mt.fields = domOrder.map(k => fieldMap.get(k)).filter(Boolean);
+          mtChanged = true;
+        }
+      });
+
       if (mtChanged) updates.message_types = updatedMt;
     }
 
