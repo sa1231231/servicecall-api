@@ -18,6 +18,7 @@ import { startAutoSync } from "./lib/retell-auto-sync.js";
 import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
 import { reportsRouter } from "./routes/reports/index.js";
 import { refreshOwnerConfig } from "./lib/settings.js";
+import { runBackup, isR2Configured } from "./lib/backup.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -141,4 +142,22 @@ app.listen(Number(config.PORT), () => {
   console.log(`ServiceCall API listening on port ${config.PORT}`);
   startAutoSync();
   startWeeklyReportScheduler();
+
+  // Daily backup at 3:00 AM UTC
+  if (isR2Configured()) {
+    const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+    const now = new Date();
+    const next3am = new Date(now);
+    next3am.setUTCHours(3, 0, 0, 0);
+    if (next3am <= now) next3am.setUTCDate(next3am.getUTCDate() + 1);
+    const msUntilFirst = next3am.getTime() - now.getTime();
+
+    console.log(`[backup] scheduled daily at 03:00 UTC (first in ${Math.round(msUntilFirst / 60000)} min)`);
+    setTimeout(() => {
+      runBackup().catch(() => {});
+      setInterval(() => runBackup().catch(() => {}), BACKUP_INTERVAL_MS);
+    }, msUntilFirst);
+  } else {
+    console.log("[backup] skipped — R2 env vars not configured");
+  }
 });

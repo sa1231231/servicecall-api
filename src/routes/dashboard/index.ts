@@ -18,6 +18,7 @@ import {
 import { getCallLogById } from "../../lib/call-log.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { getSettings, updateSettings } from "../../lib/settings.js";
+import { runBackup } from "../../lib/backup.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -180,5 +181,16 @@ dashboardApiRouter.patch("/settings", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ error: msg });
+  }
+});
+
+// ── Manual Backup ───────────────────────────────────────────────────────────
+
+dashboardApiRouter.post("/backup", async (_req, res) => {
+  const result = await runBackup();
+  if (result.success) {
+    res.json({ success: true, key: result.key });
+  } else {
+    res.status(500).json({ success: false, error: result.error });
   }
 });
