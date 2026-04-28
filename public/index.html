@@ -35,6 +35,31 @@
   }
   button[type="submit"]:hover { background: #1d4ed8; }
   button[type="submit"]:disabled { background: #93b4f5; cursor: not-allowed; }
+
+  /* Draft bar */
+  .draft-bar {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    padding: 0.6rem 0.75rem; margin-bottom: 1rem;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  .draft-bar select {
+    flex: 1; min-width: 160px; padding: 0.35rem 0.5rem; font-size: 0.82rem;
+    border: 1px solid #d1d5db; border-radius: 5px; margin: 0;
+  }
+  .draft-bar button {
+    padding: 0.35rem 0.75rem; font-size: 0.8rem; font-weight: 500;
+    border-radius: 5px; cursor: pointer; white-space: nowrap;
+  }
+  .draft-btn-save { background: #059669; color: #fff; border: none; }
+  .draft-btn-save:hover { background: #047857; }
+  .draft-btn-load { background: #2563eb; color: #fff; border: none; }
+  .draft-btn-load:hover { background: #1d4ed8; }
+  .draft-btn-delete { background: #fff; color: #dc2626; border: 1px solid #fca5a5; }
+  .draft-btn-delete:hover { background: #fef2f2; }
+  .draft-bar .draft-label { font-size: 0.78rem; font-weight: 600; color: #555; white-space: nowrap; }
+  .draft-status { font-size: 0.75rem; color: #059669; margin-left: 0.25rem; opacity: 0; transition: opacity 0.3s; }
+  .draft-status.show { opacity: 1; }
   #result {
     margin-top: 1.25rem; padding: 1rem; border-radius: 6px;
     font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; display: none;
@@ -156,6 +181,15 @@
 <body>
 <h1>Create Retell Agent</h1>
 <p style="color:#666;font-size:0.85rem;margin-top:0;">Fill in the fields below and click Create to provision a new agent.</p>
+
+<div class="draft-bar">
+  <span class="draft-label">Drafts:</span>
+  <select id="draftSelect"><option value="">— Select a draft —</option></select>
+  <button type="button" class="draft-btn-load" onclick="loadSelectedDraft()">Load</button>
+  <button type="button" class="draft-btn-save" onclick="saveDraft()">Save Draft</button>
+  <button type="button" class="draft-btn-delete" onclick="deleteSelectedDraft()">Delete</button>
+  <span class="draft-status" id="draftStatus"></span>
+</div>
 
 <div id="result"></div>
 
@@ -872,6 +906,213 @@ Do not ask for any other information than what is instructed for this node.'>${v
       submitBtn.textContent = 'Create Agent';
     }
   });
+
+  // ── Drafts ─────────────────────────────────────────────────
+
+  let currentDraftId = null;
+
+  function showDraftStatus(msg) {
+    const el = document.getElementById('draftStatus');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2500);
+  }
+
+  async function loadDraftList() {
+    try {
+      const res = await fetch('/form/drafts', { headers: { 'X-API-Key': val('apiKey') } });
+      if (!res.ok) return;
+      const drafts = await res.json();
+      const sel = document.getElementById('draftSelect');
+      const currentVal = sel.value;
+      sel.innerHTML = '<option value="">— Select a draft —</option>';
+      for (const d of drafts) {
+        const date = new Date(d.updatedAt).toLocaleDateString();
+        const opt = document.createElement('option');
+        opt.value = d._id;
+        opt.textContent = d.name + ' (' + date + ')';
+        sel.appendChild(opt);
+      }
+      if (currentVal) sel.value = currentVal;
+    } catch (err) { /* ignore */ }
+  }
+
+  /** Collect the entire form state into a serializable object. */
+  function collectFormState() {
+    const state = {
+      businessName: val('businessName'),
+      faqKnowledgeBase: val('faqKnowledgeBase'),
+      checkedDataPoints: [...document.querySelectorAll('input[name="dataPoint"]:checked')].map(cb => cb.value),
+      customDataPoints: [],
+      routingPaths: [],
+      clientName: val('clientName'),
+      dispatchTextNumbers: val('dispatchTextNumbers'),
+      dispatchCallNumber: val('dispatchCallNumber'),
+      dispatchEmail: val('dispatchEmail'),
+      summaryAgentId: val('summaryAgentId'),
+      humanRequestMode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
+    };
+
+    // Custom data points
+    customContainer.querySelectorAll('.custom-dp-card').forEach(card => {
+      state.customDataPoints.push({
+        variableName: card.querySelector('.cdp-variableName').value,
+        label: card.querySelector('.cdp-label').value,
+        type: card.querySelector('.cdp-type').value,
+        choices: card.querySelector('.cdp-choices').value,
+        description: card.querySelector('.cdp-description').value,
+        conversationPrompt: card.querySelector('.cdp-conversationPrompt').value,
+        forwardCondition: card.querySelector('.cdp-forwardCondition').value,
+      });
+    });
+
+    // Routing paths
+    pathsContainer.querySelectorAll('.path-card').forEach(card => {
+      const pathData = {
+        name: card.querySelector('.path-name').value,
+        condition: card.querySelector('.path-condition').value,
+        checkedDps: [...card.querySelectorAll('input[name="pathDp"]:checked')].map(cb => cb.value),
+        orderedDps: [...card.querySelectorAll('.path-dp-order li')].map(li => li.dataset.value),
+        dispatchSms: card.querySelector('.path-dispatch-sms').value,
+        dispatchEmail: card.querySelector('.path-dispatch-email').value,
+        dispatchCall: card.querySelector('.path-dispatch-call').value,
+      };
+      state.routingPaths.push(pathData);
+    });
+
+    return state;
+  }
+
+  /** Restore form state from a saved draft object. */
+  function loadFormState(state) {
+    // Basic fields
+    document.getElementById('businessName').value = state.businessName || '';
+    document.getElementById('faqKnowledgeBase').value = state.faqKnowledgeBase || '';
+    document.getElementById('clientName').value = state.clientName || '';
+    document.getElementById('dispatchTextNumbers').value = state.dispatchTextNumbers || '';
+    document.getElementById('dispatchCallNumber').value = state.dispatchCallNumber || '';
+    document.getElementById('dispatchEmail').value = state.dispatchEmail || '';
+    document.getElementById('summaryAgentId').value = state.summaryAgentId || '';
+
+    // Human request mode
+    const modeRadio = document.querySelector(`input[name="humanRequestMode"][value="${state.humanRequestMode || 'callback'}"]`);
+    if (modeRadio) modeRadio.checked = true;
+
+    // Data point checkboxes
+    document.querySelectorAll('input[name="dataPoint"]').forEach(cb => {
+      cb.checked = (state.checkedDataPoints || []).includes(cb.value);
+    });
+
+    // Custom data points — clear existing and recreate
+    customContainer.innerHTML = '';
+    cardCounter = 0;
+    (state.customDataPoints || []).forEach(cdp => {
+      addCustomCard(cdp);
+    });
+
+    // Routing paths — clear existing and recreate
+    pathsContainer.innerHTML = '';
+    pathCounter = 0;
+    (state.routingPaths || []).forEach(p => {
+      addPathCard();
+      const card = pathsContainer.lastElementChild;
+      card.querySelector('.path-name').value = p.name || '';
+      card.querySelector('.path-condition').value = p.condition || '';
+      card.querySelector('.path-dispatch-sms').value = p.dispatchSms || '';
+      card.querySelector('.path-dispatch-email').value = p.dispatchEmail || '';
+      card.querySelector('.path-dispatch-call').value = p.dispatchCall || '';
+
+      // Check the path's data points and rebuild order
+      const cbContainer = card.querySelector('.path-dp-checkboxes');
+      (p.checkedDps || []).forEach(val => {
+        const cb = cbContainer.querySelector(`input[value="${val}"]`);
+        if (cb) cb.checked = true;
+      });
+
+      // Rebuild the ordered list from saved order
+      const orderList = card.querySelector('.path-dp-order');
+      orderList.innerHTML = '';
+      (p.orderedDps || []).forEach(dpVal => {
+        const label = BUILTIN_LABELS[dpVal] || dpVal;
+        appendOrderItem(orderList, dpVal, label);
+      });
+      initDragDrop(orderList);
+    });
+  }
+
+  async function saveDraft() {
+    const formData = collectFormState();
+    const name = formData.businessName || 'Untitled Draft';
+
+    try {
+      if (currentDraftId) {
+        // Update existing draft
+        const res = await fetch('/form/drafts/' + currentDraftId, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': val('apiKey') },
+          body: JSON.stringify({ name, formData }),
+        });
+        if (!res.ok) throw new Error('Failed');
+        showDraftStatus('Draft updated');
+      } else {
+        // Create new draft
+        const res = await fetch('/form/drafts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': val('apiKey') },
+          body: JSON.stringify({ name, formData }),
+        });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+        currentDraftId = data._id;
+        showDraftStatus('Draft saved');
+      }
+      await loadDraftList();
+      document.getElementById('draftSelect').value = currentDraftId || '';
+    } catch (err) {
+      showDraftStatus('Save failed');
+    }
+  }
+
+  async function loadSelectedDraft() {
+    const sel = document.getElementById('draftSelect');
+    const id = sel.value;
+    if (!id) return;
+
+    try {
+      const res = await fetch('/form/drafts/' + id, { headers: { 'X-API-Key': val('apiKey') } });
+      if (!res.ok) throw new Error('Failed');
+      const draft = await res.json();
+      currentDraftId = draft._id;
+      loadFormState(draft.formData);
+      showDraftStatus('Draft loaded');
+    } catch (err) {
+      showDraftStatus('Load failed');
+    }
+  }
+
+  async function deleteSelectedDraft() {
+    const sel = document.getElementById('draftSelect');
+    const id = sel.value;
+    if (!id) return;
+    if (!confirm('Delete this draft?')) return;
+
+    try {
+      const res = await fetch('/form/drafts/' + id, {
+        method: 'DELETE',
+        headers: { 'X-API-Key': val('apiKey') },
+      });
+      if (!res.ok) throw new Error('Failed');
+      if (currentDraftId === id) currentDraftId = null;
+      sel.value = '';
+      await loadDraftList();
+      showDraftStatus('Draft deleted');
+    } catch (err) {
+      showDraftStatus('Delete failed');
+    }
+  }
+
+  // Load draft list on page load (after a short delay for API key)
+  setTimeout(loadDraftList, 500);
 </script>
 </body>
 </html>

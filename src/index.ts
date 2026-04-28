@@ -19,6 +19,8 @@ import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
 import { reportsRouter } from "./routes/reports/index.js";
 import { refreshOwnerConfig } from "./lib/settings.js";
 import { seedDataPointDefaults, getDataPointDefaultsWithCategory } from "./lib/data-point-defaults.js";
+import { ObjectId } from "mongodb";
+import { getDb } from "./lib/db.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -129,6 +131,78 @@ formRouter.get("/data-points", async (_req, res) => {
     res.status(500).json({ error: "Failed to load data points" });
   }
 });
+
+// ── Agent Drafts ───────────────────────────────────────────────────────────
+function draftsCollection() {
+  return getDb().collection("agent_drafts");
+}
+
+formRouter.get("/drafts", async (_req, res) => {
+  try {
+    const drafts = await draftsCollection()
+      .find({}, { projection: { name: 1, updatedAt: 1 } })
+      .sort({ updatedAt: -1 })
+      .toArray();
+    res.json(drafts);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load drafts" });
+  }
+});
+
+formRouter.get("/drafts/:id", async (req, res) => {
+  try {
+    const draft = await draftsCollection().findOne({ _id: new ObjectId(req.params.id) });
+    if (!draft) { res.status(404).json({ error: "Draft not found" }); return; }
+    res.json(draft);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to load draft" });
+  }
+});
+
+formRouter.post("/drafts", async (req, res) => {
+  try {
+    const { name, formData } = req.body;
+    if (!name || !formData) { res.status(400).json({ error: "name and formData are required" }); return; }
+    const result = await draftsCollection().insertOne({
+      name,
+      formData,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    res.json({ success: true, _id: result.insertedId, name });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to save draft" });
+  }
+});
+
+formRouter.put("/drafts/:id", async (req, res) => {
+  try {
+    const { name, formData } = req.body;
+    const updates: any = { updatedAt: new Date() };
+    if (name) updates.name = name;
+    if (formData) updates.formData = formData;
+    const result = await draftsCollection().findOneAndUpdate(
+      { _id: new ObjectId(req.params.id) },
+      { $set: updates },
+      { returnDocument: "after" },
+    );
+    if (!result) { res.status(404).json({ error: "Draft not found" }); return; }
+    res.json({ success: true, draft: result });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to update draft" });
+  }
+});
+
+formRouter.delete("/drafts/:id", async (req, res) => {
+  try {
+    const result = await draftsCollection().deleteOne({ _id: new ObjectId(req.params.id) });
+    if (result.deletedCount === 0) { res.status(404).json({ error: "Draft not found" }); return; }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete draft" });
+  }
+});
+
 app.use("/form", basicAuth, formRouter);
 
 // ── Dashboard (Basic Auth protected) ────────────────────────────────────────
