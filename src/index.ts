@@ -148,11 +148,11 @@ app.listen(Number(config.PORT), () => {
     const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
     const now = new Date();
     const next3am = new Date(now);
-    next3am.setUTCHours(3, 0, 0, 0);
+    next3am.setUTCHours(7, 0, 0, 0); // 3:00 AM ET = 7:00 AM UTC (EDT) / 8:00 AM UTC (EST)
     if (next3am <= now) next3am.setUTCDate(next3am.getUTCDate() + 1);
     const msUntilFirst = next3am.getTime() - now.getTime();
 
-    console.log(`[backup] scheduled daily at 03:00 UTC (first in ${Math.round(msUntilFirst / 60000)} min)`);
+    console.log(`[backup] scheduled daily at 03:00 ET (first in ${Math.round(msUntilFirst / 60000)} min)`);
     setTimeout(() => {
       runBackup().catch(() => {});
       setInterval(() => runBackup().catch(() => {}), BACKUP_INTERVAL_MS);
