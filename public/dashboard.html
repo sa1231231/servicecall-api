@@ -3155,7 +3155,16 @@
   }, true);
 
   // ── INIT ───────────────────────────────────────────────────────────
-  loadAgents();
+  loadAgents().then(() => {
+    // Auto-open agent from hash: #agent=slug
+    const hash = window.location.hash;
+    const m = hash.match(/^#agent=(.+)/);
+    if (m) {
+      const slug = decodeURIComponent(m[1]);
+      window.location.hash = '';
+      showDetail(slug);
+    }
+  });
 </script>
 </body>
 </html>

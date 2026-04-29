@@ -1067,16 +1067,9 @@
 
       if (res.ok) {
         localStorage.removeItem('agentFormAutoSave');
-        let msg = 'Agent created successfully!\n\n'
-          + 'Agent ID: ' + data.agent_id + '\n'
-          + 'Conversation Flow ID: ' + data.conversation_flow_id;
-        if (data.provision_error) {
-          msg += '\n\n⚠ Phone provisioning failed: ' + data.provision_error;
-        }
-        if (data.provisioned_number) {
-          msg += '\nProvisioned Number: ' + data.provisioned_number;
-        }
-        showResult(msg, 'success');
+        // Redirect to the agent's dashboard detail page
+        const slug = body.client.slug;
+        window.location.href = '/dashboard#agent=' + encodeURIComponent(slug);
       } else {
         let errMsg = 'Error (' + res.status + '): ' + (data.error || 'Unknown error');
         if (data.details) errMsg += '\n\nDetails: ' + data.details;
