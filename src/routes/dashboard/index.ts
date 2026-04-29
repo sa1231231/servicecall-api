@@ -290,6 +290,42 @@ dashboardApiRouter.post("/agents/:slug/send-payment-link", requirePermission("se
   }
 });
 
+dashboardApiRouter.post("/agents/:slug/send-portal-link", requirePermission("send_comms"), async (req, res) => {
+  const slug = String(req.params.slug);
+  const doc = await getClientDocument(slug);
+  if (!doc) {
+    res.status(404).json({ error: `Client "${slug}" not found` });
+    return;
+  }
+
+  if (!doc.portal_token) {
+    res.status(400).json({ error: "Portal link has not been generated yet. Generate it first from the agent detail page." });
+    return;
+  }
+
+  const numbers = doc.dispatch_text_numbers ?? [];
+  if (numbers.length === 0) {
+    res.status(400).json({ error: "No dispatch text numbers configured for this client" });
+    return;
+  }
+
+  const settings = await getSettings();
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const portalUrl = `${baseUrl}/portal/${slug}?token=${doc.portal_token}`;
+  const message = settings.portal_sms_message.replace(
+    /\{\{portal_url\}\}/g,
+    portalUrl,
+  );
+
+  try {
+    await sendSmsToAll(numbers, message);
+    res.json({ success: true, sent_to: numbers });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(502).json({ error: "Failed to send portal link", details: msg });
+  }
+});
+
 // ── Global Settings ─────────────────────────────────────────────────────────
 
 dashboardApiRouter.get("/settings", async (_req, res) => {

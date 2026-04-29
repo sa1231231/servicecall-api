@@ -616,6 +616,10 @@
     <textarea id="settings-payment-msg" placeholder="Message template..."></textarea>
     <p class="settings-hint">Template for the payment link SMS. Use {{stripe_payment_url}} where the link should appear.</p>
 
+    <label for="settings-portal-msg">Portal Link SMS Message</label>
+    <textarea id="settings-portal-msg" placeholder="Message template..."></textarea>
+    <p class="settings-hint">Template for the portal link SMS. Use {{portal_url}} where the link should appear.</p>
+
     <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
   </div>
 
@@ -1383,7 +1387,8 @@
     const sendItems =
       `<button onclick="sendWeeklyReport('${esc(slug)}')" id="btnReport">Weekly Report</button>` +
       `<button onclick="requestReview('${esc(slug)}')" id="btnReview">Request Review</button>` +
-      `<button onclick="sendPaymentLink('${esc(slug)}')" id="btnPayment">Send Payment Link</button>`;
+      `<button onclick="sendPaymentLink('${esc(slug)}')" id="btnPayment">Send Payment Link</button>` +
+      `<button onclick="sendPortalLink('${esc(slug)}')" id="btnPortal">Send Portal Link</button>`;
     const sendMenu = p.send_comms
       ? `<div class="btn-group"><button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send to Client &#9662;</button><div class="btn-group-menu">${sendItems}</div></div>`
       : '';
@@ -2141,6 +2146,29 @@
     }
   }
 
+  // ── SEND PORTAL LINK ────────────────────────────────────────────────
+
+  async function sendPortalLink(slug) {
+    const btn = document.getElementById('btnPortal');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/send-portal-link', {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed: ' + res.status);
+
+      showToast('Portal link sent to ' + data.sent_to.length + ' number(s)!', 'success');
+    } catch (err) {
+      showToast('Portal link failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send Portal Link';
+    }
+  }
+
   // ── PORTAL LINK ────────────────────────────────────────────────────
 
   async function loadPortalLink(slug) {
@@ -2332,6 +2360,7 @@
       document.getElementById('settings-trial-days').value = settings.free_trial_days || 14;
       document.getElementById('settings-payment-url').value = settings.stripe_payment_url || '';
       document.getElementById('settings-payment-msg').value = settings.payment_sms_message || '';
+      document.getElementById('settings-portal-msg').value = settings.portal_sms_message || '';
     } catch (err) {
       showToast('Failed to load settings: ' + err.message, 'error');
     }
@@ -2373,6 +2402,7 @@
       free_trial_days: parseInt(document.getElementById('settings-trial-days').value) || 14,
       stripe_payment_url: document.getElementById('settings-payment-url').value.trim(),
       payment_sms_message: document.getElementById('settings-payment-msg').value,
+      portal_sms_message: document.getElementById('settings-portal-msg').value,
     };
 
     try {
