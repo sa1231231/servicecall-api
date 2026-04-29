@@ -3241,7 +3241,10 @@
     neSlug = slug;
     neAgentId = agentId;
     const container = document.getElementById('nodeEditorContainer');
-    container.innerHTML = '<h2>Node Editor</h2><div class="ne-loading">Loading node structure...</div>';
+    // Only show loading indicator on first load, not refreshes
+    if (!neData) {
+      container.innerHTML = '<h2>Node Editor</h2><div class="ne-loading">Loading node structure...</div>';
+    }
 
     try {
       // Ensure dpDefaults is loaded for the add-data-point dropdown
@@ -3393,12 +3396,16 @@
       html += '</div></details>';
     }
 
+    const scrollY = window.scrollY;
     document.getElementById('nodeEditorContainer').innerHTML = html;
 
     // Init drag-drop for each path
     if (canEdit) {
       document.querySelectorAll('.ne-dp-list').forEach(list => initNeDragDrop(list));
     }
+
+    // Restore scroll position after re-render
+    requestAnimationFrame(() => window.scrollTo(0, scrollY));
   }
 
   function buildDpDefaultsOptions(existingVars) {
