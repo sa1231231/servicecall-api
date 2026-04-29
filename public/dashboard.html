@@ -440,25 +440,12 @@
     #callTable thead { display: none; }
     #callTable tbody tr.clickable-row {
       display: block;
-      margin-bottom: 0.75rem;
+      margin-bottom: 0;
       background: #fff;
-      border-radius: 8px;
+      border-radius: 8px 8px 0 0;
       padding: 0.75rem;
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-      border-left: 3px solid transparent;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    #callTable tbody tr.clickable-row::after {
-      content: '▸'; float: right; color: #aaa; font-size: 0.8rem; transition: transform 0.15s;
-    }
-    #callTable tbody tr.clickable-row.row-expanded::after {
-      transform: rotate(90deg); color: #2563eb;
-    }
-    #callTable tbody tr.clickable-row.row-expanded {
-      border-left-color: #2563eb;
-      background: #f8faff;
-      margin-bottom: 0;
-      border-radius: 8px 8px 0 0;
+      pointer-events: none;
     }
     #callTable tbody tr.clickable-row td {
       display: block;
@@ -481,15 +468,13 @@
       white-space: normal !important;
       text-overflow: unset !important;
     }
-    tr.call-expand-row { display: none !important; }
-    tr.call-expand-row.expanded { display: block !important; }
+    tr.call-expand-row { display: block !important; }
     tr.call-expand-row td {
       display: block;
       padding: 0;
     }
     .call-expand {
       border-radius: 0 0 8px 8px;
-      margin-top: -0.75rem;
       margin-bottom: 0.75rem;
     }
     .call-expand .field-pair {
