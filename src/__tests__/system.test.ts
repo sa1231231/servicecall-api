@@ -969,4 +969,378 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(resp.status).toBe(401);
     });
   });
+
+  // ── 24. User Management CRUD ──────────────────────────────────────
+
+  describe("User management", () => {
+    const testUser = "_systest_user_" + Date.now();
+
+    it("GET /dashboard/api/users lists users", async () => {
+      const resp = await fetch(url("/dashboard/api/users"), {
+        headers: authHeaders(),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(Array.isArray(body)).toBe(true);
+    });
+
+    it("POST creates a new user", async () => {
+      const resp = await fetch(url("/dashboard/api/users"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ username: testUser, password: "testpass123", role: "viewer" }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+      expect(body.username).toBe(testUser);
+      expect(body.role).toBe("viewer");
+    });
+
+    it("POST rejects duplicate username", async () => {
+      const resp = await fetch(url("/dashboard/api/users"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ username: testUser, password: "testpass123", role: "viewer" }),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("POST rejects missing fields", async () => {
+      const resp = await fetch(url("/dashboard/api/users"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ username: "", password: "" }),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("POST rejects invalid role", async () => {
+      const resp = await fetch(url("/dashboard/api/users"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ username: "x_invalid", password: "testpass", role: "superadmin" }),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("POST rejects short password", async () => {
+      const resp = await fetch(url("/dashboard/api/users"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ username: "x_short", password: "ab", role: "viewer" }),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("PATCH updates user permissions", async () => {
+      const resp = await fetch(url(`/dashboard/api/users/${testUser}/permissions`), {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ permissions: { edit_agents: true } }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+    });
+
+    it("PATCH returns 404 for nonexistent user", async () => {
+      const resp = await fetch(url("/dashboard/api/users/nonexistent_xyz/permissions"), {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ permissions: { edit_agents: true } }),
+      });
+      expect(resp.status).toBe(404);
+    });
+
+    it("DELETE removes the test user", async () => {
+      const resp = await fetch(url(`/dashboard/api/users/${testUser}`), {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+    });
+
+    it("DELETE returns 404 for nonexistent user", async () => {
+      const resp = await fetch(url("/dashboard/api/users/nonexistent_xyz"), {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      expect(resp.status).toBe(404);
+    });
+  });
+
+  // ── 25. Soft-Deleted Agents ─────────────────────────────────────────
+
+  describe("Soft-deleted agents", () => {
+    it("GET /dashboard/api/deleted-agents lists deleted agents", async () => {
+      const resp = await fetch(url("/dashboard/api/deleted-agents"), {
+        headers: authHeaders(),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(Array.isArray(body)).toBe(true);
+    });
+
+    it("POST restore returns 500 for nonexistent slug", async () => {
+      const resp = await fetch(url("/dashboard/api/deleted-agents/nonexistent-xyz/restore"), {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      // restoreClient will fail or the slug doesn't exist — expect error
+      expect([404, 500]).toContain(resp.status);
+    });
+
+    it("DELETE permanent returns 500 or success for nonexistent slug", async () => {
+      const resp = await fetch(url("/dashboard/api/deleted-agents/nonexistent-xyz"), {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      // deleteClient on nonexistent slug just deletes 0 docs — still returns success
+      expect([200, 404, 500]).toContain(resp.status);
+    });
+  });
+
+  // ── 26. Clone Agent ─────────────────────────────────────────────────
+
+  describe("Clone agent", () => {
+    it("returns 404 for nonexistent client", async () => {
+      const resp = await fetch(url("/dashboard/api/agents/nonexistent-xyz/clone"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ name: "Clone Test" }),
+      });
+      expect(resp.status).toBe(404);
+    });
+  });
+
+  // ── 27. Test Notification ──────────────────────────────────────────
+
+  describe("Test notification", () => {
+    it("sends test notification for demo client", async () => {
+      const resp = await fetch(url(`/qa/test-notify/${DEMO_SLUG}`), {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      const body = await json(resp);
+      // 200 success or 502 if SMS fails in test env — both valid
+      expect([200, 502]).toContain(resp.status);
+      if (resp.status === 200) {
+        expect(body.success).toBe(true);
+      }
+    });
+
+    it("returns 404 for nonexistent client", async () => {
+      const resp = await fetch(url("/qa/test-notify/nonexistent-xyz"), {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      expect(resp.status).toBe(404);
+    });
+  });
+
+  // ── 28. Form Config ────────────────────────────────────────────────
+
+  describe("Form config", () => {
+    it("GET /form/config returns config with auth", async () => {
+      const resp = await fetch(url("/form/config"), {
+        headers: { Authorization: basicAuthHeader() },
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(typeof body.apiKey).toBe("string");
+    });
+
+    it("GET /form/config rejects without auth", async () => {
+      const resp = await fetch(url("/form/config"));
+      expect(resp.status).toBe(401);
+    });
+  });
+
+  // ── 29. Form Drafts CRUD ──────────────────────────────────────────
+
+  describe("Form drafts", () => {
+    let draftId: string | undefined;
+
+    it("GET /form/drafts lists drafts", async () => {
+      const resp = await fetch(url("/form/drafts"), {
+        headers: { Authorization: basicAuthHeader() },
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(Array.isArray(body)).toBe(true);
+    });
+
+    it("POST creates a draft", async () => {
+      const resp = await fetch(url("/form/drafts"), {
+        method: "POST",
+        headers: { Authorization: basicAuthHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "_systest_draft", formData: { test: true } }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+      expect(body._id).toBeDefined();
+      draftId = body._id;
+    });
+
+    it("POST rejects missing fields", async () => {
+      const resp = await fetch(url("/form/drafts"), {
+        method: "POST",
+        headers: { Authorization: basicAuthHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("GET /form/drafts/:id returns the created draft", async () => {
+      if (!draftId) return;
+      const resp = await fetch(url(`/form/drafts/${draftId}`), {
+        headers: { Authorization: basicAuthHeader() },
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.name).toBe("_systest_draft");
+    });
+
+    it("PUT updates the draft", async () => {
+      if (!draftId) return;
+      const resp = await fetch(url(`/form/drafts/${draftId}`), {
+        method: "PUT",
+        headers: { Authorization: basicAuthHeader(), "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "_systest_draft_updated" }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+    });
+
+    it("DELETE removes the draft", async () => {
+      if (!draftId) return;
+      const resp = await fetch(url(`/form/drafts/${draftId}`), {
+        method: "DELETE",
+        headers: { Authorization: basicAuthHeader() },
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+    });
+
+    it("GET returns 404 for deleted draft", async () => {
+      if (!draftId) return;
+      const resp = await fetch(url(`/form/drafts/${draftId}`), {
+        headers: { Authorization: basicAuthHeader() },
+      });
+      expect(resp.status).toBe(404);
+    });
+
+    it("GET /form/drafts rejects without auth", async () => {
+      const resp = await fetch(url("/form/drafts"));
+      expect(resp.status).toBe(401);
+    });
+  });
+
+  // ── 30. Data Point Reorder ────────────────────────────────────────
+
+  describe("Data point reorder", () => {
+    it("PUT reorder updates sort order", async () => {
+      const resp = await fetch(url("/dashboard/api/data-point-defaults/reorder"), {
+        method: "PUT",
+        headers: authHeaders(),
+        body: JSON.stringify({ items: [
+          { key: "full_name", category: "caller_info", sortOrder: 0 },
+          { key: "phone_number", category: "caller_info", sortOrder: 1 },
+        ] }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+    });
+  });
+
+  // ── 31. Agent Create/Import/Duplicate (API key routes) ────────────
+
+  describe("Agent API key routes", () => {
+    it("POST /agents/create rejects without required fields", async () => {
+      const resp = await fetch(url("/agents/create"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("POST /agents/import rejects without agent_id", async () => {
+      const resp = await fetch(url("/agents/import"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("POST /agents/duplicate rejects without slug", async () => {
+      const resp = await fetch(url("/agents/duplicate"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("POST /agents/duplicate returns 404 for nonexistent client", async () => {
+      const resp = await fetch(url("/agents/duplicate"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ slug: "nonexistent-xyz", name: "Dup Test" }),
+      });
+      expect(resp.status).toBe(404);
+    });
+
+    it("all agent routes reject without API key", async () => {
+      const noKey = { "Content-Type": "application/json" };
+      const [r1, r2, r3] = await Promise.all([
+        fetch(url("/agents/create"), { method: "POST", headers: noKey, body: "{}" }),
+        fetch(url("/agents/import"), { method: "POST", headers: noKey, body: "{}" }),
+        fetch(url("/agents/duplicate"), { method: "POST", headers: noKey, body: "{}" }),
+      ]);
+      expect(r1.status).toBe(401);
+      expect(r2.status).toBe(401);
+      expect(r3.status).toBe(401);
+    });
+  });
+
+  // ── 32. Form & Dashboard HTML shells ──────────────────────────────
+
+  describe("HTML shells", () => {
+    it("GET /form serves form HTML with auth", async () => {
+      const resp = await fetch(url("/form"), {
+        headers: { Authorization: basicAuthHeader() },
+      });
+      expect(resp.status).toBe(200);
+      const text = await resp.text();
+      expect(text).toContain("html");
+    });
+
+    it("GET /dashboard serves dashboard HTML with auth", async () => {
+      const resp = await fetch(url("/dashboard"), {
+        headers: { Authorization: basicAuthHeader() },
+      });
+      expect(resp.status).toBe(200);
+      const text = await resp.text();
+      expect(text).toContain("html");
+    });
+
+    it("GET /form rejects without auth", async () => {
+      const resp = await fetch(url("/form"));
+      expect(resp.status).toBe(401);
+    });
+
+    it("GET /dashboard rejects without auth", async () => {
+      const resp = await fetch(url("/dashboard"));
+      expect(resp.status).toBe(401);
+    });
+  });
 });
