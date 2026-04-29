@@ -1735,6 +1735,94 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       });
     });
 
+    // ── edit-path-name ───────────────────────────────────────────
+
+    describe("edit-path-name", () => {
+      it("renames path2 and reverts", { timeout: 30_000 }, async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-path-name`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ oldName: "path2", newName: "path2_renamed" }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        expect((await json(resp)).success).toBe(true);
+
+        // Verify it changed
+        const structResp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const struct = await json(structResp);
+        expect(struct.paths.some((p: any) => p.name === "path2_renamed")).toBe(true);
+        expect(struct.paths.some((p: any) => p.name === "path2")).toBe(false);
+
+        // Revert
+        const revertResp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-path-name`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ oldName: "path2_renamed", newName: "path2" }),
+          },
+        );
+        expect(revertResp.status).toBe(200);
+      });
+
+      it("rejects missing fields", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-path-name`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ oldName: "path1" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+
+      it("returns 404 for nonexistent path", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-path-name`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ oldName: "nonexistent", newName: "x" }),
+          },
+        );
+        expect(resp.status).toBe(404);
+      });
+    });
+
+    // ── edit-human-request-mode ────────────────────────────────────
+
+    describe("edit-human-request-mode", () => {
+      it("returns current mode in GET response", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        expect(["callback", "live_transfer"]).toContain(body.humanRequestMode);
+        expect(body.humanRequestNodeId).toBeDefined();
+        expect(typeof body.introPrompt).toBe("string");
+      });
+
+      it("rejects invalid mode", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-human-request-mode`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ mode: "invalid_mode" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+    });
+
     // ── edit-agent-settings ────────────────────────────────────────
 
     describe("edit-agent-settings", () => {

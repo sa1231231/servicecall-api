@@ -207,6 +207,15 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       }));
     }
 
+    // Detect human request mode
+    const humanReqNode = parsed.allNodes.find((n) => n.name === "Human Request");
+    const hasTransferCall = parsed.allNodes.some((n) => n.name === "Transfer Call");
+    const humanRequestMode = hasTransferCall ? "live_transfer" : "callback";
+
+    // Intro node prompt
+    const introInstruction = parsed.introNode.raw.instruction as Record<string, unknown> | undefined;
+    const introPrompt = (introInstruction?.text as string) ?? "";
+
     res.json({
       agentId,
       agentName: snapshot.agentName,
@@ -215,8 +224,11 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       startNodeId: parsed.startNodeId,
       versionNumber: latestVersion?.version ?? 0,
       introNodeId: parsed.introNode.id,
+      introPrompt,
       faqNodeId,
       faqKnowledgeBase,
+      humanRequestMode,
+      humanRequestNodeId: humanReqNode?.id,
       transitionConditions,
       paths: parsed.paths.map((p) => ({
         name: p.name,
@@ -1051,6 +1063,297 @@ function buildDataPointsFromChain(
     return result;
   });
 }
+
+// ── POST /:agentId/edit-path-name — Rename a Path ────────────────────────────
+
+nodeEditorRouter.post("/:agentId/edit-path-name", async (req, res) => {
+  const p = req.params as Record<string, string>;
+  const slug = p.slug;
+  const agentId = p.agentId;
+  const { oldName, newName } = req.body;
+
+  if (!oldName || !newName || typeof oldName !== "string" || typeof newName !== "string") {
+    res.status(400).json({ error: "oldName and newName (strings) are required" });
+    return;
+  }
+  if (oldName === newName) {
+    res.json({ success: true, pathName: newName });
+    return;
+  }
+
+  const resolved = await resolveAgentId(slug, agentId);
+  if (!resolved) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  try {
+    const snapshot = await pullLatest(agentId);
+    const canonical = snapshot.canonicalJson;
+    const parsed = parseConversationFlow(canonical);
+    const flow = canonical.conversationFlow as Record<string, unknown>;
+    const nodes = flow.nodes as Array<Record<string, unknown>>;
+
+    const targetPath = parsed.paths.find((pa) => pa.name === oldName);
+    if (!targetPath) {
+      res.status(404).json({ error: `Path "${oldName}" not found` });
+      return;
+    }
+
+    await createVersionSnapshot(
+      slug, agentId, canonical, "manual_edit",
+      `Rename path "${oldName}" to "${newName}"`,
+      req.user?.username ?? "unknown",
+    );
+
+    // Update node names that contain the path suffix
+    const oldSuffix = ` (${oldName})`;
+    const newSuffix = ` (${newName})`;
+    for (const node of nodes) {
+      const name = node.name as string;
+      if (name.endsWith(oldSuffix)) {
+        node.name = name.replace(oldSuffix, newSuffix);
+      }
+    }
+
+    // Update _path_taken variable description in front-extract node
+    const frontExtract = nodes.find((n) => n.id === targetPath.frontExtractNode.id);
+    if (frontExtract) {
+      const vars = frontExtract.variables as Array<Record<string, unknown>>;
+      if (Array.isArray(vars)) {
+        const pathVar = vars.find((v) => v.name === "_path_taken");
+        if (pathVar) {
+          pathVar.description = `Always set to "${newName}".`;
+        }
+      }
+    }
+
+    // Push to Retell
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
+
+    // Update MongoDB: message_types, resolve_rules, dispatch_by_type
+    const doc = resolved.doc;
+    const updates: Record<string, unknown> = {
+      [`retell_agents.${agentId}`]: canonical,
+      last_deployed_at: new Date().toISOString(),
+    };
+
+    // Rename message_types key
+    if (doc.message_types) {
+      const oldKey = oldName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const newKey = newName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const mt = { ...doc.message_types };
+      if (mt[oldName]) {
+        mt[newName] = { ...mt[oldName], label: newName };
+        delete mt[oldName];
+      } else if (mt[oldKey]) {
+        mt[newKey] = { ...mt[oldKey], label: newName };
+        delete mt[oldKey];
+      }
+      updates.message_types = mt;
+      if (doc.default_message_type === oldName || doc.default_message_type === oldKey) {
+        updates.default_message_type = mt[newName] ? newName : newKey;
+      }
+    }
+
+    // Update resolve_rules
+    if (doc.resolve_rules) {
+      updates.resolve_rules = doc.resolve_rules.map((r: any) => ({
+        ...r,
+        equals: r.equals === oldName ? newName : r.equals,
+        then: r.then === oldName ? newName : r.then,
+      }));
+    }
+
+    // Rename dispatch_by_type key
+    if (doc.dispatch_by_type) {
+      const dbt = { ...doc.dispatch_by_type };
+      const oldKey = oldName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const newKey = newName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      if (dbt[oldName]) {
+        dbt[newName] = dbt[oldName];
+        delete dbt[oldName];
+      } else if (dbt[oldKey]) {
+        dbt[newKey] = dbt[oldKey];
+        delete dbt[oldKey];
+      }
+      updates.dispatch_by_type = dbt;
+    }
+
+    await getDb()
+      .collection<JsonClientEntry & { _id: string }>("clients")
+      .updateOne({ _id: slug } as any, { $set: updates });
+    await loadClientsFromDb();
+
+    await logAudit(req, "edit_path_name", `${slug}/${agentId}`, { oldName, newName });
+    res.json({ success: true, pathName: newName });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[node-editor] edit-path-name error:`, msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── POST /:agentId/edit-human-request-mode — Switch Callback/Transfer ────────
+
+nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
+  const p = req.params as Record<string, string>;
+  const slug = p.slug;
+  const agentId = p.agentId;
+  const { mode } = req.body;
+
+  if (mode !== "callback" && mode !== "live_transfer") {
+    res.status(400).json({ error: "mode must be 'callback' or 'live_transfer'" });
+    return;
+  }
+
+  const resolved = await resolveAgentId(slug, agentId);
+  if (!resolved) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  try {
+    const snapshot = await pullLatest(agentId);
+    const canonical = snapshot.canonicalJson;
+    const flow = canonical.conversationFlow as Record<string, unknown>;
+    const nodes = flow.nodes as Array<Record<string, unknown>>;
+    const parsed = parseConversationFlow(canonical);
+
+    await createVersionSnapshot(
+      slug, agentId, canonical, "manual_edit",
+      `Change human request mode to "${mode}"`,
+      req.user?.username ?? "unknown",
+    );
+
+    // Find existing human request and transfer nodes
+    const humanReqNode = nodes.find((n) => n.name === "Human Request");
+    if (!humanReqNode) {
+      res.status(500).json({ error: "Human Request node not found" });
+      return;
+    }
+
+    const humanReqId = humanReqNode.id as string;
+    const closingRemarksNode = nodes.find((n) => n.name === "Closing Remarks");
+    const politeHangupNode = nodes.find((n) => n.name === "Polite Hangup");
+    const closingRemarksId = closingRemarksNode?.id as string;
+    const politeHangupId = politeHangupNode?.id as string;
+
+    // Remove existing transfer nodes if switching to callback
+    const transferCallIdx = nodes.findIndex((n) => n.name === "Transfer Call");
+    const transferFailedIdx = nodes.findIndex((n) => n.name === "Transfer Failed");
+
+    if (mode === "callback") {
+      // Remove transfer nodes if they exist
+      if (transferCallIdx >= 0) nodes.splice(transferCallIdx, 1);
+      const newTfIdx = nodes.findIndex((n) => n.name === "Transfer Failed");
+      if (newTfIdx >= 0) nodes.splice(newTfIdx, 1);
+
+      // Update Human Request node to callback mode
+      humanReqNode.instruction = {
+        type: "prompt",
+        text: `The caller is requesting a human or live person.\n\n1. Acknowledge the request calmly and professionally, saying they are not available at the moment.\n\n2. Tell them they have the option to request a call back. Ask the caller if they want a call back.\n\nIf the caller refuses and repeats the request for a human, repeat that you cannot transfer the call.`,
+      };
+      humanReqNode.edges = politeHangupId ? [{
+        destination_node_id: politeHangupId,
+        id: `edge-callback-${Date.now()}`,
+        transition_condition: { type: "prompt", prompt: "The caller wants a call back" },
+      }] : [];
+      delete (humanReqNode as any).skip_response_edge;
+      humanReqNode.global_node_setting = {
+        go_back_conditions: [{
+          id: `go-back-${Date.now()}`,
+          transition_condition: { type: "prompt", prompt: "The caller would like to continue the call and not request a callback." },
+        }],
+        condition: "Jump to this node if the caller requests a live agent or a human.",
+      };
+    } else {
+      // Switch to live_transfer
+      // Add Transfer Call and Transfer Failed nodes if missing
+      const humanPos = humanReqNode.display_position as { x: number; y: number } ?? { x: -954, y: -1770 };
+
+      if (transferCallIdx < 0) {
+        const transferCallId = `node-transfer-${Date.now()}`;
+        const transferFailedId = `node-transfer-failed-${Date.now() + 1}`;
+
+        nodes.push({
+          custom_sip_headers: {},
+          transfer_destination: { type: "predefined", number: "{{dispatch_number}}" },
+          edge: {
+            destination_node_id: transferFailedId,
+            id: `edge-tf-${Date.now()}`,
+            transition_condition: { type: "prompt", prompt: "Transfer failed" },
+          },
+          name: "Transfer Call",
+          ignore_e164_validation: false,
+          id: transferCallId,
+          transfer_option: {
+            cold_transfer_mode: "sip_invite",
+            enable_bridge_audio_cue: true,
+            type: "cold_transfer",
+            agent_detection_timeout_ms: 30000,
+            show_transferee_as_caller: false,
+          },
+          type: "transfer_call",
+          speak_during_execution: false,
+          display_position: { x: humanPos.x + 360, y: humanPos.y + 96 },
+        });
+
+        nodes.push({
+          instruction: {
+            type: "prompt",
+            text: "Let the caller know you'll have their supervisor call them back as soon as possible. Do not ask them any more questions.",
+          },
+          always_edge: closingRemarksId ? {
+            destination_node_id: closingRemarksId,
+            id: `always-edge-tf-${Date.now()}`,
+            transition_condition: { type: "prompt", prompt: "Always" },
+          } : undefined,
+          name: "Transfer Failed",
+          edges: [],
+          id: transferFailedId,
+          type: "conversation",
+          display_position: { x: humanPos.x + 720, y: humanPos.y - 96 },
+        });
+
+        // Update Human Request to skip to Transfer Call
+        humanReqNode.instruction = {
+          type: "prompt",
+          text: `The caller is requesting a human or live person.\n\nAcknowledge and tell them you will transfer the call.`,
+        };
+        humanReqNode.edges = [];
+        humanReqNode.skip_response_edge = {
+          destination_node_id: transferCallId,
+          id: `skip-response-edge-hr-${Date.now()}`,
+          transition_condition: { type: "prompt", prompt: "Skip response" },
+        };
+        humanReqNode.global_node_setting = {
+          condition: "Jump to this node if the caller requests a live agent or a human.",
+          negative_finetune_examples: [],
+          positive_finetune_examples: [{
+            transcript: [{ content: "can I talk to the supervisor?", role: "user" }, { content: "", role: "agent" }],
+          }],
+        };
+      }
+    }
+
+    const errors = validateConversationFlow(flow);
+    if (errors.length > 0) {
+      res.status(400).json({ error: "Validation failed", errors });
+      return;
+    }
+
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
+    await storeCanonical(slug, agentId, canonical, resolved.doc);
+
+    await logAudit(req, "edit_human_request_mode", `${slug}/${agentId}`, { mode });
+    res.json({ success: true, mode });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[node-editor] edit-human-request-mode error:`, msg);
+    res.status(500).json({ error: msg });
+  }
+});
 
 // ── POST /:agentId/push — Raw JSON Push (admin/root only) ───────────────────
 

@@ -3284,10 +3284,40 @@
         (data.faqKnowledgeBase.length > 300 ? '...' : '') + '</div>';
     }
 
+    // Intro prompt
+    if (data.introNodeId) {
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Intro Prompt</span>';
+      if (canEdit) {
+        html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(data.introNodeId) + '\',\'Intro\')" style="font-size:0.7rem;">Edit</button>';
+      }
+      html += '</div>';
+      html += '<div class="ne-global-prompt">' + esc((data.introPrompt || '').slice(0, 300)) +
+        ((data.introPrompt || '').length > 300 ? '...' : '') + '</div>';
+    }
+
+    // Human request mode
+    if (data.humanRequestMode) {
+      const modeLabel = data.humanRequestMode === 'live_transfer' ? 'Live Transfer' : 'Callback';
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;padding:0.35rem 0.5rem;background:#fefce8;border:1px solid #fde68a;border-radius:5px;font-size:0.78rem;">' +
+        '<span style="color:#92400e;font-weight:600;">Human Request Mode:</span>' +
+        '<span style="color:#555;">' + modeLabel + '</span>';
+      if (canEdit) {
+        const otherMode = data.humanRequestMode === 'live_transfer' ? 'callback' : 'live_transfer';
+        const otherLabel = otherMode === 'live_transfer' ? 'Live Transfer' : 'Callback';
+        html += '<button class="ne-btn" onclick="neEditHumanMode(\'' + otherMode + '\')" style="font-size:0.68rem;">Switch to ' + otherLabel + '</button>';
+      }
+      html += '</div>';
+    }
+
     // Paths
     for (const path of data.paths) {
       html += '<div class="ne-path">';
-      html += '<div class="ne-path-header"><span>' + esc(path.name) + ' <span style="color:#999;font-size:0.75rem;">(' + path.dataPoints.length + ' questions)</span></span></div>';
+      html += '<div class="ne-path-header"><span>' + esc(path.name) + ' <span style="color:#999;font-size:0.75rem;">(' + path.dataPoints.length + ' questions)</span></span>';
+      if (canEdit) {
+        html += '<button class="ne-btn" onclick="neEditPathName(\'' + esc(path.name) + '\')" style="font-size:0.68rem;">Rename</button>';
+      }
+      html += '</div>';
 
       // Transition condition
       html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;padding:0.3rem 0.5rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:5px;font-size:0.78rem;">' +
@@ -3567,6 +3597,47 @@
         btn.textContent = 'Save';
       }
     };
+  }
+
+  // ── Path name edit ──────────────────────────────────────────────
+
+  function neEditPathName(oldName) {
+    const newName = prompt('Rename path "' + oldName + '" to:', oldName);
+    if (!newName || newName === oldName) return;
+    showToast('Renaming path...', 'success');
+    fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-path-name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldName, newName }),
+    })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (!ok) throw new Error(data.error || 'Failed');
+      showToast('Path renamed to "' + newName + '"', 'success');
+      // Reload everything since message_types and routing paths changed
+      showDetail(currentSlug);
+    })
+    .catch(err => showToast('Error: ' + err.message, 'error'));
+  }
+
+  // ── Human request mode ─────────────────────────────────────────
+
+  function neEditHumanMode(newMode) {
+    const label = newMode === 'live_transfer' ? 'Live Transfer' : 'Callback';
+    if (!confirm('Switch human request mode to ' + label + '?\n\nThis will modify the Human Request node and push to Retell immediately.')) return;
+    showToast('Switching mode...', 'success');
+    fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-human-request-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: newMode }),
+    })
+    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+    .then(({ ok, data }) => {
+      if (!ok) throw new Error(data.error || 'Failed');
+      showToast('Mode changed to ' + label, 'success');
+      loadNodeEditor(neSlug, neAgentId);
+    })
+    .catch(err => showToast('Error: ' + err.message, 'error'));
   }
 
   // ── Add / Remove / Reorder data points ─────────────────────────
