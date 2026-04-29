@@ -163,7 +163,7 @@
       background: #fff;
       border-radius: 8px 8px 0 0;
       padding: 0.75rem;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      box-shadow: none;
       pointer-events: none;
     }
     #callTable tbody tr.clickable-row td {
@@ -189,9 +189,14 @@
       display: block;
       padding: 0;
     }
-    .call-expand {
+    tr.call-expand-row {
+      background: #fff;
       border-radius: 0 0 8px 8px;
       margin-bottom: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .call-expand {
+      border-radius: 0 0 8px 8px;
       border-top: 1px dashed #e5e7eb;
     }
     .call-expand .mobile-hide { display: none; }
