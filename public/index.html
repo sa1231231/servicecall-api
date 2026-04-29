@@ -373,6 +373,7 @@
   function showResult(message, type) {
     resultDiv.innerHTML = '<span class="result-dismiss">click to dismiss</span>' + escapeHtml(message);
     resultDiv.className = type;
+    resultDiv.style.display = '';
     resultDiv.onclick = clearResult;
   }
 
