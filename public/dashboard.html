@@ -1473,7 +1473,8 @@
       if (!toggle.checked) continue;
       const fieldKey = toggle.dataset.fieldKey;
       const labelInput = document.querySelector(`.field-label-input[data-mt-key="${mtKey}"][data-field-key="${fieldKey}"]`);
-      const label = labelInput ? labelInput.value : fieldKey;
+      const origField = originalDoc?.message_types?.[mtKey]?.fields?.find(f => f.key === fieldKey);
+      const label = labelInput ? labelInput.value : (origField?.label || fieldKey);
       fields.push({ label, key: fieldKey });
     }
 
@@ -1606,14 +1607,7 @@
       <dt title="Client display name used in notification greetings and reports">Display Name</dt><dd><input class="edit-input" id="edit-name" value="${esc(doc.name)}" placeholder="Business name">
         <div class="config-hint">Appears in SMS/email notifications as the business identity — e.g. "Hi Acme Plumbing, you have a new call!"</div></dd>
 
-      <dt title="Custom greeting for SMS/email notifications. Use {{business_name}} for the business name.">Notification Greeting</dt><dd>
-        <div class="tmpl-editor-wrap">
-          <div class="tmpl-editor" contenteditable="true" id="greeting-editor" data-placeholder="Hi {{business_name}}, you have a new call!"></div>
-          <input type="hidden" id="edit-greeting" value="${esc(doc.notification_greeting || '')}">
-        </div>
-        <div class="greeting-preview" id="greeting-preview"></div>
-        <div class="config-hint">First line of every SMS and email notification. Leave blank for default. Type <code>{{</code> for variable suggestions.</div>
-      </dd>
+      <input type="hidden" id="edit-greeting" value="${esc(doc.notification_greeting || '')}">
 
       <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}
         <div class="config-hint">Retell agent IDs linked to this client. Inbound calls from these agents trigger dispatch notifications.</div></dd>
@@ -1678,13 +1672,6 @@
 
     document.getElementById('detailConfig').innerHTML = html;
 
-    // Initialize template editors
-    const greetingEditor = document.getElementById('greeting-editor');
-    const greetingHidden = document.getElementById('edit-greeting');
-    if (greetingEditor && greetingHidden) {
-      initTemplateEditor(greetingEditor, greetingHidden, ['business_name'], onGreetingInput);
-    }
-    onGreetingInput();
   }
 
   function buildOverrideRows(overrides) {
@@ -1881,12 +1868,13 @@
           mtChanged = true;
         }
       }
-      // Field reordering — rebuild fields array in DOM row order
-      document.querySelectorAll('.field-table[data-mt-key]').forEach(table => {
-        const mtKey = table.dataset.mtKey;
+      // Field reordering — rebuild fields array from data point row order
+      document.querySelectorAll('.ne-dp-list[data-ne-path]').forEach(list => {
+        const pathName = list.dataset.nePath;
+        const mtKey = findMtKey(pathName);
         const mt = updatedMt[mtKey];
         if (!mt) return;
-        const domOrder = [...table.querySelectorAll('tbody tr[data-field-key]')].map(tr => tr.dataset.fieldKey);
+        const domOrder = [...list.querySelectorAll('.ne-dp-row[data-field-key]')].map(r => r.dataset.fieldKey);
         const origOrder = mt.fields.map(f => f.key);
         if (domOrder.join(',') !== origOrder.join(',')) {
           const fieldMap = new Map(mt.fields.map(f => [f.key, f]));
@@ -3241,6 +3229,17 @@
         ((data.introPrompt || '').length > 300 ? '...' : '') + '</div>';
     }
 
+    // Notification greeting
+    const greetingVal = originalDoc?.notification_greeting || '';
+    html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+      '<span style="font-size:0.82rem;font-weight:600;color:#555;">Notification Greeting</span></div>' +
+      '<div style="margin-bottom:0.75rem;">' +
+      '<div class="tmpl-editor-wrap">' +
+      '<div class="tmpl-editor" contenteditable="true" id="ne-greeting-editor" data-placeholder="Hi {{business_name}}, you have a new call!"></div>' +
+      '<input type="hidden" id="ne-greeting-hidden" value="' + esc(greetingVal) + '">' +
+      '</div>' +
+      '<div class="config-hint">First line of every SMS/email. Leave blank for default. Type <code>{{</code> for variables.</div></div>';
+
     // Human request mode
     if (data.humanRequestMode) {
       const modeLabel = data.humanRequestMode === 'live_transfer' ? 'Live Transfer' : 'Callback';
@@ -3273,7 +3272,14 @@
       }
       html += '</div>';
 
-      // Data points
+      // Data points — look up Show/Req from message_types
+      const mtKeyForDp = findMtKey(path.name);
+      const mtForDp = originalDoc?.message_types?.[mtKeyForDp];
+      const fieldMap = {};
+      if (mtForDp) {
+        for (const f of mtForDp.fields) fieldMap[f.key] = f;
+      }
+
       html += '<div class="ne-dp-list" data-ne-path="' + esc(path.name) + '">';
       path.dataPoints.forEach((dp, i) => {
         // Branch condition badge — clickable to edit
@@ -3290,9 +3296,16 @@
         const isNested = dp.branchConditions && dp.branchConditions.length > 0;
         const nestStyle = isNested ? 'margin-left:1.5rem;border-left:3px solid #c4b5fd;' : '';
 
-        html += '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '" style="' + nestStyle + '">' +
+        // Show/Req from message_types field config
+        const fieldCfg = fieldMap[dp.variableName] || {};
+        const showChecked = fieldCfg.show !== false ? 'checked' : '';
+        const reqChecked = fieldCfg.required ? 'checked' : '';
+
+        html += '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '" data-field-key="' + esc(dp.variableName) + '" style="' + nestStyle + '">' +
           '<span class="ne-handle">&#9776;</span>' +
           '<span class="ne-num">' + (i + 1) + '</span>' +
+          '<input type="checkbox" ' + showChecked + ' data-mt-key="' + esc(mtKeyForDp) + '" data-field-key="' + esc(dp.variableName) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKeyForDp) + '\')" title="Show in dispatch" style="margin:0;">' +
+          '<input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKeyForDp) + '" data-field-key="' + esc(dp.variableName) + '" class="field-required-toggle" title="Required" style="margin:0;">' +
           '<span class="ne-label">' + esc(dp.label) + branchBadge + '</span>' +
           '<span class="ne-var">' + esc(dp.variableName) + '</span>' +
           '<span class="ne-actions">';
@@ -3330,22 +3343,6 @@
           '</div></div>' +
           '<div class="config-hint">Email subject line. Type <code>{{</code> to insert field values.</div></div>';
 
-        // Field table (Show / Req / Label / Variable)
-        html += '<table class="field-table" data-mt-key="' + esc(mtKey) + '"><thead><tr>' +
-          '<th class="col-drag"></th><th class="col-show">Show</th><th class="col-req">Req</th><th class="col-label">Label</th><th class="col-var">Variable</th>' +
-          '</tr></thead><tbody>';
-        for (const f of mt.fields) {
-          const checked = f.show !== false ? 'checked' : '';
-          const reqChecked = f.required ? 'checked' : '';
-          html += '<tr draggable="true" data-field-key="' + esc(f.key) + '">' +
-            '<td class="col-drag">&#9776;</td>' +
-            '<td class="col-show"><input type="checkbox" ' + checked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(f.key) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKey) + '\')"></td>' +
-            '<td class="col-req"><input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(f.key) + '" class="field-required-toggle"></td>' +
-            '<td class="col-label"><input type="text" value="' + esc(f.label) + '" data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(f.key) + '" class="field-label-input label-edit" oninput="updatePreview(\'' + esc(mtKey) + '\')"></td>' +
-            '<td class="col-var">' + esc(f.key) + '</td></tr>';
-        }
-        html += '</tbody></table>';
-
         // SMS / Email preview
         html += '<div class="preview-section" data-mt-key="' + esc(mtKey) + '">' +
           '<div style="display:flex;gap:1rem;margin-top:0.75rem;flex-wrap:wrap;">' +
@@ -3359,14 +3356,14 @@
         // Dispatch override
         html += '<details style="margin-top:0.65rem;">' +
           '<summary style="font-size:0.8rem;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">' + (Object.keys(dbt).length ? '(configured)' : '(none)') + '</span></summary>' +
-          '<div style="margin-top:0.35rem;font-size:0.8rem;">' +
-          '<div style="color:#888;margin-bottom:0.35rem;">Override who gets notified for this path. Blank = use Default Dispatch.</div>' +
-          '<label style="font-size:0.78rem;font-weight:600;">SMS Numbers</label>' +
-          '<input type="text" class="dbt-sms" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_text_numbers || []).join(', ')) + '" placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">' +
-          '<label style="font-size:0.78rem;font-weight:600;">Email(s)</label>' +
-          '<input type="text" class="dbt-email" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_email || []).join(', ')) + '" placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">' +
-          '<label style="font-size:0.78rem;font-weight:600;">Dispatch Call Number</label>' +
-          '<input type="text" class="dbt-call" data-mt-key="' + esc(mtKey) + '" value="' + esc(dbt.dispatch_call_number || '') + '" placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">' +
+          '<div style="margin-top:0.5rem;font-size:0.8rem;">' +
+          '<div style="color:#888;margin-bottom:0.5rem;">Override who gets notified for this path. Blank = use Default Dispatch.</div>' +
+          '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">SMS Numbers</label>' +
+          '<input type="text" class="dbt-sms" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_text_numbers || []).join(', ')) + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
+          '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Email(s)</label>' +
+          '<input type="text" class="dbt-email" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_email || []).join(', ')) + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
+          '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Dispatch Call Number</label>' +
+          '<input type="text" class="dbt-call" data-mt-key="' + esc(mtKey) + '" value="' + esc(dbt.dispatch_call_number || '') + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
           '</div></details>';
       }
 
@@ -3401,8 +3398,18 @@
       document.querySelectorAll('.ne-dp-list').forEach(list => initNeDragDrop(list));
     }
 
-    // Init field table drag-drop and subject template editors
-    document.querySelectorAll('#nodeEditorContainer .field-table').forEach(table => initFieldDragDrop(table));
+    // Init notification greeting editor in node editor
+    const neGreetEditor = document.getElementById('ne-greeting-editor');
+    const neGreetHidden = document.getElementById('ne-greeting-hidden');
+    if (neGreetEditor && neGreetHidden) {
+      initTemplateEditor(neGreetEditor, neGreetHidden, ['business_name'], () => {
+        // Sync to main edit-greeting hidden input for saveChanges()
+        const mainHidden = document.getElementById('edit-greeting');
+        if (mainHidden) mainHidden.value = neGreetHidden.value;
+      });
+    }
+
+    // Init subject template editors
     document.querySelectorAll('#nodeEditorContainer .subject-editor').forEach(editor => {
       const mtKey = editor.dataset.mtKey;
       const hidden = document.querySelector('#nodeEditorContainer .subject-template-input[data-mt-key="' + mtKey + '"]');
