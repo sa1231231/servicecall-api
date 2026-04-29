@@ -831,6 +831,34 @@
   </div>
 </div>
 
+<!-- ── Branch Condition Edit Modal ──────────────────────────────────── -->
+<div id="branchModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeBranchModal()">
+  <div class="modal" style="width:440px;">
+    <h3 id="branchModalTitle">Edit Condition</h3>
+    <p class="modal-desc" id="branchModalDesc"></p>
+    <div class="modal-field">
+      <label class="modal-label">When variable</label>
+      <select id="branchModalVar" style="width:100%;padding:0.4rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px;" onchange="branchModalVarChanged()"></select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Operator</label>
+      <select id="branchModalOp" style="width:auto;padding:0.4rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px;">
+        <option value="==">equals (==)</option>
+        <option value="!=">does not equal (!=)</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Value</label>
+      <select id="branchModalVal" style="width:100%;padding:0.4rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px;"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeBranchModal()">Cancel</button>
+      <button class="btn-cancel" id="branchModalRemove" onclick="saveBranchModal(true)" style="color:#dc2626;border-color:#fca5a5;">Remove Condition</button>
+      <button class="btn-confirm" id="branchModalSave" onclick="saveBranchModal(false)">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Clone Modal ──────────────────────────────────────────────────── -->
 <div id="cloneModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)hideCloneModal()">
   <div class="modal">
@@ -3343,13 +3371,15 @@
       // Data points
       html += '<div class="ne-dp-list" data-ne-path="' + esc(path.name) + '">';
       path.dataPoints.forEach((dp, i) => {
-        // Branch condition badge
+        // Branch condition badge — clickable to edit
         let branchBadge = '';
         if (dp.branchConditions && dp.branchConditions.length > 0) {
           const conds = dp.branchConditions.map(c =>
             c.variable + ' ' + c.operator + (c.value ? ' ' + c.value : '')
           ).join(' & ');
-          branchBadge = '<span style="font-size:0.65rem;padding:0.1rem 0.35rem;background:#faf5ff;border:1px solid #c4b5fd;border-radius:3px;color:#7c3aed;white-space:nowrap;" title="Conditional: only asked when ' + esc(conds) + '">IF ' + esc(conds) + '</span>';
+          branchBadge = canEdit
+            ? ' <span onclick="openBranchEdit(\'' + esc(dp.variableName) + '\',\'' + esc(path.name) + '\')" style="font-size:0.65rem;padding:0.1rem 0.35rem;background:#faf5ff;border:1px solid #c4b5fd;border-radius:3px;color:#7c3aed;white-space:nowrap;cursor:pointer;" title="Click to edit condition">IF ' + esc(conds) + '</span>'
+            : ' <span style="font-size:0.65rem;padding:0.1rem 0.35rem;background:#faf5ff;border:1px solid #c4b5fd;border-radius:3px;color:#7c3aed;white-space:nowrap;">IF ' + esc(conds) + '</span>';
         }
 
         html += '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '">' +
@@ -3359,6 +3389,9 @@
           '<span class="ne-var">' + esc(dp.variableName) + '</span>' +
           '<span class="ne-actions">';
         if (canEdit) {
+          if (!dp.branchConditions || dp.branchConditions.length === 0) {
+            html += '<button class="ne-btn" onclick="openBranchEdit(\'' + esc(dp.variableName) + '\',\'' + esc(path.name) + '\')" style="font-size:0.65rem;color:#7c3aed;border-color:#c4b5fd;">IF</button>';
+          }
           html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(dp.collectNodeId) + '\',\'' + esc(dp.label) + '\')">Edit</button>' +
             '<button class="ne-btn ne-btn-remove" onclick="neRemoveDataPoint(\'' + esc(dp.variableName) + '\',\'' + esc(path.name) + '\')">Remove</button>';
         }
@@ -3613,6 +3646,119 @@
         btn.textContent = 'Save';
       }
     };
+  }
+
+  // ── Branch condition edit ───────────────────────────────────────
+
+  let branchEditVar = '', branchEditPath = '';
+
+  function openBranchEdit(variableName, pathName) {
+    if (!neData) return;
+    branchEditVar = variableName;
+    branchEditPath = pathName;
+
+    const path = neData.paths.find(p => p.name === pathName);
+    if (!path) return;
+    const dp = path.dataPoints.find(d => d.variableName === variableName);
+    if (!dp) return;
+
+    document.getElementById('branchModalTitle').textContent = 'Condition: ' + dp.label;
+    document.getElementById('branchModalDesc').textContent = 'Only ask this question when the condition is met.';
+
+    // Find all enum/boolean variables in this path (before this data point) for the variable dropdown
+    const varSelect = document.getElementById('branchModalVar');
+    let varHtml = '<option value="">— Select variable —</option>';
+    for (const d of path.dataPoints) {
+      if (d.variableName === variableName) break; // only vars before this one
+      const vd = d.variableDefs[0];
+      if (vd && (vd.type === 'enum' || vd.type === 'boolean')) {
+        varHtml += '<option value="' + esc(d.variableName) + '">' + esc(d.label) + ' (' + esc(d.variableName) + ')</option>';
+      }
+    }
+    varSelect.innerHTML = varHtml;
+
+    // Pre-fill from existing conditions
+    const existing = dp.branchConditions && dp.branchConditions.length > 0 ? dp.branchConditions[0] : null;
+    if (existing) {
+      varSelect.value = existing.variable;
+      document.getElementById('branchModalOp').value = existing.operator;
+      branchModalVarChanged();
+      document.getElementById('branchModalVal').value = existing.value || '';
+      document.getElementById('branchModalRemove').style.display = '';
+    } else {
+      document.getElementById('branchModalOp').value = '==';
+      branchModalVarChanged();
+      document.getElementById('branchModalRemove').style.display = 'none';
+    }
+
+    document.getElementById('branchModal').style.display = '';
+  }
+
+  function branchModalVarChanged() {
+    const varName = document.getElementById('branchModalVar').value;
+    const valSelect = document.getElementById('branchModalVal');
+    valSelect.innerHTML = '<option value="">— Select value —</option>';
+    if (!varName || !neData) return;
+
+    // Find the variable's choices from the path data
+    for (const path of neData.paths) {
+      const dp = path.dataPoints.find(d => d.variableName === varName);
+      if (dp && dp.variableDefs[0] && dp.variableDefs[0].choices) {
+        for (const c of dp.variableDefs[0].choices) {
+          if (c === 'Not Mentioned' || c === "Caller Doesn't Know") continue;
+          valSelect.innerHTML += '<option value="' + esc(c) + '">' + esc(c) + '</option>';
+        }
+        return;
+      }
+    }
+    // Boolean type
+    valSelect.innerHTML += '<option value="true">true</option><option value="false">false</option>';
+  }
+
+  async function saveBranchModal(remove) {
+    const btn = document.getElementById('branchModalSave');
+    let branchConditions = null;
+
+    if (!remove) {
+      const variable = document.getElementById('branchModalVar').value;
+      const operator = document.getElementById('branchModalOp').value;
+      const value = document.getElementById('branchModalVal').value;
+      if (!variable || !value) {
+        showToast('Select a variable and value', 'error');
+        return;
+      }
+      branchConditions = [{ variable, operator, value }];
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+    try {
+      const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-branch-condition', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          variableName: branchEditVar,
+          pathName: branchEditPath,
+          branchConditions,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      showToast(remove ? 'Condition removed' : 'Condition saved', 'success');
+      closeBranchModal();
+      loadNodeEditor(neSlug, neAgentId);
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Save';
+    }
+  }
+
+  function closeBranchModal() {
+    document.getElementById('branchModal').style.display = 'none';
+    const btn = document.getElementById('branchModalSave');
+    btn.disabled = false;
+    btn.textContent = 'Save';
   }
 
   // ── Path name edit ──────────────────────────────────────────────

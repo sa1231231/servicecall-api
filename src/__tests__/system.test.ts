@@ -1735,6 +1735,97 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       });
     });
 
+    // ── edit-branch-condition ─────────────────────────────────────
+
+    describe("edit-branch-condition", () => {
+      it("sets a branch condition on a data point", { timeout: 30_000 }, async () => {
+        // Set condition on year_built: only ask when has_pets == Yes
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-branch-condition`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({
+              variableName: "year_built",
+              pathName: "path1",
+              branchConditions: [{ variable: "has_pets", operator: "==", value: "Yes" }],
+            }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        expect((await json(resp)).success).toBe(true);
+      });
+
+      it("branch condition appears in GET response", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        const p1 = body.paths.find((p: any) => p.name === "path1");
+        const yb = p1.dataPoints.find((d: any) => d.variableName === "year_built");
+        expect(yb.branchConditions).toBeDefined();
+        expect(yb.branchConditions.length).toBeGreaterThan(0);
+        expect(yb.branchConditions[0].variable).toBe("has_pets");
+      });
+
+      it("removes a branch condition", { timeout: 30_000 }, async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-branch-condition`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({
+              variableName: "year_built",
+              pathName: "path1",
+              branchConditions: null,
+            }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        expect((await json(resp)).success).toBe(true);
+      });
+
+      it("condition is gone after removal", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        const p1 = body.paths.find((p: any) => p.name === "path1");
+        const yb = p1.dataPoints.find((d: any) => d.variableName === "year_built");
+        expect(!yb.branchConditions || yb.branchConditions.length === 0).toBe(true);
+      });
+
+      it("rejects nonexistent variable", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-branch-condition`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({
+              variableName: "nonexistent_xyz",
+              pathName: "path1",
+              branchConditions: null,
+            }),
+          },
+        );
+        expect(resp.status).toBe(404);
+      });
+
+      it("rejects missing variableName", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-branch-condition`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ pathName: "path1", branchConditions: null }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+    });
+
     // ── edit-path-name ───────────────────────────────────────────
 
     describe("edit-path-name", () => {

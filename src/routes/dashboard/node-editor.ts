@@ -1064,6 +1064,110 @@ function buildDataPointsFromChain(
   });
 }
 
+// ── POST /:agentId/edit-branch-condition — Set/Remove Branch on Data Point ───
+
+nodeEditorRouter.post("/:agentId/edit-branch-condition", async (req, res) => {
+  const p = req.params as Record<string, string>;
+  const slug = p.slug;
+  const agentId = p.agentId;
+  const { variableName, pathName, branchConditions } = req.body;
+
+  if (!variableName || typeof variableName !== "string") {
+    res.status(400).json({ error: "variableName (string) is required" });
+    return;
+  }
+
+  // branchConditions: null to remove, or array of { variable, operator, value }
+  if (branchConditions !== null && !Array.isArray(branchConditions)) {
+    res.status(400).json({ error: "branchConditions must be null (to remove) or an array of { variable, operator, value }" });
+    return;
+  }
+
+  const resolved = await resolveAgentId(slug, agentId);
+  if (!resolved) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  try {
+    const defaults = await getDataPointDefaults();
+    const snapshot = await pullLatest(agentId);
+    const canonical = snapshot.canonicalJson;
+    const parsed = parseConversationFlow(canonical);
+
+    const targetPath = findPath(parsed.paths, pathName);
+    if (!targetPath) {
+      res.status(404).json({ error: pathName ? `Path "${pathName}" not found` : "No path found" });
+      return;
+    }
+
+    const existingVars = targetPath.dataChain.map((dp) => dp.variableName);
+    if (!existingVars.includes(variableName)) {
+      res.status(404).json({ error: `Variable "${variableName}" not found in path` });
+      return;
+    }
+
+    // Build data points with updated branch conditions
+    const currentDataPoints = buildDataPointsFromChain(targetPath, defaults);
+    for (const dp of currentDataPoints) {
+      if (dp.variableName === variableName) {
+        if (branchConditions === null) {
+          delete dp._branchConditions;
+        } else {
+          dp._branchConditions = branchConditions.map((bc: any) => ({
+            variable: bc.variable,
+            operator: bc.operator as "==" | "!=",
+            value: bc.value,
+          }));
+        }
+      }
+    }
+
+    await createVersionSnapshot(
+      slug, agentId, canonical, "manual_edit",
+      branchConditions === null
+        ? `Remove branch condition from "${variableName}"`
+        : `Set branch condition on "${variableName}"`,
+      req.user?.username ?? "unknown",
+    );
+
+    const closeNodeId = parsed.closeNode?.id;
+    if (!closeNodeId) {
+      res.status(500).json({ error: "Could not find Close node" });
+      return;
+    }
+
+    const result = regenerateDataChain(
+      targetPath,
+      currentDataPoints,
+      closeNodeId,
+      targetPath.name === "Default" ? undefined : targetPath.name,
+    );
+    applyRegeneratedChain(canonical, result);
+
+    const flow = canonical.conversationFlow as Record<string, unknown>;
+    const errors = validateConversationFlow(flow);
+    if (errors.length > 0) {
+      res.status(400).json({ error: "Validation failed", errors });
+      return;
+    }
+
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
+    await storeCanonical(slug, agentId, canonical, resolved.doc);
+
+    await logAudit(req, "edit_branch_condition", `${slug}/${agentId}`, {
+      variableName,
+      pathName: targetPath.name,
+      branchConditions,
+    });
+    res.json({ success: true, variableName, pathName: targetPath.name });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[node-editor] edit-branch-condition error:`, msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
 // ── POST /:agentId/edit-path-name — Rename a Path ────────────────────────────
 
 nodeEditorRouter.post("/:agentId/edit-path-name", async (req, res) => {
