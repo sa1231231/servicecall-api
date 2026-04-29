@@ -314,6 +314,8 @@ app.use("/dashboard", sessionAuth);
 app.use("/dashboard", dashboardRouter);
 app.use("/dashboard/api", dashboardApiRouter);
 app.use("/api/backup", sessionAuth, requirePermission("manage_settings"), backupRouter);
+app.use("/qa", sessionAuth, qaRouter);
+app.use("/api/reports", sessionAuth, reportsRouter);
 
 // ── API Key middleware (external/machine routes only) ────────────────────────
 app.use((req, res, next) => {
@@ -330,8 +332,6 @@ app.use((req, res, next) => {
 // app.use("/stripe", stripeRouter);
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
-app.use("/qa", qaRouter);
-app.use("/api/reports", reportsRouter);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();
