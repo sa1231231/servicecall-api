@@ -1566,36 +1566,7 @@
       buildHeaderButtons(doc._id) + `</h1>`;
     document.getElementById('smokeResults').innerHTML = '';
 
-    let html = `<h2>Default Dispatch</h2>
-    <dl class="config-grid">
-      <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}
-        <div class="config-hint">These numbers receive an SMS with the call summary after every call. Routing path overrides (below) take priority when configured.</div></dd>
-
-      <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}
-        <div class="config-hint">These addresses receive an email with the full call summary after every call.</div></dd>
-
-      <dt title="Phone number called by the outbound summary agent after intake">Dispatch Call</dt><dd>
-        <input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty" style="margin-bottom:0.25rem;">
-        <div class="config-hint">If set with a Summary Agent, an AI outbound call is placed to this number after each call to deliver the summary by voice.</div>
-        <details style="margin-top:0.25rem;">
-          <summary style="font-size:0.78rem;color:#888;cursor:pointer;">Call Overrides <span style="font-weight:400;">${Object.keys(doc.dispatch_call_overrides || {}).length ? '(' + Object.keys(doc.dispatch_call_overrides).length + ' configured)' : '(none)'}</span></summary>
-          <div style="margin-top:0.35rem;">
-            <div class="config-hint" style="margin-bottom:0.35rem;">Route dispatch calls to different numbers based on the caller's number. Left = caller number, Right = dispatch to.</div>
-            <div id="call-overrides-container">${buildOverrideRows(doc.dispatch_call_overrides)}</div>
-            <button type="button" class="btn-add-override" onclick="addOverrideRow()">+ Add override</button>
-          </div>
-        </details>
-      </dd>
-    </dl>
-    <details style="margin-top:0.25rem;">
-      <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Advanced Dispatch <span style="font-weight:400;color:#999;">${doc.webhook_url ? '(webhook configured)' : ''}</span></summary>
-      <dl class="config-grid" style="margin-top:0.5rem;">
-        <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook">
-          <div class="config-hint">Call data is POSTed as JSON to this URL after each dispatch. Use for CRM integrations, Zapier, etc.</div></dd>
-      </dl>
-    </details>
-
-    <h2>Agent Settings</h2>
+    let html = `<h2>Agent Settings</h2>
     <dl class="config-grid">
       <dt title="Client display name used in notification greetings and reports">Display Name</dt><dd><input class="edit-input" id="edit-name" value="${esc(doc.name)}" placeholder="Business name">
         <div class="config-hint">Appears in SMS/email notifications as the business identity — e.g. "Hi Acme Plumbing, you have a new call!"</div></dd>
@@ -1635,7 +1606,36 @@
         </label>
         <div class="config-hint">Sends an automated weekly call summary email to the client's dispatch email addresses.</div>
       </dd>
-    </dl>`;
+    </dl>
+
+    <h2>Default Dispatch</h2>
+    <dl class="config-grid">
+      <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}
+        <div class="config-hint">These numbers receive an SMS with the call summary after every call. Routing path overrides (below) take priority when configured.</div></dd>
+
+      <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}
+        <div class="config-hint">These addresses receive an email with the full call summary after every call.</div></dd>
+
+      <dt title="Phone number called by the outbound summary agent after intake">Dispatch Call</dt><dd>
+        <input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty" style="margin-bottom:0.25rem;">
+        <div class="config-hint">If set with a Summary Agent, an AI outbound call is placed to this number after each call to deliver the summary by voice.</div>
+        <details style="margin-top:0.25rem;">
+          <summary style="font-size:0.78rem;color:#888;cursor:pointer;">Call Overrides <span style="font-weight:400;">${Object.keys(doc.dispatch_call_overrides || {}).length ? '(' + Object.keys(doc.dispatch_call_overrides).length + ' configured)' : '(none)'}</span></summary>
+          <div style="margin-top:0.35rem;">
+            <div class="config-hint" style="margin-bottom:0.35rem;">Route dispatch calls to different numbers based on the caller's number. Left = caller number, Right = dispatch to.</div>
+            <div id="call-overrides-container">${buildOverrideRows(doc.dispatch_call_overrides)}</div>
+            <button type="button" class="btn-add-override" onclick="addOverrideRow()">+ Add override</button>
+          </div>
+        </details>
+      </dd>
+    </dl>
+    <details style="margin-top:0.25rem;">
+      <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Advanced Dispatch <span style="font-weight:400;color:#999;">${doc.webhook_url ? '(webhook configured)' : ''}</span></summary>
+      <dl class="config-grid" style="margin-top:0.5rem;">
+        <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook">
+          <div class="config-hint">Call data is POSTed as JSON to this URL after each dispatch. Use for CRM integrations, Zapier, etc.</div></dd>
+      </dl>
+    </details>`;
 
     if (hasPerm('edit_agents')) {
       html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
@@ -3235,6 +3235,15 @@
     container.innerHTML = '<h2>Node Editor</h2><div class="ne-loading">Loading node structure...</div>';
 
     try {
+      // Ensure dpDefaults is loaded for the add-data-point dropdown
+      if (Object.keys(dpDefaults).length === 0) {
+        const dpRes = await fetch('/dashboard/api/data-point-defaults');
+        if (dpRes.ok) {
+          const dpData = await dpRes.json();
+          dpDefaults = dpData.defaults || dpData;
+        }
+      }
+
       const [nodeRes, verRes] = await Promise.all([
         fetch('/dashboard/api/agents/' + slug + '/nodes/' + agentId),
         fetch('/dashboard/api/agents/' + slug + '/nodes/' + agentId + '/versions?limit=10'),
@@ -3262,20 +3271,53 @@
     html += '<div class="ne-global-prompt">' + esc(data.globalPrompt).slice(0, 500) +
       (data.globalPrompt.length > 500 ? '...' : '') + '</div>';
 
+    // FAQ Knowledge Base
+    if (data.faqNodeId) {
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+        '<span style="font-size:0.82rem;font-weight:600;color:#555;">FAQ / Knowledge Base</span>';
+      if (canEdit) {
+        html += '<button class="ne-btn" onclick="openFaqEdit()" style="font-size:0.7rem;">Edit</button>';
+      }
+      html += '</div>';
+      const faqPreview = (data.faqKnowledgeBase || '').slice(0, 300);
+      html += '<div class="ne-global-prompt">' + esc(faqPreview) +
+        (data.faqKnowledgeBase.length > 300 ? '...' : '') + '</div>';
+    }
+
     // Paths
     for (const path of data.paths) {
       html += '<div class="ne-path">';
       html += '<div class="ne-path-header"><span>' + esc(path.name) + ' <span style="color:#999;font-size:0.75rem;">(' + path.dataPoints.length + ' questions)</span></span></div>';
+
+      // Transition condition
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;padding:0.3rem 0.5rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:5px;font-size:0.78rem;">' +
+        '<span style="color:#0369a1;font-weight:600;flex-shrink:0;">Transition:</span>' +
+        '<span style="color:#555;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(path.transitionCondition || '(none)') + '</span>';
+      if (canEdit) {
+        html += '<button class="ne-btn" onclick="openTransitionEdit(\'' + esc(path.name) + '\')" style="font-size:0.68rem;flex-shrink:0;">Edit</button>';
+      }
+      html += '</div>';
+
+      // Data points
       html += '<div class="ne-dp-list" data-ne-path="' + esc(path.name) + '">';
       path.dataPoints.forEach((dp, i) => {
+        // Branch condition badge
+        let branchBadge = '';
+        if (dp.branchConditions && dp.branchConditions.length > 0) {
+          const conds = dp.branchConditions.map(c =>
+            c.variable + ' ' + c.operator + (c.value ? ' ' + c.value : '')
+          ).join(' & ');
+          branchBadge = '<span style="font-size:0.65rem;padding:0.1rem 0.35rem;background:#faf5ff;border:1px solid #c4b5fd;border-radius:3px;color:#7c3aed;white-space:nowrap;" title="Conditional: only asked when ' + esc(conds) + '">IF ' + esc(conds) + '</span>';
+        }
+
         html += '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '">' +
           '<span class="ne-handle">&#9776;</span>' +
           '<span class="ne-num">' + (i + 1) + '</span>' +
-          '<span class="ne-label">' + esc(dp.label) + '</span>' +
+          '<span class="ne-label">' + esc(dp.label) + branchBadge + '</span>' +
           '<span class="ne-var">' + esc(dp.variableName) + '</span>' +
           '<span class="ne-actions">';
         if (canEdit) {
-          html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(dp.collectNodeId) + '\',\'' + esc(dp.label) + '\')">Edit Prompt</button>' +
+          html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(dp.collectNodeId) + '\',\'' + esc(dp.label) + '\')">Edit</button>' +
             '<button class="ne-btn ne-btn-remove" onclick="neRemoveDataPoint(\'' + esc(dp.variableName) + '\',\'' + esc(path.name) + '\')">Remove</button>';
         }
         html += '</span></div>';
@@ -3460,6 +3502,71 @@
     const btn = document.getElementById('promptModalSave');
     btn.disabled = false;
     btn.textContent = 'Save';
+  }
+
+  // ── FAQ edit ────────────────────────────────────────────────────
+
+  function openFaqEdit() {
+    if (!neData || !neData.faqNodeId) return;
+    document.getElementById('promptModalTitle').textContent = 'Edit FAQ / Knowledge Base';
+    document.getElementById('promptModalDesc').textContent = 'Content the agent uses to answer caller questions about the business.';
+    document.getElementById('promptModalText').value = neData.faqKnowledgeBase || '';
+    document.getElementById('promptModal').style.display = '';
+    promptModalCb = async (text) => {
+      const btn = document.getElementById('promptModalSave');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+      try {
+        // The FAQ node's full instruction is the prefix + the knowledge base
+        const fullText = 'Your goal is to answer administrative and general questions briefly and accurately.\n\n' + text;
+        const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nodeId: neData.faqNodeId, instruction: fullText }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed');
+        showToast('FAQ updated', 'success');
+        closePromptModal();
+        loadNodeEditor(neSlug, neAgentId);
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Save';
+      }
+    };
+  }
+
+  // ── Transition condition edit ──────────────────────────────────
+
+  function openTransitionEdit(pathName) {
+    if (!neData) return;
+    const tc = neData.transitionConditions?.[pathName] || '';
+    document.getElementById('promptModalTitle').textContent = 'Edit Transition: ' + pathName;
+    document.getElementById('promptModalDesc').textContent = 'The condition the AI evaluates after the intro to route callers into this path.';
+    document.getElementById('promptModalText').value = tc;
+    document.getElementById('promptModal').style.display = '';
+    promptModalCb = async (text) => {
+      const btn = document.getElementById('promptModalSave');
+      btn.disabled = true;
+      btn.textContent = 'Saving...';
+      try {
+        const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-transition', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pathName, transitionCondition: text }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed');
+        showToast('Transition updated', 'success');
+        closePromptModal();
+        loadNodeEditor(neSlug, neAgentId);
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Save';
+      }
+    };
   }
 
   // ── Add / Remove / Reorder data points ─────────────────────────

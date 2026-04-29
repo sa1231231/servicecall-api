@@ -145,6 +145,68 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
     const parsed = parseConversationFlow(snapshot.canonicalJson);
     const latestVersion = await getLatestVersion(slug, agentId);
 
+    // Extract transition conditions from intro node edges
+    const introEdges = parsed.introNode.raw.edges as Array<Record<string, unknown>> | undefined;
+    const transitionConditions: Record<string, string> = {};
+    if (Array.isArray(introEdges)) {
+      for (const path of parsed.paths) {
+        const edge = introEdges.find(
+          (e) => e.destination_node_id === path.transitionNode.id,
+        );
+        if (edge) {
+          const tc = edge.transition_condition as Record<string, unknown> | undefined;
+          transitionConditions[path.name] = (tc?.prompt as string) ?? "";
+        }
+      }
+    }
+
+    // Extract FAQ knowledge base from FAQ node
+    let faqKnowledgeBase = "";
+    let faqNodeId: string | undefined;
+    if (parsed.faqNode) {
+      faqNodeId = parsed.faqNode.id;
+      const instr = parsed.faqNode.raw.instruction as Record<string, unknown> | undefined;
+      const fullText = (instr?.text as string) ?? "";
+      // FAQ prompt format: "Your goal is to answer...\n\n{faqContent}"
+      const faqPrefix = "Your goal is to answer administrative and general questions briefly and accurately.\n\n";
+      faqKnowledgeBase = fullText.startsWith(faqPrefix)
+        ? fullText.slice(faqPrefix.length)
+        : fullText;
+    }
+
+    // Extract branch conditions from data points
+    function extractBranchConditions(dp: typeof parsed.paths[0]["dataChain"][0]) {
+      // Check the router edge for this data point's branch conditions
+      const routerEdges = parsed.paths
+        .flatMap((p) => {
+          const re = p.routerNode.raw.edges as Array<Record<string, unknown>> | undefined;
+          return (re ?? []).filter((e) => e.destination_node_id === dp.collectNode.id);
+        });
+      if (routerEdges.length === 0) return undefined;
+      const edge = routerEdges[0];
+      const tc = edge.transition_condition as Record<string, unknown> | undefined;
+      if (tc?.type !== "equation") return undefined;
+      const eqs = tc.equations as Array<Record<string, unknown>> | undefined;
+      if (!Array.isArray(eqs)) return undefined;
+      // Find branch condition equations (not the "is missing" checks)
+      const branchEqs = eqs.filter((eq) => {
+        const left = eq.left as string;
+        // Skip the standard "is missing" equations for this variable
+        if (left === `{{${dp.variableName}}}`) return false;
+        if (left === `{{phone_number_collected}}`) return false;
+        // Skip composite variable checks
+        const isComposite = dp.variableDefs.some((v) => left === `{{${v.name}}}`);
+        if (isComposite) return false;
+        return true;
+      });
+      if (branchEqs.length === 0) return undefined;
+      return branchEqs.map((eq) => ({
+        variable: (eq.left as string).replace(/^\{\{|\}\}$/g, ""),
+        operator: eq.operator as string,
+        value: eq.right as string | undefined,
+      }));
+    }
+
     res.json({
       agentId,
       agentName: snapshot.agentName,
@@ -152,11 +214,16 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       globalPrompt: parsed.globalPrompt,
       startNodeId: parsed.startNodeId,
       versionNumber: latestVersion?.version ?? 0,
+      introNodeId: parsed.introNode.id,
+      faqNodeId,
+      faqKnowledgeBase,
+      transitionConditions,
       paths: parsed.paths.map((p) => ({
         name: p.name,
         transitionNodeId: p.transitionNode.id,
         frontExtractNodeId: p.frontExtractNode.id,
         routerNodeId: p.routerNode.id,
+        transitionCondition: transitionConditions[p.name] ?? "",
         dataPoints: p.dataChain.map((dp) => ({
           variableName: dp.variableName,
           label: dp.label,
@@ -165,6 +232,7 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
           conversationPrompt: dp.conversationPrompt,
           forwardCondition: dp.forwardCondition,
           variableDefs: dp.variableDefs,
+          branchConditions: extractBranchConditions(dp),
         })),
       })),
       nodes: parsed.allNodes.map((n) => ({
@@ -389,6 +457,86 @@ nodeEditorRouter.post("/:agentId/edit-global-prompt", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error(`[node-editor] edit-global-prompt error:`, msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── POST /:agentId/edit-transition — Edit Path Transition Condition ──────────
+
+nodeEditorRouter.post("/:agentId/edit-transition", async (req, res) => {
+  const p = req.params as Record<string, string>;
+  const slug = p.slug;
+  const agentId = p.agentId;
+  const { pathName, transitionCondition } = req.body;
+
+  if (!pathName || typeof pathName !== "string") {
+    res.status(400).json({ error: "pathName (string) is required" });
+    return;
+  }
+  if (typeof transitionCondition !== "string" || transitionCondition.trim().length === 0) {
+    res.status(400).json({ error: "transitionCondition (non-empty string) is required" });
+    return;
+  }
+
+  const resolved = await resolveAgentId(slug, agentId);
+  if (!resolved) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  try {
+    const snapshot = await pullLatest(agentId);
+    const canonical = snapshot.canonicalJson;
+    const parsed = parseConversationFlow(canonical);
+
+    // Find the target path's transition node
+    const targetPath = parsed.paths.find((pa) => pa.name === pathName);
+    if (!targetPath) {
+      res.status(404).json({
+        error: `Path "${pathName}" not found`,
+        availablePaths: parsed.paths.map((pa) => pa.name),
+      });
+      return;
+    }
+
+    // Find the intro node edge that points to this path's transition node
+    const introNode = parsed.introNode.raw;
+    const edges = introNode.edges as Array<Record<string, unknown>>;
+    const targetEdge = edges.find(
+      (e) => e.destination_node_id === targetPath.transitionNode.id,
+    );
+    if (!targetEdge) {
+      res.status(500).json({ error: "Could not find transition edge for this path" });
+      return;
+    }
+
+    // Snapshot before edit
+    await createVersionSnapshot(
+      slug, agentId, canonical, "manual_edit",
+      `Edit transition condition for path "${pathName}"`,
+      req.user?.username ?? "unknown",
+    );
+
+    // Update the edge's transition condition
+    (targetEdge.transition_condition as Record<string, unknown>).prompt = transitionCondition;
+
+    // Validate
+    const flow = canonical.conversationFlow as Record<string, unknown>;
+    const errors = validateConversationFlow(flow);
+    if (errors.length > 0) {
+      res.status(400).json({ error: "Validation failed", errors });
+      return;
+    }
+
+    // Push to Retell
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
+    await storeCanonical(slug, agentId, canonical, resolved.doc);
+
+    await logAudit(req, "edit_transition", `${slug}/${agentId}`, { pathName, transitionCondition });
+    res.json({ success: true, pathName });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[node-editor] edit-transition error:`, msg);
     res.status(500).json({ error: msg });
   }
 });

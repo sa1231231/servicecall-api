@@ -1375,12 +1375,29 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         expect(typeof body.globalPrompt).toBe("string");
         expect(body.globalPrompt.length).toBeGreaterThan(0);
         expect(typeof body.startNodeId).toBe("string");
+        expect(typeof body.introNodeId).toBe("string");
+
+        // FAQ knowledge base
+        expect(typeof body.faqNodeId).toBe("string");
+        expect(typeof body.faqKnowledgeBase).toBe("string");
+        expect(body.faqKnowledgeBase.length).toBeGreaterThan(0);
+
+        // Transition conditions
+        expect(typeof body.transitionConditions).toBe("object");
+        expect(typeof body.transitionConditions.path1).toBe("string");
+        expect(body.transitionConditions.path1.length).toBeGreaterThan(0);
+        expect(typeof body.transitionConditions.path2).toBe("string");
 
         // Multi-path structure
         expect(Array.isArray(body.paths)).toBe(true);
         expect(body.paths.length).toBe(2);
         expect(body.paths[0].name).toBe("path1");
         expect(body.paths[1].name).toBe("path2");
+
+        // Each path has transitionCondition
+        expect(typeof body.paths[0].transitionCondition).toBe("string");
+        expect(body.paths[0].transitionCondition.length).toBeGreaterThan(0);
+        expect(typeof body.paths[1].transitionCondition).toBe("string");
 
         // Path 1 data points
         const p1Vars = body.paths[0].dataPoints.map((d: any) => d.variableName);
@@ -1393,7 +1410,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         expect(p2Vars).toContain("street_address");
         initialPath2Vars = p2Vars;
 
-        // Each data point has required fields
+        // Each data point has required fields including branchConditions
         for (const path of body.paths) {
           for (const dp of path.dataPoints) {
             expect(dp.variableName).toBeDefined();
@@ -1403,7 +1420,25 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             expect(typeof dp.conversationPrompt).toBe("string");
             expect(typeof dp.forwardCondition).toBe("string");
             expect(Array.isArray(dp.variableDefs)).toBe(true);
+            // branchConditions is either null/undefined or an array
+            if (dp.branchConditions) {
+              expect(Array.isArray(dp.branchConditions)).toBe(true);
+              for (const bc of dp.branchConditions) {
+                expect(typeof bc.variable).toBe("string");
+                expect(typeof bc.operator).toBe("string");
+              }
+            }
           }
+        }
+
+        // Branch conditions should exist on conditional data points (has_pets branches)
+        const p1Dps = body.paths[0].dataPoints;
+        const propertyType = p1Dps.find((d: any) => d.variableName === "property_type");
+        if (propertyType) {
+          // property_type is behind a has_pets == Yes branch
+          expect(propertyType.branchConditions).toBeDefined();
+          expect(propertyType.branchConditions.length).toBeGreaterThan(0);
+          expect(propertyType.branchConditions[0].variable).toBe("has_pets");
         }
 
         // Node list
@@ -1593,6 +1628,107 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
           },
         );
         expect(resp.status).toBe(400);
+      });
+    });
+
+    // ── edit-transition ──────────────────────────────────────────
+
+    describe("edit-transition", () => {
+      it("changes path2 transition condition", { timeout: 30_000 }, async () => {
+        const testCondition = "The caller has something else [TEST-" + Date.now() + "]";
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-transition`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ pathName: "path2", transitionCondition: testCondition }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        expect((await json(resp)).success).toBe(true);
+      });
+
+      it("transition condition is updated in GET response", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        expect(body.transitionConditions.path2).toContain("[TEST-");
+        expect(body.paths[1].transitionCondition).toContain("[TEST-");
+      });
+
+      it("rejects empty condition", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-transition`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ pathName: "path2", transitionCondition: "" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+
+      it("rejects missing pathName", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-transition`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ transitionCondition: "test" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+
+      it("returns 404 for nonexistent path", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-transition`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ pathName: "nonexistent_path", transitionCondition: "test" }),
+          },
+        );
+        expect(resp.status).toBe(404);
+        const body = await json(resp);
+        expect(Array.isArray(body.availablePaths)).toBe(true);
+      });
+    });
+
+    // ── edit FAQ via edit-prompt ────────────────────────────────────
+
+    describe("edit FAQ", () => {
+      it("edits FAQ node prompt to update knowledge base", { timeout: 30_000 }, async () => {
+        // Get the FAQ node ID
+        const structResp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const struct = await json(structResp);
+        expect(struct.faqNodeId).toBeDefined();
+
+        const newFaq = "Your goal is to answer administrative and general questions briefly and accurately.\n\nUpdated FAQ content [TEST-" + Date.now() + "]";
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-prompt`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ nodeId: struct.faqNodeId, instruction: newFaq }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        expect((await json(resp)).success).toBe(true);
+      });
+
+      it("FAQ content updated in GET response", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        expect(body.faqKnowledgeBase).toContain("Updated FAQ content [TEST-");
       });
     });
 
