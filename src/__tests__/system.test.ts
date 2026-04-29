@@ -1345,360 +1345,602 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
   });
 
   // ── 33. Node Editor ─────────────────────────────────────────────────
+  // Uses test-test-123 agent which has known multi-path structure:
+  //   path1: full_name, phone_number, has_pets, property_type, year_built
+  //   path2: city, street_address
 
   describe("Node editor", () => {
-    let nodeAgentId: string | undefined;
-    let originalVersionId: string | undefined;
-    let editVersionId: string | undefined;
+    const NE_SLUG = "test-test-123";
+    const NE_AGENT = "agent_66565c3c5e4e1981d38eb54587";
 
-    it("GET node structure for demo agent", async () => {
-      // First get the agent ID
-      if (!demoAgentId) {
-        const agentResp = await fetch(url(`/dashboard/api/agents/${DEMO_SLUG}`), {
-          headers: authHeaders(),
-        });
-        const agentBody = await json(agentResp);
-        demoAgentId = agentBody.agent_ids[0];
-      }
-      nodeAgentId = demoAgentId;
+    let initialVersionCount = 0;
+    let firstVersionId: string | undefined;
+    let preEditSnapshotId: string | undefined;
+    let initialPath2Vars: string[] = [];
 
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}`),
-        { headers: authHeaders() },
-      );
-      expect(resp.status).toBe(200);
-      const body = await json(resp);
+    // ── Read operations ────────────────────────────────────────────
 
-      expect(body.agentId).toBe(nodeAgentId);
-      expect(typeof body.agentName).toBe("string");
-      expect(typeof body.conversationFlowId).toBe("string");
-      expect(typeof body.globalPrompt).toBe("string");
-      expect(body.globalPrompt.length).toBeGreaterThan(0);
-      expect(typeof body.startNodeId).toBe("string");
-      expect(Array.isArray(body.paths)).toBe(true);
-      expect(body.paths.length).toBeGreaterThan(0);
-      expect(Array.isArray(body.nodes)).toBe(true);
-      expect(body.nodes.length).toBeGreaterThan(10);
+    describe("GET node structure", () => {
+      it("returns structured node tree for multi-path agent", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
 
-      // Verify path structure
-      const firstPath = body.paths[0];
-      expect(firstPath.name).toBeDefined();
-      expect(Array.isArray(firstPath.dataPoints)).toBe(true);
-      expect(firstPath.dataPoints.length).toBeGreaterThan(0);
-      expect(firstPath.dataPoints[0].variableName).toBeDefined();
-      expect(firstPath.dataPoints[0].label).toBeDefined();
-      expect(firstPath.dataPoints[0].collectNodeId).toBeDefined();
-      expect(firstPath.dataPoints[0].confirmNodeId).toBeDefined();
-    });
+        expect(body.agentId).toBe(NE_AGENT);
+        expect(typeof body.agentName).toBe("string");
+        expect(typeof body.conversationFlowId).toBe("string");
+        expect(typeof body.globalPrompt).toBe("string");
+        expect(body.globalPrompt.length).toBeGreaterThan(0);
+        expect(typeof body.startNodeId).toBe("string");
 
-    it("returns 404 for nonexistent agent ID", async () => {
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/nonexistent-agent-id`),
-        { headers: authHeaders() },
-      );
-      expect(resp.status).toBe(404);
-    });
+        // Multi-path structure
+        expect(Array.isArray(body.paths)).toBe(true);
+        expect(body.paths.length).toBe(2);
+        expect(body.paths[0].name).toBe("path1");
+        expect(body.paths[1].name).toBe("path2");
 
-    it("returns 404 for nonexistent slug", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/nonexistent-slug/nodes/${nodeAgentId}`),
-        { headers: authHeaders() },
-      );
-      expect(resp.status).toBe(404);
-    });
+        // Path 1 data points
+        const p1Vars = body.paths[0].dataPoints.map((d: any) => d.variableName);
+        expect(p1Vars).toContain("full_name");
+        expect(p1Vars).toContain("phone_number");
 
-    it("GET version history (initially may be empty)", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/versions`),
-        { headers: authHeaders() },
-      );
-      expect(resp.status).toBe(200);
-      const body = await json(resp);
-      expect(Array.isArray(body.versions)).toBe(true);
-      expect(typeof body.total).toBe("number");
-    });
+        // Path 2 data points
+        const p2Vars = body.paths[1].dataPoints.map((d: any) => d.variableName);
+        expect(p2Vars).toContain("city");
+        expect(p2Vars).toContain("street_address");
+        initialPath2Vars = p2Vars;
 
-    it("edit-prompt changes node text and creates version", async () => {
-      if (!nodeAgentId) return;
-
-      // Get current structure to find a node to edit
-      const structResp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}`),
-        { headers: authHeaders() },
-      );
-      const struct = await json(structResp);
-
-      // Find the Close node (safe to edit, won't affect call flow much)
-      const closeNode = struct.nodes.find((n: any) => n.name === "Close");
-      if (!closeNode) return;
-
-      const testInstruction = `Thank the caller for all the information, and let them know our team will reach out soon. [TEST-${Date.now()}]`;
-
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/edit-prompt`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            nodeId: closeNode.id,
-            instruction: testInstruction,
-          }),
-        },
-      );
-      expect(resp.status).toBe(200);
-      const body = await json(resp);
-      expect(body.success).toBe(true);
-      expect(body.nodeId).toBe(closeNode.id);
-      expect(body.nodeName).toBe("Close");
-    });
-
-    it("version history grows after edit", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/versions`),
-        { headers: authHeaders() },
-      );
-      expect(resp.status).toBe(200);
-      const body = await json(resp);
-      expect(body.total).toBeGreaterThan(0);
-
-      // Save the latest version for potential rollback
-      if (body.versions.length > 0) {
-        editVersionId = body.versions[0]._id;
-        // The version before the edit (second one if exists) is the original state
-        if (body.versions.length > 1) {
-          originalVersionId = body.versions[1]._id;
+        // Each data point has required fields
+        for (const path of body.paths) {
+          for (const dp of path.dataPoints) {
+            expect(dp.variableName).toBeDefined();
+            expect(dp.label).toBeDefined();
+            expect(dp.collectNodeId).toBeDefined();
+            expect(dp.confirmNodeId).toBeDefined();
+            expect(typeof dp.conversationPrompt).toBe("string");
+            expect(typeof dp.forwardCondition).toBe("string");
+            expect(Array.isArray(dp.variableDefs)).toBe(true);
+          }
         }
-      }
-    });
 
-    it("GET specific version returns full detail", async () => {
-      if (!nodeAgentId || !editVersionId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/versions/${editVersionId}`),
-        { headers: authHeaders() },
-      );
-      expect(resp.status).toBe(200);
-      const body = await json(resp);
-      expect(body.version).toBeDefined();
-      expect(body.source).toBe("manual_edit");
-      expect(typeof body.nodeCount).toBe("number");
-      expect(typeof body.dataPointCount).toBe("number");
-      expect(typeof body.globalPrompt).toBe("string");
-      expect(Array.isArray(body.paths)).toBe(true);
-      expect(Array.isArray(body.nodes)).toBe(true);
-    });
-
-    it("returns 404 for nonexistent version", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/versions/000000000000000000000000`),
-        { headers: authHeaders() },
-      );
-      expect(resp.status).toBe(404);
-    });
-
-    it("edit-prompt rejects empty instruction", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/edit-prompt`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ nodeId: "some-id", instruction: "" }),
-        },
-      );
-      expect(resp.status).toBe(400);
-    });
-
-    it("edit-prompt rejects missing nodeId", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/edit-prompt`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ instruction: "test" }),
-        },
-      );
-      expect(resp.status).toBe(400);
-    });
-
-    it("edit-prompt returns 404 for nonexistent node", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/edit-prompt`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            nodeId: "nonexistent-node-id-xyz",
-            instruction: "test",
-          }),
-        },
-      );
-      expect(resp.status).toBe(404);
-    });
-
-    it("edit-global-prompt changes the global prompt", async () => {
-      if (!nodeAgentId) return;
-
-      // Get current global prompt
-      const structResp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}`),
-        { headers: authHeaders() },
-      );
-      const struct = await json(structResp);
-      const originalGlobalPrompt = struct.globalPrompt;
-
-      const testPrompt = originalGlobalPrompt + `\n\n[TEST-${Date.now()}]`;
-
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/edit-global-prompt`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ globalPrompt: testPrompt }),
-        },
-      );
-      expect(resp.status).toBe(200);
-      const body = await json(resp);
-      expect(body.success).toBe(true);
-    });
-
-    it("edit-global-prompt rejects empty prompt", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/edit-global-prompt`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ globalPrompt: "" }),
-        },
-      );
-      expect(resp.status).toBe(400);
-    });
-
-    it("edit-agent-settings rejects empty body", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/edit-agent-settings`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({}),
-        },
-      );
-      expect(resp.status).toBe(400);
-      const body = await json(resp);
-      expect(Array.isArray(body.allowed)).toBe(true);
-    });
-
-    it("edit-agent-settings rejects non-allowed fields", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/edit-agent-settings`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ response_engine: "hacked" }),
-        },
-      );
-      expect(resp.status).toBe(400);
-    });
-
-    it("rollback rejects missing versionId", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/rollback`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({}),
-        },
-      );
-      expect(resp.status).toBe(400);
-    });
-
-    it("rollback rejects nonexistent version", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/rollback`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ versionId: "000000000000000000000000" }),
-        },
-      );
-      expect(resp.status).toBe(404);
-    });
-
-    it("rollback restores to original state", { timeout: 30_000 }, async () => {
-      if (!nodeAgentId || !originalVersionId) return;
-
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/rollback`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ versionId: originalVersionId }),
-        },
-      );
-      expect(resp.status).toBe(200);
-      const body = await json(resp);
-      expect(body.success).toBe(true);
-      expect(typeof body.restoredVersion).toBe("number");
-    });
-
-    it("node structure is valid after rollback", async () => {
-      if (!nodeAgentId) return;
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}`),
-        { headers: authHeaders() },
-      );
-      expect(resp.status).toBe(200);
-      const body = await json(resp);
-
-      // Verify structural integrity
-      expect(body.agentId).toBe(nodeAgentId);
-      expect(body.paths.length).toBeGreaterThan(0);
-      expect(body.nodes.length).toBeGreaterThan(10);
-      expect(body.globalPrompt.length).toBeGreaterThan(0);
-
-      // Verify all nodes have required fields
-      for (const node of body.nodes) {
-        expect(node.id).toBeDefined();
-        expect(node.name).toBeDefined();
-        expect(node.type).toBeDefined();
-      }
-
-      // Verify all paths have data points
-      for (const path of body.paths) {
-        expect(path.dataPoints.length).toBeGreaterThan(0);
-        for (const dp of path.dataPoints) {
-          expect(dp.variableName).toBeDefined();
-          expect(dp.collectNodeId).toBeDefined();
-          expect(dp.confirmNodeId).toBeDefined();
+        // Node list
+        expect(Array.isArray(body.nodes)).toBe(true);
+        expect(body.nodes.length).toBeGreaterThan(10);
+        for (const node of body.nodes) {
+          expect(node.id).toBeDefined();
+          expect(node.name).toBeDefined();
+          expect(node.type).toBeDefined();
+          expect(typeof node.isGlobal).toBe("boolean");
         }
-      }
+      });
+
+      it("returns 404 for nonexistent agent ID", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/nonexistent-agent-id`),
+          { headers: authHeaders() },
+        );
+        expect(resp.status).toBe(404);
+      });
+
+      it("returns 404 for nonexistent slug", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/nonexistent-slug/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        expect(resp.status).toBe(404);
+      });
     });
 
-    it("push rejects non-root users (if not root)", async () => {
-      if (!nodeAgentId) return;
-      // This test may pass or fail depending on whether the test user is root
-      // Just verify the endpoint exists and responds
-      const resp = await fetch(
-        url(`/dashboard/api/agents/${DEMO_SLUG}/nodes/${nodeAgentId}/push`),
-        {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({ canonicalJson: {} }),
-        },
-      );
-      // Root users get 400 (bad canonicalJson), non-root get 403
-      expect([400, 403]).toContain(resp.status);
+    // ── Version history ────────────────────────────────────────────
+
+    describe("Version history", () => {
+      it("GET versions returns paginated list", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/versions?limit=5`),
+          { headers: authHeaders() },
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(Array.isArray(body.versions)).toBe(true);
+        expect(typeof body.total).toBe("number");
+        initialVersionCount = body.total;
+
+        if (body.versions.length > 0) {
+          const v = body.versions[0];
+          expect(v._id).toBeDefined();
+          expect(typeof v.version).toBe("number");
+          expect(v.source).toBeDefined();
+          expect(typeof v.description).toBe("string");
+          expect(typeof v.nodeCount).toBe("number");
+          expect(typeof v.dataPointCount).toBe("number");
+          expect(v.createdAt).toBeDefined();
+          firstVersionId = v._id;
+        }
+      });
+
+      it("GET specific version returns full detail", async () => {
+        if (!firstVersionId) return;
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/versions/${firstVersionId}`),
+          { headers: authHeaders() },
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(typeof body.version).toBe("number");
+        expect(typeof body.globalPrompt).toBe("string");
+        expect(Array.isArray(body.paths)).toBe(true);
+        expect(Array.isArray(body.nodes)).toBe(true);
+      });
+
+      it("returns 404 for nonexistent version", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/versions/000000000000000000000000`),
+          { headers: authHeaders() },
+        );
+        expect(resp.status).toBe(404);
+      });
+    });
+
+    // ── edit-prompt ────────────────────────────────────────────────
+
+    describe("edit-prompt", () => {
+      it("edits Close node prompt and creates version", { timeout: 30_000 }, async () => {
+        const structResp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const struct = await json(structResp);
+        const closeNode = struct.nodes.find((n: any) => n.name === "Close");
+        expect(closeNode).toBeDefined();
+
+        const testText = `Thank the caller. [SYSTEST-${Date.now()}]`;
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-prompt`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ nodeId: closeNode.id, instruction: testText }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.success).toBe(true);
+        expect(body.nodeId).toBe(closeNode.id);
+        expect(body.nodeName).toBe("Close");
+      });
+
+      it("version count increased after edit", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/versions?limit=1`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        expect(body.total).toBeGreaterThan(initialVersionCount);
+        if (body.versions.length > 0) {
+          preEditSnapshotId = body.versions[0]._id;
+        }
+      });
+
+      it("rejects empty instruction", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-prompt`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ nodeId: "x", instruction: "" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+
+      it("rejects missing nodeId", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-prompt`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ instruction: "test" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+
+      it("returns 404 for nonexistent node", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-prompt`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ nodeId: "nonexistent-node-xyz", instruction: "test" }),
+          },
+        );
+        expect(resp.status).toBe(404);
+      });
+    });
+
+    // ── edit-global-prompt ─────────────────────────────────────────
+
+    describe("edit-global-prompt", () => {
+      it("changes the global prompt", { timeout: 30_000 }, async () => {
+        const structResp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const struct = await json(structResp);
+
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-global-prompt`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ globalPrompt: struct.globalPrompt + `\n[TEST-${Date.now()}]` }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        expect((await json(resp)).success).toBe(true);
+      });
+
+      it("rejects empty prompt", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-global-prompt`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ globalPrompt: "" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+    });
+
+    // ── edit-agent-settings ────────────────────────────────────────
+
+    describe("edit-agent-settings", () => {
+      it("rejects empty body", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-agent-settings`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({}),
+          },
+        );
+        expect(resp.status).toBe(400);
+        const body = await json(resp);
+        expect(Array.isArray(body.allowed)).toBe(true);
+        expect(body.allowed.length).toBeGreaterThan(5);
+      });
+
+      it("rejects non-allowed fields only", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/edit-agent-settings`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ response_engine: "hacked", agent_id: "stolen" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+    });
+
+    // ── add-data-point ─────────────────────────────────────────────
+
+    describe("add-data-point", () => {
+      it("adds email to path2", { timeout: 30_000 }, async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/add-data-point`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ dataPointKey: "email", pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.success).toBe(true);
+        expect(body.variableName).toBe("email");
+        expect(body.pathName).toBe("path2");
+      });
+
+      it("email appears in path2 after add", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        const p2 = body.paths.find((p: any) => p.name === "path2");
+        const vars = p2.dataPoints.map((d: any) => d.variableName);
+        expect(vars).toContain("email");
+        expect(vars.length).toBe(initialPath2Vars.length + 1);
+      });
+
+      it("rejects duplicate variable in same path", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/add-data-point`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ dataPointKey: "email", pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+        const body = await json(resp);
+        expect(body.error).toContain("already exists");
+      });
+
+      it("rejects unknown data point key", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/add-data-point`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ dataPointKey: "nonexistent_xyz_var", pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+
+      it("rejects nonexistent path name", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/add-data-point`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ dataPointKey: "company_name", pathName: "nonexistent_path" }),
+          },
+        );
+        expect(resp.status).toBe(404);
+        const body = await json(resp);
+        expect(Array.isArray(body.availablePaths)).toBe(true);
+      });
+
+      it("rejects missing dataPointKey", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/add-data-point`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+
+      it("path1 is unaffected by path2 changes", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        const p1 = body.paths.find((p: any) => p.name === "path1");
+        const p1Vars = p1.dataPoints.map((d: any) => d.variableName);
+        expect(p1Vars).toContain("full_name");
+        expect(p1Vars).toContain("phone_number");
+        expect(p1Vars).toContain("has_pets");
+      });
+    });
+
+    // ── reorder-data-points ────────────────────────────────────────
+
+    describe("reorder-data-points", () => {
+      it("reverses path2 data point order", { timeout: 30_000 }, async () => {
+        // Get current order
+        const structResp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const struct = await json(structResp);
+        const p2 = struct.paths.find((p: any) => p.name === "path2");
+        const currentVars = p2.dataPoints.map((d: any) => d.variableName);
+        const reversed = [...currentVars].reverse();
+
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/reorder-data-points`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ variableNames: reversed, pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        expect((await json(resp)).success).toBe(true);
+      });
+
+      it("order is reversed after reorder", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        const p2 = body.paths.find((p: any) => p.name === "path2");
+        const vars = p2.dataPoints.map((d: any) => d.variableName);
+        // email was added last, so reversed order starts with email
+        expect(vars[0]).toBe("email");
+      });
+
+      it("rejects mismatched variable names", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/reorder-data-points`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ variableNames: ["city", "nonexistent"], pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+        const body = await json(resp);
+        expect(body.missing.length).toBeGreaterThan(0);
+        expect(body.extra.length).toBeGreaterThan(0);
+      });
+
+      it("rejects empty variableNames", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/reorder-data-points`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ variableNames: [], pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+    });
+
+    // ── remove-data-point ──────────────────────────────────────────
+
+    describe("remove-data-point", () => {
+      it("removes email from path2", { timeout: 30_000 }, async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/remove-data-point`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ variableName: "email", pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.success).toBe(true);
+        expect(body.variableName).toBe("email");
+      });
+
+      it("email is gone and path2 is back to original count", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        const body = await json(resp);
+        const p2 = body.paths.find((p: any) => p.name === "path2");
+        const vars = p2.dataPoints.map((d: any) => d.variableName);
+        expect(vars).not.toContain("email");
+        expect(vars.length).toBe(initialPath2Vars.length);
+      });
+
+      it("rejects removing nonexistent variable", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/remove-data-point`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ variableName: "nonexistent_xyz", pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(404);
+        const body = await json(resp);
+        expect(Array.isArray(body.existingVariables)).toBe(true);
+      });
+
+      it("rejects missing variableName", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/remove-data-point`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ pathName: "path2" }),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+    });
+
+    // ── rollback ───────────────────────────────────────────────────
+
+    describe("rollback", () => {
+      it("rejects missing versionId", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/rollback`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({}),
+          },
+        );
+        expect(resp.status).toBe(400);
+      });
+
+      it("rejects nonexistent version", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/rollback`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ versionId: "000000000000000000000000" }),
+          },
+        );
+        expect(resp.status).toBe(404);
+      });
+
+      it("restores to pre-edit snapshot", { timeout: 30_000 }, async () => {
+        if (!preEditSnapshotId) return;
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/rollback`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ versionId: preEditSnapshotId }),
+          },
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.success).toBe(true);
+        expect(typeof body.restoredVersion).toBe("number");
+      });
+
+      it("structure is valid after rollback", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}`),
+          { headers: authHeaders() },
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+
+        expect(body.agentId).toBe(NE_AGENT);
+        expect(body.paths.length).toBe(2);
+        expect(body.nodes.length).toBeGreaterThan(10);
+        expect(body.globalPrompt.length).toBeGreaterThan(0);
+
+        for (const path of body.paths) {
+          expect(path.dataPoints.length).toBeGreaterThan(0);
+          for (const dp of path.dataPoints) {
+            expect(dp.variableName).toBeDefined();
+            expect(dp.collectNodeId).toBeDefined();
+            expect(dp.confirmNodeId).toBeDefined();
+          }
+        }
+      });
+    });
+
+    // ── push (raw JSON) ────────────────────────────────────────────
+
+    describe("push (raw JSON)", () => {
+      it("rejects missing conversationFlow", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/push`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ canonicalJson: { noFlow: true } }),
+          },
+        );
+        // Root gets 400, non-root gets 403
+        expect([400, 403]).toContain(resp.status);
+      });
+
+      it("rejects empty canonicalJson", async () => {
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${NE_SLUG}/nodes/${NE_AGENT}/push`),
+          {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ canonicalJson: {} }),
+          },
+        );
+        expect([400, 403]).toContain(resp.status);
+      });
     });
   });
 });
