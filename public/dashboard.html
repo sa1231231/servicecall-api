@@ -460,6 +460,8 @@
       margin-right: 0.5rem;
     }
     #callTable tbody tr.clickable-row td:empty { display: none; }
+    tr.call-expand-row { display: none !important; }
+    tr.call-expand-row.expanded { display: block !important; }
     tr.call-expand-row td {
       display: block;
       padding: 0;
@@ -2003,7 +2005,8 @@
   function toggleCallExpand(row) {
     const expandRow = row.nextElementSibling;
     if (expandRow && expandRow.classList.contains('call-expand-row')) {
-      expandRow.style.display = expandRow.style.display === 'none' ? '' : 'none';
+      expandRow.classList.toggle('expanded');
+      expandRow.style.display = expandRow.classList.contains('expanded') ? '' : 'none';
     }
   }
 
