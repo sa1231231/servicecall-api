@@ -217,8 +217,13 @@ formRouter.get("/", (_req, res) => {
     res.status(500).send("Form not found");
   }
 });
-formRouter.get("/config", (_req, res) => {
-  res.json({ apiKey: config.API_KEY });
+formRouter.get("/config", async (_req, res) => {
+  const { getSettings } = await import("./lib/settings.js");
+  const settings = await getSettings();
+  res.json({
+    apiKey: config.API_KEY,
+    default_summary_agent_id: settings.default_summary_agent_id || "",
+  });
 });
 formRouter.get("/data-points", async (_req, res) => {
   try {

@@ -402,7 +402,12 @@
   // Auto-load API key from server environment
   fetch('/form/config')
     .then(r => r.json())
-    .then(data => { document.getElementById('apiKey').value = data.apiKey; })
+    .then(data => {
+      document.getElementById('apiKey').value = data.apiKey;
+      if (data.default_summary_agent_id && !document.getElementById('summaryAgentId').value) {
+        document.getElementById('summaryAgentId').value = data.default_summary_agent_id;
+      }
+    })
     .catch(() => { /* key will be empty — POST will fail with 401 */ });
 
   // Load data points dynamically

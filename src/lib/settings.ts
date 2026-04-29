@@ -10,6 +10,7 @@ export interface GlobalSettings {
   free_trial_days: number;
   owner_email: string;
   owner_phone: string;
+  default_summary_agent_id: string;
 }
 
 function collection() {
@@ -27,6 +28,7 @@ export async function getSettings(): Promise<GlobalSettings> {
     free_trial_days: doc?.free_trial_days ?? 0,
     owner_email: doc?.owner_email ?? "",
     owner_phone: doc?.owner_phone ?? "",
+    default_summary_agent_id: (doc as any)?.default_summary_agent_id ?? "",
   };
 }
 
@@ -42,6 +44,7 @@ export async function updateSettings(
   if (updates.free_trial_days !== undefined) setObj.free_trial_days = updates.free_trial_days;
   if (updates.owner_email !== undefined) setObj.owner_email = updates.owner_email;
   if (updates.owner_phone !== undefined) setObj.owner_phone = updates.owner_phone;
+  if (updates.default_summary_agent_id !== undefined) setObj.default_summary_agent_id = updates.default_summary_agent_id;
 
   if (Object.keys(setObj).length === 0) {
     return getSettings();
