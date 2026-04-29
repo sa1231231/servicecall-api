@@ -336,7 +336,7 @@ ${faqKnowledgeBase}`,
         transition_condition: {
           type: "prompt",
           prompt:
-            "The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.",
+            "You answered the caller's question.",
         },
       },
     ],
