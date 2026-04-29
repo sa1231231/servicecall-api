@@ -345,16 +345,16 @@ app.listen(Number(config.PORT), () => {
   startAutoSync();
   startWeeklyReportScheduler();
 
-  // Daily backup at 3:00 AM UTC
+  // Hourly backup to R2
   if (isR2Configured()) {
-    const BACKUP_INTERVAL_MS = 24 * 60 * 60 * 1000;
+    const BACKUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
     const now = new Date();
-    const next3am = new Date(now);
-    next3am.setUTCHours(7, 0, 0, 0); // 3:00 AM ET = 7:00 AM UTC (EDT) / 8:00 AM UTC (EST)
-    if (next3am <= now) next3am.setUTCDate(next3am.getUTCDate() + 1);
-    const msUntilFirst = next3am.getTime() - now.getTime();
+    const nextHour = new Date(now);
+    nextHour.setUTCMinutes(0, 0, 0);
+    nextHour.setUTCHours(nextHour.getUTCHours() + 1);
+    const msUntilFirst = nextHour.getTime() - now.getTime();
 
-    console.log(`[backup] scheduled daily at 03:00 ET (first in ${Math.round(msUntilFirst / 60000)} min)`);
+    console.log(`[backup] scheduled hourly (first in ${Math.round(msUntilFirst / 60000)} min)`);
     setTimeout(() => {
       runBackup().catch(() => {});
       setInterval(() => runBackup().catch(() => {}), BACKUP_INTERVAL_MS);

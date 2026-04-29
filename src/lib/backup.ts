@@ -34,8 +34,10 @@ export async function runBackup(): Promise<{ success: boolean; key?: string; err
   }
 
   const start = Date.now();
-  const date = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-  const key = `${BACKUP_PREFIX}${date}.json.gz`;
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const hour = now.getUTCHours().toString().padStart(2, "0");
+  const key = `${BACKUP_PREFIX}${date}_${hour}00.json.gz`;
 
   try {
     // Export all collections

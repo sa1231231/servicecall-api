@@ -475,7 +475,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       const body = await json(resp);
       if (resp.status === 200) {
         expect(body.success).toBe(true);
-        expect(body.key).toMatch(/^backups\/\d{4}-\d{2}-\d{2}\.json\.gz$/);
+        expect(body.key).toMatch(/^backups\/\d{4}-\d{2}-\d{2}_\d{4}\.json\.gz$/);
       } else {
         expect(resp.status).toBe(500);
         expect(body.error).toContain("R2");
