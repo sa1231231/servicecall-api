@@ -38,8 +38,10 @@
   }
   td { border-bottom: 1px solid #f0f0f0; }
   tr:last-child td { border-bottom: none; }
-  .clickable-row { cursor: pointer; }
+  .clickable-row { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
   .clickable-row:hover td { background: #f0f5ff; }
+  .clickable-row::after { content: '▸'; float: right; color: #aaa; font-size: 0.8rem; transition: transform 0.15s; }
+  .clickable-row.row-expanded::after { transform: rotate(90deg); color: #2563eb; }
   .agent-ids {
     font-family: monospace;
     font-size: 0.72rem;
@@ -444,6 +446,13 @@
       border-radius: 8px;
       padding: 0.75rem;
       box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      border-left: 3px solid transparent;
+    }
+    #callTable tbody tr.clickable-row.row-expanded {
+      border-left-color: #2563eb;
+      background: #f8faff;
+      margin-bottom: 0;
+      border-radius: 8px 8px 0 0;
     }
     #callTable tbody tr.clickable-row td {
       display: block;
@@ -2012,6 +2021,7 @@
     const expandRow = row.nextElementSibling;
     if (expandRow && expandRow.classList.contains('call-expand-row')) {
       expandRow.classList.toggle('expanded');
+      row.classList.toggle('row-expanded');
       expandRow.style.display = expandRow.classList.contains('expanded') ? '' : 'none';
     }
   }
