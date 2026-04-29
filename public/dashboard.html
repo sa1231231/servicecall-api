@@ -3171,6 +3171,8 @@
   // ── Node Editor ──────────────────────────────────────────────────
 
   let neSlug = '', neAgentId = '', neData = null, neDirty = false, neVersionData = null;
+  let neScopeCounter = 0;
+  const neScopeConditions = {};
 
   async function loadNodeEditor(slug, agentId) {
     neSlug = slug;
@@ -3510,7 +3512,8 @@
           for (let d = 0; d <= depth; d++) {
             if (sampleClean[d]) scopeConditions.push(sampleClean[d]);
           }
-          const scopeCondJson = esc(JSON.stringify(scopeConditions));
+          const scopeCondIdx = 'neScopeCond_' + (++neScopeCounter);
+          neScopeConditions[scopeCondIdx] = scopeConditions;
 
           out += '<div class="ne-branch-scope" style="margin-left:' + (depth > 0 ? '1.25rem' : '0') + ';">' +
             '<div class="ne-branch-header">' +
@@ -3521,7 +3524,7 @@
           out += renderDps(group, depth + 1);
           if (canEdit) {
             out += '<div class="ne-path-actions" style="margin:0.2rem 0 0.1rem;">' +
-              '<select onchange="neAddDataPointWithCondition(this.value,\'' + esc(pathName) + '\',\'' + scopeCondJson + '\');this.value=\'\';" style="font-size:0.72rem;">' +
+              '<select onchange="neAddDataPointWithCondition(this.value,\'' + esc(pathName) + '\',\'' + scopeCondIdx + '\');this.value=\'\';" style="font-size:0.72rem;">' +
               '<option value="">+ Add here...</option>' +
               buildDpDefaultsOptions(dataPoints.map(d => d.variableName)) +
               '</select></div>';
@@ -3896,9 +3899,9 @@
 
   // ── Add / Remove / Reorder data points (all local) ─────────────
 
-  function neAddDataPointWithCondition(dataPointKey, pathName, conditionsJson) {
+  function neAddDataPointWithCondition(dataPointKey, pathName, scopeCondIdx) {
     if (!dataPointKey) return;
-    const conditions = JSON.parse(conditionsJson);
+    const conditions = neScopeConditions[scopeCondIdx] || [];
     const path = neData.paths.find(p => p.name === pathName);
     if (!path) return;
     if (path.dataPoints.some(d => d.variableName === dataPointKey)) {
