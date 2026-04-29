@@ -3534,8 +3534,14 @@
     if (!neData) return;
     let prompt = '';
     // Check intro
-    if (nodeId === neData.introNodeId) { prompt = neData.introPrompt || ''; }
-    else {
+    if (nodeId === neData.introNodeId) {
+      prompt = neData.introPrompt || '';
+      // Fallback: find from nodes list
+      if (!prompt && neData.nodes) {
+        const introNode = neData.nodes.find(n => n.id === nodeId);
+        if (introNode && introNode.promptPreview) prompt = introNode.promptPreview;
+      }
+    } else {
       for (const path of neData.paths) {
         const dp = path.dataPoints.find(d => d.collectNodeId === nodeId);
         if (dp) { prompt = dp.conversationPrompt; break; }
