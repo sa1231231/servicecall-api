@@ -600,9 +600,12 @@
     <input type="text" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
     <p class="settings-hint">Your Google Business review link. Used in the review request SMS sent to clients via "Send to Client &gt; Request Review".</p>
 
-    <label for="settings-review-msg">Review SMS Message</label>
-    <textarea id="settings-review-msg" placeholder="Message template..."></textarea>
-    <p class="settings-hint">Template for the review request SMS. Use {{google_review_url}} where the link should appear.</p>
+    <label>Review SMS Message</label>
+    <div class="tmpl-editor-wrap">
+      <div class="tmpl-editor" contenteditable="true" id="settings-review-msg-editor" data-placeholder="Hi! Please leave us a review: {{google_review_url}}"></div>
+      <input type="hidden" id="settings-review-msg">
+    </div>
+    <p class="settings-hint">Template for the review request SMS. Type {{ to insert {{google_review_url}}.</p>
 
     <label for="settings-trial-days">Free Trial Length (days)</label>
     <input type="number" id="settings-trial-days" min="1" max="90" placeholder="14" style="width:80px;">
@@ -612,13 +615,19 @@
     <input type="text" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
     <p class="settings-hint">Stripe checkout link sent to clients when their trial expires. Used in the payment SMS via "Send to Client &gt; Send Payment Link".</p>
 
-    <label for="settings-payment-msg">Payment SMS Message</label>
-    <textarea id="settings-payment-msg" placeholder="Message template..."></textarea>
-    <p class="settings-hint">Template for the payment link SMS. Use {{stripe_payment_url}} where the link should appear.</p>
+    <label>Payment SMS Message</label>
+    <div class="tmpl-editor-wrap">
+      <div class="tmpl-editor" contenteditable="true" id="settings-payment-msg-editor" data-placeholder="Hi! Subscribe here: {{stripe_payment_url}}"></div>
+      <input type="hidden" id="settings-payment-msg">
+    </div>
+    <p class="settings-hint">Template for the payment link SMS. Type {{ to insert {{stripe_payment_url}}.</p>
 
-    <label for="settings-portal-msg">Portal Link SMS Message</label>
-    <textarea id="settings-portal-msg" placeholder="Message template..."></textarea>
-    <p class="settings-hint">Template for the portal link SMS. Use {{portal_url}} where the link should appear.</p>
+    <label>Portal Link SMS Message</label>
+    <div class="tmpl-editor-wrap">
+      <div class="tmpl-editor" contenteditable="true" id="settings-portal-msg-editor" data-placeholder="Hi! Here's your portal: {{portal_url}}"></div>
+      <input type="hidden" id="settings-portal-msg">
+    </div>
+    <p class="settings-hint">Template for the portal link SMS. Type {{ to insert {{portal_url}}.</p>
 
     <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
   </div>
@@ -2361,6 +2370,9 @@
       document.getElementById('settings-payment-url').value = settings.stripe_payment_url || '';
       document.getElementById('settings-payment-msg').value = settings.payment_sms_message || '';
       document.getElementById('settings-portal-msg').value = settings.portal_sms_message || '';
+
+      // Initialize template editors for settings SMS fields
+      initSettingsTemplateEditors();
     } catch (err) {
       showToast('Failed to load settings: ' + err.message, 'error');
     }
@@ -2371,6 +2383,21 @@
       loadDeletedAgents();
     }
     loadUsers();
+  }
+
+  function initSettingsTemplateEditors() {
+    const editors = [
+      { editor: 'settings-review-msg-editor', hidden: 'settings-review-msg', vars: ['google_review_url'] },
+      { editor: 'settings-payment-msg-editor', hidden: 'settings-payment-msg', vars: ['stripe_payment_url'] },
+      { editor: 'settings-portal-msg-editor', hidden: 'settings-portal-msg', vars: ['portal_url'] },
+    ];
+    for (const { editor, hidden, vars } of editors) {
+      const editorEl = document.getElementById(editor);
+      const hiddenEl = document.getElementById(hidden);
+      if (editorEl && hiddenEl) {
+        initTemplateEditor(editorEl, hiddenEl, vars);
+      }
+    }
   }
 
   function hideSettings() {
