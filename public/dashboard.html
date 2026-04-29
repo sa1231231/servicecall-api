@@ -3146,7 +3146,7 @@
 
   // ── Node Editor ──────────────────────────────────────────────────
 
-  let neSlug = '', neAgentId = '', neData = null;
+  let neSlug = '', neAgentId = '', neData = null, neDirty = false, neVersionData = null;
 
   async function loadNodeEditor(slug, agentId) {
     neSlug = slug;
@@ -3173,8 +3173,9 @@
       ]);
       if (!nodeRes.ok) throw new Error('Failed to load nodes: ' + nodeRes.status);
       neData = await nodeRes.json();
-      const verData = verRes.ok ? await verRes.json() : { versions: [], total: 0 };
-      renderNodeEditor(neData, verData);
+      neVersionData = verRes.ok ? await verRes.json() : { versions: [], total: 0 };
+      neDirty = false;
+      renderNodeEditor(neData, neVersionData);
     } catch (err) {
       container.innerHTML = '<h2>Node Editor</h2><div class="error-msg">' + esc(err.message) + '</div>';
     }
@@ -3183,6 +3184,7 @@
   function renderNodeEditor(data, verData) {
     const canEdit = hasPerm('edit_agents');
     let html = '<h2>Node Editor</h2>';
+    html += '<button class="btn-save" id="ne-publish-btn" onclick="neSaveAndPublish()" style="' + (neDirty ? '' : 'display:none;') + 'margin-bottom:0.75rem;background:#059669;">Save &amp; Publish to Retell</button>';
 
     // Global prompt
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
@@ -3522,38 +3524,40 @@
 
   let promptModalCb = null;
 
+  function markNeDirty() {
+    neDirty = true;
+    const btn = document.getElementById('ne-publish-btn');
+    if (btn) btn.style.display = '';
+  }
+
   function openPromptEdit(nodeId, label) {
     if (!neData) return;
-    // Find the node's current prompt from neData
     let prompt = '';
-    for (const path of neData.paths) {
-      const dp = path.dataPoints.find(d => d.collectNodeId === nodeId);
-      if (dp) { prompt = dp.conversationPrompt; break; }
+    // Check intro
+    if (nodeId === neData.introNodeId) { prompt = neData.introPrompt || ''; }
+    else {
+      for (const path of neData.paths) {
+        const dp = path.dataPoints.find(d => d.collectNodeId === nodeId);
+        if (dp) { prompt = dp.conversationPrompt; break; }
+      }
     }
     document.getElementById('promptModalTitle').textContent = 'Edit Prompt: ' + label;
-    document.getElementById('promptModalDesc').textContent = 'Node ID: ' + nodeId;
+    document.getElementById('promptModalDesc').textContent = '';
     document.getElementById('promptModalText').value = prompt;
     document.getElementById('promptModal').style.display = '';
-    promptModalCb = async (text) => {
-      const btn = document.getElementById('promptModalSave');
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
-      try {
-        const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-prompt', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nodeId, instruction: text }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed');
-        showToast('Prompt updated', 'success');
-        closePromptModal();
-        loadNodeEditor(neSlug, neAgentId);
-      } catch (err) {
-        showToast('Error: ' + err.message, 'error');
-        btn.disabled = false;
-        btn.textContent = 'Save';
+    promptModalCb = (text) => {
+      // Update locally
+      if (nodeId === neData.introNodeId) {
+        neData.introPrompt = text;
+      } else {
+        for (const path of neData.paths) {
+          const dp = path.dataPoints.find(d => d.collectNodeId === nodeId);
+          if (dp) { dp.conversationPrompt = text; break; }
+        }
       }
+      markNeDirty();
+      closePromptModal();
+      showToast('Prompt updated (save to publish)', 'success');
     };
   }
 
@@ -3563,26 +3567,12 @@
     document.getElementById('promptModalDesc').textContent = 'System prompt used across all nodes in the conversation flow.';
     document.getElementById('promptModalText').value = neData.globalPrompt;
     document.getElementById('promptModal').style.display = '';
-    promptModalCb = async (text) => {
-      const btn = document.getElementById('promptModalSave');
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
-      try {
-        const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-global-prompt', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ globalPrompt: text }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed');
-        showToast('Global prompt updated', 'success');
-        closePromptModal();
-        loadNodeEditor(neSlug, neAgentId);
-      } catch (err) {
-        showToast('Error: ' + err.message, 'error');
-        btn.disabled = false;
-        btn.textContent = 'Save';
-      }
+    promptModalCb = (text) => {
+      neData.globalPrompt = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('Global prompt updated (save to publish)', 'success');
     };
   }
 
@@ -3600,7 +3590,7 @@
     btn.textContent = 'Save';
   }
 
-  // ── FAQ edit ────────────────────────────────────────────────────
+  // ── FAQ edit (local) ────────────────────────────────────────────
 
   function openFaqEdit() {
     if (!neData || !neData.faqNodeId) return;
@@ -3608,32 +3598,16 @@
     document.getElementById('promptModalDesc').textContent = 'Content the agent uses to answer caller questions about the business.';
     document.getElementById('promptModalText').value = neData.faqKnowledgeBase || '';
     document.getElementById('promptModal').style.display = '';
-    promptModalCb = async (text) => {
-      const btn = document.getElementById('promptModalSave');
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
-      try {
-        // The FAQ node's full instruction is the prefix + the knowledge base
-        const fullText = 'Your goal is to answer administrative and general questions briefly and accurately.\n\n' + text;
-        const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-prompt', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nodeId: neData.faqNodeId, instruction: fullText }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed');
-        showToast('FAQ updated', 'success');
-        closePromptModal();
-        loadNodeEditor(neSlug, neAgentId);
-      } catch (err) {
-        showToast('Error: ' + err.message, 'error');
-        btn.disabled = false;
-        btn.textContent = 'Save';
-      }
+    promptModalCb = (text) => {
+      neData.faqKnowledgeBase = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('FAQ updated (save to publish)', 'success');
     };
   }
 
-  // ── Transition condition edit ──────────────────────────────────
+  // ── Transition condition edit (local) ──────────────────────────
 
   function openTransitionEdit(pathName) {
     if (!neData) return;
@@ -3642,26 +3616,14 @@
     document.getElementById('promptModalDesc').textContent = 'The condition the AI evaluates after the intro to route callers into this path.';
     document.getElementById('promptModalText').value = tc;
     document.getElementById('promptModal').style.display = '';
-    promptModalCb = async (text) => {
-      const btn = document.getElementById('promptModalSave');
-      btn.disabled = true;
-      btn.textContent = 'Saving...';
-      try {
-        const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-transition', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pathName, transitionCondition: text }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed');
-        showToast('Transition updated', 'success');
-        closePromptModal();
-        loadNodeEditor(neSlug, neAgentId);
-      } catch (err) {
-        showToast('Error: ' + err.message, 'error');
-        btn.disabled = false;
-        btn.textContent = 'Save';
-      }
+    promptModalCb = (text) => {
+      neData.transitionConditions[pathName] = text;
+      const path = neData.paths.find(p => p.name === pathName);
+      if (path) path.transitionCondition = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('Transition updated (save to publish)', 'success');
     };
   }
 
@@ -3732,8 +3694,7 @@
     valSelect.innerHTML += '<option value="true">true</option><option value="false">false</option>';
   }
 
-  async function saveBranchModal(remove) {
-    const btn = document.getElementById('branchModalSave');
+  function saveBranchModal(remove) {
     let branchConditions = null;
 
     if (!remove) {
@@ -3747,28 +3708,16 @@
       branchConditions = [{ variable, operator, value }];
     }
 
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
-    try {
-      const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-branch-condition', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          variableName: branchEditVar,
-          pathName: branchEditPath,
-          branchConditions,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
-      showToast(remove ? 'Condition removed' : 'Condition saved', 'success');
-      closeBranchModal();
-      loadNodeEditor(neSlug, neAgentId);
-    } catch (err) {
-      showToast('Error: ' + err.message, 'error');
-      btn.disabled = false;
-      btn.textContent = 'Save';
+    // Update locally
+    const path = neData.paths.find(p => p.name === branchEditPath);
+    if (path) {
+      const dp = path.dataPoints.find(d => d.variableName === branchEditVar);
+      if (dp) dp.branchConditions = branchConditions;
     }
+    markNeDirty();
+    closeBranchModal();
+    renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+    showToast(remove ? 'Condition removed (save to publish)' : 'Condition saved (save to publish)', 'success');
   }
 
   function closeBranchModal() {
@@ -3783,101 +3732,141 @@
   function neEditPathName(oldName) {
     const newName = prompt('Rename path "' + oldName + '" to:', oldName);
     if (!newName || newName === oldName) return;
-    showToast('Renaming path...', 'success');
-    fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-path-name', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ oldName, newName }),
-    })
-    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
-    .then(({ ok, data }) => {
-      if (!ok) throw new Error(data.error || 'Failed');
-      showToast('Path renamed to "' + newName + '"', 'success');
-      // Reload everything since message_types and routing paths changed
-      showDetail(currentSlug);
-    })
-    .catch(err => showToast('Error: ' + err.message, 'error'));
+    const path = neData.paths.find(p => p.name === oldName);
+    if (path) {
+      path.name = newName;
+      if (neData.transitionConditions[oldName] !== undefined) {
+        neData.transitionConditions[newName] = neData.transitionConditions[oldName];
+        delete neData.transitionConditions[oldName];
+      }
+      path.transitionCondition = neData.transitionConditions[newName] || path.transitionCondition;
+    }
+    markNeDirty();
+    renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+    showToast('Path renamed (save to publish)', 'success');
   }
-
-  // ── Human request mode ─────────────────────────────────────────
 
   function neEditHumanMode(newMode) {
-    const label = newMode === 'live_transfer' ? 'Live Transfer' : 'Callback';
-    if (!confirm('Switch human request mode to ' + label + '?\n\nThis will modify the Human Request node and push to Retell immediately.')) return;
-    showToast('Switching mode...', 'success');
-    fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-human-request-mode', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: newMode }),
-    })
-    .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
-    .then(({ ok, data }) => {
-      if (!ok) throw new Error(data.error || 'Failed');
-      showToast('Mode changed to ' + label, 'success');
-      loadNodeEditor(neSlug, neAgentId);
-    })
-    .catch(err => showToast('Error: ' + err.message, 'error'));
+    neData.humanRequestMode = newMode;
+    markNeDirty();
+    renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+    showToast('Human request mode changed (save to publish)', 'success');
   }
 
-  // ── Add / Remove / Reorder data points ─────────────────────────
+  // ── Add / Remove / Reorder data points (all local) ─────────────
 
-  async function neAddDataPoint(dataPointKey, pathName) {
+  function neAddDataPoint(dataPointKey, pathName) {
     if (!dataPointKey) return;
-    showToast('Adding data point...', 'success');
-    try {
-      const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/add-data-point', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataPointKey, pathName }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
-      showToast('Added "' + (data.label || dataPointKey) + '"', 'success');
-      loadNodeEditor(neSlug, neAgentId);
-    } catch (err) {
-      showToast('Error: ' + err.message, 'error');
+    const path = neData.paths.find(p => p.name === pathName);
+    if (!path) return;
+    // Check duplicate
+    if (path.dataPoints.some(d => d.variableName === dataPointKey)) {
+      showToast('"' + dataPointKey + '" already exists in this path', 'error');
+      return;
     }
+    const dp = dpDefaults[dataPointKey];
+    const label = dp ? dp.label : dataPointKey;
+    path.dataPoints.push({
+      variableName: dataPointKey,
+      label: label,
+      collectNodeId: 'new-' + dataPointKey,
+      confirmNodeId: 'new-confirm-' + dataPointKey,
+      conversationPrompt: dp ? dp.conversationPrompt : '',
+      forwardCondition: dp ? dp.forwardCondition : '',
+      variableDefs: [{ name: dataPointKey, type: dp?.type || 'string', description: dp?.description || '' }],
+      branchConditions: null,
+    });
+    markNeDirty();
+    renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+    showToast('Added "' + label + '" (save to publish)', 'success');
   }
 
-  async function neRemoveDataPoint(variableName, pathName) {
-    if (!confirm('Remove "' + variableName + '" from path "' + pathName + '"?\n\nThis will push the change to Retell immediately.')) return;
-    showToast('Removing...', 'success');
-    try {
-      const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/remove-data-point', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variableName, pathName }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
-      showToast('Removed "' + variableName + '"', 'success');
-      loadNodeEditor(neSlug, neAgentId);
-    } catch (err) {
-      showToast('Error: ' + err.message, 'error');
+  function neRemoveDataPoint(variableName, pathName) {
+    if (!confirm('Remove "' + variableName + '" from "' + pathName + '"?')) return;
+    const path = neData.paths.find(p => p.name === pathName);
+    if (path) {
+      path.dataPoints = path.dataPoints.filter(d => d.variableName !== variableName);
     }
+    markNeDirty();
+    renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+    showToast('Removed (save to publish)', 'success');
   }
 
-  async function neReorderDataPoints(pathName, variableNames) {
-    showToast('Saving order...', 'success');
+  function neReorderDataPoints(pathName, variableNames) {
+    const path = neData.paths.find(p => p.name === pathName);
+    if (!path) return;
+    const dpMap = new Map(path.dataPoints.map(d => [d.variableName, d]));
+    path.dataPoints = variableNames.map(v => dpMap.get(v)).filter(Boolean);
+    markNeDirty();
+    showToast('Order updated (save to publish)', 'success');
+  }
+
+  // ── Save & Publish ─────────────────────────────────────────────
+
+  async function neSaveAndPublish() {
+    if (!neData) return;
+    const btn = document.getElementById('ne-publish-btn');
+    btn.disabled = true;
+    btn.textContent = 'Publishing...';
+
+    // Build changes object
+    const changes = {};
+    changes.globalPrompt = neData.globalPrompt;
+    changes.introPrompt = neData.introPrompt;
+    changes.faqKnowledgeBase = neData.faqKnowledgeBase;
+    changes.transitionConditions = neData.transitionConditions;
+    changes.description = 'Save & Publish from dashboard';
+
+    // Collect node prompt edits
+    changes.nodePrompts = {};
+    for (const path of neData.paths) {
+      for (const dp of path.dataPoints) {
+        if (dp.collectNodeId && !dp.collectNodeId.startsWith('new-')) {
+          changes.nodePrompts[dp.collectNodeId] = dp.conversationPrompt;
+        }
+      }
+    }
+
+    // Per-path data point keys + branch conditions
+    changes.paths = {};
+    for (const path of neData.paths) {
+      const pathChanges = {
+        dataPointKeys: path.dataPoints.map(d => d.variableName),
+        branchConditions: {},
+      };
+      for (const dp of path.dataPoints) {
+        if (dp.branchConditions && dp.branchConditions.length > 0) {
+          pathChanges.branchConditions[dp.variableName] = dp.branchConditions;
+        } else if (dp.branchConditions === null) {
+          pathChanges.branchConditions[dp.variableName] = null;
+        }
+      }
+      changes.paths[path.name] = pathChanges;
+    }
+
     try {
-      const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/reorder-data-points', {
+      const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/save-and-publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variableNames, pathName }),
+        body: JSON.stringify({ changes }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed');
-      showToast('Order saved', 'success');
+      if (!res.ok) throw new Error(data.details || data.error || 'Failed');
+      neDirty = false;
+      showToast('Published to Retell', 'success');
       loadNodeEditor(neSlug, neAgentId);
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save & Publish to Retell';
     }
   }
 
   // ── Rollback ───────────────────────────────────────────────────
 
   async function neRollback(versionId, versionNum) {
-    if (!confirm('Rollback to version ' + versionNum + '?\n\nThis will push the restored state to Retell immediately. The current state will be saved as a snapshot first.')) return;
+    if (!confirm('Rollback to version ' + versionNum + '?\n\nThis will push the restored state to Retell immediately.')) return;
     showToast('Rolling back...', 'success');
     try {
       const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/rollback', {
@@ -3887,6 +3876,7 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
+      neDirty = false;
       showToast('Rolled back to v' + data.restoredVersion, 'success');
       loadNodeEditor(neSlug, neAgentId);
     } catch (err) {

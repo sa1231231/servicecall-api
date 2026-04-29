@@ -404,10 +404,7 @@ nodeEditorRouter.post("/:agentId/edit-prompt", async (req, res) => {
       return;
     }
 
-    // Push to Retell
-    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
-
-    // Store in MongoDB
+    // Store in MongoDB (no Retell push — user publishes explicitly)
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_node_prompt", `${slug}/${agentId}`, { nodeId, nodeName: targetNode.name });
@@ -461,7 +458,6 @@ nodeEditorRouter.post("/:agentId/edit-global-prompt", async (req, res) => {
     }
 
     // Push to Retell
-    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_global_prompt", `${slug}/${agentId}`);
@@ -541,7 +537,6 @@ nodeEditorRouter.post("/:agentId/edit-transition", async (req, res) => {
     }
 
     // Push to Retell
-    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_transition", `${slug}/${agentId}`, { pathName, transitionCondition });
@@ -798,8 +793,6 @@ nodeEditorRouter.post("/:agentId/add-data-point", async (req, res) => {
       return;
     }
 
-    // Push to Retell
-    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "add_data_point", `${slug}/${agentId}`, {
@@ -898,7 +891,6 @@ nodeEditorRouter.post("/:agentId/remove-data-point", async (req, res) => {
       return;
     }
 
-    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "remove_data_point", `${slug}/${agentId}`, {
@@ -992,7 +984,6 @@ nodeEditorRouter.post("/:agentId/reorder-data-points", async (req, res) => {
       return;
     }
 
-    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "reorder_data_points", `${slug}/${agentId}`, {
@@ -1152,7 +1143,6 @@ nodeEditorRouter.post("/:agentId/edit-branch-condition", async (req, res) => {
       return;
     }
 
-    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_branch_condition", `${slug}/${agentId}`, {
@@ -1231,9 +1221,6 @@ nodeEditorRouter.post("/:agentId/edit-path-name", async (req, res) => {
         }
       }
     }
-
-    // Push to Retell
-    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
 
     // Update MongoDB: message_types, resolve_rules, dispatch_by_type
     const doc = resolved.doc;
@@ -1447,7 +1434,6 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
       return;
     }
 
-    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_human_request_mode", `${slug}/${agentId}`, { mode });
@@ -1455,6 +1441,157 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error(`[node-editor] edit-human-request-mode error:`, msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── POST /:agentId/save-and-publish — Apply All Changes & Push to Retell ─────
+
+nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
+  const p = req.params as Record<string, string>;
+  const slug = p.slug;
+  const agentId = p.agentId;
+  const { changes } = req.body;
+
+  if (!changes || typeof changes !== "object") {
+    res.status(400).json({ error: "changes object is required" });
+    return;
+  }
+
+  const resolved = await resolveAgentId(slug, agentId);
+  if (!resolved) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  try {
+    const defaults = await getDataPointDefaults();
+    const snapshot = await pullLatest(agentId);
+    const canonical = snapshot.canonicalJson;
+    const flow = canonical.conversationFlow as Record<string, unknown>;
+    const nodes = flow.nodes as Array<Record<string, unknown>>;
+    const parsed = parseConversationFlow(canonical);
+
+    // Snapshot before changes
+    await createVersionSnapshot(
+      slug, agentId, canonical, "manual_edit",
+      changes.description || "Save & Publish",
+      req.user?.username ?? "unknown",
+    );
+
+    // Apply global prompt change
+    if (typeof changes.globalPrompt === "string") {
+      flow.global_prompt = changes.globalPrompt;
+    }
+
+    // Apply intro prompt change
+    if (typeof changes.introPrompt === "string" && parsed.introNode) {
+      const introNode = nodes.find((n) => n.id === parsed.introNode.id);
+      if (introNode) {
+        (introNode.instruction as Record<string, unknown>).text = changes.introPrompt;
+      }
+    }
+
+    // Apply FAQ change
+    if (typeof changes.faqKnowledgeBase === "string" && parsed.faqNode) {
+      const faqNode = nodes.find((n) => n.id === parsed.faqNode!.id);
+      if (faqNode) {
+        (faqNode.instruction as Record<string, unknown>).text =
+          "Your goal is to answer administrative and general questions briefly and accurately.\n\n" + changes.faqKnowledgeBase;
+      }
+    }
+
+    // Apply individual node prompt changes
+    if (changes.nodePrompts && typeof changes.nodePrompts === "object") {
+      for (const [nodeId, text] of Object.entries(changes.nodePrompts as Record<string, string>)) {
+        const node = nodes.find((n) => n.id === nodeId);
+        if (node?.instruction) {
+          (node.instruction as Record<string, unknown>).text = text;
+        }
+      }
+    }
+
+    // Apply transition condition changes
+    if (changes.transitionConditions && typeof changes.transitionConditions === "object") {
+      const introEdges = parsed.introNode.raw.edges as Array<Record<string, unknown>>;
+      for (const [pathName, condition] of Object.entries(changes.transitionConditions as Record<string, string>)) {
+        const targetPath = parsed.paths.find((pa) => pa.name === pathName);
+        if (!targetPath) continue;
+        const edge = introEdges.find((e) => e.destination_node_id === targetPath.transitionNode.id);
+        if (edge) {
+          (edge.transition_condition as Record<string, unknown>).prompt = condition;
+        }
+      }
+    }
+
+    // Apply per-path data point changes (add/remove/reorder/branch)
+    if (changes.paths && typeof changes.paths === "object") {
+      const closeNodeId = parsed.closeNode?.id;
+      if (!closeNodeId) {
+        res.status(500).json({ error: "Could not find Close node" });
+        return;
+      }
+
+      for (const [pathName, pathChanges] of Object.entries(changes.paths as Record<string, any>)) {
+        const targetPath = parsed.paths.find((pa) => pa.name === pathName);
+        if (!targetPath) continue;
+
+        // pathChanges.dataPointKeys = ordered list of data point keys for this path
+        if (Array.isArray(pathChanges.dataPointKeys)) {
+          const newDataPoints: DataPoint[] = [];
+          for (const item of pathChanges.dataPointKeys) {
+            if (typeof item === "string") {
+              // Look up from existing chain first (preserves prompts), then defaults
+              const existing = targetPath.dataChain.find((d) => d.variableName === item);
+              if (existing) {
+                const dp = buildDataPointsFromChain({ ...targetPath, dataChain: [existing] }, defaults)[0];
+                // Apply branch conditions if specified
+                const bc = pathChanges.branchConditions?.[item];
+                if (bc === null) delete dp._branchConditions;
+                else if (Array.isArray(bc)) dp._branchConditions = bc;
+                newDataPoints.push(dp);
+              } else {
+                try {
+                  const resolved_dps = resolveDataPoints([item], defaults);
+                  const dp = resolved_dps[0];
+                  const bc = pathChanges.branchConditions?.[item];
+                  if (Array.isArray(bc)) dp._branchConditions = bc;
+                  newDataPoints.push(dp);
+                } catch {
+                  res.status(400).json({ error: `Unknown data point "${item}" in path "${pathName}"` });
+                  return;
+                }
+              }
+            }
+          }
+
+          const result = regenerateDataChain(
+            targetPath, newDataPoints, closeNodeId,
+            targetPath.name === "Default" ? undefined : targetPath.name,
+          );
+          applyRegeneratedChain(canonical, result);
+        }
+      }
+    }
+
+    // Validate
+    const errors = validateConversationFlow(flow);
+    if (errors.length > 0) {
+      res.status(400).json({ error: "Validation failed", errors });
+      return;
+    }
+
+    // Push to Retell
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
+    await storeCanonical(slug, agentId, canonical, resolved.doc);
+
+    await logAudit(req, "save_and_publish", `${slug}/${agentId}`, {
+      description: changes.description,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[node-editor] save-and-publish error:`, msg);
     res.status(500).json({ error: msg });
   }
 });
