@@ -314,15 +314,58 @@ export async function listDeletedClients(): Promise<
     .toArray() as any;
 }
 
-/** Permanently delete documents where deletedAt is older than `days` days. */
+/** Permanently delete documents where deletedAt is older than `days` days. Also cleans up Retell. */
 export async function purgeExpiredClients(days = 30): Promise<number> {
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const expired = await clients()
+    .find({ deletedAt: { $lt: cutoff } } as any)
+    .toArray();
+
+  if (expired.length === 0) return 0;
+
+  // Lazy-import Retell + config to avoid circular deps at module load
+  const [{ default: Retell }, { config }] = await Promise.all([
+    import("retell-sdk"),
+    import("../config.js"),
+  ]);
+  const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+
+  for (const doc of expired) {
+    const retellAgents = (doc as any).retell_agents ?? {};
+    for (const [agentId, agentJson] of Object.entries(retellAgents)) {
+      try {
+        await retell.agent.delete(agentId);
+        console.log(`[purge] deleted Retell agent ${agentId}`);
+      } catch (err) {
+        console.warn(`[purge] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+      }
+      const flowId =
+        (agentJson as Record<string, any>)?.conversationFlow?.conversation_flow_id ??
+        (agentJson as Record<string, any>)?.response_engine?.conversation_flow_id;
+      if (flowId) {
+        try {
+          await retell.conversationFlow.delete(flowId);
+          console.log(`[purge] deleted Retell flow ${flowId}`);
+        } catch (err) {
+          console.warn(`[purge] could not delete Retell flow ${flowId}: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    }
+    for (const agentId of (doc as any).agent_ids ?? []) {
+      if (retellAgents[agentId]) continue;
+      try {
+        await retell.agent.delete(agentId);
+        console.log(`[purge] deleted Retell agent ${agentId} (from agent_ids)`);
+      } catch (err) {
+        console.warn(`[purge] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
+
   const result = await clients().deleteMany({
     deletedAt: { $lt: cutoff },
   } as any);
-  if (result.deletedCount > 0) {
-    console.log(`[client-store] purged ${result.deletedCount} expired soft-deleted client(s)`);
-  }
+  console.log(`[client-store] purged ${result.deletedCount} expired soft-deleted client(s) + their Retell resources`);
   return result.deletedCount;
 }
 

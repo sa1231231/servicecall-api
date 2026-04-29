@@ -8,6 +8,34 @@ import {
 import { logAudit } from "../../lib/audit.js";
 import { alertRootIfNeeded } from "../../lib/root-alerts.js";
 
+const SOFT_DELETE_DAYS = 30;
+
+/** Build the "[DELETED — expires YYYY-MM-DD]" suffix. */
+function deletedSuffix(): string {
+  const expires = new Date();
+  expires.setDate(expires.getDate() + SOFT_DELETE_DAYS);
+  return ` [DELETED — expires ${expires.toISOString().slice(0, 10)}]`;
+}
+
+/** Rename a Retell agent to mark it as soft-deleted. */
+async function markRetellAgent(
+  retell: Retell,
+  agentId: string,
+  warnings: string[],
+): Promise<void> {
+  try {
+    const agent = await retell.agent.retrieve(agentId);
+    await retell.agent.update(agentId, {
+      agent_name: (agent.agent_name ?? agentId) + deletedSuffix(),
+    });
+    console.log(`[delete-agent] renamed Retell agent ${agentId} as deleted`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[delete-agent] could not rename Retell agent ${agentId}: ${msg}`);
+    warnings.push(`Retell agent ${agentId}: ${msg}`);
+  }
+}
+
 export async function deleteAgentHandler(
   req: Request,
   res: Response,
@@ -23,46 +51,16 @@ export async function deleteAgentHandler(
   const retell = new Retell({ apiKey: config.RETELL_API_KEY });
   const warnings: string[] = [];
 
-  // Delete each Retell agent + its conversation flow (gracefully)
+  // Soft-delete: rename each Retell agent instead of deleting
   const retellAgents = doc.retell_agents ?? {};
-  for (const [agentId, agentJson] of Object.entries(retellAgents)) {
-    // Try to delete the Retell agent
-    try {
-      await retell.agent.delete(agentId);
-      console.log(`[delete-agent] deleted Retell agent ${agentId}`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[delete-agent] could not delete Retell agent ${agentId}: ${msg}`);
-      warnings.push(`Retell agent ${agentId}: ${msg}`);
-    }
-
-    // Try to delete the conversation flow
-    const flowId =
-      (agentJson as Record<string, any>)?.conversationFlow?.conversation_flow_id ??
-      (agentJson as Record<string, any>)?.response_engine?.conversation_flow_id;
-    if (flowId) {
-      try {
-        await retell.conversationFlow.delete(flowId);
-        console.log(`[delete-agent] deleted Retell flow ${flowId}`);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[delete-agent] could not delete Retell flow ${flowId}: ${msg}`);
-        warnings.push(`Retell flow ${flowId}: ${msg}`);
-      }
-    }
+  for (const agentId of Object.keys(retellAgents)) {
+    await markRetellAgent(retell, agentId, warnings);
   }
 
-  // Also try to delete any agent_ids not in retell_agents (belt-and-suspenders)
+  // Also handle any agent_ids not in retell_agents (belt-and-suspenders)
   for (const agentId of doc.agent_ids ?? []) {
     if (retellAgents[agentId]) continue; // already handled above
-    try {
-      await retell.agent.delete(agentId);
-      console.log(`[delete-agent] deleted Retell agent ${agentId} (from agent_ids)`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[delete-agent] could not delete Retell agent ${agentId}: ${msg}`);
-      warnings.push(`Retell agent ${agentId}: ${msg}`);
-    }
+    await markRetellAgent(retell, agentId, warnings);
   }
 
   // Soft-delete: mark as deleted but keep in MongoDB for 30-day recovery

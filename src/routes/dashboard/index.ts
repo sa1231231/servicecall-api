@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Router } from "express";
 import express from "express";
+import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import { listAgentsHandler } from "./list-agents.js";
 import { toggleShadowHandler } from "./toggle-shadow.js";
@@ -91,6 +92,29 @@ dashboardApiRouter.get("/deleted-agents", requireRoot, async (_req, res) => {
 dashboardApiRouter.post("/deleted-agents/:slug/restore", requireRoot, async (req, res) => {
   const slug = String(req.params.slug);
   try {
+    // Restore the Retell agent names (strip "[DELETED — expires ...]" suffix)
+    const doc = await getClientDocument(slug);
+    if (doc) {
+      const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+      const deletedPattern = /\s*\[DELETED — expires \d{4}-\d{2}-\d{2}\]$/;
+      const allIds = new Set([
+        ...Object.keys(doc.retell_agents ?? {}),
+        ...(doc.agent_ids ?? []),
+      ]);
+      for (const agentId of allIds) {
+        try {
+          const agent = await retell.agent.retrieve(agentId);
+          const cleaned = (agent.agent_name ?? "").replace(deletedPattern, "");
+          if (cleaned !== agent.agent_name) {
+            await retell.agent.update(agentId, { agent_name: cleaned });
+            console.log(`[restore-agent] renamed Retell agent ${agentId} back to "${cleaned}"`);
+          }
+        } catch (err) {
+          console.warn(`[restore-agent] could not rename Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    }
+
     await restoreClient(slug);
     await logAudit(req, "restore_agent", slug);
     alertRootIfNeeded(req, "restore_agent", slug);
@@ -104,6 +128,41 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requireRoot, async (req
 dashboardApiRouter.delete("/deleted-agents/:slug", requireRoot, async (req, res) => {
   const slug = String(req.params.slug);
   try {
+    // Actually delete from Retell now (permanent delete)
+    const doc = await getClientDocument(slug);
+    if (doc) {
+      const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+      const retellAgents = doc.retell_agents ?? {};
+      for (const [agentId, agentJson] of Object.entries(retellAgents)) {
+        try {
+          await retell.agent.delete(agentId);
+          console.log(`[permanent-delete] deleted Retell agent ${agentId}`);
+        } catch (err) {
+          console.warn(`[permanent-delete] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+        }
+        const flowId =
+          (agentJson as Record<string, any>)?.conversationFlow?.conversation_flow_id ??
+          (agentJson as Record<string, any>)?.response_engine?.conversation_flow_id;
+        if (flowId) {
+          try {
+            await retell.conversationFlow.delete(flowId);
+            console.log(`[permanent-delete] deleted Retell flow ${flowId}`);
+          } catch (err) {
+            console.warn(`[permanent-delete] could not delete Retell flow ${flowId}: ${err instanceof Error ? err.message : err}`);
+          }
+        }
+      }
+      for (const agentId of doc.agent_ids ?? []) {
+        if (retellAgents[agentId]) continue;
+        try {
+          await retell.agent.delete(agentId);
+          console.log(`[permanent-delete] deleted Retell agent ${agentId} (from agent_ids)`);
+        } catch (err) {
+          console.warn(`[permanent-delete] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+    }
+
     await deleteClient(slug);
     await logAudit(req, "permanent_delete_agent", slug);
     alertRootIfNeeded(req, "permanent_delete_agent", slug);
