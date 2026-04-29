@@ -107,7 +107,7 @@ import type { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 
 const SESSION_COOKIE = "scs_session";
-const SESSION_MAX_AGE = 8 * 60 * 60; // 8 hours in seconds
+const SESSION_MAX_AGE = 14 * 24 * 60 * 60; // 14 days in seconds
 const COOKIE_SECRET = config.ROOT_PASSWORD; // Use root password as HMAC key
 
 function signSession(payload: object): string {
