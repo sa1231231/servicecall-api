@@ -81,11 +81,18 @@
   .autosave-banner .ab-restore { background: #f59e0b; color: #fff; border: none; }
   .autosave-banner .ab-discard { background: #fff; color: #666; border: 1px solid #d1d5db; }
   #result {
-    margin-top: 1.25rem; padding: 1rem; border-radius: 6px;
-    font-size: 0.85rem; white-space: pre-wrap; word-break: break-word; display: none;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+    padding: 1rem 1.25rem; margin: 0;
+    font-size: 0.9rem; white-space: pre-wrap; word-break: break-word;
+    display: none; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    cursor: pointer;
   }
-  #result.success { background: #dcfce7; border: 1px solid #86efac; color: #166534; display: block; }
-  #result.error { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; display: block; }
+  #result.success { background: #dcfce7; border-bottom: 2px solid #86efac; color: #166534; display: block; }
+  #result.error { background: #fee2e2; border-bottom: 2px solid #fca5a5; color: #991b1b; display: block; }
+  #result .result-dismiss {
+    float: right; font-size: 0.75rem; font-weight: 600; opacity: 0.6;
+    margin-left: 1rem;
+  }
 
   /* Custom data point cards */
   .custom-dp-card {
@@ -364,14 +371,19 @@
   const pathsContainer = document.getElementById('routingPaths');
 
   function showResult(message, type) {
-    resultDiv.textContent = message;
+    resultDiv.innerHTML = '<span class="result-dismiss">click to dismiss</span>' + escapeHtml(message);
     resultDiv.className = type;
-    resultDiv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    resultDiv.onclick = clearResult;
   }
 
   function clearResult() {
     resultDiv.className = '';
     resultDiv.style.display = 'none';
+    resultDiv.onclick = null;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
   // Populated dynamically from /form/data-points
