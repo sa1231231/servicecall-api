@@ -3443,57 +3443,67 @@
   }
 
   function renderBranchTree(dataPoints, pathName, mtKey, fieldMap, canEdit) {
-    // Build a tree: group consecutive data points by their branch scope
-    // A "scope" is defined by the branch conditions array
     let html = '';
     let num = 0;
-    const openScopes = []; // stack of open scope keys
 
-    function scopeKey(bc) {
-      if (!bc || bc.length === 0) return '';
-      return bc.map(c => c.variable + c.operator + (c.value || '')).join('|');
+    // Normalize branch conditions: strip sentinel guards and compute
+    // a "branch key" per data point that represents the meaningful condition
+    function normalizeBc(bc) {
+      if (!bc || bc.length === 0) return [];
+      return bc.filter(c =>
+        c.value !== 'Not Mentioned' && c.value !== "Caller Doesn't Know"
+      );
     }
 
-    function condLabel(bc) {
-      return bc.map(c => {
+    function bcLabel(conditions) {
+      // conditions = array of {variable, operator, value} for one scope level
+      return conditions.map(c => {
+        const name = c.variable.replace(/_/g, ' ');
         const op = c.operator === '==' ? 'is' : 'is not';
-        return c.variable + ' ' + op + ' ' + (c.value || '');
+        return name + ' ' + op + ' ' + (c.value || '');
       }).join(' AND ');
     }
 
-    // Group data points into a nested structure
+    // Get the "scope signature" at a given depth — the primary condition
+    // (first non-sentinel condition that differs from parent)
+    function scopeAt(bc, depth) {
+      const clean = normalizeBc(bc);
+      if (depth >= clean.length) return null;
+      return clean[depth];
+    }
+
+    function scopeKey(cond) {
+      if (!cond) return '';
+      return cond.variable + cond.operator + (cond.value || '');
+    }
+
     function renderDps(dps, depth) {
       let out = '';
       let i = 0;
       while (i < dps.length) {
         const dp = dps[i];
-        const bc = dp.branchConditions || [];
-        const myDepth = bc.length;
+        const cleanBc = normalizeBc(dp.branchConditions);
 
-        if (myDepth <= depth) {
-          // This dp is at current depth or above — render it
+        if (cleanBc.length <= depth) {
+          // At current scope — render the data point
           num++;
           out += renderDpRow(dp, num, pathName, mtKey, fieldMap, canEdit);
           i++;
         } else {
-          // This dp is deeper — collect all consecutive dps that share this branch level
-          // Find the condition at this depth level
-          const branchCond = bc[depth];
-          // Collect all dps that have this same condition at this depth
-          const groupKey = branchCond.variable + branchCond.operator + (branchCond.value || '');
+          // Deeper — open a scope block
+          const cond = cleanBc[depth];
+          const key = scopeKey(cond);
+          // Collect all consecutive dps sharing this scope
           const group = [];
           while (i < dps.length) {
-            const nextBc = dps[i].branchConditions || [];
-            if (nextBc.length <= depth) break;
-            const nextCond = nextBc[depth];
-            const nextKey = nextCond.variable + nextCond.operator + (nextCond.value || '');
-            if (nextKey !== groupKey) break;
+            const nextClean = normalizeBc(dps[i].branchConditions);
+            if (nextClean.length <= depth) break;
+            const nextCond = nextClean[depth];
+            if (scopeKey(nextCond) !== key) break;
             group.push(dps[i]);
             i++;
           }
-          // Render the scope block
-          const op = branchCond.operator === '==' ? 'is' : 'is not';
-          const label = branchCond.variable.replace(/_/g, ' ') + ' ' + op + ' ' + (branchCond.value || '');
+          const label = bcLabel([cond]);
           out += '<div class="ne-branch-scope" style="margin-left:' + (depth > 0 ? '1.25rem' : '0') + ';">' +
             '<div class="ne-branch-header">' +
             '<span class="ne-branch-icon">&#9658;</span> ' +
