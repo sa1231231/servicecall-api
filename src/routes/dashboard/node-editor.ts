@@ -225,6 +225,10 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       versionNumber: latestVersion?.version ?? 0,
       introNodeId: parsed.introNode.id,
       introPrompt,
+      transitionPrompt: parsed.paths.length > 0
+        ? ((parsed.paths[0].transitionNode.raw.instruction as Record<string, unknown> | undefined)?.text as string ?? "")
+        : "",
+      transitionNodeIds: parsed.paths.map((p) => p.transitionNode.id),
       faqNodeId,
       faqKnowledgeBase,
       humanRequestMode,
@@ -1489,6 +1493,16 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
       const introNode = nodes.find((n) => n.id === parsed.introNode.id);
       if (introNode) {
         (introNode.instruction as Record<string, unknown>).text = changes.introPrompt;
+      }
+    }
+
+    // Apply transition prompt change (same text for all transition nodes)
+    if (typeof changes.transitionPrompt === "string") {
+      for (const path of parsed.paths) {
+        const tNode = nodes.find((n) => n.id === path.transitionNode.id);
+        if (tNode?.instruction) {
+          (tNode.instruction as Record<string, unknown>).text = changes.transitionPrompt;
+        }
       }
     }
 

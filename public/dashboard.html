@@ -3235,6 +3235,18 @@
         ((data.introPrompt || '').length > 300 ? '...' : '') + '</div>';
     }
 
+    // Transition prompt (shared across all paths)
+    if (data.transitionPrompt !== undefined) {
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Transition Prompt</span>';
+      if (canEdit) {
+        html += '<button class="ne-btn" onclick="openTransitionPromptEdit()" style="font-size:0.7rem;">Edit</button>';
+      }
+      html += '</div>';
+      html += '<div class="ne-global-prompt">' + esc((data.transitionPrompt || '').slice(0, 300)) +
+        ((data.transitionPrompt || '').length > 300 ? '...' : '') + '</div>';
+    }
+
     // Display name
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
       '<span style="font-size:0.82rem;font-weight:600;color:#555;">Display Name</span></div>' +
@@ -3596,6 +3608,23 @@
     btn.textContent = 'Save';
   }
 
+  // ── Transition prompt edit (local, shared across paths) ─────────
+
+  function openTransitionPromptEdit() {
+    if (!neData) return;
+    document.getElementById('promptModalTitle').textContent = 'Edit Transition Prompt';
+    document.getElementById('promptModalDesc').textContent = 'What the agent says after the caller states their intent, before collecting data. Shared across all paths.';
+    document.getElementById('promptModalText').value = neData.transitionPrompt || '';
+    document.getElementById('promptModal').style.display = '';
+    promptModalCb = (text) => {
+      neData.transitionPrompt = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('Transition prompt updated (save to publish)', 'success');
+    };
+  }
+
   // ── FAQ edit (local) ────────────────────────────────────────────
 
   function openFaqEdit() {
@@ -3819,6 +3848,7 @@
     const changes = {};
     changes.globalPrompt = neData.globalPrompt;
     changes.introPrompt = neData.introPrompt;
+    changes.transitionPrompt = neData.transitionPrompt;
     changes.faqKnowledgeBase = neData.faqKnowledgeBase;
     changes.transitionConditions = neData.transitionConditions;
     changes.description = 'Save & Publish from dashboard';
