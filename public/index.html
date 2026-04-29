@@ -698,7 +698,7 @@
         fields.className = 'chain-custom-fields';
         fields.innerHTML = `
           <label>Variable Name <span style="color:#dc2626">*</span></label>
-          <input type="text" class="cc-variableName" placeholder="property_type" onblur="this.value=slugify(this.value)">
+          <input type="text" class="cc-variableName" placeholder="property_type" onblur="this.value=slugify(this.value);autoFillCustomDp(this);">
           <label>Label <span style="color:#dc2626">*</span></label>
           <input type="text" class="cc-label" placeholder="Property Type">
           <label>Type</label>
@@ -706,7 +706,7 @@
           <label>Choices <span style="font-weight:400;color:#999;">(comma-separated, for enum)</span></label>
           <input type="text" class="cc-choices" placeholder="Residential, Commercial">
           <label>Description <span style="color:#dc2626">*</span></label>
-          <textarea class="cc-description" placeholder='What this field means...'></textarea>
+          <textarea class="cc-description" placeholder='Auto-filled when you set the variable name'></textarea>
           <label>Conversation Prompt <span style="color:#dc2626">*</span></label>
           <textarea class="cc-conversationPrompt" placeholder='How the agent asks for this...'></textarea>
           <label>Forward Condition <span style="color:#dc2626">*</span></label>
@@ -719,6 +719,38 @@
       item.classList.remove('custom-expanded');
       const fields = item.querySelector('.chain-custom-fields');
       if (fields) fields.remove();
+    }
+  }
+
+  function autoFillCustomDp(input) {
+    const fields = input.closest('.chain-custom-fields');
+    if (!fields) return;
+    const varName = input.value.trim();
+    if (!varName) return;
+    const readableName = varName.replace(/_/g, ' ');
+
+    // Auto-fill description if empty
+    const descEl = fields.querySelector('.cc-description');
+    if (descEl && !descEl.value.trim()) {
+      descEl.value = varName + '. If not mentioned, set to "Not Mentioned". If the caller explicitly says they don\'t know, set to "Caller Doesn\'t Know".';
+    }
+
+    // Auto-fill label if empty
+    const labelEl = fields.querySelector('.cc-label');
+    if (labelEl && !labelEl.value.trim()) {
+      labelEl.value = readableName.replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    // Auto-fill conversation prompt if empty
+    const promptEl = fields.querySelector('.cc-conversationPrompt');
+    if (promptEl && !promptEl.value.trim()) {
+      promptEl.value = 'Ask the caller for their ' + readableName + '.\n\nIf the caller says they don\'t know, acknowledge it and move on.';
+    }
+
+    // Auto-fill forward condition if empty
+    const condEl = fields.querySelector('.cc-forwardCondition');
+    if (condEl && !condEl.value.trim()) {
+      condEl.value = 'The caller has provided their ' + readableName + ' or has indicated they don\'t know it';
     }
   }
 
