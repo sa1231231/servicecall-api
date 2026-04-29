@@ -195,6 +195,11 @@
       pointer-events: auto;
     }
     .mobile-collected-data::before { content: none !important; }
+    #callTable tbody tr.clickable-row td[data-label="Links"] a,
+    #callTable tbody tr.clickable-row td[data-label="Recording"] a {
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
     .mobile-collected-data details summary {
       cursor: pointer;
       color: #2563eb;
@@ -202,6 +207,9 @@
       font-size: 0.82rem;
       padding: 0.3rem 0;
       list-style: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
     }
     .mobile-collected-data details summary::marker,
     .mobile-collected-data details summary::-webkit-details-marker { display: none; }
