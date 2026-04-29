@@ -477,6 +477,7 @@
       border-radius: 0 0 8px 8px;
       margin-bottom: 0.75rem;
     }
+    .call-expand .mobile-hide { display: none; }
     .call-expand .field-pair {
       display: block;
       margin-right: 0;
@@ -1967,8 +1968,8 @@
           <div class="call-expand">
             <p><strong>Call ID:</strong> <code>${esc(c._id)}</code></p>
             <p><strong>Disconnection:</strong> ${esc(c.disconnection_reason)}</p>
-            <p><strong>Routing Path:</strong> ${esc(c.message_type_label || c.message_type_key)}</p>
-            ${c.call_summary ? '<p><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
+            <p class="mobile-hide"><strong>Routing Path:</strong> ${esc(c.message_type_label || c.message_type_key)}</p>
+            ${c.call_summary ? '<p class="mobile-hide"><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
             <p style="margin-top:0.5rem;"><strong>Extracted Fields:</strong></p>
             <p>${renderFields(c.extracted_fields)}</p>
           </div>

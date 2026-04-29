@@ -193,6 +193,7 @@
       border-radius: 0 0 8px 8px;
       margin-bottom: 0.75rem;
     }
+    .call-expand .mobile-hide { display: none; }
     .btn-load-more { width: 100%; }
   }
 </style>
@@ -485,8 +486,8 @@
       </tr>
       <tr class="call-expand-row" style="display:none;"><td colspan="7">
         <div class="call-expand">
-          <p><strong>Message Type:</strong> ${esc(c.message_type_label || '')}</p>
-          ${c.call_summary ? '<p><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
+          <p class="mobile-hide"><strong>Message Type:</strong> ${esc(c.message_type_label || '')}</p>
+          ${c.call_summary ? '<p class="mobile-hide"><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
           <p style="margin-top:0.5rem;"><strong>Collected Data:</strong></p>
           <p>${renderFields(c.extracted_fields)}</p>
         </div>
