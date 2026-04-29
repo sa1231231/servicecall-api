@@ -983,9 +983,9 @@
       if (!id.startsWith('agent_')) errors.push(`Agent ID "${id}" invalid. Must start with "agent_".`);
     }
     // Summary agent ID
-    const summaryAgent = document.getElementById('edit-summary-agent').value.trim();
-    if (summaryAgent && !summaryAgent.startsWith('agent_')) {
-      errors.push(`Summary Agent ID "${summaryAgent}" invalid. Must start with "agent_".`);
+    const summaryAgentVals = getChipValues('chip-summary-agent');
+    for (const id of summaryAgentVals) {
+      if (!id.startsWith('agent_')) errors.push(`Summary Agent ID "${id}" invalid. Must start with "agent_".`);
     }
     // Call overrides
     document.querySelectorAll('.override-row').forEach((row, i) => {
@@ -1612,7 +1612,7 @@
       <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}
         <div class="config-hint">Retell agent IDs linked to this client. Inbound calls from these agents trigger dispatch notifications.</div></dd>
 
-      <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd><input class="edit-input" id="edit-summary-agent" value="${esc(doc.summary_agent_id || '')}" placeholder="Summary agent ID or empty">
+      <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd>${chipInputHtml('chip-summary-agent', doc.summary_agent_id ? [doc.summary_agent_id] : [], 'agent_...')}
         <div class="config-hint">The Retell agent that makes outbound dispatch calls. Its bound phone number is used as the caller ID. Works with Dispatch Call above.</div></dd>
 
       <dt title="When the client's free trial started">Trial Start Date</dt><dd>
@@ -1765,7 +1765,8 @@
       updates.dispatch_call_number = callNum;
     }
 
-    const summaryAgent = document.getElementById('edit-summary-agent').value.trim() || null;
+    const summaryAgentChips = getChipValues('chip-summary-agent');
+    const summaryAgent = summaryAgentChips.length > 0 ? summaryAgentChips[0] : null;
     if (summaryAgent !== (originalDoc.summary_agent_id || null)) {
       updates.summary_agent_id = summaryAgent;
     }
@@ -3130,10 +3131,6 @@
       return;
     }
     // Summary agent ID
-    if (id === 'edit-summary-agent') {
-      markField(input, v.startsWith('agent_'), 'Must start with "agent_"');
-      return;
-    }
   }, true);
 
   // Settings page inline validation
