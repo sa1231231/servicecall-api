@@ -1604,9 +1604,7 @@
 
     let html = `<h2>Agent Settings</h2>
     <dl class="config-grid">
-      <dt title="Client display name used in notification greetings and reports">Display Name</dt><dd><input class="edit-input" id="edit-name" value="${esc(doc.name)}" placeholder="Business name">
-        <div class="config-hint">Appears in SMS/email notifications as the business identity — e.g. "Hi Acme Plumbing, you have a new call!"</div></dd>
-
+      <input type="hidden" id="edit-name" value="${esc(doc.name)}">
       <input type="hidden" id="edit-greeting" value="${esc(doc.notification_greeting || '')}">
 
       <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}
@@ -3221,6 +3219,13 @@
         ((data.introPrompt || '').length > 300 ? '...' : '') + '</div>';
     }
 
+    // Display name
+    html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+      '<span style="font-size:0.82rem;font-weight:600;color:#555;">Display Name</span></div>' +
+      '<div style="margin-bottom:0.75rem;">' +
+      '<input class="edit-input" id="ne-display-name" value="' + esc(originalDoc?.name || '') + '" placeholder="Business name" style="margin-bottom:0.15rem;">' +
+      '<div class="config-hint">Appears in SMS/email notifications as the business identity.</div></div>';
+
     // Notification greeting
     const greetingVal = originalDoc?.notification_greeting || '';
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
@@ -3394,6 +3399,15 @@
     // Init drag-drop for data point reorder
     if (canEdit) {
       document.querySelectorAll('.ne-dp-list').forEach(list => initNeDragDrop(list));
+    }
+
+    // Sync display name to main edit-name input
+    const neDisplayName = document.getElementById('ne-display-name');
+    if (neDisplayName) {
+      neDisplayName.addEventListener('input', () => {
+        const mainName = document.getElementById('edit-name');
+        if (mainName) mainName.value = neDisplayName.value;
+      });
     }
 
     // Init notification greeting editor in node editor
