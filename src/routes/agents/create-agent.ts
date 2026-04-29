@@ -128,7 +128,10 @@ export async function createAgentHandler(
 
   try {
     // ── 1. Generate agent JSON ─────────────────────────────────────────────
-    console.log(`[create-agent] generating agent for "${body.business.businessName}"`);
+    const pathSummary = hasPaths
+      ? `${body.paths!.length} path(s): ${body.paths!.map(p => `"${p.name}" (${p.dataPoints.length} dps)`).join(", ")}`
+      : `${body.dataPoints!.length} data points (flat)`;
+    console.log(`[create-agent] generating agent for "${body.business.businessName}" — ${pathSummary}`);
     const agentConfig: AgentConfig = {
       ...body.business,
       humanRequestMode: body.business.human_request_mode || "callback",
@@ -233,6 +236,21 @@ export async function createAgentHandler(
 
     const message =
       err instanceof Error ? err.message : "Unknown error";
-    res.status(502).json({ error: "Failed to create agent in Retell", details: message });
+
+    // Differentiate between validation/generation errors and Retell API errors
+    const isValidation = message.includes("data point") || message.includes("Path ") ||
+      message.includes("variableName") || message.includes("Unknown") ||
+      message.includes("No data point defaults");
+    const status = isValidation ? 400 : 502;
+    const errorLabel = isValidation
+      ? "Agent generation failed"
+      : "Failed to create agent in Retell";
+
+    // Extract Retell API error details if available
+    let details = message;
+    if ((err as any)?.status) details += ` (HTTP ${(err as any).status})`;
+    if ((err as any)?.error?.message) details = (err as any).error.message;
+
+    res.status(status).json({ error: errorLabel, details });
   }
 }

@@ -1054,14 +1054,23 @@
 
       if (res.ok) {
         localStorage.removeItem('agentFormAutoSave');
-        showResult(
-          'Agent created successfully!\n\n'
+        let msg = 'Agent created successfully!\n\n'
           + 'Agent ID: ' + data.agent_id + '\n'
-          + 'Conversation Flow ID: ' + data.conversation_flow_id,
-          'success'
-        );
+          + 'Conversation Flow ID: ' + data.conversation_flow_id;
+        if (data.provision_error) {
+          msg += '\n\n⚠ Phone provisioning failed: ' + data.provision_error;
+        }
+        if (data.provisioned_number) {
+          msg += '\nProvisioned Number: ' + data.provisioned_number;
+        }
+        showResult(msg, 'success');
       } else {
-        showResult('Error (' + res.status + '): ' + (data.error || JSON.stringify(data)), 'error');
+        let errMsg = 'Error (' + res.status + '): ' + (data.error || 'Unknown error');
+        if (data.details) errMsg += '\n\nDetails: ' + data.details;
+        if (data.errors && Array.isArray(data.errors)) {
+          errMsg += '\n\nValidation errors:\n' + data.errors.map(e => '• ' + (e.message || e)).join('\n');
+        }
+        showResult(errMsg, 'error');
       }
     } catch (err) {
       showResult('Network error: ' + err.message, 'error');
