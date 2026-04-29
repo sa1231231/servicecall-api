@@ -637,11 +637,15 @@
         </select>
         <p class="settings-hint">Which category section this data point will appear in.</p>
         <label>Type</label>
-        <select id="newDpType" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
+        <select id="newDpType" onchange="document.getElementById('newDpChoicesWrap').style.display = this.value === 'enum' ? 'block' : 'none'" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
           <option value="string">string</option>
           <option value="enum">enum</option>
           <option value="boolean">boolean</option>
         </select>
+        <div id="newDpChoicesWrap" style="display:none;">
+          <label>Choices <span style="color:#6b7280;font-weight:normal;">(comma-separated)</span></label>
+          <input type="text" id="newDpChoices" placeholder="residential, commercial, other">
+        </div>
         <label>Description</label>
         <textarea id="newDpDescription" placeholder="Optional — what this field means and how to handle missing values."></textarea>
         <label>Conversation Prompt</label>
@@ -2697,6 +2701,16 @@
     return `<details class="dp-card" data-dp-key="${esc(key)}" draggable="true">
       <summary><span class="dp-drag-handle">&#9776;</span><strong>${esc(dp.label)}</strong> <span class="dp-var">${esc(key)}</span></summary>
       <div class="dp-card-body">
+        <label>Type</label>
+        <select class="dp-type" onchange="toggleDpChoices(this)" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
+          <option value="string"${dp.type === 'string' ? ' selected' : ''}>string</option>
+          <option value="enum"${dp.type === 'enum' ? ' selected' : ''}>enum</option>
+          <option value="boolean"${dp.type === 'boolean' ? ' selected' : ''}>boolean</option>
+        </select>
+        <div class="dp-choices-wrap" style="display:${dp.type === 'enum' ? 'block' : 'none'};">
+          <label>Choices <span style="color:#6b7280;font-weight:normal;">(comma-separated)</span></label>
+          <input type="text" class="dp-choices" value="${esc((dp.choices || []).join(', '))}">
+        </div>
         <label>Description</label>
         <textarea class="dp-description">${esc(dp.description || '')}</textarea>
         <label>Conversation Prompt</label>
@@ -2854,8 +2868,16 @@
     rows.appendChild(div);
   }
 
+  function toggleDpChoices(sel) {
+    const wrap = sel.closest('.dp-card-body').querySelector('.dp-choices-wrap');
+    wrap.style.display = sel.value === 'enum' ? 'block' : 'none';
+  }
+
   function collectDpCard(key) {
     const card = document.querySelector(`.dp-card[data-dp-key="${key}"]`);
+    const type = card.querySelector('.dp-type').value;
+    const choicesRaw = card.querySelector('.dp-choices').value;
+    const choices = type === 'enum' ? choicesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     const description = card.querySelector('.dp-description').value;
     const conversationPrompt = card.querySelector('.dp-conv-prompt').value;
     const forwardCondition = card.querySelector('.dp-fwd-condition').value;
@@ -2870,7 +2892,7 @@
       });
       if (transcript.length > 0) finetuneExamples.push({ type, transcript });
     });
-    return { description, conversationPrompt, forwardCondition, finetuneExamples };
+    return { type, choices, description, conversationPrompt, forwardCondition, finetuneExamples };
   }
 
   async function saveDpDefault(key) {
@@ -2894,11 +2916,15 @@
     const key = document.getElementById('newDpKey').value.trim();
     const label = document.getElementById('newDpLabel').value.trim();
     if (!key || !label) { showToast('Variable Name and Label are required', 'error'); return; }
+    const dpType = document.getElementById('newDpType').value;
+    const choicesRaw = document.getElementById('newDpChoices').value;
+    const choices = dpType === 'enum' ? choicesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     const body = {
       key,
       label,
       category: document.getElementById('newDpCategory').value || 'custom',
-      type: document.getElementById('newDpType').value,
+      type: dpType,
+      choices,
       description: document.getElementById('newDpDescription').value,
       conversationPrompt: document.getElementById('newDpConvPrompt').value,
       forwardCondition: document.getElementById('newDpFwdCondition').value,
@@ -2917,6 +2943,9 @@
       document.getElementById('newDpKey').value = '';
       document.getElementById('newDpLabel').value = '';
       document.getElementById('newDpCategory').value = 'custom';
+      document.getElementById('newDpType').value = 'string';
+      document.getElementById('newDpChoices').value = '';
+      document.getElementById('newDpChoicesWrap').style.display = 'none';
       document.getElementById('newDpDescription').value = '';
       document.getElementById('newDpConvPrompt').value = '';
       document.getElementById('newDpFwdCondition').value = '';
