@@ -1676,83 +1676,6 @@
       html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
     }
 
-    // Routing paths (formerly "message types")
-    const mt = doc.message_types || {};
-    const dbt = doc.dispatch_by_type || {};
-    const mtKeys = Object.keys(mt);
-    if (mtKeys.length > 0) {
-      html += `<h2>Routing Paths (${mtKeys.length})</h2>
-      <div class="config-hint" style="margin-top:-0.5rem;margin-bottom:0.75rem;">Each path represents a caller intent branch. Fields control what appears in dispatch notifications. Drag to reorder, toggle Show/Req to control visibility and required status.</div>`;
-      for (const [key, val] of Object.entries(mt)) {
-        const override = dbt[key] || {};
-        const fieldCount = val.fields.length;
-        const visibleCount = val.fields.filter(f => f.show !== false).length;
-        html += `<details class="route-path-details">
-        <summary class="route-path-summary">
-          <strong>${esc(val.label)}</strong>
-          <span class="route-key" style="display:inline;margin:0 0.5rem;">${esc(key)}</span>
-          <span style="color:#999;font-size:0.75rem;">${visibleCount}/${fieldCount} fields</span>
-        </summary>
-        <div class="route-path-body">`;
-        html += `<div style="margin-top:0.5rem;">
-          <div style="display:flex;align-items:center;gap:0.5rem;">
-            <span style="color:#666;font-size:0.82rem;flex-shrink:0;">Subject:</span>
-            <div class="tmpl-editor-wrap" style="flex:1;">
-              <div class="tmpl-editor subject-editor" contenteditable="true" data-mt-key="${esc(key)}" data-placeholder="Subject template..." style="min-height:1.6em;font-size:0.8rem;"></div>
-              <input type="hidden" class="subject-template-input" data-mt-key="${esc(key)}" value="${esc(val.subject_template)}">
-            </div>
-          </div>
-          <div class="config-hint">Email subject line for this path's notifications. Type <code>{{</code> to insert collected field values.</div>
-        </div>`;
-        if (val.additional_text) html += `<div class="route-meta">Note: ${esc(val.additional_text)}</div>`;
-        html += `<table class="field-table" data-mt-key="${esc(key)}"><thead><tr>
-          <th class="col-drag"></th><th class="col-show">Show</th><th class="col-req">Req</th><th class="col-label">Label</th><th class="col-var">Variable</th>
-        </tr></thead><tbody>`;
-        for (const f of val.fields) {
-          const checked = f.show !== false ? 'checked' : '';
-          const reqChecked = f.required ? 'checked' : '';
-          html += `<tr draggable="true" data-field-key="${esc(f.key)}">
-            <td class="col-drag">&#9776;</td>
-            <td class="col-show"><input type="checkbox" ${checked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-toggle" onchange="updatePreview('${esc(key)}')"></td>
-            <td class="col-req"><input type="checkbox" ${reqChecked} data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-required-toggle"></td>
-            <td class="col-label"><input type="text" value="${esc(f.label)}" data-mt-key="${esc(key)}" data-field-key="${esc(f.key)}" class="field-label-input label-edit" oninput="updatePreview('${esc(key)}')"></td>
-            <td class="col-var">${esc(f.key)}</td>
-          </tr>`;
-        }
-        html += '</tbody></table>';
-        // Live preview
-        html += `<div class="preview-section" data-mt-key="${esc(key)}">
-          <div style="display:flex;gap:1rem;margin-top:0.75rem;flex-wrap:wrap;">
-            <div style="flex:1;min-width:250px;">
-              <div style="font-size:0.72rem;font-weight:600;color:#888;text-transform:uppercase;margin-bottom:0.25rem;">SMS Preview</div>
-              <pre class="preview-sms" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:0.6rem;font-size:0.75rem;white-space:pre-wrap;margin:0;font-family:inherit;"></pre>
-            </div>
-            <div style="flex:1;min-width:250px;">
-              <div style="font-size:0.72rem;font-weight:600;color:#888;text-transform:uppercase;margin-bottom:0.25rem;">Email Preview</div>
-              <div class="preview-email" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:0.6rem;font-size:0.75rem;"></div>
-            </div>
-          </div>
-        </div>`;
-        // Dispatch override per path
-        html += `<details style="margin-top:0.65rem;">
-          <summary style="font-size:0.8rem;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">${Object.keys(override).length ? '(configured)' : '(none)'}</span></summary>
-          <div style="margin-top:0.35rem;font-size:0.8rem;">
-            <div style="color:#888;margin-bottom:0.35rem;">Override who gets notified for this specific path. If blank, falls back to the Default Dispatch settings above.</div>
-            <label style="font-size:0.78rem;font-weight:600;">SMS Numbers</label>
-            <input type="text" class="dbt-sms" data-mt-key="${esc(key)}" value="${esc((override.dispatch_text_numbers || []).join(', '))}"
-              placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">
-            <label style="font-size:0.78rem;font-weight:600;">Email(s)</label>
-            <input type="text" class="dbt-email" data-mt-key="${esc(key)}" value="${esc((override.dispatch_email || []).join(', '))}"
-              placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">
-            <label style="font-size:0.78rem;font-weight:600;">Dispatch Call Number</label>
-            <input type="text" class="dbt-call" data-mt-key="${esc(key)}" value="${esc(override.dispatch_call_number || '')}"
-              placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">
-          </div>
-        </details>`;
-        html += '</div></details>';
-      }
-    }
-
     document.getElementById('detailConfig').innerHTML = html;
 
     // Initialize template editors
@@ -1762,24 +1685,6 @@
       initTemplateEditor(greetingEditor, greetingHidden, ['business_name'], onGreetingInput);
     }
     onGreetingInput();
-
-    // Initialize field table drag-drop
-    document.querySelectorAll('.field-table').forEach(table => initFieldDragDrop(table));
-
-    // Initialize subject template editors + previews for all routing paths
-    document.querySelectorAll('.subject-editor').forEach(editor => {
-      const mtKey = editor.dataset.mtKey;
-      const hidden = document.querySelector(`.subject-template-input[data-mt-key="${mtKey}"]`);
-      if (hidden) {
-        const getFieldKeys = () => {
-          const keys = [];
-          document.querySelectorAll(`.field-label-input[data-mt-key="${mtKey}"]`).forEach(el => keys.push(el.dataset.fieldKey));
-          return keys;
-        };
-        initTemplateEditor(editor, hidden, getFieldKeys, () => updatePreview(mtKey));
-      }
-      updatePreview(mtKey);
-    });
   }
 
   function buildOverrideRows(overrides) {
@@ -3406,6 +3311,62 @@
           buildDpDefaultsOptions(path.dataPoints.map(d => d.variableName)) +
           '</select></div>';
       }
+
+      // ── Notification config (from originalDoc.message_types) ────
+      const mtKey = findMtKey(path.name);
+      const mt = originalDoc?.message_types?.[mtKey];
+      const dbt = originalDoc?.dispatch_by_type?.[mtKey] || {};
+      if (mt) {
+        // Subject template
+        html += '<div style="margin-top:0.65rem;">' +
+          '<div style="display:flex;align-items:center;gap:0.5rem;">' +
+          '<span style="color:#666;font-size:0.82rem;flex-shrink:0;">Subject:</span>' +
+          '<div class="tmpl-editor-wrap" style="flex:1;">' +
+          '<div class="tmpl-editor subject-editor" contenteditable="true" data-mt-key="' + esc(mtKey) + '" data-placeholder="Subject template..." style="min-height:1.6em;font-size:0.8rem;"></div>' +
+          '<input type="hidden" class="subject-template-input" data-mt-key="' + esc(mtKey) + '" value="' + esc(mt.subject_template) + '">' +
+          '</div></div>' +
+          '<div class="config-hint">Email subject line. Type <code>{{</code> to insert field values.</div></div>';
+
+        // Field table (Show / Req / Label / Variable)
+        html += '<table class="field-table" data-mt-key="' + esc(mtKey) + '"><thead><tr>' +
+          '<th class="col-drag"></th><th class="col-show">Show</th><th class="col-req">Req</th><th class="col-label">Label</th><th class="col-var">Variable</th>' +
+          '</tr></thead><tbody>';
+        for (const f of mt.fields) {
+          const checked = f.show !== false ? 'checked' : '';
+          const reqChecked = f.required ? 'checked' : '';
+          html += '<tr draggable="true" data-field-key="' + esc(f.key) + '">' +
+            '<td class="col-drag">&#9776;</td>' +
+            '<td class="col-show"><input type="checkbox" ' + checked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(f.key) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKey) + '\')"></td>' +
+            '<td class="col-req"><input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(f.key) + '" class="field-required-toggle"></td>' +
+            '<td class="col-label"><input type="text" value="' + esc(f.label) + '" data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(f.key) + '" class="field-label-input label-edit" oninput="updatePreview(\'' + esc(mtKey) + '\')"></td>' +
+            '<td class="col-var">' + esc(f.key) + '</td></tr>';
+        }
+        html += '</tbody></table>';
+
+        // SMS / Email preview
+        html += '<div class="preview-section" data-mt-key="' + esc(mtKey) + '">' +
+          '<div style="display:flex;gap:1rem;margin-top:0.75rem;flex-wrap:wrap;">' +
+          '<div style="flex:1;min-width:250px;">' +
+          '<div style="font-size:0.72rem;font-weight:600;color:#888;text-transform:uppercase;margin-bottom:0.25rem;">SMS Preview</div>' +
+          '<pre class="preview-sms" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:0.6rem;font-size:0.75rem;white-space:pre-wrap;margin:0;font-family:inherit;"></pre></div>' +
+          '<div style="flex:1;min-width:250px;">' +
+          '<div style="font-size:0.72rem;font-weight:600;color:#888;text-transform:uppercase;margin-bottom:0.25rem;">Email Preview</div>' +
+          '<div class="preview-email" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:0.6rem;font-size:0.75rem;"></div></div></div></div>';
+
+        // Dispatch override
+        html += '<details style="margin-top:0.65rem;">' +
+          '<summary style="font-size:0.8rem;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">' + (Object.keys(dbt).length ? '(configured)' : '(none)') + '</span></summary>' +
+          '<div style="margin-top:0.35rem;font-size:0.8rem;">' +
+          '<div style="color:#888;margin-bottom:0.35rem;">Override who gets notified for this path. Blank = use Default Dispatch.</div>' +
+          '<label style="font-size:0.78rem;font-weight:600;">SMS Numbers</label>' +
+          '<input type="text" class="dbt-sms" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_text_numbers || []).join(', ')) + '" placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">' +
+          '<label style="font-size:0.78rem;font-weight:600;">Email(s)</label>' +
+          '<input type="text" class="dbt-email" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_email || []).join(', ')) + '" placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">' +
+          '<label style="font-size:0.78rem;font-weight:600;">Dispatch Call Number</label>' +
+          '<input type="text" class="dbt-call" data-mt-key="' + esc(mtKey) + '" value="' + esc(dbt.dispatch_call_number || '') + '" placeholder="Leave blank for client default" style="font-size:0.8rem;padding:0.3rem 0.5rem;margin-bottom:0.4rem;">' +
+          '</div></details>';
+      }
+
       html += '</div>';
     }
 
@@ -3432,13 +3393,42 @@
     const scrollY = window.scrollY;
     document.getElementById('nodeEditorContainer').innerHTML = html;
 
-    // Init drag-drop for each path
+    // Init drag-drop for data point reorder
     if (canEdit) {
       document.querySelectorAll('.ne-dp-list').forEach(list => initNeDragDrop(list));
     }
 
+    // Init field table drag-drop and subject template editors
+    document.querySelectorAll('#nodeEditorContainer .field-table').forEach(table => initFieldDragDrop(table));
+    document.querySelectorAll('#nodeEditorContainer .subject-editor').forEach(editor => {
+      const mtKey = editor.dataset.mtKey;
+      const hidden = document.querySelector('#nodeEditorContainer .subject-template-input[data-mt-key="' + mtKey + '"]');
+      if (hidden) {
+        const getFieldKeys = () => {
+          const keys = [];
+          document.querySelectorAll('.field-label-input[data-mt-key="' + mtKey + '"]').forEach(el => keys.push(el.dataset.fieldKey));
+          return keys;
+        };
+        initTemplateEditor(editor, hidden, getFieldKeys, () => updatePreview(mtKey));
+      }
+      updatePreview(mtKey);
+    });
+
     // Restore scroll position after re-render
     requestAnimationFrame(() => window.scrollTo(0, scrollY));
+  }
+
+  function findMtKey(pathName) {
+    if (!originalDoc || !originalDoc.message_types) return pathName;
+    const mt = originalDoc.message_types;
+    if (mt[pathName]) return pathName;
+    const slugified = pathName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    if (mt[slugified]) return slugified;
+    // Try all keys
+    for (const k of Object.keys(mt)) {
+      if (k.toLowerCase() === pathName.toLowerCase()) return k;
+    }
+    return pathName;
   }
 
   function buildDpDefaultsOptions(existingVars) {
@@ -3468,22 +3458,27 @@
     let dragEl = null;
     list.addEventListener('dragstart', e => {
       dragEl = e.target.closest('.ne-dp-row');
-      if (dragEl) dragEl.classList.add('dragging');
+      if (dragEl) {
+        dragEl.classList.add('dragging');
+        e.stopPropagation();
+      }
     });
     list.addEventListener('dragend', e => {
       if (dragEl) dragEl.classList.remove('dragging');
       dragEl = null;
     });
     list.addEventListener('dragover', e => {
+      if (!dragEl) return;
       e.preventDefault();
+      e.stopPropagation();
       const after = getDragAfterElement(list, e.clientY);
-      if (dragEl) {
-        if (after) list.insertBefore(dragEl, after);
-        else list.appendChild(dragEl);
-      }
+      if (after) list.insertBefore(dragEl, after);
+      else list.appendChild(dragEl);
     });
     list.addEventListener('drop', e => {
+      if (!dragEl) return;
       e.preventDefault();
+      e.stopPropagation();
       // Collect new order and save
       const pathName = list.dataset.nePath;
       const vars = Array.from(list.querySelectorAll('.ne-dp-row')).map(r => r.dataset.var);
