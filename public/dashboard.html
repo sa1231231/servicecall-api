@@ -39,6 +39,7 @@
   td { border-bottom: 1px solid #f0f0f0; }
   tr:last-child td { border-bottom: none; }
   .td-summary { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-collected-data { display: none; }
   .clickable-row { cursor: pointer; }
   .clickable-row:hover td { background: #f0f5ff; }
   #callTable .clickable-row:hover td { background: inherit; }
@@ -441,11 +442,11 @@
     #callTable thead { display: none; }
     #callTable tbody tr.clickable-row {
       display: block;
-      margin-bottom: 0;
+      margin-bottom: 0.75rem;
       background: #fff;
-      border-radius: 8px 8px 0 0;
+      border-radius: 8px;
       padding: 0.75rem;
-      box-shadow: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
       pointer-events: none;
     }
     #callTable tbody tr.clickable-row td {
@@ -469,24 +470,38 @@
       white-space: normal !important;
       text-overflow: unset !important;
     }
-    tr.call-expand-row { display: block !important; }
-    tr.call-expand-row td {
+    tr.call-expand-row { display: none !important; }
+    .mobile-collected-data {
+      display: block !important;
+      pointer-events: auto;
+    }
+    .mobile-collected-data::before { content: none !important; }
+    .mobile-collected-data details summary {
+      cursor: pointer;
+      color: #2563eb;
+      font-weight: 600;
+      font-size: 0.82rem;
+      padding: 0.3rem 0;
+      list-style: none;
+    }
+    .mobile-collected-data details summary::marker,
+    .mobile-collected-data details summary::-webkit-details-marker { display: none; }
+    .mobile-collected-data details summary::before {
+      content: '▸ ';
+      display: inline-block;
+      transition: transform 0.15s;
+    }
+    .mobile-collected-data details[open] summary::before {
+      transform: rotate(90deg);
+    }
+    .mobile-collected-data .mobile-fields {
+      padding: 0.4rem 0 0.2rem 0.5rem;
+      font-size: 0.8rem;
+    }
+    .mobile-collected-data .mobile-fields .field-pair {
       display: block;
-      padding: 0;
+      margin-bottom: 0.2rem;
     }
-    tr.call-expand-row {
-      background: #fff;
-      border-radius: 0 0 8px 8px;
-      margin-bottom: 1.25rem;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    }
-    .call-expand {
-      background: #fff;
-      border-radius: 0 0 8px 8px;
-      border-top: 1px dashed #e5e7eb;
-      padding-left: 1.25rem;
-    }
-    .call-expand .mobile-hide { display: none; }
     .call-expand .field-pair {
       display: block;
       margin-right: 0;
@@ -1972,6 +1987,7 @@
           <td data-label="Sentiment" class="${sentClass}">${esc(c.user_sentiment || 'Pending')}</td>
           <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
           <td data-label="Links">${links.join(' | ') || '—'}</td>
+          <td class="mobile-collected-data"><details><summary>Collected Data</summary><div class="mobile-fields">${renderFields(c.extracted_fields)}</div></details></td>
         </tr>
         <tr class="call-expand-row" style="display:none;"><td colspan="7">
           <div class="call-expand">
@@ -1979,7 +1995,7 @@
             <p><strong>Disconnection:</strong> ${esc(c.disconnection_reason)}</p>
             <p class="mobile-hide"><strong>Routing Path:</strong> ${esc(c.message_type_label || c.message_type_key)}</p>
             ${c.call_summary ? '<p class="mobile-hide"><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
-            <p style="margin-top:0.5rem;"><strong>Extracted Fields:</strong></p>
+            <p style="margin-top:0.5rem;" class="mobile-hide"><strong>Extracted Fields:</strong></p>
             <p>${renderFields(c.extracted_fields)}</p>
           </div>
         </td></tr>`;
