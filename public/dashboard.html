@@ -844,6 +844,25 @@
   let callOffset = 0;
   const CALL_LIMIT = 50;
 
+  // ── Cmd+S / Ctrl+S to save ──────────────────────────────────────
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+      e.preventDefault();
+      // Agent detail view
+      const btnSave = document.getElementById('btnSave');
+      if (btnSave && btnSave.offsetParent !== null && !btnSave.disabled) {
+        btnSave.click();
+        return;
+      }
+      // Global settings view
+      const btnSettings = document.getElementById('btnSaveSettings');
+      if (btnSettings && btnSettings.offsetParent !== null && !btnSettings.disabled) {
+        btnSettings.click();
+        return;
+      }
+    }
+  });
+
   function esc(str) {
     const d = document.createElement('div');
     d.textContent = str ?? '';
