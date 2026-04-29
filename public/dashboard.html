@@ -444,6 +444,30 @@
   }
   .ne-version-row .ne-v-desc { flex: 1; color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ne-version-row .ne-v-time { color: #999; font-size: 0.72rem; flex-shrink: 0; }
+  .ne-branch-scope {
+    margin: 0.35rem 0; padding: 0;
+    border-left: 3px solid #c4b5fd; border-radius: 0 6px 6px 0;
+    background: #faf5ff;
+  }
+  .ne-branch-header {
+    font-size: 0.75rem; color: #7c3aed; font-weight: 500;
+    padding: 0.3rem 0.6rem; background: #f3e8ff;
+    border-bottom: 1px solid #e9d5ff; border-radius: 0 6px 0 0;
+  }
+  .ne-branch-header .ne-branch-icon { font-size: 0.55rem; }
+  .ne-branch-body { padding: 0.3rem 0.4rem 0.3rem 0.6rem; }
+  .ne-branch-scope .ne-branch-scope {
+    border-left-color: #93c5fd; background: #eff6ff;
+  }
+  .ne-branch-scope .ne-branch-scope .ne-branch-header {
+    color: #2563eb; background: #dbeafe; border-bottom-color: #bfdbfe;
+  }
+  .ne-branch-scope .ne-branch-scope .ne-branch-scope {
+    border-left-color: #86efac; background: #f0fdf4;
+  }
+  .ne-branch-scope .ne-branch-scope .ne-branch-scope .ne-branch-header {
+    color: #059669; background: #dcfce7; border-bottom-color: #bbf7d0;
+  }
   .ne-loading { color: #888; font-size: 0.85rem; padding: 1rem 0; }
 
   /* ── Mobile responsive ─────────────────────────────────────────── */
@@ -3298,43 +3322,7 @@
         '<span style="width:1.1em;text-align:center;" title="Required field">R</span>' +
         '</div>';
       html += '<div class="ne-dp-list" data-ne-path="' + esc(path.name) + '">';
-      path.dataPoints.forEach((dp, i) => {
-        // Branch condition badge — clickable to edit
-        let branchBadge = '';
-        if (dp.branchConditions && dp.branchConditions.length > 0) {
-          const conds = dp.branchConditions.map(c =>
-            c.variable + ' ' + c.operator + (c.value ? ' ' + c.value : '')
-          ).join(' & ');
-          branchBadge = canEdit
-            ? ' <span onclick="openBranchEdit(\'' + esc(dp.variableName) + '\',\'' + esc(path.name) + '\')" style="font-size:0.65rem;padding:0.1rem 0.35rem;background:#faf5ff;border:1px solid #c4b5fd;border-radius:3px;color:#7c3aed;white-space:nowrap;cursor:pointer;" title="Click to edit condition">IF ' + esc(conds) + '</span>'
-            : ' <span style="font-size:0.65rem;padding:0.1rem 0.35rem;background:#faf5ff;border:1px solid #c4b5fd;border-radius:3px;color:#7c3aed;white-space:nowrap;">IF ' + esc(conds) + '</span>';
-        }
-
-        const isNested = dp.branchConditions && dp.branchConditions.length > 0;
-        const nestStyle = isNested ? 'margin-left:1.5rem;border-left:3px solid #c4b5fd;' : '';
-
-        // Show/Req from message_types field config
-        const fieldCfg = fieldMap[dp.variableName] || {};
-        const showChecked = fieldCfg.show !== false ? 'checked' : '';
-        const reqChecked = fieldCfg.required ? 'checked' : '';
-
-        html += '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '" data-field-key="' + esc(dp.variableName) + '" style="' + nestStyle + '">' +
-          '<span class="ne-handle">&#9776;</span>' +
-          '<span class="ne-num">' + (i + 1) + '</span>' +
-          '<input type="checkbox" ' + showChecked + ' data-mt-key="' + esc(mtKeyForDp) + '" data-field-key="' + esc(dp.variableName) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKeyForDp) + '\')" title="Show in dispatch" style="margin:0;">' +
-          '<input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKeyForDp) + '" data-field-key="' + esc(dp.variableName) + '" class="field-required-toggle" title="Required" style="margin:0;">' +
-          '<span class="ne-label">' + esc(dp.label) + branchBadge + '</span>' +
-          '<span class="ne-var">' + esc(dp.variableName) + '</span>' +
-          '<span class="ne-actions">';
-        if (canEdit) {
-          if (!dp.branchConditions || dp.branchConditions.length === 0) {
-            html += '<button class="ne-btn" onclick="openBranchEdit(\'' + esc(dp.variableName) + '\',\'' + esc(path.name) + '\')" style="font-size:0.65rem;color:#7c3aed;border-color:#c4b5fd;">IF</button>';
-          }
-          html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(dp.collectNodeId) + '\',\'' + esc(dp.label) + '\')">Edit</button>' +
-            '<button class="ne-btn ne-btn-remove" onclick="neRemoveDataPoint(\'' + esc(dp.variableName) + '\',\'' + esc(path.name) + '\')">Remove</button>';
-        }
-        html += '</span></div>';
-      });
+      html += renderBranchTree(path.dataPoints, path.name, mtKeyForDp, fieldMap, canEdit);
       html += '</div>';
 
       if (canEdit) {
@@ -3452,6 +3440,99 @@
 
     // Restore scroll position after re-render
     requestAnimationFrame(() => window.scrollTo(0, scrollY));
+  }
+
+  function renderBranchTree(dataPoints, pathName, mtKey, fieldMap, canEdit) {
+    // Build a tree: group consecutive data points by their branch scope
+    // A "scope" is defined by the branch conditions array
+    let html = '';
+    let num = 0;
+    const openScopes = []; // stack of open scope keys
+
+    function scopeKey(bc) {
+      if (!bc || bc.length === 0) return '';
+      return bc.map(c => c.variable + c.operator + (c.value || '')).join('|');
+    }
+
+    function condLabel(bc) {
+      return bc.map(c => {
+        const op = c.operator === '==' ? 'is' : 'is not';
+        return c.variable + ' ' + op + ' ' + (c.value || '');
+      }).join(' AND ');
+    }
+
+    // Group data points into a nested structure
+    function renderDps(dps, depth) {
+      let out = '';
+      let i = 0;
+      while (i < dps.length) {
+        const dp = dps[i];
+        const bc = dp.branchConditions || [];
+        const myDepth = bc.length;
+
+        if (myDepth <= depth) {
+          // This dp is at current depth or above — render it
+          num++;
+          out += renderDpRow(dp, num, pathName, mtKey, fieldMap, canEdit);
+          i++;
+        } else {
+          // This dp is deeper — collect all consecutive dps that share this branch level
+          // Find the condition at this depth level
+          const branchCond = bc[depth];
+          // Collect all dps that have this same condition at this depth
+          const groupKey = branchCond.variable + branchCond.operator + (branchCond.value || '');
+          const group = [];
+          while (i < dps.length) {
+            const nextBc = dps[i].branchConditions || [];
+            if (nextBc.length <= depth) break;
+            const nextCond = nextBc[depth];
+            const nextKey = nextCond.variable + nextCond.operator + (nextCond.value || '');
+            if (nextKey !== groupKey) break;
+            group.push(dps[i]);
+            i++;
+          }
+          // Render the scope block
+          const op = branchCond.operator === '==' ? 'is' : 'is not';
+          const label = branchCond.variable.replace(/_/g, ' ') + ' ' + op + ' ' + (branchCond.value || '');
+          out += '<div class="ne-branch-scope" style="margin-left:' + (depth > 0 ? '1.25rem' : '0') + ';">' +
+            '<div class="ne-branch-header">' +
+            '<span class="ne-branch-icon">&#9658;</span> ' +
+            '<span>IF <strong>' + esc(label) + '</strong></span>' +
+            '</div>' +
+            '<div class="ne-branch-body">';
+          out += renderDps(group, depth + 1);
+          out += '</div></div>';
+        }
+      }
+      return out;
+    }
+
+    html += renderDps(dataPoints, 0);
+    return html;
+  }
+
+  function renderDpRow(dp, num, pathName, mtKey, fieldMap, canEdit) {
+    const fieldCfg = fieldMap[dp.variableName] || {};
+    const showChecked = fieldCfg.show !== false ? 'checked' : '';
+    const reqChecked = fieldCfg.required ? 'checked' : '';
+
+    let html = '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '" data-field-key="' + esc(dp.variableName) + '">' +
+      '<span class="ne-handle">&#9776;</span>' +
+      '<span class="ne-num">' + num + '</span>' +
+      '<input type="checkbox" ' + showChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(dp.variableName) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKey) + '\')" title="Show in dispatch" style="margin:0;">' +
+      '<input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(dp.variableName) + '" class="field-required-toggle" title="Required" style="margin:0;">' +
+      '<span class="ne-label">' + esc(dp.label) + '</span>' +
+      '<span class="ne-var">' + esc(dp.variableName) + '</span>' +
+      '<span class="ne-actions">';
+    if (canEdit) {
+      if (!dp.branchConditions || dp.branchConditions.length === 0) {
+        html += '<button class="ne-btn" onclick="openBranchEdit(\'' + esc(dp.variableName) + '\',\'' + esc(pathName) + '\')" style="font-size:0.65rem;color:#7c3aed;border-color:#c4b5fd;">IF</button>';
+      }
+      html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(dp.collectNodeId) + '\',\'' + esc(dp.label) + '\')">Edit</button>' +
+        '<button class="ne-btn ne-btn-remove" onclick="neRemoveDataPoint(\'' + esc(dp.variableName) + '\',\'' + esc(pathName) + '\')">Remove</button>';
+    }
+    html += '</span></div>';
+    return html;
   }
 
   function findMtKey(pathName) {
