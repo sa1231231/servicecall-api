@@ -306,13 +306,35 @@ function parseDataPointFromNodes(
     }
   }
 
-  // Build variable defs from confirm node
-  const variableDefs = (confirmVars as Array<Record<string, unknown>>).map((v) => ({
-    name: v.name as string,
-    type: (v.type as string) ?? "string",
-    description: (v.description as string) ?? "",
-    ...(v.choices ? { choices: v.choices as string[] } : {}),
-  }));
+  // Build variable defs for this data point only (not the tapered remainder).
+  // Composite data points have collect node name == label (not "Collect {label}").
+  // For composites, we need all variables that aren't from later data points.
+  const isComposite = !nameMatch; // collect node name doesn't match "Collect {label}"
+  let variableDefs: Array<{ name: string; type: string; description: string; choices?: string[] }>;
+
+  if (isComposite) {
+    // For composite: the confirm node's variables include this composite's vars
+    // plus remaining tapered vars. We take variables until we hit one that
+    // doesn't share the composite's pattern. Heuristic: use the front-extract
+    // node to find all vars, or just include all vars that aren't the primary
+    // variable of a subsequent "Confirm {X}" node.
+    // Simplest: take all vars from the confirm node — the regenerator's toVarDefs
+    // handles composites via the DataPoint.variables field.
+    variableDefs = (confirmVars as Array<Record<string, unknown>>).map((v) => ({
+      name: v.name as string,
+      type: (v.type as string) ?? "string",
+      description: (v.description as string) ?? "",
+      ...(v.choices ? { choices: v.choices as string[] } : {}),
+    }));
+  } else {
+    // Non-composite: only the primary variable for this data point
+    variableDefs = [{
+      name: primaryVar.name as string,
+      type: (primaryVar.type as string) ?? "string",
+      description: (primaryVar.description as string) ?? "",
+      ...(primaryVar.choices ? { choices: primaryVar.choices as string[] } : {}),
+    }];
+  }
 
   return {
     variableName,

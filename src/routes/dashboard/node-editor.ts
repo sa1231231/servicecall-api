@@ -1036,8 +1036,9 @@ function buildDataPointsFromChain(
       ],
     };
 
-    // For composite data points
-    if (dp.variableDefs.length > 1) {
+    // For composite data points: the collect node name == label (no "Collect " prefix)
+    const isComposite = !dp.collectNode.name.startsWith("Collect ");
+    if (isComposite && dp.variableDefs.length > 1) {
       result.composite = true;
       result.variables = dp.variableDefs.map((v) => ({
         variableName: v.name,
