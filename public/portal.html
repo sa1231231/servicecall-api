@@ -170,14 +170,8 @@
       user-select: none;
       -webkit-tap-highlight-color: transparent;
     }
-    #callTable tbody tr.clickable-row a,
-    #callTable tbody tr.clickable-row .mobile-collected-data {
+    #callTable tbody tr.clickable-row a {
       pointer-events: auto;
-    }
-    #callTable tbody tr.clickable-row .td-summary,
-    #callTable tbody tr.clickable-row .mobile-fields {
-      -webkit-user-select: text;
-      user-select: text;
     }
     #callTable tbody tr.clickable-row td {
       display: block;
@@ -198,42 +192,20 @@
       text-overflow: unset !important;
     }
     tr.call-expand-row { display: none !important; }
-    .mobile-collected-data {
-      display: block !important;
-      pointer-events: auto;
-    }
-    .mobile-collected-data::before { content: none !important; }
     #callTable tbody tr.clickable-row td[data-label="Links"] a,
     #callTable tbody tr.clickable-row td[data-label="Recording"] a {
       font-size: 0.82rem;
       font-weight: 600;
     }
-    .mobile-collected-data details summary {
-      cursor: pointer;
-      color: #2563eb;
-      font-weight: 600;
-      font-size: 0.82rem;
-      padding: 0.3rem 0;
-      list-style: none;
-      -webkit-user-select: none;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-    }
-    .mobile-collected-data details summary::marker,
-    .mobile-collected-data details summary::-webkit-details-marker { display: none; }
-    .mobile-collected-data details summary::before {
-      content: '▸ ';
-      display: inline-block;
-      transition: transform 0.15s;
-    }
-    .mobile-collected-data details[open] summary::before {
-      transform: rotate(90deg);
-    }
-    .mobile-collected-data .mobile-fields {
-      padding: 0.4rem 0 0.2rem 0.5rem;
+    .mobile-collected-data {
+      display: block !important;
+      border-top: 1px dashed #e5e7eb;
+      margin-top: 0.4rem;
+      padding-top: 0.4rem;
       font-size: 0.8rem;
     }
-    .mobile-collected-data .mobile-fields .field-pair {
+    .mobile-collected-data::before { content: none !important; }
+    .mobile-collected-data .field-pair {
       display: block;
       margin-bottom: 0.2rem;
     }
@@ -526,7 +498,7 @@
         <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
         <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
         <td data-label="Recording">${c.recording_url ? '<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>' : '—'}</td>
-        <td class="mobile-collected-data"><details><summary>Collected Data</summary><div class="mobile-fields">${renderFields(c.extracted_fields)}</div></details></td>
+        <td class="mobile-collected-data">${renderFields(c.extracted_fields)}</td>
       </tr>
       <tr class="call-expand-row" style="display:none;"><td colspan="7">
         <div class="call-expand">
