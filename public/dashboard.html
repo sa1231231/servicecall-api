@@ -1657,14 +1657,9 @@
           </div>
         </details>
       </dd>
-    </dl>
-    <details style="margin-top:0.25rem;">
-      <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Advanced Dispatch <span style="font-weight:400;color:#999;">${doc.webhook_url ? '(webhook configured)' : ''}</span></summary>
-      <dl class="config-grid" style="margin-top:0.5rem;">
-        <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook">
-          <div class="config-hint">Call data is POSTed as JSON to this URL after each dispatch. Use for CRM integrations, Zapier, etc.</div></dd>
-      </dl>
-    </details>`;
+      <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook">
+        <div class="config-hint">Call data is POSTed as JSON to this URL after each dispatch. Use for CRM integrations, Zapier, etc.</div></dd>
+    </dl>`;
 
     if (hasPerm('edit_agents')) {
       html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
