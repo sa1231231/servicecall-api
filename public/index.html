@@ -332,7 +332,7 @@
   <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
   <div class="field-hint">Used in outgoing SMS and email notifications as the business identity — e.g. "Hi Acme Plumbing Co., you have a new call!" If blank, falls back to Business Name.</div>
 
-  <label for="dispatchTextNumbers">Dispatch Text Numbers <span style="color:#dc2626">*</span></label>
+  <label for="dispatchTextNumbers">Dispatch Text Numbers <span style="font-weight:400;color:#999;">(defaults to owner phone if empty)</span></label>
   <input type="text" id="dispatchTextNumbers" required placeholder="+15551234567, +15559876543">
   <div class="field-hint">These numbers receive an SMS with the call summary after every call. Comma-separated. At least one required.</div>
 
@@ -399,7 +399,8 @@
   let pathCounter = 0;
   let chainItemCounter = 0;
 
-  // Auto-load API key from server environment
+  // Auto-load API key and defaults from server environment
+  let ownerPhone = '';
   fetch('/form/config')
     .then(r => r.json())
     .then(data => {
@@ -407,6 +408,7 @@
       if (data.default_summary_agent_id && !document.getElementById('summaryAgentId').value) {
         document.getElementById('summaryAgentId').value = data.default_summary_agent_id;
       }
+      ownerPhone = data.owner_phone || '';
     })
     .catch(() => { /* key will be empty — POST will fail with 401 */ });
 
@@ -468,11 +470,8 @@
   function validateFormFields() {
     const errors = [];
 
-    // Dispatch text numbers
+    // Dispatch text numbers (optional — falls back to owner phone)
     const textNums = csvToArray(val('dispatchTextNumbers'));
-    if (textNums.length === 0) {
-      errors.push('At least one dispatch text number is required.');
-    }
     for (const num of textNums) {
       if (!validatePhone(num)) {
         errors.push(`Invalid dispatch text number "${num}". Format: +1XXXXXXXXXX (11 digits starting with +1).`);
@@ -1009,7 +1008,15 @@
       return;
     }
 
-    const dispatchTexts = csvToArray(val('dispatchTextNumbers'));
+    let dispatchTexts = csvToArray(val('dispatchTextNumbers'));
+    // Fall back to owner phone if no dispatch numbers provided
+    if (dispatchTexts.length === 0 && ownerPhone) {
+      dispatchTexts = [ownerPhone];
+    }
+    if (dispatchTexts.length === 0) {
+      showResult('Dispatch text number is required. Set one here or configure Owner Phone in Settings.', 'error');
+      return;
+    }
 
     const body = {
       business: {

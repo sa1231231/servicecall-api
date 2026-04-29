@@ -114,9 +114,16 @@ export async function createAgentHandler(
     res.status(400).json({ error: "Missing required field: client.slug" });
     return;
   }
+  // Fall back to owner phone if dispatch_text_numbers is empty
   if (!Array.isArray(body.client.dispatch_text_numbers) || body.client.dispatch_text_numbers.length === 0) {
-    res.status(400).json({ error: "Missing required field: client.dispatch_text_numbers (non-empty array)" });
-    return;
+    const { getSettings } = await import("../../lib/settings.js");
+    const settings = await getSettings();
+    if (settings.owner_phone) {
+      body.client.dispatch_text_numbers = [settings.owner_phone];
+    } else {
+      res.status(400).json({ error: "Missing dispatch_text_numbers and no owner phone configured in settings" });
+      return;
+    }
   }
   if (notificationClients[body.client.slug]) {
     res.status(409).json({ error: `Client slug "${body.client.slug}" already exists` });

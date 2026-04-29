@@ -223,6 +223,7 @@ formRouter.get("/config", async (_req, res) => {
   res.json({
     apiKey: config.API_KEY,
     default_summary_agent_id: settings.default_summary_agent_id || "",
+    owner_phone: settings.owner_phone || "",
   });
 });
 formRouter.get("/data-points", async (_req, res) => {
