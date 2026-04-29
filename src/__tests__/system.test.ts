@@ -868,7 +868,87 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
   });
 
-  // ── 21. Form Data Points Endpoint ──────────────────────────────────
+  // ── 21. Portal Link Sending ──────────────────────────────────────
+
+  describe("Portal link sending", () => {
+    it("sends portal link or returns error when not generated", async () => {
+      const resp = await fetch(
+        url(`/dashboard/api/agents/${DEMO_SLUG}/send-portal-link`),
+        { method: "POST", headers: authHeaders() },
+      );
+      const body = await json(resp);
+      // Either 400 (portal not generated) or 200 (success) — both valid
+      expect([200, 400]).toContain(resp.status);
+      if (resp.status === 400) {
+        expect(body.error).toContain("Portal");
+      } else {
+        expect(body.success).toBe(true);
+        expect(Array.isArray(body.sent_to)).toBe(true);
+      }
+    });
+
+    it("returns 404 for nonexistent client", async () => {
+      const resp = await fetch(
+        url("/dashboard/api/agents/nonexistent-slug-xyz/send-portal-link"),
+        { method: "POST", headers: authHeaders() },
+      );
+      expect(resp.status).toBe(404);
+    });
+  });
+
+  // ── 22. Settings CRUD ──────────────────────────────────────────────
+
+  describe("Settings CRUD", () => {
+    let originalSettings: any;
+
+    it("GET returns all expected fields", async () => {
+      const resp = await fetch(url("/dashboard/api/settings"), {
+        headers: authHeaders(),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      originalSettings = body;
+
+      expect(typeof body.google_review_url).toBe("string");
+      expect(typeof body.review_sms_message).toBe("string");
+      expect(typeof body.stripe_payment_url).toBe("string");
+      expect(typeof body.payment_sms_message).toBe("string");
+      expect(typeof body.portal_sms_message).toBe("string");
+      expect(typeof body.free_trial_days).toBe("number");
+      expect(typeof body.owner_email).toBe("string");
+      expect(typeof body.owner_phone).toBe("string");
+    });
+
+    it("PATCH updates portal_sms_message and persists", async () => {
+      const testMsg = "Test portal msg {{portal_url}} - " + Date.now();
+      const patchResp = await fetch(url("/dashboard/api/settings"), {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ portal_sms_message: testMsg }),
+      });
+      expect(patchResp.status).toBe(200);
+
+      // Verify it persisted
+      const getResp = await fetch(url("/dashboard/api/settings"), {
+        headers: authHeaders(),
+      });
+      const body = await json(getResp);
+      expect(body.portal_sms_message).toBe(testMsg);
+
+      // Restore original
+      if (originalSettings) {
+        await fetch(url("/dashboard/api/settings"), {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({
+            portal_sms_message: originalSettings.portal_sms_message,
+          }),
+        });
+      }
+    });
+  });
+
+  // ── 23. Form Data Points Endpoint ──────────────────────────────────
 
   describe("Form data points", () => {
     it("GET /form/data-points returns data points with categories (requires auth)", async () => {
