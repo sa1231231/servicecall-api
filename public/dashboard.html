@@ -505,6 +505,9 @@
   .settings-form { background: #fff; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
   .settings-form label { display: block; font-size: 0.82rem; font-weight: 600; color: #555; margin-bottom: 0.25rem; margin-top: 0.75rem; }
   .settings-form label:first-child { margin-top: 0; }
+  .settings-section { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+  .settings-section-title { font-size: 0.85rem; font-weight: 700; color: #374151; margin: 0 0 0.25rem; display: flex; align-items: center; gap: 0.4rem; }
+  .settings-section-title .section-icon { font-size: 1rem; }
   .settings-form input, .settings-form textarea {
     width: 100%; padding: 0.4rem 0.6rem; font-size: 0.82rem;
     border: 1px solid #d1d5db; border-radius: 6px; font-family: inherit;
@@ -588,48 +591,57 @@
   <button class="btn-back" onclick="hideSettings()">&larr; Back to all agents</button>
   <h1>Settings</h1>
   <div class="settings-form admin-only">
-    <label for="settings-owner-email">Owner Email</label>
-    <input type="email" id="settings-owner-email" placeholder="owner@example.com">
-    <p class="settings-hint">Receives shadow mode notifications, call monitoring alerts, and weekly reports. This is your email, not the client's.</p>
 
-    <label for="settings-owner-phone">Owner Phone</label>
-    <input type="tel" id="settings-owner-phone" placeholder="+15551234567">
-    <p class="settings-hint">Receives shadow mode SMS and problem call alerts. When an agent is in shadow mode, dispatch goes here instead of the client.</p>
-
-    <label for="settings-review-url">Google Review URL</label>
-    <input type="text" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
-    <p class="settings-hint">Your Google Business review link. Used in the review request SMS sent to clients via "Send to Client &gt; Request Review".</p>
-
-    <label>Review SMS Message</label>
-    <div class="tmpl-editor-wrap">
-      <div class="tmpl-editor" contenteditable="true" id="settings-review-msg-editor" data-placeholder="Hi! Please leave us a review: {{google_review_url}}"></div>
-      <input type="hidden" id="settings-review-msg">
+    <div class="settings-section">
+      <div class="settings-section-title">Owner Contact</div>
+      <label for="settings-owner-email">Email</label>
+      <input type="email" id="settings-owner-email" placeholder="owner@example.com">
+      <p class="settings-hint">Receives shadow mode notifications, call monitoring alerts, and weekly reports.</p>
+      <label for="settings-owner-phone">Phone</label>
+      <input type="tel" id="settings-owner-phone" placeholder="+15551234567">
+      <p class="settings-hint">Receives shadow mode SMS and problem call alerts.</p>
     </div>
-    <p class="settings-hint">Template for the review request SMS. Type {{ to insert {{google_review_url}}.</p>
 
-    <label for="settings-trial-days">Free Trial Length (days)</label>
-    <input type="number" id="settings-trial-days" min="1" max="90" placeholder="14" style="width:80px;">
-    <p class="settings-hint">Global trial duration for all clients. Each client's trial starts from their individual Trial Start Date on the agent detail page.</p>
-
-    <label for="settings-payment-url">Stripe Payment URL</label>
-    <input type="text" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
-    <p class="settings-hint">Stripe checkout link sent to clients when their trial expires. Used in the payment SMS via "Send to Client &gt; Send Payment Link".</p>
-
-    <label>Payment SMS Message</label>
-    <div class="tmpl-editor-wrap">
-      <div class="tmpl-editor" contenteditable="true" id="settings-payment-msg-editor" data-placeholder="Hi! Subscribe here: {{stripe_payment_url}}"></div>
-      <input type="hidden" id="settings-payment-msg">
+    <div class="settings-section">
+      <div class="settings-section-title">Billing &amp; Trials</div>
+      <label for="settings-trial-days">Free Trial Length (days)</label>
+      <input type="number" id="settings-trial-days" min="1" max="90" placeholder="14" style="width:80px;">
+      <p class="settings-hint">Global trial duration. Each client's trial starts from their individual Trial Start Date.</p>
+      <label for="settings-payment-url">Stripe Payment URL</label>
+      <input type="text" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
+      <p class="settings-hint">Checkout link sent when a client's trial expires.</p>
+      <label>Payment SMS Template</label>
+      <div class="tmpl-editor-wrap">
+        <div class="tmpl-editor" contenteditable="true" id="settings-payment-msg-editor" data-placeholder="Hi! Subscribe here: {{stripe_payment_url}}"></div>
+        <input type="hidden" id="settings-payment-msg">
+      </div>
+      <p class="settings-hint">Type {{ to insert {{stripe_payment_url}}.</p>
     </div>
-    <p class="settings-hint">Template for the payment link SMS. Type {{ to insert {{stripe_payment_url}}.</p>
 
-    <label>Portal Link SMS Message</label>
-    <div class="tmpl-editor-wrap">
-      <div class="tmpl-editor" contenteditable="true" id="settings-portal-msg-editor" data-placeholder="Hi! Here's your portal: {{portal_url}}"></div>
-      <input type="hidden" id="settings-portal-msg">
+    <div class="settings-section">
+      <div class="settings-section-title">Google Reviews</div>
+      <label for="settings-review-url">Review URL</label>
+      <input type="text" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
+      <p class="settings-hint">Your Google Business review link.</p>
+      <label>Review SMS Template</label>
+      <div class="tmpl-editor-wrap">
+        <div class="tmpl-editor" contenteditable="true" id="settings-review-msg-editor" data-placeholder="Hi! Please leave us a review: {{google_review_url}}"></div>
+        <input type="hidden" id="settings-review-msg">
+      </div>
+      <p class="settings-hint">Type {{ to insert {{google_review_url}}.</p>
     </div>
-    <p class="settings-hint">Template for the portal link SMS. Type {{ to insert {{portal_url}}.</p>
 
-    <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
+    <div class="settings-section">
+      <div class="settings-section-title">Client Portal</div>
+      <label>Portal Link SMS Template</label>
+      <div class="tmpl-editor-wrap">
+        <div class="tmpl-editor" contenteditable="true" id="settings-portal-msg-editor" data-placeholder="Hi! Here's your portal: {{portal_url}}"></div>
+        <input type="hidden" id="settings-portal-msg">
+      </div>
+      <p class="settings-hint">Type {{ to insert {{portal_url}}.</p>
+    </div>
+
+    <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:0.5rem;">Save Settings</button>
   </div>
 
   <div class="admin-only">
