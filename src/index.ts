@@ -24,6 +24,7 @@ import { getDb } from "./lib/db.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
 import { getUser, verifyPassword, resolvePermissions, DEFAULT_PERMISSIONS } from "./lib/users.js";
 import { ensureAuditIndex } from "./lib/audit.js";
+import { ensureVersionIndexes } from "./lib/agent-versions.js";
 import { requirePermission } from "./middleware/require-role.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -336,6 +337,7 @@ app.use("/agents", agentsRouter);
 // ── Start ────────────────────────────────────────────────────────────────────
 await initDb();
 await ensureAuditIndex();
+await ensureVersionIndexes();
 await purgeExpiredClients();
 await loadClientsFromDb();
 await refreshOwnerConfig();

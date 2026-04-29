@@ -34,6 +34,7 @@ import {
 } from "../../lib/data-point-defaults.js";
 import { requirePermission, requireRoot } from "../../middleware/require-role.js";
 import { logAudit } from "../../lib/audit.js";
+import { nodeEditorRouter } from "./node-editor.js";
 import { alertRootIfNeeded } from "../../lib/root-alerts.js";
 import {
   listUsers,
@@ -81,6 +82,9 @@ dashboardApiRouter.patch("/agents/:slug/shadow", requirePermission("edit_agents"
 dashboardApiRouter.patch("/agents/:slug", requirePermission("edit_agents"), updateAgentHandler);
 dashboardApiRouter.post("/agents/:slug/clone", requirePermission("clone_agents"), cloneAgentHandler);
 dashboardApiRouter.delete("/agents/:slug", requirePermission("delete_agents"), deleteAgentHandler);
+
+// ── Node Editor ──────────────────────────────────────────────────────────────
+dashboardApiRouter.use("/agents/:slug/nodes", requirePermission("edit_agents"), nodeEditorRouter);
 
 // ── Soft-Deleted Agents (Recovery) ──────────────────────────────────────────
 

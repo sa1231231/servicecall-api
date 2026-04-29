@@ -11,6 +11,7 @@ import {
 } from "./notification-config.js";
 import { getDb } from "./db.js";
 import type { JsonClientEntry } from "../config/client-store.js";
+import { createVersionSnapshot } from "./agent-versions.js";
 
 const THREE_MIN_MS = 3 * 60_000;
 const TEN_MIN_MS = 10 * 60_000;
@@ -53,6 +54,18 @@ async function runAutoSync(): Promise<void> {
     for (const agentId of agentIds) {
       try {
         const snapshot = await fetchRetellAgent(retell, agentId);
+
+        // Drift detection: snapshot if significant changes detected
+        const existingCanonical = doc.retell_agents?.[agentId] as Record<string, unknown> | undefined;
+        if (existingCanonical) {
+          if (hasSignificantDrift(existingCanonical, snapshot.canonicalJson)) {
+            try {
+              await createVersionSnapshot(slug, agentId, existingCanonical, "auto_sync", "Auto-sync drift detected", "system");
+            } catch (snapErr) {
+              console.warn(`[auto-sync] could not snapshot drift for "${slug}" agent ${agentId}:`, snapErr);
+            }
+          }
+        }
 
         // Preserve existing dispatch info
         const clientInfo: ClientInfo = {
@@ -156,4 +169,26 @@ async function runAutoSync(): Promise<void> {
   console.log(
     `[auto-sync] complete: ${synced} synced, ${skipped} skipped, ${errors} errors`,
   );
+}
+
+function hasSignificantDrift(
+  existing: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): boolean {
+  const existingFlow = existing.conversationFlow as Record<string, unknown> | undefined;
+  const incomingFlow = incoming.conversationFlow as Record<string, unknown> | undefined;
+  if (!existingFlow || !incomingFlow) return false;
+
+  const existingNodes = existingFlow.nodes as unknown[] | undefined;
+  const incomingNodes = incomingFlow.nodes as unknown[] | undefined;
+  const existingCount = Array.isArray(existingNodes) ? existingNodes.length : 0;
+  const incomingCount = Array.isArray(incomingNodes) ? incomingNodes.length : 0;
+
+  // Node count changed
+  if (existingCount !== incomingCount) return true;
+
+  // Global prompt changed
+  if (existingFlow.global_prompt !== incomingFlow.global_prompt) return true;
+
+  return false;
 }

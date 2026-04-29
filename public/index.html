@@ -694,6 +694,7 @@
           <textarea class="cc-conversationPrompt" placeholder='How the agent asks for this...'></textarea>
           <label>Forward Condition <span style="color:#dc2626">*</span></label>
           <input type="text" class="cc-forwardCondition" placeholder="The caller has provided...">
+          <button type="button" class="btn-save-as-default" onclick="saveCustomAsDefault(this)" style="margin-top:0.4rem;padding:0.35rem 0.75rem;font-size:0.78rem;font-weight:600;color:#059669;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:5px;cursor:pointer;">Save as Default Variable</button>
         `;
         item.appendChild(fields);
       }
@@ -701,6 +702,92 @@
       item.classList.remove('custom-expanded');
       const fields = item.querySelector('.chain-custom-fields');
       if (fields) fields.remove();
+    }
+  }
+
+  async function saveCustomAsDefault(btn) {
+    const item = btn.closest('.chain-item');
+    const f = item.querySelector('.chain-custom-fields');
+    if (!f) return;
+
+    const variableName = slugify(f.querySelector('.cc-variableName').value.trim());
+    const label = f.querySelector('.cc-label').value.trim();
+    const type = f.querySelector('.cc-type').value;
+    const choicesRaw = f.querySelector('.cc-choices').value.trim();
+    const description = f.querySelector('.cc-description').value.trim();
+    const conversationPrompt = f.querySelector('.cc-conversationPrompt').value.trim();
+    const forwardCondition = f.querySelector('.cc-forwardCondition').value.trim();
+
+    if (!variableName || !label) {
+      alert('Variable Name and Label are required to save as default.');
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    try {
+      const resp = await fetch('/dashboard/api/data-point-defaults', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: variableName,
+          label,
+          category: 'custom',
+          type: type || 'string',
+          choices: choicesRaw ? choicesRaw.split(',').map(c => c.trim()).filter(Boolean) : [],
+          description,
+          conversationPrompt,
+          forwardCondition,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        alert(data.error || 'Failed to save as default');
+        btn.disabled = false;
+        btn.textContent = 'Save as Default Variable';
+        return;
+      }
+
+      // Add to all data point dropdowns on the page
+      const newOpt = `<option value="${variableName}">${label}</option>`;
+      document.querySelectorAll('select.chain-dp-select').forEach(sel => {
+        // Insert before the Custom optgroup
+        const customOg = sel.querySelector('optgroup[label="Custom"]');
+        if (customOg) {
+          customOg.insertAdjacentHTML('beforebegin', newOpt);
+        } else {
+          sel.insertAdjacentHTML('beforeend', newOpt);
+        }
+      });
+
+      // Add to in-memory data so future dropdowns include it
+      BUILTIN_NAMES.push(variableName);
+      BUILTIN_LABELS[variableName] = label;
+      BUILTIN_CATEGORIES[variableName] = 'custom';
+      BUILTIN_SORT_ORDERS[variableName] = 99;
+      BUILTIN_DATA[variableName] = data.dataPoint;
+
+      // Switch this item from custom to the new default key
+      const select = item.querySelector('.chain-dp-select');
+      if (select) {
+        // Add option to this select if not already there
+        if (!select.querySelector(`option[value="${variableName}"]`)) {
+          const customOg = select.querySelector('optgroup[label="Custom"]');
+          if (customOg) {
+            customOg.insertAdjacentHTML('beforebegin', newOpt);
+          }
+        }
+        select.value = variableName;
+        item.classList.remove('custom-expanded');
+        f.remove();
+      }
+
+      btn.textContent = 'Saved!';
+    } catch (err) {
+      alert('Error saving: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = 'Save as Default Variable';
     }
   }
 
