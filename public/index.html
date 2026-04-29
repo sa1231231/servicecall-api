@@ -795,22 +795,21 @@
 
   function addPathCard(defaultName) {
     const id = 'path_' + (++pathCounter);
-    const isDefault = defaultName === 'Default';
     const html = `
       <div class="path-card" data-path-id="${id}">
         <div class="card-header">
           <span>Path #<span class="path-num"></span></span>
           <div class="card-actions">
+            <button type="button" onclick="duplicatePathCard('${id}')" style="color:#2563eb;border-color:#93b4f5;">Duplicate</button>
             <button type="button" onclick="removePathCard('${id}')">Remove</button>
           </div>
         </div>
         <label>Path Name <span style="color:#dc2626">*</span></label>
         <input type="text" class="path-name" placeholder="e.g. Emergency Dispatch" value="${defaultName || ''}">
         <div class="field-hint">Shown as the message type header in dispatch notifications.</div>
-        ${isDefault ? '' : `<label>Transition Condition <span style="color:#dc2626">*</span></label>
-        <input type="text" class="path-condition" placeholder="e.g. The caller has a truck that is broken down">
-        <div class="field-hint">The condition the AI evaluates after the intro to route into this path.</div>`}
-        ${isDefault ? '<input type="hidden" class="path-condition" value="">' : ''}
+        <label>Transition Condition <span style="color:#dc2626">*</span></label>
+        <input type="text" class="path-condition" placeholder="e.g. The caller confirms forward intent with service" value="${defaultName === 'Default' ? 'The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.' : ''}">
+        <div class="field-hint">The condition the AI evaluates after the intro to route into this path.</div>
         <label style="margin-top:0.5rem;">Data Collection Chain</label>
         <div class="field-hint" style="margin-top:-0.25rem;">Add data points in the order the agent should ask them. Use branches for conditional logic.</div>
         <div class="chain-list" data-chain-root="${id}"></div>
@@ -834,6 +833,35 @@
     `;
     pathsContainer.insertAdjacentHTML('beforeend', html);
     renumberPaths();
+  }
+
+  function duplicatePathCard(pathId) {
+    const card = pathsContainer.querySelector(`[data-path-id="${pathId}"]`);
+    if (!card) return;
+
+    const name = card.querySelector('.path-name').value.trim();
+    const condition = card.querySelector('.path-condition').value.trim();
+    const chainRoot = card.querySelector('.chain-list[data-chain-root]');
+    const chainData = chainRoot ? serializeChain(chainRoot) : [];
+    const sms = card.querySelector('.path-dispatch-sms').value;
+    const email = card.querySelector('.path-dispatch-email').value;
+    const call = card.querySelector('.path-dispatch-call').value;
+
+    // Create new card with copied name
+    addPathCard(name ? name + ' (Copy)' : '');
+
+    // Fill in the new card's fields
+    const newCard = pathsContainer.lastElementChild;
+    newCard.querySelector('.path-condition').value = condition;
+    newCard.querySelector('.path-dispatch-sms').value = sms;
+    newCard.querySelector('.path-dispatch-email').value = email;
+    newCard.querySelector('.path-dispatch-call').value = call;
+
+    // Restore the chain data into the new card
+    const newChainRoot = newCard.querySelector('.chain-list[data-chain-root]');
+    if (newChainRoot && chainData.length > 0) {
+      restoreChain(newChainRoot, chainData);
+    }
   }
 
   function removePathCard(pathId) {
@@ -915,9 +943,7 @@
       const dataPoints = chainRoot ? collectChain(chainRoot) : [];
 
       if (!name) errors.push(`Path #${num}: Path Name is required.`);
-      // Condition not required for single default path
-      const isSingleDefault = cards.length === 1 && name === 'Default';
-      if (!isSingleDefault && !condition) errors.push(`Path #${num}: Transition Condition is required.`);
+      if (!condition) errors.push(`Path #${num}: Transition Condition is required.`);
       if (dataPoints.length === 0) errors.push(`Path #${num}: Add at least one data point.`);
 
       if (errors.length === 0) {
@@ -980,25 +1006,19 @@
       },
     };
 
-    // Single default path → send as flat dataPoints (no routing)
-    const isSingleDefault = pathData.paths.length === 1 && pathData.paths[0].name === 'Default';
-    if (isSingleDefault) {
-      body.dataPoints = pathData.paths[0].dataPoints;
-    } else {
-      // Multi-path: build dispatch_by_type from path-level overrides
-      const dispatchByType = {};
-      for (const p of pathData.paths) {
-        if (p.dispatchOverride) {
-          const typeKey = slugify(p.name);
-          dispatchByType[typeKey] = p.dispatchOverride;
-        }
-        delete p.dispatchOverride;
+    // Build dispatch_by_type from path-level overrides
+    const dispatchByType = {};
+    for (const p of pathData.paths) {
+      if (p.dispatchOverride) {
+        const typeKey = slugify(p.name);
+        dispatchByType[typeKey] = p.dispatchOverride;
       }
-      if (Object.keys(dispatchByType).length > 0) {
-        body.client.dispatch_by_type = dispatchByType;
-      }
-      body.paths = pathData.paths;
+      delete p.dispatchOverride;
     }
+    if (Object.keys(dispatchByType).length > 0) {
+      body.client.dispatch_by_type = dispatchByType;
+    }
+    body.paths = pathData.paths;
 
     // Optional client fields
     const clientName = val('clientName');
