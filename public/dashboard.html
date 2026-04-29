@@ -3287,7 +3287,10 @@
             : ' <span style="font-size:0.65rem;padding:0.1rem 0.35rem;background:#faf5ff;border:1px solid #c4b5fd;border-radius:3px;color:#7c3aed;white-space:nowrap;">IF ' + esc(conds) + '</span>';
         }
 
-        html += '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '">' +
+        const isNested = dp.branchConditions && dp.branchConditions.length > 0;
+        const nestStyle = isNested ? 'margin-left:1.5rem;border-left:3px solid #c4b5fd;' : '';
+
+        html += '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '" style="' + nestStyle + '">' +
           '<span class="ne-handle">&#9776;</span>' +
           '<span class="ne-num">' + (i + 1) + '</span>' +
           '<span class="ne-label">' + esc(dp.label) + branchBadge + '</span>' +
