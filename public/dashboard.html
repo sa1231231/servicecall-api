@@ -463,11 +463,8 @@
     #callTable tbody tr.clickable-row td[data-label="Summary"] {
       white-space: normal !important;
       max-width: none !important;
-      overflow: hidden !important;
-      display: -webkit-box !important;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      text-overflow: ellipsis;
+      overflow: visible !important;
+      text-overflow: unset !important;
     }
     tr.call-expand-row { display: none !important; }
     tr.call-expand-row.expanded { display: block !important; }
