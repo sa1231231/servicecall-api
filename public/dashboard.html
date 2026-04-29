@@ -3280,6 +3280,12 @@
         for (const f of mtForDp.fields) fieldMap[f.key] = f;
       }
 
+      html += '<div style="display:flex;gap:0.5rem;padding:0 0.5rem;margin-bottom:0.15rem;font-size:0.6rem;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:0.03em;">' +
+        '<span style="width:1rem;"></span>' +
+        '<span style="width:1.2em;text-align:right;"></span>' +
+        '<span style="width:1.1em;text-align:center;" title="Show in dispatch notifications">S</span>' +
+        '<span style="width:1.1em;text-align:center;" title="Required field">R</span>' +
+        '</div>';
       html += '<div class="ne-dp-list" data-ne-path="' + esc(path.name) + '">';
       path.dataPoints.forEach((dp, i) => {
         // Branch condition badge — clickable to edit
