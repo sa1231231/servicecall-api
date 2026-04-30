@@ -2148,7 +2148,7 @@
       <td data-label="Links" style="white-space:nowrap;">${links.join(' | ') || '—'}</td>
       <td class="mobile-collected-data">${renderFields(c.extracted_fields)}</td>
     </tr>
-    <tr class="call-expand-row" style="display:none;"><td colspan="8">
+    <tr class="call-expand-row" style="display:none;"><td colspan="99">
       <div class="call-expand">
         <p><strong>Call ID:</strong> <code>${esc(c._id)}</code></p>
         <p><strong>Disconnection:</strong> ${esc(c.disconnection_reason)}</p>
@@ -2167,7 +2167,7 @@
       const container = document.getElementById('callLogContent');
       let html = `<table id="callTable"><thead><tr>
         <th>Date</th><th>From</th><th>Duration</th>${hasPerm('view_billing') ? '<th>Cost</th>' : ''}<th>Outcome</th>
-        <th>Sentiment</th><th>Summary</th><th>Links</th>
+        <th>Sentiment</th><th>Summary</th><th>Links</th><th class="mobile-collected-data"></th>
       </tr></thead><tbody id="callBody">`;
       for (const c of dashAllCalls) html += dashBuildCallRow(c);
       html += '</tbody></table>';
@@ -2191,8 +2191,8 @@
       return;
     }
     let html = `<table id="callTable"><thead><tr>
-      <th>Date</th><th>From</th><th>Duration</th><th>Cost</th><th>Outcome</th>
-      <th>Sentiment</th><th>Summary</th><th>Links</th>
+      <th>Date</th><th>From</th><th>Duration</th>${hasPerm('view_billing') ? '<th>Cost</th>' : ''}<th>Outcome</th>
+      <th>Sentiment</th><th>Summary</th><th>Links</th><th class="mobile-collected-data"></th>
     </tr></thead><tbody id="callBody">`;
     for (const c of filtered) html += dashBuildCallRow(c);
     html += '</tbody></table>';
@@ -2340,8 +2340,8 @@
       let html = '';
       if (fresh) {
         html = `<table id="callTable"><thead><tr>
-          <th>Date</th><th>From</th><th>Duration</th><th>Cost</th><th>Outcome</th>
-          <th>Sentiment</th><th>Summary</th><th>Links</th>
+          <th>Date</th><th>From</th><th>Duration</th>${hasPerm('view_billing') ? '<th>Cost</th>' : ''}<th>Outcome</th>
+          <th>Sentiment</th><th>Summary</th><th>Links</th><th class="mobile-collected-data"></th>
         </tr></thead><tbody id="callBody">`;
       }
 
