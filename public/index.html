@@ -311,6 +311,11 @@
     <button type="button" class="sb-btn-delete" onclick="deleteSelected('template')">Delete</button>
   </div>
   <div class="save-bar-row">
+    <span class="sb-label">JSON:</span>
+    <input type="file" id="jsonFileInput" accept=".json" style="display:none" onchange="loadFromJsonFile(this)">
+    <button type="button" class="sb-btn-load" onclick="document.getElementById('jsonFileInput').click()">Load from JSON</button>
+  </div>
+  <div class="save-bar-row">
     <span class="sb-label">Drafts:</span>
     <select id="draftSelect"><option value="">— Select a draft —</option></select>
     <button type="button" class="sb-btn-load" onclick="loadSelected('draft')">Load</button>
@@ -1334,6 +1339,55 @@
     });
 
     return state;
+  }
+
+  function loadFromJsonFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const config = JSON.parse(e.target.result);
+        // Convert export format to form state
+        const state = {
+          businessName: config.business?.businessName || '',
+          faqKnowledgeBase: config.business?.faqKnowledgeBase || '',
+          humanRequestMode: config.business?.human_request_mode || 'callback',
+          clientName: config.client?.name || '',
+          dispatchTextNumbers: (config.client?.dispatch_text_numbers || []).join(', '),
+          dispatchCallNumber: config.client?.dispatch_call_number || '',
+          dispatchEmail: (config.client?.dispatch_email || []).join(', '),
+          summaryAgentId: config.client?.summary_agent_id || '',
+          routingPaths: (config.paths || []).map(p => ({
+            name: p.name,
+            condition: p.transitionCondition || '',
+            chain: (p.dataPoints || []).map(dp => {
+              if (typeof dp === 'string') return dp;
+              if (dp._branch) return dp;
+              return {
+                _custom: true,
+                variableName: dp.variableName,
+                label: dp.label || '',
+                type: dp.type || 'string',
+                choices: (dp.choices || []).join(', '),
+                description: dp.description || '',
+                conversationPrompt: dp.conversationPrompt || '',
+                forwardCondition: dp.forwardCondition || '',
+              };
+            }),
+            dispatchSms: '',
+            dispatchEmail: '',
+            dispatchCall: '',
+          })),
+        };
+        loadFormState(state);
+        showResult('Loaded config from ' + file.name, 'success');
+      } catch (err) {
+        showResult('Error loading JSON: ' + err.message, 'error');
+      }
+      input.value = '';
+    };
+    reader.readAsText(file);
   }
 
   function loadFormState(state) {

@@ -357,7 +357,7 @@ app.listen(Number(config.PORT), () => {
   (async () => {
     try {
       const result = await getDb().collection("users").updateOne(
-        { _id: "sam_admin", role: { $ne: "super_admin" } },
+        { _id: "sam_admin", role: { $ne: "super_admin" } } as any,
         { $set: { role: "super_admin", permissions: {
           create_agents: true, edit_agents: true, clone_agents: true,
           delete_agents: true, send_comms: true, manage_settings: true,

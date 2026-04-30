@@ -1669,6 +1669,7 @@
       : '';
 
     const manageItems =
+      `<button onclick="exportAgentConfig('${esc(slug)}')">Export Config</button>` +
       (p.clone_agents ? `<button onclick="showCloneModal()">Clone Agent</button>` : '') +
       (p.delete_agents ? `<button class="danger" onclick="showDeleteModal()">Delete Agent</button>` : '');
     const manageMenu = manageItems
@@ -1676,6 +1677,10 @@
       : '';
 
     return testMenu + sendMenu + manageMenu;
+  }
+
+  function exportAgentConfig(slug) {
+    window.open('/agents/' + encodeURIComponent(slug) + '/export', '_blank');
   }
 
   function toggleDropdown(btn) {
