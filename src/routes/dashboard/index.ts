@@ -401,7 +401,8 @@ dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
   const defaults = await getDataPointDefaultsWithCategory();
   const settings = await getSettings();
   const categoryOrder = settings.category_order || CATEGORY_ORDER;
-  res.json({ defaults, categoryOrder, categoryLabels: CATEGORY_LABELS });
+  const categoryLabels = { ...CATEGORY_LABELS, ...(settings.category_labels || {}) };
+  res.json({ defaults, categoryOrder, categoryLabels });
 });
 
 dashboardApiRouter.patch("/data-point-defaults/:key", requirePermission("manage_data_points"), async (req, res) => {

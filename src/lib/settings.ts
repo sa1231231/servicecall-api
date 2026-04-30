@@ -12,6 +12,7 @@ export interface GlobalSettings {
   owner_phone: string;
   default_summary_agent_id: string;
   category_order?: string[];
+  category_labels?: Record<string, string>;
 }
 
 function collection() {
@@ -31,6 +32,7 @@ export async function getSettings(): Promise<GlobalSettings> {
     owner_phone: doc?.owner_phone ?? "",
     default_summary_agent_id: (doc as any)?.default_summary_agent_id ?? "",
     category_order: (doc as any)?.category_order ?? undefined,
+    category_labels: (doc as any)?.category_labels ?? undefined,
   };
 }
 
@@ -48,6 +50,7 @@ export async function updateSettings(
   if (updates.owner_phone !== undefined) setObj.owner_phone = updates.owner_phone;
   if (updates.default_summary_agent_id !== undefined) setObj.default_summary_agent_id = updates.default_summary_agent_id;
   if (updates.category_order !== undefined) setObj.category_order = updates.category_order;
+  if (updates.category_labels !== undefined) setObj.category_labels = updates.category_labels;
 
   if (Object.keys(setObj).length === 0) {
     return getSettings();
