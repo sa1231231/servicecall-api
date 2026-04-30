@@ -5,6 +5,7 @@ import {
   notificationClients,
   agentIdToClient,
   agentIdToSlug,
+  phoneNumberToClient,
 } from "../_cache/clients.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -123,6 +124,9 @@ function registerInMemory(slug: string, config: ClientNotificationConfig): void 
   for (const agentId of config.agent_ids) {
     agentIdToClient[agentId] = config;
     agentIdToSlug[agentId] = slug;
+  }
+  if (config.outbound_from_number) {
+    phoneNumberToClient[config.outbound_from_number] = { slug, config };
   }
 }
 
@@ -253,6 +257,10 @@ export async function updateClientFields(
         delete agentIdToSlug[oldId];
       }
     }
+    // Special handling for outbound_from_number: remove old mapping
+    if ("outbound_from_number" in setObj && existing.outbound_from_number) {
+      delete phoneNumberToClient[existing.outbound_from_number];
+    }
 
     // Apply all field updates to in-memory object
     for (const [key, value] of Object.entries(setObj)) {
@@ -266,6 +274,10 @@ export async function updateClientFields(
         agentIdToSlug[newId] = slug;
       }
     }
+    // Re-register phone number if it changed
+    if ("outbound_from_number" in setObj && existing.outbound_from_number) {
+      phoneNumberToClient[existing.outbound_from_number] = { slug, config: existing };
+    }
   }
 
   console.log(`[client-store] updated "${slug}" fields: ${Object.keys(setObj).join(", ")}`);
@@ -278,6 +290,9 @@ function unregisterFromMemory(slug: string): void {
     for (const agentId of existing.agent_ids) {
       delete agentIdToClient[agentId];
       delete agentIdToSlug[agentId];
+    }
+    if (existing.outbound_from_number) {
+      delete phoneNumberToClient[existing.outbound_from_number];
     }
     delete notificationClients[slug];
   }

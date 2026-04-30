@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
-import { agentIdToClient, agentIdToSlug } from "../../_cache/clients.js";
+import { agentIdToClient, agentIdToSlug, phoneNumberToClient } from "../../_cache/clients.js";
 
 export async function preHookHandler(req: Request, res: Response) {
   const sig = (req.headers["x-retell-signature"] as string) ?? "";
@@ -38,41 +38,67 @@ export async function preHookHandler(req: Request, res: Response) {
 
   const agentId = inbound?.agent_id ?? null;
   const toNumber = inbound?.to_number ?? null;
+  const responseKey = eventType === "call_inbound" ? "call_inbound" : "chat_inbound";
 
-  // 3) Check if agent is active
-  // NOTE: For rejection to work, the phone number's inbound agent must be UNSET
-  // in Retell. The webhook becomes the sole gatekeeper — it accepts by returning
-  // override_agent_id, and rejects by omitting it.
-  if (agentId) {
-    const client = agentIdToClient[agentId];
-    const slug = agentIdToSlug[agentId] ?? "unknown";
+  // 3) Resolve client — try agent_id first, fall back to to_number
+  let client = agentId ? agentIdToClient[agentId] : null;
+  let slug = agentId ? (agentIdToSlug[agentId] ?? null) : null;
+  let resolvedAgentId = agentId;
 
-    if (client && client.active === false) {
-      console.log("retell-pre-hook: agent inactive, rejecting call", {
-        agent_id: agentId,
-        client: slug,
+  if (!client && toNumber) {
+    const byPhone = phoneNumberToClient[toNumber];
+    if (byPhone) {
+      client = byPhone.config;
+      slug = byPhone.slug;
+      // Use first agent_id from client config since the number has no bound agent
+      resolvedAgentId = client.agent_ids[0] ?? null;
+      console.log("retell-pre-hook: resolved client by to_number", {
         to_number: toNumber,
+        client: slug,
+        resolved_agent_id: resolvedAgentId,
       });
-      // Omit override_agent_id → Retell rejects the call
-      const responseKey = eventType === "call_inbound" ? "call_inbound" : "chat_inbound";
-      res.status(200).json({ [responseKey]: {} });
-      return;
     }
+  }
+
+  // 4) If we can't identify the client, pass through without blocking
+  if (!client) {
+    console.log("retell-pre-hook: unknown agent/number, passing through", {
+      agent_id: agentId,
+      to_number: toNumber,
+    });
+    res.status(200).json({
+      [responseKey]: {
+        ...(agentId ? { override_agent_id: agentId } : {}),
+      },
+    });
+    return;
+  }
+
+  // 5) Check if agent is active
+  if (client.active === false) {
+    console.log("retell-pre-hook: agent inactive, rejecting call", {
+      agent_id: resolvedAgentId,
+      client: slug,
+      to_number: toNumber,
+    });
+    // Omit override_agent_id → Retell rejects the call
+    res.status(200).json({ [responseKey]: {} });
+    return;
   }
 
   // TODO: Verify business has credit balance > 0
 
   console.log("retell-pre-hook: inbound call validated", {
-    agent_id: agentId,
+    agent_id: resolvedAgentId,
+    client: slug,
     to_number: toNumber,
     event_type: eventType,
   });
 
   // Accept — return override_agent_id so Retell connects the call
-  const responseKey = eventType === "call_inbound" ? "call_inbound" : "chat_inbound";
   res.status(200).json({
     [responseKey]: {
-      ...(agentId ? { override_agent_id: agentId } : {}),
+      ...(resolvedAgentId ? { override_agent_id: resolvedAgentId } : {}),
     },
   });
 }
