@@ -50,7 +50,6 @@ export async function preHookHandler(req: Request, res: Response) {
     if (byPhone) {
       client = byPhone.config;
       slug = byPhone.slug;
-      // Use first agent_id from client config since the number has no bound agent
       resolvedAgentId = client.agent_ids[0] ?? null;
       console.log("retell-pre-hook: resolved client by to_number", {
         to_number: toNumber,
@@ -66,11 +65,7 @@ export async function preHookHandler(req: Request, res: Response) {
       agent_id: agentId,
       to_number: toNumber,
     });
-    res.status(200).json({
-      [responseKey]: {
-        ...(agentId ? { override_agent_id: agentId } : {}),
-      },
-    });
+    res.status(200).json({ [responseKey]: {} });
     return;
   }
 
@@ -81,8 +76,21 @@ export async function preHookHandler(req: Request, res: Response) {
       client: slug,
       to_number: toNumber,
     });
-    // Omit override_agent_id → Retell rejects the call
-    res.status(200).json({ [responseKey]: {} });
+    // Override the call to deliver a short unavailable message then hang up.
+    // This works regardless of whether the inbound agent is set on the number.
+    res.status(200).json({
+      [responseKey]: {
+        agent_override: {
+          agent: {
+            end_call_after_silence_ms: 10000,
+            max_call_duration_ms: 60000,
+          },
+          ...(eventType === "call_inbound"
+            ? { conversation_flow: { begin_message: "We're sorry, this number is currently unavailable. Goodbye." } }
+            : { retell_llm: { begin_message: "We're sorry, this service is currently unavailable." } }),
+        },
+      },
+    });
     return;
   }
 
@@ -95,10 +103,6 @@ export async function preHookHandler(req: Request, res: Response) {
     event_type: eventType,
   });
 
-  // Accept — return override_agent_id so Retell connects the call
-  res.status(200).json({
-    [responseKey]: {
-      ...(resolvedAgentId ? { override_agent_id: resolvedAgentId } : {}),
-    },
-  });
+  // Accept — pass through with no overrides (inbound agent on the number handles it)
+  res.status(200).json({ [responseKey]: {} });
 }
