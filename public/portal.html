@@ -716,7 +716,7 @@
         <td data-label="Type">${esc(c.message_type_label || '')}</td>
         <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
         <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
-        <td data-label="Recording">${c.recording_url ? '<button class="play-btn" onclick="event.stopPropagation();togglePlay(this,\'' + esc(c.recording_url) + '\')">&#9654;</button>' : '—'}</td>
+        <td data-label="Recording">${c.recording_url ? '<button class="play-btn" onclick="event.stopPropagation();togglePlay(this,\'' + esc(c.recording_url) + '\',this.closest(\'tr\').nextElementSibling)">&#9654;</button>' : '—'}</td>
         <td class="mobile-collected-data">${renderFields(c.extracted_fields)}</td>
       </tr>
       <tr class="call-expand-row" style="display:none;"><td colspan="7">
@@ -749,32 +749,38 @@
   let currentAudio = null;
   let currentBtn = null;
 
-  function togglePlay(btn, url) {
+  function togglePlay(btn, url, expandRow) {
     // Stop current if playing
     if (currentAudio && currentBtn) {
       currentAudio.pause();
       currentBtn.innerHTML = '&#9654;';
       currentBtn.classList.remove('playing');
-      // Remove existing audio element
-      const existingAudio = currentBtn.closest('td').querySelector('.call-audio');
+      const existingAudio = document.querySelector('.call-audio-player');
       if (existingAudio) existingAudio.remove();
       if (currentBtn === btn) { currentAudio = null; currentBtn = null; return; }
     }
 
-    const audio = new Audio(url);
-    const audioEl = document.createElement('audio');
-    audioEl.src = url;
-    audioEl.controls = true;
-    audioEl.className = 'call-audio';
-    audioEl.autoplay = true;
-    btn.closest('td').appendChild(audioEl);
+    // Show audio player in the expand row for full width
+    const audioEl = document.createElement('div');
+    audioEl.className = 'call-audio-player';
+    audioEl.style.cssText = 'padding:0.5rem 1rem;background:#f9fafb;';
+    audioEl.innerHTML = '<audio src="' + esc(url) + '" controls autoplay style="width:100%;height:36px;"></audio>';
+    const audio = audioEl.querySelector('audio');
+
+    if (expandRow) {
+      expandRow.style.display = '';
+      const expandDiv = expandRow.querySelector('.call-expand') || expandRow.querySelector('td');
+      expandDiv.prepend(audioEl);
+    } else {
+      btn.closest('td').appendChild(audioEl);
+    }
 
     btn.innerHTML = '&#9632;';
     btn.classList.add('playing');
-    currentAudio = audioEl;
+    currentAudio = audio;
     currentBtn = btn;
 
-    audioEl.addEventListener('ended', () => {
+    audio.addEventListener('ended', () => {
       btn.innerHTML = '&#9654;';
       btn.classList.remove('playing');
       audioEl.remove();

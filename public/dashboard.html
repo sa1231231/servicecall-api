@@ -2094,7 +2094,7 @@
           : '<span style="color:#aaa">pending</span>';
 
         const links = [];
-        if (c.recording_url) links.push('<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>');
+        if (c.recording_url) links.push('<button style="background:none;border:1px solid #d1d5db;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:0.65rem;color:#059669;display:inline-flex;align-items:center;justify-content:center;" onclick="event.stopPropagation();dashTogglePlay(this,\'' + esc(c.recording_url) + '\',this.closest(\'tr\').nextElementSibling)">&#9654;</button>');
         if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
         if (c.transcript) links.push('<a class="icon-link" href="/dashboard/api/agents/' + esc(currentSlug) + '/calls/' + esc(c._id) + '/transcript" download>Transcript</a>');
 
@@ -2175,6 +2175,39 @@
 
   function loadMoreCalls() {
     loadCalls(false);
+  }
+
+  let dashCurrentAudio = null, dashCurrentBtn = null;
+  function dashTogglePlay(btn, url, expandRow) {
+    if (dashCurrentAudio && dashCurrentBtn) {
+      dashCurrentAudio.pause();
+      dashCurrentBtn.innerHTML = '&#9654;';
+      dashCurrentBtn.style.color = '#059669';
+      const old = document.querySelector('.dash-audio-player');
+      if (old) old.remove();
+      if (dashCurrentBtn === btn) { dashCurrentAudio = null; dashCurrentBtn = null; return; }
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'dash-audio-player';
+    wrapper.style.cssText = 'padding:0.5rem 1rem;background:#f9fafb;';
+    wrapper.innerHTML = '<audio src="' + esc(url) + '" controls autoplay style="width:100%;height:36px;"></audio>';
+    const audio = wrapper.querySelector('audio');
+    if (expandRow) {
+      expandRow.style.display = '';
+      const td = expandRow.querySelector('td');
+      td.prepend(wrapper);
+    }
+    btn.innerHTML = '&#9632;';
+    btn.style.color = '#dc2626';
+    dashCurrentAudio = audio;
+    dashCurrentBtn = btn;
+    audio.addEventListener('ended', () => {
+      btn.innerHTML = '&#9654;';
+      btn.style.color = '#059669';
+      wrapper.remove();
+      dashCurrentAudio = null;
+      dashCurrentBtn = null;
+    });
   }
 
   function toggleCallExpand(row) {
