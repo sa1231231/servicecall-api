@@ -314,6 +314,7 @@
     <span class="sb-label">JSON:</span>
     <input type="file" id="jsonFileInput" accept=".json" style="display:none" onchange="loadFromJsonFile(this)">
     <button type="button" class="sb-btn-load" onclick="document.getElementById('jsonFileInput').click()">Load from JSON</button>
+    <button type="button" class="sb-btn-save" onclick="exportFormAsJson()">Export JSON</button>
   </div>
   <div class="save-bar-row">
     <span class="sb-label">Drafts:</span>
@@ -1339,6 +1340,45 @@
     });
 
     return state;
+  }
+
+  function exportFormAsJson() {
+    const pathData = collectPaths();
+    const paths = (pathData.paths || []).map(p => ({
+      name: p.name,
+      transitionCondition: p.transitionCondition,
+      dataPoints: p.dataPoints,
+    }));
+
+    const config = {
+      version: 1,
+      type: "servicecall-agent-config",
+      exportedAt: new Date().toISOString(),
+      business: {
+        businessName: val('businessName'),
+        faqKnowledgeBase: val('faqKnowledgeBase'),
+        introFinetuneExamples: [],
+        human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
+      },
+      paths,
+      client: {
+        slug: val('businessName').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        name: val('clientName') || val('businessName'),
+        dispatch_text_numbers: getFormChipValues('chip-dispatch-text'),
+        dispatch_call_number: val('dispatchCallNumber') || null,
+        dispatch_email: getFormChipValues('chip-dispatch-email'),
+        summary_agent_id: getFormChipValues('chip-summary-agent')[0] || null,
+        shadow_mode: true,
+      },
+    };
+
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (config.client.slug || 'agent-config') + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function loadFromJsonFile(input) {
