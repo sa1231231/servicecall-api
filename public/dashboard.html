@@ -4020,6 +4020,7 @@
           '<span class="ne-v-source">' + esc(v.source) + '</span>' +
           '<span class="ne-v-desc">' + esc(v.description) + '</span>' +
           '<span class="ne-v-time">' + ago + '</span>';
+        html += '<button class="ne-btn" onclick="exportAgentConfig(\'' + esc(currentSlug) + '\')" style="font-size:0.68rem;">Export</button>';
         if (canEdit) {
           html += '<button class="ne-btn" onclick="neRollback(\'' + v._id + '\',' + v.version + ')">Rollback</button>';
         }
