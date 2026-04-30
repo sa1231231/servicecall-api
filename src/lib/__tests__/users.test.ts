@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   hashPassword,
   verifyPassword,
@@ -7,6 +7,13 @@ import {
   PERMISSION_DEFS,
   DEFAULT_PERMISSIONS,
 } from "../users.js";
+
+// ── DB function mocks (lazy-loaded to avoid hoisting issues with pure imports) ──
+const mockDbFindOne = vi.fn();
+const mockDbFind = vi.fn();
+const mockDbInsertOne = vi.fn();
+const mockDbUpdateOne = vi.fn();
+const mockDbDeleteOne = vi.fn();
 
 // ── hashPassword / verifyPassword ───────────────────────────────────────────
 
@@ -160,5 +167,133 @@ describe("resolvePermissions", () => {
     } as any);
     expect(perms.edit_agents).toBe(false);
     expect((perms as any).bogus_key).toBeUndefined();
+  });
+});
+
+// ── DB Functions (mocked) ─────────────────────────────────────────────────
+// These test the DB-backed functions: createUser, getUser, listUsers,
+// updateUserPermissions, deleteUser
+
+vi.mock("../db.js", () => ({
+  getDb: () => ({
+    collection: () => ({
+      findOne: mockDbFindOne,
+      find: mockDbFind,
+      insertOne: mockDbInsertOne,
+      updateOne: mockDbUpdateOne,
+      deleteOne: mockDbDeleteOne,
+    }),
+  }),
+}));
+
+// Re-import after mock is set up
+const { createUser, getUser, listUsers, updateUserPermissions, deleteUser } = await import("../users.js");
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockDbFind.mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) });
+});
+
+describe("createUser", () => {
+  it("creates user with default permissions for role", async () => {
+    mockDbFindOne.mockResolvedValue(null);
+    mockDbInsertOne.mockResolvedValue({});
+
+    await createUser("newuser", "pass123", "operator", "admin");
+
+    expect(mockDbInsertOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: "newuser",
+        role: "operator",
+        permissions: DEFAULT_PERMISSIONS.operator,
+      }),
+    );
+  });
+
+  it("creates super_admin with all permissions", async () => {
+    mockDbFindOne.mockResolvedValue(null);
+    mockDbInsertOne.mockResolvedValue({});
+
+    await createUser("superuser", "pass123", "super_admin", "root");
+
+    const inserted = mockDbInsertOne.mock.calls[0][0];
+    expect(inserted.role).toBe("super_admin");
+    for (const key of PERMISSION_KEYS) {
+      expect(inserted.permissions[key]).toBe(true);
+    }
+  });
+
+  it("uses custom permissions when provided", async () => {
+    mockDbFindOne.mockResolvedValue(null);
+    mockDbInsertOne.mockResolvedValue({});
+
+    const custom = { create_agents: false, edit_agents: true };
+    await createUser("custom", "pass", "operator", "admin", custom);
+
+    expect(mockDbInsertOne.mock.calls[0][0].permissions).toEqual(custom);
+  });
+
+  it("throws when user already exists", async () => {
+    mockDbFindOne.mockResolvedValue({ _id: "existing" });
+
+    await expect(createUser("existing", "pass", "operator", "admin"))
+      .rejects.toThrow("already exists");
+    expect(mockDbInsertOne).not.toHaveBeenCalled();
+  });
+});
+
+describe("getUser", () => {
+  it("returns user when found", async () => {
+    const user = { _id: "sam", role: "admin", permissions: {} };
+    mockDbFindOne.mockResolvedValue(user);
+    expect(await getUser("sam")).toEqual(user);
+  });
+
+  it("returns null when not found", async () => {
+    mockDbFindOne.mockResolvedValue(null);
+    expect(await getUser("nobody")).toBeNull();
+  });
+});
+
+describe("listUsers", () => {
+  it("returns array from MongoDB", async () => {
+    const users = [{ _id: "sam", role: "admin" }];
+    mockDbFind.mockReturnValue({ toArray: vi.fn().mockResolvedValue(users) });
+    expect(await listUsers()).toEqual(users);
+  });
+});
+
+describe("updateUserPermissions", () => {
+  it("strips unknown keys and updates", async () => {
+    mockDbUpdateOne.mockResolvedValue({ matchedCount: 1 });
+
+    const result = await updateUserPermissions("sam", {
+      create_agents: true,
+      bogus_key: true,
+      edit_agents: false,
+    } as any);
+
+    expect(result).toBe(true);
+    const perms = mockDbUpdateOne.mock.calls[0][1].$set.permissions;
+    expect(perms.create_agents).toBe(true);
+    expect(perms.edit_agents).toBe(false);
+    expect(perms.bogus_key).toBeUndefined();
+  });
+
+  it("returns false when user not found", async () => {
+    mockDbUpdateOne.mockResolvedValue({ matchedCount: 0 });
+    expect(await updateUserPermissions("nobody", {})).toBe(false);
+  });
+});
+
+describe("deleteUser", () => {
+  it("returns true when user deleted", async () => {
+    mockDbDeleteOne.mockResolvedValue({ deletedCount: 1 });
+    expect(await deleteUser("sam")).toBe(true);
+  });
+
+  it("returns false when user not found", async () => {
+    mockDbDeleteOne.mockResolvedValue({ deletedCount: 0 });
+    expect(await deleteUser("nobody")).toBe(false);
   });
 });

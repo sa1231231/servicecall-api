@@ -18,7 +18,7 @@ vi.mock("../../config/notification-clients.js", () => ({
   setOwnerConfig: vi.fn(),
 }));
 
-import { getSettings, updateSettings } from "../settings.js";
+import { getSettings, updateSettings, refreshOwnerConfig } from "../settings.js";
 import { setOwnerConfig } from "../../config/notification-clients.js";
 
 beforeEach(() => {
@@ -77,6 +77,36 @@ describe("getSettings", () => {
     expect(settings.free_trial_days).toBe(21);
     expect(settings.owner_email).toBe("owner@test.com");
     expect(settings.owner_phone).toBe("+15551234567");
+  });
+
+  it("returns category_labels when stored", async () => {
+    mockFindOne.mockResolvedValue({
+      _id: "global",
+      category_labels: { hvac: "HVAC", custom: "Custom" },
+    });
+    const settings = await getSettings();
+    expect(settings.category_labels).toEqual({ hvac: "HVAC", custom: "Custom" });
+  });
+
+  it("returns undefined category_labels when not stored", async () => {
+    mockFindOne.mockResolvedValue({ _id: "global" });
+    const settings = await getSettings();
+    expect(settings.category_labels).toBeUndefined();
+  });
+
+  it("returns category_order when stored", async () => {
+    mockFindOne.mockResolvedValue({
+      _id: "global",
+      category_order: ["billing", "caller_info"],
+    });
+    const settings = await getSettings();
+    expect(settings.category_order).toEqual(["billing", "caller_info"]);
+  });
+
+  it("returns undefined category_order when not stored", async () => {
+    mockFindOne.mockResolvedValue(null);
+    const settings = await getSettings();
+    expect(settings.category_order).toBeUndefined();
   });
 
   it("returns empty string for missing fields in partial document", async () => {
@@ -142,6 +172,20 @@ describe("updateSettings", () => {
     expect(setOwnerConfig).toHaveBeenCalledWith("a@b.com", "+1555");
   });
 
+  it("updates category_labels", async () => {
+    mockFindOne.mockResolvedValue({ _id: "global" });
+    await updateSettings({ category_labels: { hvac: "HVAC" } });
+    const setArg = mockUpdateOne.mock.calls[0][1].$set;
+    expect(setArg.category_labels).toEqual({ hvac: "HVAC" });
+  });
+
+  it("updates category_order", async () => {
+    mockFindOne.mockResolvedValue({ _id: "global" });
+    await updateSettings({ category_order: ["billing", "caller_info"] });
+    const setArg = mockUpdateOne.mock.calls[0][1].$set;
+    expect(setArg.category_order).toEqual(["billing", "caller_info"]);
+  });
+
   it("handles all fields at once", async () => {
     mockFindOne.mockResolvedValue({ _id: "global" });
 
@@ -158,5 +202,25 @@ describe("updateSettings", () => {
 
     const setArg = mockUpdateOne.mock.calls[0][1].$set;
     expect(Object.keys(setArg)).toHaveLength(8);
+  });
+});
+
+// ── refreshOwnerConfig ────────────────────────────────────────────────────
+
+describe("refreshOwnerConfig", () => {
+  it("loads settings and calls setOwnerConfig", async () => {
+    mockFindOne.mockResolvedValue({
+      _id: "global",
+      owner_email: "refresh@test.com",
+      owner_phone: "+15559999999",
+    });
+    await refreshOwnerConfig();
+    expect(setOwnerConfig).toHaveBeenCalledWith("refresh@test.com", "+15559999999");
+  });
+
+  it("uses empty defaults when no document", async () => {
+    mockFindOne.mockResolvedValue(null);
+    await refreshOwnerConfig();
+    expect(setOwnerConfig).toHaveBeenCalledWith("", "");
   });
 });
