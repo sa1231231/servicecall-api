@@ -151,6 +151,16 @@ async function sessionAuth(req: Request, res: Response, next: NextFunction): Pro
   if (match) {
     const user = verifySession(match[1]);
     if (user) {
+      // Refresh permissions from DB to handle stale cookies
+      if (user.isRoot) {
+        user.permissions = { ...DEFAULT_PERMISSIONS.super_admin };
+      } else {
+        const dbUser = await getUser(user.username);
+        if (dbUser) {
+          user.role = dbUser.role;
+          user.permissions = resolvePermissions(dbUser.role, dbUser.permissions);
+        }
+      }
       req.user = user;
       next();
       return;

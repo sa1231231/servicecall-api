@@ -871,6 +871,7 @@
             <option value="operator">Operator</option>
             <option value="viewer">Viewer (read-only)</option>
             <option value="admin">Admin</option>
+            <option value="super_admin" id="optSuperAdmin" style="display:none;">Super Admin</option>
           </select>
         </div>
         <button onclick="createNewUser()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:0.4rem 0.8rem;font-size:0.82rem;cursor:pointer;font-weight:500;">Add</button>
@@ -2796,6 +2797,8 @@
     if (currentUser && currentUser.isRoot) {
       document.getElementById('deletedAgentsSection').style.display = '';
       loadDeletedAgents();
+      const saOpt = document.getElementById('optSuperAdmin');
+      if (saOpt) saOpt.style.display = '';
     }
     loadUsers();
   }
@@ -3011,6 +3014,7 @@
   // ── USER MANAGEMENT ─────────────────────────────────────────────────
 
   function roleBadgeColor(role) {
+    if (role === 'super_admin') return 'background:#fde68a;color:#78350f';
     if (role === 'admin') return 'background:#fef3c7;color:#92400e';
     if (role === 'viewer') return 'background:#f3e8ff;color:#6b21a8';
     return 'background:#dbeafe;color:#1e40af';
@@ -3044,7 +3048,7 @@
       let html = '';
       for (const u of users) {
         const isSelf = currentUser && u._id === currentUser.username;
-        const isAdmin = u.role === 'admin';
+        const isAdmin = u.role === 'admin' || u.role === 'super_admin';
         const perms = u.permissions || (defaultPermissions[u.role] || {});
         html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;">';
         html += '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">';
@@ -3106,7 +3110,7 @@
     const password = document.getElementById('newUserPass').value;
     const role = document.getElementById('newUserRole').value;
     if (!username || !password) { showToast('Username and password are required', 'error'); return; }
-    const permissions = role !== 'admin' ? collectPermsFromCheckboxes('new-user') : undefined;
+    const permissions = (role !== 'admin' && role !== 'super_admin') ? collectPermsFromCheckboxes('new-user') : undefined;
     try {
       const res = await fetch('/dashboard/api/users', {
         method: 'POST',
