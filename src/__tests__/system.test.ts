@@ -855,5 +855,299 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         expect([400, 403]).toContain(resp.status);
       });
     });
+
+    // ══════════════════════════════════════════════════════════════
+    // LIVE INTEGRATION: Full round-trip against Retell
+    // Each test publishes, then pulls fresh from Retell to verify.
+    // All changes are rolled back at the end.
+    // ══════════════════════════════════════════════════════════════
+
+    describe("Live integration (publish → verify in Retell → rollback)", () => {
+      let snapshotBeforeIntegration: string | undefined;
+
+      it("snapshots current state before integration tests", async () => {
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/versions?limit=1`), { headers: authHeaders() });
+        const body = await json(resp);
+        if (body.versions.length > 0) {
+          snapshotBeforeIntegration = body.versions[0]._id;
+        }
+      });
+
+      // ── 1. Add data point + publish + verify in Retell ─────────
+
+      it("adds email to dont_measure_me and publishes to Retell", { timeout: 45_000 }, async () => {
+        const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const dm = before.paths.find((p: any) => p.name === "dont_measure_me");
+        const currentVars = dm.dataPoints.map((d: any) => d.variableName);
+
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            changes: {
+              description: "Integration: add email",
+              paths: { dont_measure_me: { dataPointKeys: [...currentVars, "email"], branchConditions: {} } },
+            },
+          }),
+        });
+        expect(resp.status).toBe(200);
+
+        // Pull fresh from Retell (GET does fetchRetellAgent)
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const dm2 = after.paths.find((p: any) => p.name === "dont_measure_me");
+        expect(dm2.dataPoints.map((d: any) => d.variableName)).toContain("email");
+      });
+
+      // ── 2. Reorder + publish + verify in Retell ────────────────
+
+      it("reorders dont_measure_me and verifies in Retell", { timeout: 45_000 }, async () => {
+        const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const dm = before.paths.find((p: any) => p.name === "dont_measure_me");
+        const vars = dm.dataPoints.map((d: any) => d.variableName);
+        const reversed = [...vars].reverse();
+
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            changes: {
+              description: "Integration: reorder",
+              paths: { dont_measure_me: { dataPointKeys: reversed, branchConditions: {} } },
+            },
+          }),
+        });
+        expect(resp.status).toBe(200);
+
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const dm2 = after.paths.find((p: any) => p.name === "dont_measure_me");
+        const afterVars = dm2.dataPoints.map((d: any) => d.variableName);
+        expect(afterVars[0]).toBe(reversed[0]);
+      });
+
+      // ── 3. Remove data point + publish + verify ────────────────
+
+      it("removes email and verifies in Retell", { timeout: 45_000 }, async () => {
+        const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const dm = before.paths.find((p: any) => p.name === "dont_measure_me");
+        const withoutEmail = dm.dataPoints.filter((d: any) => d.variableName !== "email").map((d: any) => d.variableName);
+
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            changes: {
+              description: "Integration: remove email",
+              paths: { dont_measure_me: { dataPointKeys: withoutEmail, branchConditions: {} } },
+            },
+          }),
+        });
+        expect(resp.status).toBe(200);
+
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const dm2 = after.paths.find((p: any) => p.name === "dont_measure_me");
+        expect(dm2.dataPoints.map((d: any) => d.variableName)).not.toContain("email");
+      });
+
+      // ── 4. Edit global prompt + publish + verify ───────────────
+
+      it("edits global prompt and verifies in Retell", { timeout: 45_000 }, async () => {
+        const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const marker = "[INTEGRATION-" + Date.now() + "]";
+        const newPrompt = before.globalPrompt + "\n" + marker;
+
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ changes: { globalPrompt: newPrompt, description: "Integration: global prompt" } }),
+        });
+        expect(resp.status).toBe(200);
+
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        expect(after.globalPrompt).toContain(marker);
+      });
+
+      // ── 5. Edit FAQ + publish + verify ─────────────────────────
+
+      it("edits FAQ and verifies in Retell", { timeout: 45_000 }, async () => {
+        const marker = "[FAQ-TEST-" + Date.now() + "]";
+
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ changes: { faqKnowledgeBase: "Demo Meter measures stuff! " + marker, description: "Integration: FAQ" } }),
+        });
+        expect(resp.status).toBe(200);
+
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        expect(after.faqKnowledgeBase).toContain(marker);
+      });
+
+      // ── 6. Edit transition condition + publish + verify ────────
+
+      it("edits transition condition and verifies in Retell", { timeout: 45_000 }, async () => {
+        const marker = "[TRANS-" + Date.now() + "]";
+
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            changes: {
+              transitionConditions: { dont_measure_me: "Caller does not want measured " + marker },
+              description: "Integration: transition",
+            },
+          }),
+        });
+        expect(resp.status).toBe(200);
+
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        expect(after.transitionConditions.dont_measure_me).toContain(marker);
+      });
+
+      // ── 7. Edit intro prompt + publish + verify ────────────────
+
+      it("edits intro prompt and verifies in Retell", { timeout: 45_000 }, async () => {
+        const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const marker = "[INTRO-" + Date.now() + "]";
+
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ changes: { introPrompt: before.introPrompt + "\n" + marker, description: "Integration: intro" } }),
+        });
+        expect(resp.status).toBe(200);
+
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        expect(after.introPrompt).toContain(marker);
+      });
+
+      // ── 8. Edit transition prompt + publish + verify ───────────
+
+      it("edits transition prompt and verifies in Retell", { timeout: 45_000 }, async () => {
+        const marker = "[TRANSPROMPT-" + Date.now() + "]";
+
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ changes: { transitionPrompt: "Alright let me note that down. " + marker, description: "Integration: transition prompt" } }),
+        });
+        expect(resp.status).toBe(200);
+
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        expect(after.transitionPrompt).toContain(marker);
+      });
+
+      // ── 9. Edit individual node prompt + publish + verify ──────
+
+      it("edits a collect node prompt and verifies in Retell", { timeout: 45_000 }, async () => {
+        const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const dm = before.paths.find((p: any) => p.name === "dont_measure_me");
+        const firstDp = dm.dataPoints[0];
+        const marker = "[NODEPROMPT-" + Date.now() + "]";
+
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            changes: {
+              nodePrompts: { [firstDp.collectNodeId]: firstDp.conversationPrompt + "\n" + marker },
+              description: "Integration: node prompt",
+            },
+          }),
+        });
+        expect(resp.status).toBe(200);
+
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const dm2 = after.paths.find((p: any) => p.name === "dont_measure_me");
+        expect(dm2.dataPoints[0].conversationPrompt).toContain(marker);
+      });
+
+      // ── 10. Add new path + publish + verify ────────────────────
+
+      it("adds a new path and verifies in Retell", { timeout: 45_000 }, async () => {
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            changes: {
+              description: "Integration: add path",
+              newPaths: [{
+                name: "test_path_integration",
+                transitionCondition: "The caller wants the integration test path",
+                dataPointKeys: ["full_name", "email"],
+              }],
+            },
+          }),
+        });
+        expect(resp.status).toBe(200);
+
+        const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        expect(after.paths.length).toBeGreaterThanOrEqual(3);
+        const newPath = after.paths.find((p: any) => p.name === "test_path_integration");
+        expect(newPath).toBeDefined();
+        expect(newPath.dataPoints.map((d: any) => d.variableName)).toContain("full_name");
+        expect(newPath.dataPoints.map((d: any) => d.variableName)).toContain("email");
+        expect(after.transitionConditions.test_path_integration).toContain("integration test path");
+      });
+
+      // ── 11. Verify measure_me branches survived all edits ──────
+
+      it("measure_me branches are intact after all edits", async () => {
+        const body = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const mm = body.paths.find((p: any) => p.name === "measure_me");
+        expect(mm).toBeDefined();
+        expect(mm.dataPoints.map((d: any) => d.variableName)).toContain("property_type");
+        expect(mm.dataPoints.map((d: any) => d.variableName)).toContain("warranty_status");
+        expect(mm.dataPoints.map((d: any) => d.variableName)).toContain("truck_number");
+
+        // Branch conditions should still exist
+        const prefDay = mm.dataPoints.find((d: any) => d.variableName === "preferred_day");
+        if (prefDay) {
+          expect(prefDay.branchConditions).toBeDefined();
+          expect(prefDay.branchConditions.some((c: any) => c.variable === "property_type")).toBe(true);
+        }
+      });
+
+      // ── 12. Version history has entries from all edits ──────────
+
+      it("version history has entries from integration tests", async () => {
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/versions?limit=20`), { headers: authHeaders() });
+        const body = await json(resp);
+        expect(body.total).toBeGreaterThanOrEqual(5);
+        const descriptions = body.versions.map((v: any) => v.description);
+        expect(descriptions.some((d: string) => d.includes("Integration"))).toBe(true);
+      });
+
+      // ── 13. Sync from Retell reflects published changes ────────
+
+      it("sync pulls latest from Retell matching published state", async () => {
+        // Sync the agent
+        const syncResp = await fetch(url(`/agents/${SLUG}/sync`), { method: "POST", headers: authHeaders() });
+        expect(syncResp.status).toBe(200);
+
+        // Verify the synced state matches what we published
+        const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+        expect(doc.retell_agents[AGENT_ID]).toBeDefined();
+        const canonical = doc.retell_agents[AGENT_ID];
+        expect(canonical.conversationFlow).toBeDefined();
+        const flow = canonical.conversationFlow;
+        expect(flow.nodes.length).toBeGreaterThan(30);
+      });
+
+      // ── 14. Rollback to pre-integration snapshot ───────────────
+
+      it("rolls back to pre-integration state", { timeout: 30_000 }, async () => {
+        if (!snapshotBeforeIntegration) return;
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/rollback`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ versionId: snapshotBeforeIntegration }),
+        });
+        expect(resp.status).toBe(200);
+        expect((await json(resp)).success).toBe(true);
+      });
+
+      // ── 15. Verify clean state after rollback ──────────────────
+
+      it("agent is clean after rollback — 2 paths, no test_path", async () => {
+        const body = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        expect(body.paths.length).toBe(2);
+        expect(body.paths.some((p: any) => p.name === "test_path_integration")).toBe(false);
+        expect(body.paths.some((p: any) => p.name === "measure_me")).toBe(true);
+        expect(body.paths.some((p: any) => p.name === "dont_measure_me")).toBe(true);
+
+        // Global prompt should not contain integration markers
+        expect(body.globalPrompt).not.toContain("[INTEGRATION-");
+        expect(body.faqKnowledgeBase).not.toContain("[FAQ-TEST-");
+      });
+    });
   });
 });
