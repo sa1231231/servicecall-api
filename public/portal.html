@@ -70,23 +70,6 @@
   .play-btn:hover { background: #f0fdf4; border-color: #86efac; }
   .play-btn.playing { color: #dc2626; border-color: #fca5a5; }
   .call-audio { display: block; width: 200px; height: 32px; margin-top: 0.25rem; }
-  .search-filter-bar {
-    display: flex; gap: 0.5rem; margin-bottom: 0.75rem; align-items: center; flex-wrap: wrap;
-  }
-  .search-filter-bar input {
-    flex: 1; min-width: 180px; padding: 0.4rem 0.6rem; font-size: 0.82rem;
-    border: 1px solid #d1d5db; border-radius: 6px;
-  }
-  .search-filter-bar input:focus { border-color: #93b4f5; outline: none; }
-  .search-filter-bar select {
-    padding: 0.4rem 0.5rem; font-size: 0.82rem;
-    border: 1px solid #d1d5db; border-radius: 6px; background: #fff;
-  }
-  .page-size-toggle {
-    font-size: 0.75rem; color: #888; margin-left: auto; cursor: pointer;
-    text-decoration: underline;
-  }
-  .page-size-toggle:hover { color: #2563eb; }
 
   .config-grid {
     display: grid; grid-template-columns: 160px 1fr; gap: 0.35rem 1rem;
@@ -239,9 +222,6 @@
       margin-bottom: 0.2rem;
     }
     .btn-load-more { width: 100%; }
-    .search-filter-bar { flex-direction: column; }
-    .search-filter-bar input, .search-filter-bar select { width: 100%; min-width: 0; }
-    .page-size-toggle { margin-left: 0; }
     .call-audio { height: 36px; }
   }
   .portal-toast {
@@ -645,15 +625,8 @@
 
       // Call log with search/filter
       html += '<h2>Call Log</h2>';
-      html += '<div class="search-filter-bar">' +
-        '<input type="text" id="callSearch" placeholder="Search calls..." oninput="filterCalls()">' +
-        '<select id="callFilter" onchange="filterCalls()">' +
-        '<option value="">All Outcomes</option>' +
-        '<option value="dispatched">Dispatched</option>' +
-        '<option value="skipped_empty_call">Skipped</option>' +
-        '<option value="skipped_required_field">Missing Field</option>' +
-        '</select>' +
-        '<span class="page-size-toggle" id="pageSizeToggle" onclick="togglePageSize()">Show 200</span>' +
+      html += '<div style="margin-bottom:0.75rem;">' +
+        '<input type="text" id="callSearch" placeholder="Search calls..." oninput="filterCalls()" style="width:100%;padding:0.4rem 0.6rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">' +
         '</div>';
       html += '<div id="callLogContent"><div class="loading">Loading calls...</div></div>';
 
@@ -785,13 +758,8 @@
 
   function filterCalls() {
     const query = (document.getElementById('callSearch')?.value || '').toLowerCase();
-    const filter = document.getElementById('callFilter')?.value || '';
 
     let filtered = allCalls;
-
-    if (filter) {
-      filtered = filtered.filter(c => c.outcome === filter);
-    }
 
     if (query) {
       filtered = filtered.filter(c => {
@@ -823,7 +791,12 @@
     html += '</tbody></table>';
 
     if (calls.length > pageSize) {
-      html += '<button class="btn-load-more" onclick="loadFilteredMore()">Load more (' + (calls.length - pageSize) + ' remaining)</button>';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.5rem;">' +
+        '<button class="btn-load-more" style="flex:1;margin:0;" onclick="loadFilteredMore()">Load more (' + (calls.length - pageSize) + ' remaining)</button>' +
+        '<select onchange="togglePageSize(this.value)" style="margin-left:0.5rem;padding:0.3rem 0.5rem;font-size:0.75rem;border:1px solid #d1d5db;border-radius:4px;">' +
+        '<option value="50"' + (pageSize === 50 ? ' selected' : '') + '>50 per page</option>' +
+        '<option value="200"' + (pageSize === 200 ? ' selected' : '') + '>200 per page</option>' +
+        '</select></div>';
     }
     container.innerHTML = html;
     // Store for load-more
@@ -850,15 +823,8 @@
     }
   }
 
-  function togglePageSize() {
-    const toggle = document.getElementById('pageSizeToggle');
-    if (pageSize === 50) {
-      pageSize = 200;
-      if (toggle) toggle.textContent = 'Show 50';
-    } else {
-      pageSize = 50;
-      if (toggle) toggle.textContent = 'Show 200';
-    }
+  function togglePageSize(val) {
+    pageSize = parseInt(val) || 50;
     filterCalls();
   }
 
