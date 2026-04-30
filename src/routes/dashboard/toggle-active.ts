@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import Retell from "retell-sdk";
 import { config } from "../../config.js";
-import { updateClientField } from "../../config/client-store.js";
+import { updateClientFields } from "../../config/client-store.js";
 import { notificationClients } from "../../_cache/clients.js";
 
 export async function toggleActiveHandler(
@@ -23,20 +23,32 @@ export async function toggleActiveHandler(
   }
 
   const retell = new Retell({ apiKey: config.RETELL_API_KEY });
-
-  // Find all Retell phone numbers that have any of this client's agent_ids
-  // bound as inbound agents (or that match outbound_from_number).
   const allNumbers = await retell.phoneNumber.list();
   const clientAgentIds = new Set(client.agent_ids);
 
-  const matchingNumbers = allNumbers.filter((n) => {
-    // Match by inbound agent binding
-    if (n.inbound_agents?.some((a) => clientAgentIds.has(a.agent_id))) return true;
-    if (n.inbound_agent_id && clientAgentIds.has(n.inbound_agent_id)) return true;
-    // Match by outbound_from_number (number may have had inbound agents cleared already)
-    if (client.outbound_from_number && n.phone_number === client.outbound_from_number) return true;
-    return false;
-  });
+  let matchingNumbers: typeof allNumbers;
+
+  if (active) {
+    // Re-activating: use the stored deactivated_numbers to find which numbers to re-bind
+    const stored = (client as any).deactivated_numbers as string[] | undefined;
+    if (stored && stored.length > 0) {
+      const storedSet = new Set(stored);
+      matchingNumbers = allNumbers.filter((n) => storedSet.has(n.phone_number));
+    } else {
+      // Fallback: match by outbound_from_number
+      matchingNumbers = allNumbers.filter((n) =>
+        client.outbound_from_number && n.phone_number === client.outbound_from_number,
+      );
+    }
+  } else {
+    // Deactivating: find numbers that currently have this client's agent bound
+    matchingNumbers = allNumbers.filter((n) => {
+      if (n.inbound_agents?.some((a) => clientAgentIds.has(a.agent_id))) return true;
+      if (n.inbound_agent_id && clientAgentIds.has(n.inbound_agent_id)) return true;
+      if (client.outbound_from_number && n.phone_number === client.outbound_from_number) return true;
+      return false;
+    });
+  }
 
   if (matchingNumbers.length === 0) {
     console.log(`[toggle-active] no Retell phone numbers found for "${slug}"`);
@@ -44,24 +56,26 @@ export async function toggleActiveHandler(
 
   // Update each matching phone number's inbound agent binding
   const errors: string[] = [];
+  const updatedNumbers: string[] = [];
+
   for (const num of matchingNumbers) {
     try {
       if (active) {
-        // Re-enable: bind the first agent_id as inbound agent
         const agentId = client.agent_ids[0];
         if (agentId) {
           await retell.phoneNumber.update(num.phone_number, {
             inbound_agents: [{ agent_id: agentId, weight: 1 }],
           });
           console.log(`[toggle-active] enabled inbound agent on ${num.phone_number} → ${agentId}`);
+          updatedNumbers.push(num.phone_number);
         }
       } else {
-        // Disable: clear inbound agents so the number doesn't accept calls
         await retell.phoneNumber.update(num.phone_number, {
           inbound_agent_id: null,
           inbound_agents: null,
         });
         console.log(`[toggle-active] cleared inbound agents on ${num.phone_number}`);
+        updatedNumbers.push(num.phone_number);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -75,15 +89,23 @@ export async function toggleActiveHandler(
     return;
   }
 
-  // Persist active state in MongoDB
+  // Persist active state + deactivated numbers in MongoDB
   try {
-    await updateClientField(slug, "active", active);
+    const updates: Record<string, unknown> = { active };
+    if (!active && updatedNumbers.length > 0) {
+      // Remember which numbers we cleared so we can re-bind on reactivation
+      updates.deactivated_numbers = updatedNumbers;
+    } else if (active) {
+      // Clear the stored list once re-activated
+      updates.deactivated_numbers = null;
+    }
+    await updateClientFields(slug, updates);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     res.status(404).json({ error: message });
     return;
   }
 
-  console.log(`[toggle-active] ${slug} is now ${active ? "ACTIVE" : "INACTIVE"} (${matchingNumbers.length} number(s) updated)`);
-  res.json({ success: true, slug, active, numbers_updated: matchingNumbers.length });
+  console.log(`[toggle-active] ${slug} is now ${active ? "ACTIVE" : "INACTIVE"} (${updatedNumbers.length} number(s) updated)`);
+  res.json({ success: true, slug, active, numbers_updated: updatedNumbers.length });
 }
