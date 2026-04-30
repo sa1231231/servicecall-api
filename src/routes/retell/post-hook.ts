@@ -53,11 +53,9 @@ export async function postHookHandler(req: Request, res: Response) {
 
   // ── Skip web calls (no real phone number) ──────────────────────────
 
-  const fromNumber = call.from_number ?? null;
-  if (!fromNumber || fromNumber === "unknown") {
-    console.log("retell-post-hook: skipping web call (no from_number)");
-    res.status(200).json({ success: true, outcome: "skipped_web_call" });
-    return;
+  const isWebCall = !call.from_number || call.from_number === "unknown";
+  if (isWebCall) {
+    call.from_number = "Web Call";
   }
 
   // ── Notification Logic ──────────────────────────────────────────────
@@ -104,6 +102,24 @@ export async function postHookHandler(req: Request, res: Response) {
       shadow_mode: client.shadow_mode ?? false,
       created_at: new Date(),
     };
+  }
+
+  // Skip dispatch for web calls — log only
+  if (isWebCall) {
+    console.log("retell-post-hook: web call — logging but skipping dispatch");
+    const typeKey = clientConfig.resolve_type(allVars);
+    const messageType = clientConfig.message_types[typeKey] ?? clientConfig.message_types[clientConfig.default_message_type];
+    const typeLabel = messageType?.label ?? "";
+    const fields: Record<string, string> = {};
+    if (messageType) {
+      for (const f of messageType.fields) {
+        const val = allVars[f.key];
+        if (val !== undefined && val !== "Not Mentioned") fields[f.key] = String(val);
+      }
+    }
+    saveCallLog(buildCallLog("web_call", typeKey, typeLabel, fields)).catch(() => {});
+    res.status(200).json({ success: true, outcome: "web_call" });
+    return;
   }
 
   // Build notification messages
