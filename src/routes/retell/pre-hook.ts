@@ -40,6 +40,9 @@ export async function preHookHandler(req: Request, res: Response) {
   const toNumber = inbound?.to_number ?? null;
 
   // 3) Check if agent is active
+  // NOTE: For rejection to work, the phone number's inbound agent must be UNSET
+  // in Retell. The webhook becomes the sole gatekeeper — it accepts by returning
+  // override_agent_id, and rejects by omitting it.
   if (agentId) {
     const client = agentIdToClient[agentId];
     const slug = agentIdToSlug[agentId] ?? "unknown";
@@ -50,7 +53,9 @@ export async function preHookHandler(req: Request, res: Response) {
         client: slug,
         to_number: toNumber,
       });
-      res.status(200).json({});
+      // Omit override_agent_id → Retell rejects the call
+      const responseKey = eventType === "call_inbound" ? "call_inbound" : "chat_inbound";
+      res.status(200).json({ [responseKey]: {} });
       return;
     }
   }
@@ -63,7 +68,11 @@ export async function preHookHandler(req: Request, res: Response) {
     event_type: eventType,
   });
 
-  // Accept the call — return the event key so Retell proceeds
+  // Accept — return override_agent_id so Retell connects the call
   const responseKey = eventType === "call_inbound" ? "call_inbound" : "chat_inbound";
-  res.status(200).json({ [responseKey]: {} });
+  res.status(200).json({
+    [responseKey]: {
+      ...(agentId ? { override_agent_id: agentId } : {}),
+    },
+  });
 }
