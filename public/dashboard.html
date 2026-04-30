@@ -871,6 +871,12 @@
   <h2>Configuration</h2>
   <div id="detailConfig"></div>
   <div id="nodeEditorContainer"></div>
+  <div style="display:flex;align-items:center;gap:0.5rem;margin-top:1rem;flex-wrap:wrap;">
+    <span style="font-size:0.82rem;font-weight:600;color:#555;">Cost Range:</span>
+    <input type="date" id="dashCostStart" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
+    <span style="color:#888;font-size:0.82rem;">to</span>
+    <input type="date" id="dashCostEnd" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
+  </div>
   <div id="callCostSummary"></div>
   <h2>Call Log</h2>
   <div style="margin-bottom:0.75rem;">
@@ -2145,6 +2151,33 @@
     container.innerHTML = html;
   }
 
+  function dashUpdateCostSummary() {
+    const startVal = document.getElementById('dashCostStart')?.value;
+    const endVal = document.getElementById('dashCostEnd')?.value;
+    if (!startVal || !endVal) return;
+    const start = new Date(startVal + 'T00:00:00').getTime();
+    const end = new Date(endVal + 'T23:59:59').getTime();
+    const rangeCalls = dashAllCalls.filter(c => {
+      if (c.call_cost_cents == null) return false;
+      const t = new Date(c.created_at).getTime();
+      return t >= start && t <= end;
+    });
+    const total = rangeCalls.reduce((s, c) => s + (c.call_cost_cents || 0), 0);
+    const avg = rangeCalls.length > 0 ? total / rangeCalls.length : 0;
+    document.getElementById('callCostSummary').innerHTML =
+      '<div style="display:flex;gap:1rem;margin:0.5rem 0 0.75rem;flex-wrap:wrap;">' +
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
+      '<div style="font-size:1.1rem;font-weight:700;color:#059669;">$' + (total / 100).toFixed(2) + '</div>' +
+      '<div style="font-size:0.72rem;color:#888;">Total Cost</div></div>' +
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
+      '<div style="font-size:1.1rem;font-weight:700;color:#333;">$' + (avg / 100).toFixed(2) + '</div>' +
+      '<div style="font-size:0.72rem;color:#888;">Avg Per Call</div></div>' +
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
+      '<div style="font-size:1.1rem;font-weight:700;color:#333;">' + rangeCalls.length + '</div>' +
+      '<div style="font-size:0.72rem;color:#888;">Calls</div></div>' +
+      '</div>';
+  }
+
   async function loadCalls(fresh) {
     if (fresh) { callOffset = 0; dashAllCalls = []; }
 
@@ -2183,28 +2216,14 @@
         }
         document.getElementById('callLogContent').innerHTML = html;
 
-        // Calculate cost summary from loaded calls
-        const costCalls = calls.filter(c => c.call_cost_cents != null);
-        if (costCalls.length > 0) {
-          const now = new Date();
-          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-          const monthCalls = calls.filter(c => c.call_cost_cents != null && new Date(c.created_at) >= monthStart);
-          const monthTotal = monthCalls.reduce((s, c) => s + (c.call_cost_cents || 0), 0);
-          const allTotal = costCalls.reduce((s, c) => s + (c.call_cost_cents || 0), 0);
-          const avgCost = costCalls.length > 0 ? allTotal / costCalls.length : 0;
-          document.getElementById('callCostSummary').innerHTML =
-            '<div style="display:flex;gap:1rem;margin-bottom:0.75rem;flex-wrap:wrap;">' +
-            '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
-            '<div style="font-size:1.1rem;font-weight:700;color:#059669;">$' + (monthTotal / 100).toFixed(2) + '</div>' +
-            '<div style="font-size:0.72rem;color:#888;">This Month</div></div>' +
-            '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
-            '<div style="font-size:1.1rem;font-weight:700;color:#333;">$' + (avgCost / 100).toFixed(2) + '</div>' +
-            '<div style="font-size:0.72rem;color:#888;">Avg Per Call</div></div>' +
-            '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
-            '<div style="font-size:1.1rem;font-weight:700;color:#333;">' + monthCalls.length + '</div>' +
-            '<div style="font-size:0.72rem;color:#888;">Calls This Month</div></div>' +
-            '</div>';
-        }
+        // Set default date range and calculate cost
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startEl = document.getElementById('dashCostStart');
+        const endEl = document.getElementById('dashCostEnd');
+        if (startEl && !startEl.value) startEl.value = monthStart.toISOString().slice(0, 10);
+        if (endEl && !endEl.value) endEl.value = now.toISOString().slice(0, 10);
+        dashUpdateCostSummary();
       } else {
         // Append to existing table
         document.getElementById('callBody').insertAdjacentHTML('beforeend', html);

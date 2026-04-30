@@ -436,31 +436,37 @@
   }
 
   // ── Analytics ─────────────────────────────────────────────────────
-  let currentRange = 7;
 
-  function setRange(range) {
-    currentRange = range;
-    document.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('active', Number(b.dataset.range) === range));
-    document.getElementById('analyticsHeading').textContent = 'Last ' + range + ' Days';
-    buildAnalytics(allCalls, range);
+  function portalDateRangeChanged() {
+    buildAnalytics(allCalls);
   }
 
-  function buildAnalytics(calls, rangeDays) {
-    rangeDays = rangeDays || 7;
+  function buildAnalytics(calls) {
+    const startInput = document.getElementById('portalDateStart');
+    const endInput = document.getElementById('portalDateEnd');
+    const startDate = startInput ? new Date(startInput.value + 'T00:00:00') : new Date(Date.now() - 7 * 86400000);
+    const endDate = endInput ? new Date(endInput.value + 'T23:59:59') : new Date();
 
-    // Build day buckets
+    // Build day buckets between start and end
     const days = [];
-    const now = new Date();
-    for (let i = rangeDays - 1; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      d.setHours(0, 0, 0, 0);
-      days.push(d);
+    const d = new Date(startDate);
+    d.setHours(0, 0, 0, 0);
+    const endDay = new Date(endDate);
+    endDay.setHours(0, 0, 0, 0);
+    while (d <= endDay) {
+      days.push(new Date(d));
+      d.setDate(d.getDate() + 1);
     }
+    if (days.length === 0) days.push(new Date());
+    const rangeDays = days.length;
     const cutoff = days[0].getTime();
 
     // Filter calls to range
-    const filtered = calls.filter(c => new Date(c.created_at).getTime() >= cutoff);
+    const endCutoff = endDate.getTime();
+    const filtered = calls.filter(c => {
+      const t = new Date(c.created_at).getTime();
+      return t >= cutoff && t <= endCutoff;
+    });
 
     const total = filtered.length;
     const dispatched = filtered.filter(c => c.outcome === 'dispatched').length;
@@ -606,11 +612,14 @@
       html += '<button class="portal-save-btn" id="portalSaveBtn" onclick="portalSaveSettings()">Save Changes</button>';
 
       // Analytics section
-      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:1.5rem 0 0.75rem;">';
-      html += '<h2 id="analyticsHeading" style="margin:0;border:none;padding:0;">Last 7 Days</h2>';
-      html += '<div class="range-toggle">';
-      html += '<button class="range-btn active" data-range="7" onclick="setRange(7)">7 Days</button>';
-      html += '<button class="range-btn" data-range="30" onclick="setRange(30)">30 Days</button>';
+      const defaultEnd = new Date().toISOString().slice(0, 10);
+      const defaultStart = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:1.5rem 0 0.75rem;flex-wrap:wrap;gap:0.5rem;">';
+      html += '<h2 id="analyticsHeading" style="margin:0;border:none;padding:0;">Analytics</h2>';
+      html += '<div style="display:flex;gap:0.4rem;align-items:center;font-size:0.82rem;">';
+      html += '<input type="date" id="portalDateStart" value="' + defaultStart + '" onchange="portalDateRangeChanged()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">';
+      html += '<span style="color:#888;">to</span>';
+      html += '<input type="date" id="portalDateEnd" value="' + defaultEnd + '" onchange="portalDateRangeChanged()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">';
       html += '</div></div>';
       html += '<div id="statsRow" class="stats-row"><div class="loading" style="padding:1rem;width:100%;">Calculating...</div></div>';
       html += '<div class="chart-container"><canvas id="volumeChart" height="220"></canvas></div>';
