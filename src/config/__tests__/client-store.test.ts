@@ -120,6 +120,12 @@ describe("toClientConfig", () => {
     expect(toClientConfig(makeEntry()).shadow_mode).toBeUndefined();
   });
 
+  it("preserves active field", () => {
+    expect(toClientConfig(makeEntry({ active: true })).active).toBe(true);
+    expect(toClientConfig(makeEntry({ active: false })).active).toBe(false);
+    expect(toClientConfig(makeEntry()).active).toBeUndefined();
+  });
+
   it("wires up binary resolve_rule", () => {
     const config = toClientConfig(
       makeEntry({
