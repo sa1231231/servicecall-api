@@ -126,6 +126,12 @@ describe("toClientConfig", () => {
     expect(toClientConfig(makeEntry()).active).toBeUndefined();
   });
 
+  it("preserves outbound_from_number", () => {
+    const config = toClientConfig(makeEntry({ outbound_from_number: "+15551234567" }));
+    expect(config.outbound_from_number).toBe("+15551234567");
+    expect(toClientConfig(makeEntry()).outbound_from_number).toBeNull();
+  });
+
   it("wires up binary resolve_rule", () => {
     const config = toClientConfig(
       makeEntry({

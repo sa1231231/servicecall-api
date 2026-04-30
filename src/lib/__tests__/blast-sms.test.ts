@@ -62,6 +62,10 @@ describe("personalizeMessage", () => {
   it("returns message unchanged when no placeholder", () => {
     expect(personalizeMessage("Hello world!", "Acme")).toBe("Hello world!");
   });
+
+  it("does not replace partial matches like {{client_name_extra}}", () => {
+    expect(personalizeMessage("{{client_name_extra}}", "Acme")).toBe("{{client_name_extra}}");
+  });
 });
 
 describe("gatherRecipients", () => {
@@ -100,6 +104,14 @@ describe("gatherRecipients", () => {
     const { recipients, clientCount } = gatherRecipients();
     expect(clientCount).toBe(0);
     expect(recipients).toHaveLength(0);
+  });
+
+  it("includes explicitly active clients", () => {
+    addClient("explicit", { active: true, dispatch_text_numbers: ["+15550000001"] });
+
+    const { recipients, clientCount } = gatherRecipients();
+    expect(clientCount).toBe(1);
+    expect(recipients).toHaveLength(1);
   });
 
   it("includes client name with each recipient", () => {
@@ -166,5 +178,30 @@ describe("sendBlast", () => {
     expect(mockSendSms).not.toHaveBeenCalled();
     expect(result.sent).toBe(0);
     expect(result.total_recipients).toBe(0);
+  });
+
+  it("handles all sends failing", async () => {
+    addClient("a", { dispatch_text_numbers: ["+15550000001"] });
+    addClient("b", { dispatch_text_numbers: ["+15550000002"] });
+
+    mockSendSms.mockRejectedValue(new Error("Service down"));
+
+    const result = await sendBlast("Test");
+
+    expect(result.sent).toBe(0);
+    expect(result.failed).toHaveLength(2);
+    expect(result.failed[0].error).toContain("Service down");
+    expect(result.failed[1].error).toContain("Service down");
+  });
+
+  it("sends plain message without placeholders identically", async () => {
+    addClient("a", { name: "Acme", dispatch_text_numbers: ["+15550000001"] });
+    addClient("b", { name: "Beta", dispatch_text_numbers: ["+15550000002"] });
+
+    const result = await sendBlast("Happy holidays!");
+
+    expect(mockSendSms).toHaveBeenCalledWith("+15550000001", "Happy holidays!");
+    expect(mockSendSms).toHaveBeenCalledWith("+15550000002", "Happy holidays!");
+    expect(result.sent).toBe(2);
   });
 });

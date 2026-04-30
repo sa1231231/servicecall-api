@@ -221,6 +221,69 @@ describe("toggleActiveHandler", () => {
     });
   });
 
+  describe("edge cases", () => {
+    it("reactivation with empty agent_ids does not update phone numbers", async () => {
+      mockNotificationClients["test-co"] = {
+        agent_ids: [],
+        outbound_from_number: null,
+        deactivated_numbers: ["+15551234567"],
+      };
+      mockPhoneNumberList.mockResolvedValue([
+        { phone_number: "+15551234567" },
+      ]);
+      mockPhoneNumberUpdate.mockResolvedValue({});
+
+      const res = mockRes();
+      await toggleActiveHandler(mockReq("test-co", { active: true }), res);
+
+      expect(res._json.success).toBe(true);
+      // No agentId to bind, so update is skipped
+      expect(mockPhoneNumberUpdate).not.toHaveBeenCalled();
+      expect(res._json.numbers_updated).toBe(0);
+    });
+
+    it("reactivation with multiple agent_ids only binds the first", async () => {
+      mockNotificationClients["test-co"] = {
+        agent_ids: ["agent_first", "agent_second"],
+        outbound_from_number: null,
+        deactivated_numbers: ["+15551234567"],
+      };
+      mockPhoneNumberList.mockResolvedValue([
+        { phone_number: "+15551234567" },
+      ]);
+      mockPhoneNumberUpdate.mockResolvedValue({});
+
+      const res = mockRes();
+      await toggleActiveHandler(mockReq("test-co", { active: true }), res);
+
+      expect(mockPhoneNumberUpdate).toHaveBeenCalledWith("+15551234567", {
+        inbound_agents: [{ agent_id: "agent_first", weight: 1 }],
+      });
+    });
+
+    it("partial Retell failure skips MongoDB update", async () => {
+      mockNotificationClients["test-co"] = {
+        agent_ids: ["agent_abc"],
+        outbound_from_number: null,
+      };
+      mockPhoneNumberList.mockResolvedValue([
+        makeRetellNumber("+15551111111", "agent_abc"),
+        makeRetellNumber("+15552222222", "agent_abc"),
+      ]);
+      mockPhoneNumberUpdate
+        .mockResolvedValueOnce({})
+        .mockRejectedValueOnce(new Error("Rate limited"));
+
+      const res = mockRes();
+      await toggleActiveHandler(mockReq("test-co", { active: false }), res);
+
+      expect(res._status).toBe(500);
+      expect(res._json.details).toHaveLength(1);
+      expect(res._json.details[0]).toContain("Rate limited");
+      expect(mockUpdateClientFields).not.toHaveBeenCalled();
+    });
+  });
+
   describe("error handling", () => {
     it("returns 500 when Retell API fails", async () => {
       mockNotificationClients["test-co"] = {

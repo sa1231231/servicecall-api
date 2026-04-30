@@ -152,6 +152,52 @@ describe("preHookHandler", () => {
     expect(res._json).toEqual({ chat_inbound: {} });
   });
 
+  it("agent_id takes precedence over to_number", async () => {
+    const clientA = makeClient({ name: "Client A" });
+    const clientB = makeClient({ name: "Client B" });
+    mockAgentIdToClient["agent_abc"] = clientA;
+    mockAgentIdToSlug["agent_abc"] = "client-a";
+    mockPhoneNumberToClient["+15559999999"] = { slug: "client-b", config: clientB };
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const res = mockRes();
+    await preHookHandler(
+      mockReq({
+        event: "call_inbound",
+        call_inbound: { agent_id: "agent_abc", to_number: "+15559999999" },
+      }),
+      res,
+    );
+
+    const validatedLog = spy.mock.calls.find((c) =>
+      typeof c[0] === "string" && c[0].includes("inbound call validated"),
+    );
+    expect(validatedLog![1]).toMatchObject({ client: "client-a" });
+    spy.mockRestore();
+  });
+
+  it("active: undefined is treated as active (logs true)", async () => {
+    const client = makeClient(); // active is undefined
+    mockAgentIdToClient["agent_abc"] = client;
+    mockAgentIdToSlug["agent_abc"] = "test-co";
+
+    const spy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const res = mockRes();
+    await preHookHandler(
+      mockReq({
+        event: "call_inbound",
+        call_inbound: { agent_id: "agent_abc", to_number: "+15559999999" },
+      }),
+      res,
+    );
+
+    const validatedLog = spy.mock.calls.find((c) =>
+      typeof c[0] === "string" && c[0].includes("inbound call validated"),
+    );
+    expect(validatedLog![1]).toMatchObject({ active: true });
+    spy.mockRestore();
+  });
+
   it("logs active status for known clients", async () => {
     const client = makeClient({ active: false });
     mockAgentIdToClient["agent_abc"] = client;
