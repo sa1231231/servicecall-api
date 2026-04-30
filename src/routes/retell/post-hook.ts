@@ -51,6 +51,15 @@ export async function postHookHandler(req: Request, res: Response) {
     return;
   }
 
+  // ── Skip web calls (no real phone number) ──────────────────────────
+
+  const fromNumber = call.from_number ?? null;
+  if (!fromNumber || fromNumber === "unknown") {
+    console.log("retell-post-hook: skipping web call (no from_number)");
+    res.status(200).json({ success: true, outcome: "skipped_web_call" });
+    return;
+  }
+
   // ── Notification Logic ──────────────────────────────────────────────
 
   const dynamicVars = call?.retell_llm_dynamic_variables ?? {};
