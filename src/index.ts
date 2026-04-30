@@ -353,6 +353,30 @@ app.listen(Number(config.PORT), () => {
   startAutoSync();
   startWeeklyReportScheduler();
 
+  // One-time: ensure all Retell phone numbers have pre-hook webhook
+  (async () => {
+    try {
+      const Retell = (await import("retell-sdk")).default;
+      const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+      const preHookUrl = "https://servicecall-api-production.up.railway.app/retell/pre-hook";
+      const phones = await retell.phoneNumber.list();
+      let updated = 0;
+      for (const phone of phones) {
+        if (!phone.inbound_webhook_url || phone.inbound_webhook_url !== preHookUrl) {
+          try {
+            await retell.phoneNumber.update(phone.phone_number, { inbound_webhook_url: preHookUrl });
+            updated++;
+          } catch (err) {
+            console.warn(`[pre-hook] failed to update ${phone.phone_number}:`, err);
+          }
+        }
+      }
+      console.log(`[pre-hook] checked ${phones.length} phone numbers, updated ${updated}`);
+    } catch (err) {
+      console.error("[pre-hook] migration failed:", err);
+    }
+  })();
+
   // Hourly backup to R2
   if (isR2Configured()) {
     const BACKUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour

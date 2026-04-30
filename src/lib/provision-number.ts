@@ -89,6 +89,7 @@ export async function provisionPhoneNumber(
       termination_uri: terminationUri,
       inbound_agents: [{ agent_id: agentId, weight: 1 }],
       nickname: clientName,
+      inbound_webhook_url: "https://servicecall-api-production.up.railway.app/retell/pre-hook",
     });
     console.log(`[provision] imported into Retell with agent ${agentId}`);
   }
