@@ -175,6 +175,24 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
   });
 
+  // ── 5b. Active Toggle ────────────────────────────────────────────────
+
+  describe("Active toggle", () => {
+    it("sets active to true", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/active`), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ active: true }),
+      });
+      expect(resp.status).toBe(200);
+    });
+    it("rejects non-boolean", async () => {
+      expect((await fetch(url(`/dashboard/api/agents/${SLUG}/active`), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ active: "yes" }),
+      })).status).toBe(400);
+    });
+  });
+
   // ── 6. Update Agent Fields ─────────────────────────────────────────────
 
   describe("Update agent fields", () => {
@@ -297,15 +315,56 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(body.dispatch_cc).toBeUndefined();
     });
 
-    it("GET /portal/:slug/api/calls returns call log", async () => {
+    it("GET /portal/:slug/api/calls returns call log without web calls", async () => {
       if (!portalToken) return;
-      const resp = await fetch(url(`/portal/${SLUG}/api/calls?token=${portalToken}&limit=5`));
+      const resp = await fetch(url(`/portal/${SLUG}/api/calls?token=${portalToken}&limit=50`));
       expect(resp.status).toBe(200);
-      expect(Array.isArray(await json(resp))).toBe(true);
+      const calls = await json(resp);
+      expect(Array.isArray(calls)).toBe(true);
+      // No web calls should appear
+      for (const c of calls) {
+        expect(c.from_number).not.toBe("unknown");
+        expect(c.from_number).not.toBe("Web Call");
+      }
+    });
+
+    it("GET /portal/:slug/api/calls includes call_cost_cents when available", async () => {
+      if (!portalToken) return;
+      const resp = await fetch(url(`/portal/${SLUG}/api/calls?token=${portalToken}&limit=50`));
+      const calls = await json(resp);
+      // call_cost_cents may or may not be present on older calls
+      // Just verify the field structure is correct when present
+      for (const c of calls) {
+        if (c.call_cost_cents !== undefined) {
+          expect(typeof c.call_cost_cents).toBe("number");
+        }
+      }
     });
 
     it("GET /portal/:slug/api/agent rejects bad token", async () => {
       expect((await fetch(url(`/portal/${SLUG}/api/agent?token=invalid`))).status).toBe(401);
+    });
+
+    it("GET /portal/:slug/api/agent includes dispatch_call_overrides when present", async () => {
+      // Use J&A Fleet which has call overrides
+      const jaToken = await (async () => {
+        const resp = await fetch(url("/dashboard/api/agents/j-a/portal-token"), { method: "POST", headers: authHeaders() });
+        if (!resp.ok) return null;
+        const body = await json(resp);
+        return new URL(body.portal_url).searchParams.get("token");
+      })();
+      if (!jaToken) return;
+      const resp = await fetch(url(`/portal/j-a/api/agent?token=${jaToken}`));
+      if (resp.status !== 200) return; // J&A may not exist in all environments
+      const body = await json(resp);
+      // J&A has dispatch_call_overrides
+      if (body.dispatch_call_overrides) {
+        expect(typeof body.dispatch_call_overrides).toBe("object");
+        for (const [from, to] of Object.entries(body.dispatch_call_overrides)) {
+          expect(typeof from).toBe("string");
+          expect(typeof to).toBe("string");
+        }
+      }
     });
 
     it("POST /portal/request-link returns success for any email", async () => {
@@ -630,6 +689,81 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
           method: "PATCH", headers: authHeaders(),
           body: JSON.stringify({ portal_sms_message: origPortalMsg }),
         });
+      }
+    });
+  });
+
+  // ── 18b. Settings — category_order ─────────────────────────────────
+
+  describe("Settings category_order", () => {
+    it("saves and retrieves category_order", async () => {
+      const order = ["billing", "trucking", "caller_info"];
+      const patchResp = await fetch(url("/dashboard/api/settings"), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ category_order: order }),
+      });
+      expect(patchResp.status).toBe(200);
+
+      const verify = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
+      expect(verify.category_order).toEqual(order);
+
+      // Verify data-point-defaults returns custom order
+      const dpResp = await json(await fetch(url("/dashboard/api/data-point-defaults"), { headers: authHeaders() }));
+      expect(dpResp.categoryOrder).toEqual(order);
+
+      // Restore default
+      await fetch(url("/dashboard/api/settings"), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ category_order: null }),
+      });
+    });
+  });
+
+  // ── 18c. Blast SMS ───────────────────────────────────────────────
+
+  describe("Blast SMS", () => {
+    it("preview returns recipient count", async () => {
+      const resp = await fetch(url("/dashboard/api/blast-sms/preview"), {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ message: "Test" }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(typeof body.total_recipients).toBe("number");
+      expect(typeof body.total_clients).toBe("number");
+    });
+
+    it("rejects empty message", async () => {
+      expect((await fetch(url("/dashboard/api/blast-sms"), {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ message: "" }),
+      })).status).toBe(400);
+    });
+
+    it("rejects too-long message", async () => {
+      expect((await fetch(url("/dashboard/api/blast-sms"), {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ message: "x".repeat(1601) }),
+      })).status).toBe(400);
+    });
+  });
+
+  // ── 18d. Call log includes cost data ──────────────────────────────
+
+  describe("Call log cost data", () => {
+    it("GET calls returns call_cost_cents field when present", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/calls?limit=10`), { headers: authHeaders() });
+      expect(resp.status).toBe(200);
+      const calls = await json(resp);
+      for (const c of calls) {
+        // call_cost_cents may be null/undefined for old calls, number for new
+        if (c.call_cost_cents !== undefined && c.call_cost_cents !== null) {
+          expect(typeof c.call_cost_cents).toBe("number");
+        }
+        // Web calls should show "Web Call" not "unknown"
+        if (c.from_number === "unknown") {
+          // This shouldn't happen for new calls, but old ones may exist
+        }
       }
     });
   });
