@@ -438,6 +438,16 @@
   // ── Analytics ─────────────────────────────────────────────────────
 
   function portalDateRangeChanged() {
+    document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+    buildAnalytics(allCalls);
+  }
+
+  function portalQuickRange(days) {
+    const end = new Date();
+    const start = new Date(Date.now() - days * 86400000);
+    document.getElementById('portalDateStart').value = start.toISOString().slice(0, 10);
+    document.getElementById('portalDateEnd').value = end.toISOString().slice(0, 10);
+    document.querySelectorAll('.range-btn').forEach(b => b.classList.toggle('active', Number(b.dataset.range) === days));
     buildAnalytics(allCalls);
   }
 
@@ -613,10 +623,14 @@
       const defaultStart = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
       html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:1.5rem 0 0.75rem;flex-wrap:wrap;gap:0.5rem;">';
       html += '<h2 id="analyticsHeading" style="margin:0;border:none;padding:0;">Analytics</h2>';
-      html += '<div style="display:flex;gap:0.4rem;align-items:center;font-size:0.82rem;">';
+      html += '<div style="display:flex;gap:0.4rem;align-items:center;font-size:0.82rem;flex-wrap:wrap;">';
       html += '<input type="date" id="portalDateStart" value="' + defaultStart + '" onchange="portalDateRangeChanged()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">';
       html += '<span style="color:#888;">to</span>';
       html += '<input type="date" id="portalDateEnd" value="' + defaultEnd + '" onchange="portalDateRangeChanged()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">';
+      html += '<div class="range-toggle" style="margin-left:0.25rem;">';
+      html += '<button class="range-btn active" data-range="7" onclick="portalQuickRange(7)">7d</button>';
+      html += '<button class="range-btn" data-range="30" onclick="portalQuickRange(30)">30d</button>';
+      html += '</div>';
       html += '</div></div>';
       html += '<div id="statsRow" class="stats-row"><div class="loading" style="padding:1rem;width:100%;">Calculating...</div></div>';
       html += '<div class="chart-container"><canvas id="volumeChart" height="220"></canvas></div>';
