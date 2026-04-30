@@ -916,6 +916,67 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     it("returns 404 for nonexistent agent", async () => {
       expect((await fetch(url("/dashboard/api/agents/nonexistent-xyz/export"), { headers: authHeaders() })).status).toBe(404);
     });
+
+    it("exported paths match node editor structure", async () => {
+      const [exportResp, nodeResp] = await Promise.all([
+        fetch(url(`/dashboard/api/agents/${SLUG}/export`), { headers: authHeaders() }),
+        fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }),
+      ]);
+      const config = await json(exportResp);
+      const nodeData = await json(nodeResp);
+
+      // Same number of paths
+      expect(config.paths.length).toBe(nodeData.paths.length);
+
+      // Path names match
+      const exportNames = config.paths.map((p: any) => p.name).sort();
+      const nodeNames = nodeData.paths.map((p: any) => p.name).sort();
+      expect(exportNames).toEqual(nodeNames);
+
+      // Data point counts match per path
+      for (const ep of config.paths) {
+        const np = nodeData.paths.find((p: any) => p.name === ep.name);
+        if (np) {
+          expect(ep.dataPoints.length).toBe(np.dataPoints.length);
+        }
+      }
+    });
+
+    it("export also works via API key route", async () => {
+      const resp = await fetch(url(`/agents/${SLUG}/export`), { headers: authHeaders() });
+      expect(resp.status).toBe(200);
+      const config = await json(resp);
+      expect(config.version).toBe(1);
+      expect(config.type).toBe("servicecall-agent-config");
+    });
+  });
+
+  // ── 23c. Settings — category_labels ─────────────────────────────────
+
+  describe("Settings category_labels", () => {
+    it("saves and retrieves custom category labels", async () => {
+      const labels = { custom_cat: "My Custom Category" };
+      const patchResp = await fetch(url("/dashboard/api/settings"), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ category_labels: labels }),
+      });
+      expect(patchResp.status).toBe(200);
+
+      const verify = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
+      expect(verify.category_labels.custom_cat).toBe("My Custom Category");
+
+      // Verify data-point-defaults returns merged labels
+      const dpResp = await json(await fetch(url("/dashboard/api/data-point-defaults"), { headers: authHeaders() }));
+      expect(dpResp.categoryLabels.custom_cat).toBe("My Custom Category");
+      // Built-in labels should still be present
+      expect(dpResp.categoryLabels.caller_info).toBeDefined();
+
+      // Clean up
+      await fetch(url("/dashboard/api/settings"), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ category_labels: null }),
+      });
+    });
   });
 
   // ── 24. Form Config ─────────────────────────────────────────────────
