@@ -873,6 +873,9 @@
   <div id="nodeEditorContainer"></div>
   <div id="callCostSummary"></div>
   <h2>Call Log</h2>
+  <div style="margin-bottom:0.75rem;">
+    <input type="text" id="dashCallSearch" placeholder="Search calls..." oninput="dashFilterCalls()" style="width:100%;padding:0.4rem 0.6rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+  </div>
   <div id="callLogContent"><div class="loading">Loading calls...</div></div>
 </div>
 
@@ -983,6 +986,7 @@
   let currentSlug = '';
   let callOffset = 0;
   const CALL_LIMIT = 50;
+  let dashAllCalls = [];
 
   // ── Cmd+S / Ctrl+S to save ──────────────────────────────────────
   document.addEventListener('keydown', (e) => {
@@ -2070,8 +2074,79 @@
 
   // ── CALL LOG ───────────────────────────────────────────────────────
 
+  function dashBuildCallRow(c) {
+    const sentClass = (c.user_sentiment || '').toLowerCase().includes('positive') ? 'sentiment-positive'
+      : (c.user_sentiment || '').toLowerCase().includes('negative') ? 'sentiment-negative'
+      : 'sentiment-unknown';
+    const summary = c.call_summary ? esc(c.call_summary) : '<span style="color:#aaa">pending</span>';
+    const links = [];
+    if (c.recording_url) links.push('<audio src="' + esc(c.recording_url) + '" controls preload="none" class="dash-audio-inline" onclick="event.stopPropagation()"></audio>');
+    if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
+    if (c.transcript) links.push('<a class="icon-link" href="/dashboard/api/agents/' + esc(currentSlug) + '/calls/' + esc(c._id) + '/transcript" download>Transcript</a>');
+    return `<tr class="clickable-row" onclick="toggleCallExpand(this)">
+      <td data-label="Date">${fmtDate(c.created_at)}</td>
+      <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${c.from_number === 'unknown' ? 'Web Call' : esc(c.from_number)}</td>
+      <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
+      <td data-label="Cost" style="font-size:0.78rem;">${c.call_cost_cents != null ? '$' + (c.call_cost_cents / 100).toFixed(2) : '—'}</td>
+      <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
+      <td data-label="Sentiment" class="${sentClass}">${esc(c.user_sentiment || 'Pending')}</td>
+      <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
+      <td data-label="Links">${links.join(' | ') || '—'}</td>
+      <td class="mobile-collected-data">${renderFields(c.extracted_fields)}</td>
+    </tr>
+    <tr class="call-expand-row" style="display:none;"><td colspan="8">
+      <div class="call-expand">
+        <p><strong>Call ID:</strong> <code>${esc(c._id)}</code></p>
+        <p><strong>Disconnection:</strong> ${esc(c.disconnection_reason)}</p>
+        <p class="mobile-hide"><strong>Routing Path:</strong> ${esc(c.message_type_label || c.message_type_key)}</p>
+        ${c.call_summary ? '<p class="mobile-hide"><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
+        <p style="margin-top:0.5rem;" class="mobile-hide"><strong>Extracted Fields:</strong></p>
+        <p>${renderFields(c.extracted_fields)}</p>
+      </div>
+    </td></tr>`;
+  }
+
+  function dashFilterCalls() {
+    const query = (document.getElementById('dashCallSearch')?.value || '').toLowerCase();
+    if (!query) {
+      // Reset to normal view
+      const container = document.getElementById('callLogContent');
+      let html = `<table id="callTable"><thead><tr>
+        <th>Date</th><th>From</th><th>Duration</th><th>Cost</th><th>Outcome</th>
+        <th>Sentiment</th><th>Summary</th><th>Links</th>
+      </tr></thead><tbody id="callBody">`;
+      for (const c of dashAllCalls) html += dashBuildCallRow(c);
+      html += '</tbody></table>';
+      if (dashAllCalls.length >= CALL_LIMIT) {
+        html += '<button class="btn-load-more" onclick="loadMoreCalls()">Load more</button>';
+      }
+      container.innerHTML = html;
+      return;
+    }
+    const filtered = dashAllCalls.filter(c => {
+      const haystack = [
+        c.from_number || '', c.call_summary || '', c.message_type_label || '',
+        c.user_sentiment || '', c.outcome || '',
+        ...(c.extracted_fields ? Object.values(c.extracted_fields) : []),
+      ].join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+    const container = document.getElementById('callLogContent');
+    if (filtered.length === 0) {
+      container.innerHTML = '<div class="loading">No matching calls.</div>';
+      return;
+    }
+    let html = `<table id="callTable"><thead><tr>
+      <th>Date</th><th>From</th><th>Duration</th><th>Cost</th><th>Outcome</th>
+      <th>Sentiment</th><th>Summary</th><th>Links</th>
+    </tr></thead><tbody id="callBody">`;
+    for (const c of filtered) html += dashBuildCallRow(c);
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
   async function loadCalls(fresh) {
-    if (fresh) callOffset = 0;
+    if (fresh) { callOffset = 0; dashAllCalls = []; }
 
     try {
       const res = await fetch(
@@ -2087,6 +2162,8 @@
         return;
       }
 
+      dashAllCalls = dashAllCalls.concat(calls);
+
       let html = '';
       if (fresh) {
         html = `<table id="callTable"><thead><tr>
@@ -2096,39 +2173,7 @@
       }
 
       for (const c of calls) {
-        const sentClass = (c.user_sentiment || '').toLowerCase().includes('positive') ? 'sentiment-positive'
-          : (c.user_sentiment || '').toLowerCase().includes('negative') ? 'sentiment-negative'
-          : 'sentiment-unknown';
-        const summary = c.call_summary
-          ? esc(c.call_summary)
-          : '<span style="color:#aaa">pending</span>';
-
-        const links = [];
-        if (c.recording_url) links.push('<audio src="' + esc(c.recording_url) + '" controls preload="none" class="dash-audio-inline" onclick="event.stopPropagation()"></audio>');
-        if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
-        if (c.transcript) links.push('<a class="icon-link" href="/dashboard/api/agents/' + esc(currentSlug) + '/calls/' + esc(c._id) + '/transcript" download>Transcript</a>');
-
-        html += `<tr class="clickable-row" onclick="toggleCallExpand(this)">
-          <td data-label="Date">${fmtDate(c.created_at)}</td>
-          <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${c.from_number === 'unknown' ? 'Web Call' : esc(c.from_number)}</td>
-          <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
-          <td data-label="Cost" style="font-size:0.78rem;">${c.call_cost_cents != null ? '$' + (c.call_cost_cents / 100).toFixed(2) : '—'}</td>
-          <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
-          <td data-label="Sentiment" class="${sentClass}">${esc(c.user_sentiment || 'Pending')}</td>
-          <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
-          <td data-label="Links">${links.join(' | ') || '—'}</td>
-          <td class="mobile-collected-data">${renderFields(c.extracted_fields)}</td>
-        </tr>
-        <tr class="call-expand-row" style="display:none;"><td colspan="8">
-          <div class="call-expand">
-            <p><strong>Call ID:</strong> <code>${esc(c._id)}</code></p>
-            <p><strong>Disconnection:</strong> ${esc(c.disconnection_reason)}</p>
-            <p class="mobile-hide"><strong>Routing Path:</strong> ${esc(c.message_type_label || c.message_type_key)}</p>
-            ${c.call_summary ? '<p class="mobile-hide"><strong>Full Summary:</strong> ' + esc(c.call_summary) + '</p>' : ''}
-            <p style="margin-top:0.5rem;" class="mobile-hide"><strong>Extracted Fields:</strong></p>
-            <p>${renderFields(c.extracted_fields)}</p>
-          </div>
-        </td></tr>`;
+        html += dashBuildCallRow(c);
       }
 
       if (fresh) {
