@@ -17,3 +17,5 @@ agentsRouter.post("/:slug/sync", syncAgentHandler);
 agentsRouter.post("/duplicate", duplicateAgentHandler);
 agentsRouter.post("/provision-number", provisionNumberHandler);
 agentsRouter.get("/:slug/export", exportAgentHandler);
+
+export { exportAgentHandler };

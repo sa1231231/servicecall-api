@@ -85,6 +85,10 @@ dashboardApiRouter.patch("/agents/:slug", requirePermission("edit_agents"), upda
 dashboardApiRouter.post("/agents/:slug/clone", requirePermission("clone_agents"), cloneAgentHandler);
 dashboardApiRouter.delete("/agents/:slug", requirePermission("delete_agents"), deleteAgentHandler);
 
+// ── Export ───────────────────────────────────────────────────────────────────
+import { exportAgentHandler } from "../agents/export-agent.js";
+dashboardApiRouter.get("/agents/:slug/export", exportAgentHandler);
+
 // ── Node Editor ──────────────────────────────────────────────────────────────
 dashboardApiRouter.use("/agents/:slug/nodes", requirePermission("edit_agents"), nodeEditorRouter);
 
