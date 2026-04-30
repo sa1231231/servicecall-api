@@ -64,6 +64,7 @@ export interface JsonClientEntry {
   phone_fallback_to_caller?: boolean;
   hide_not_mentioned?: boolean;
   shadow_mode?: boolean;
+  active?: boolean;
   retell_agents?: Record<string, Record<string, unknown>>;
   last_deployed_at?: string;
   portal_token?: string | null;
@@ -113,6 +114,7 @@ export function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig
     phone_fallback_to_caller: entry.phone_fallback_to_caller,
     hide_not_mentioned: entry.hide_not_mentioned,
     shadow_mode: entry.shadow_mode,
+    active: entry.active,
   };
 }
 
@@ -203,6 +205,7 @@ const EDITABLE_FIELDS = new Set([
   "dispatch_cc",
   "outbound_from_number",
   "summary_agent_id",
+  "active",
   "shadow_mode",
   "hide_not_mentioned",
   "notification_greeting",

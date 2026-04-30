@@ -1623,8 +1623,11 @@
     const sm = doc.shadow_mode;
     const sc = sm ? 'badge-shadow' : 'badge-live';
     const sl = sm ? 'Shadow' : 'Live';
+    const inactiveBadge = doc.active === false
+      ? ' <span class="badge" style="font-size:0.7rem;vertical-align:middle;background:#fee2e2;color:#991b1b;">Inactive</span>'
+      : '';
     document.getElementById('detailHeader').innerHTML =
-      `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
+      `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
       buildHeaderButtons(doc._id) + `</h1>`;
     document.getElementById('smokeResults').innerHTML = '';
 
@@ -1642,6 +1645,14 @@
       <dt title="When the client's free trial started">Trial Start Date</dt><dd>
         <input type="date" class="edit-input" id="edit-trial-start" value="${doc.trial_start_date ? doc.trial_start_date.slice(0, 10) : ''}" style="width:auto;">
         <div class="config-hint">When this client's free trial started. Trial length is set globally in Settings.</div>
+      </dd>
+
+      <dt title="When off, inbound calls to this agent are silently rejected">Agent Active</dt><dd>
+        <label class="toggle">
+          <input type="checkbox" id="edit-active" ${doc.active !== false ? 'checked' : ''}>
+          <span class="slider"></span>
+        </label>
+        <div class="config-hint">When off, inbound calls to this agent are rejected via pre-webhook. Use to temporarily disable an agent without deleting it.</div>
       </dd>
 
       <dt title="When on, notifications go to the owner instead of the client for testing">Shadow Mode</dt><dd>
@@ -1802,6 +1813,11 @@
       updates.trial_start_date = newTrialStart;
     }
 
+    const active = document.getElementById('edit-active').checked;
+    if (active !== (originalDoc.active !== false)) {
+      updates.active = active;
+    }
+
     const shadowMode = document.getElementById('edit-shadow-mode').checked;
     if (shadowMode !== (originalDoc.shadow_mode ?? false)) {
       updates.shadow_mode = shadowMode;
@@ -1953,12 +1969,15 @@
       originalDoc = JSON.parse(JSON.stringify(data.doc));
       showToast('Saved ' + Object.keys(updates).length + ' field(s)', 'success');
 
-      // Update header badge if shadow mode changed
-      if ('shadow_mode' in updates) {
-        const sc = updates.shadow_mode ? 'badge-shadow' : 'badge-live';
-        const sl = updates.shadow_mode ? 'Shadow' : 'Live';
+      // Update header badges if shadow mode or active changed
+      if ('shadow_mode' in updates || 'active' in updates) {
+        const sc = originalDoc.shadow_mode ? 'badge-shadow' : 'badge-live';
+        const sl = originalDoc.shadow_mode ? 'Shadow' : 'Live';
+        const inactiveBadge = originalDoc.active === false
+          ? ' <span class="badge" style="font-size:0.7rem;vertical-align:middle;background:#fee2e2;color:#991b1b;">Inactive</span>'
+          : '';
         document.getElementById('detailHeader').innerHTML =
-          `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>` +
+          `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
           buildHeaderButtons(currentSlug) + `</h1>`;
       }
     } catch (err) {

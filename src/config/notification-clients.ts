@@ -48,6 +48,7 @@ export interface ClientNotificationConfig {
   phone_fallback_to_caller?: boolean;
   hide_not_mentioned?: boolean;
   shadow_mode?: boolean;
+  active?: boolean;
 }
 
 // Runtime cache maps moved to src/_cache/clients.ts

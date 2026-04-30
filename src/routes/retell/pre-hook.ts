@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
+import { agentIdToClient, agentIdToSlug } from "../../_cache/clients.js";
 
 export async function preHookHandler(req: Request, res: Response) {
   const sig = (req.headers["x-retell-signature"] as string) ?? "";
@@ -35,22 +36,34 @@ export async function preHookHandler(req: Request, res: Response) {
 
   console.log("retell-pre-hook: Received inbound event:", { eventType, inbound });
 
+  const agentId = inbound?.agent_id ?? null;
   const toNumber = inbound?.to_number ?? null;
 
-  if (!toNumber) {
-    console.log("retell-pre-hook: cannot find number in inbound payload, rejecting");
-    res.status(200).json({});
-    return;
+  // 3) Check if agent is active
+  if (agentId) {
+    const client = agentIdToClient[agentId];
+    const slug = agentIdToSlug[agentId] ?? "unknown";
+
+    if (client && client.active === false) {
+      console.log("retell-pre-hook: agent inactive, rejecting call", {
+        agent_id: agentId,
+        client: slug,
+        to_number: toNumber,
+      });
+      res.status(200).json({});
+      return;
+    }
   }
 
-  // TODO: Look up agent by inbound number
   // TODO: Verify business has credit balance > 0
-  // TODO: Return { call_inbound: { override_agent_id } } or {} to reject
 
   console.log("retell-pre-hook: inbound call validated", {
+    agent_id: agentId,
     to_number: toNumber,
     event_type: eventType,
   });
 
-  res.status(200).json({});
+  // Accept the call — return the event key so Retell proceeds
+  const responseKey = eventType === "call_inbound" ? "call_inbound" : "chat_inbound";
+  res.status(200).json({ [responseKey]: {} });
 }
