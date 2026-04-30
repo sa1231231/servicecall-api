@@ -21,6 +21,7 @@ export interface CallLogDocument {
   recording_url?: string;
   public_log_url?: string;
   transcript?: string;
+  call_cost_cents?: number;
   created_at: Date;
 }
 

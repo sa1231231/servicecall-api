@@ -100,6 +100,7 @@ export async function postHookHandler(req: Request, res: Response) {
       message_type_label: typeLabel,
       outcome,
       shadow_mode: client.shadow_mode ?? false,
+      call_cost_cents: call.call_cost?.combined_cost ?? undefined,
       created_at: new Date(),
     };
   }

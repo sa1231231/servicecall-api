@@ -861,6 +861,7 @@
   <h2>Configuration</h2>
   <div id="detailConfig"></div>
   <div id="nodeEditorContainer"></div>
+  <div id="callCostSummary"></div>
   <h2>Call Log</h2>
   <div id="callLogContent"><div class="loading">Loading calls...</div></div>
 </div>
@@ -2072,13 +2073,14 @@
 
       if (fresh && calls.length === 0) {
         document.getElementById('callLogContent').innerHTML = '<div class="loading">No calls yet.</div>';
+        document.getElementById('callCostSummary').innerHTML = '';
         return;
       }
 
       let html = '';
       if (fresh) {
         html = `<table id="callTable"><thead><tr>
-          <th>Date</th><th>From</th><th>Duration</th><th>Outcome</th>
+          <th>Date</th><th>From</th><th>Duration</th><th>Cost</th><th>Outcome</th>
           <th>Sentiment</th><th>Summary</th><th>Links</th>
         </tr></thead><tbody id="callBody">`;
       }
@@ -2100,13 +2102,14 @@
           <td data-label="Date">${fmtDate(c.created_at)}</td>
           <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${c.from_number === 'unknown' ? 'Web Call' : esc(c.from_number)}</td>
           <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
+          <td data-label="Cost" style="font-size:0.78rem;">${c.call_cost_cents != null ? '$' + (c.call_cost_cents / 100).toFixed(2) : '—'}</td>
           <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
           <td data-label="Sentiment" class="${sentClass}">${esc(c.user_sentiment || 'Pending')}</td>
           <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
           <td data-label="Links">${links.join(' | ') || '—'}</td>
           <td class="mobile-collected-data">${renderFields(c.extracted_fields)}</td>
         </tr>
-        <tr class="call-expand-row" style="display:none;"><td colspan="7">
+        <tr class="call-expand-row" style="display:none;"><td colspan="8">
           <div class="call-expand">
             <p><strong>Call ID:</strong> <code>${esc(c._id)}</code></p>
             <p><strong>Disconnection:</strong> ${esc(c.disconnection_reason)}</p>
@@ -2124,6 +2127,29 @@
           html += '<button class="btn-load-more" onclick="loadMoreCalls()">Load more</button>';
         }
         document.getElementById('callLogContent').innerHTML = html;
+
+        // Calculate cost summary from loaded calls
+        const costCalls = calls.filter(c => c.call_cost_cents != null);
+        if (costCalls.length > 0) {
+          const now = new Date();
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          const monthCalls = calls.filter(c => c.call_cost_cents != null && new Date(c.created_at) >= monthStart);
+          const monthTotal = monthCalls.reduce((s, c) => s + (c.call_cost_cents || 0), 0);
+          const allTotal = costCalls.reduce((s, c) => s + (c.call_cost_cents || 0), 0);
+          const avgCost = costCalls.length > 0 ? allTotal / costCalls.length : 0;
+          document.getElementById('callCostSummary').innerHTML =
+            '<div style="display:flex;gap:1rem;margin-bottom:0.75rem;flex-wrap:wrap;">' +
+            '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
+            '<div style="font-size:1.1rem;font-weight:700;color:#059669;">$' + (monthTotal / 100).toFixed(2) + '</div>' +
+            '<div style="font-size:0.72rem;color:#888;">This Month</div></div>' +
+            '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
+            '<div style="font-size:1.1rem;font-weight:700;color:#333;">$' + (avgCost / 100).toFixed(2) + '</div>' +
+            '<div style="font-size:0.72rem;color:#888;">Avg Per Call</div></div>' +
+            '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
+            '<div style="font-size:1.1rem;font-weight:700;color:#333;">' + monthCalls.length + '</div>' +
+            '<div style="font-size:0.72rem;color:#888;">Calls This Month</div></div>' +
+            '</div>';
+        }
       } else {
         // Append to existing table
         document.getElementById('callBody').insertAdjacentHTML('beforeend', html);
