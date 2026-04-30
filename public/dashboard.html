@@ -657,6 +657,8 @@
   .dp-card summary { padding: 0.6rem 1rem; cursor: pointer; display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; }
   .dp-card summary .dp-drag-handle { cursor: grab; color: #94a3b8; font-size: 0.85rem; margin-right: 0.15rem; }
   .dp-card summary .dp-drag-handle:active { cursor: grabbing; }
+  .dp-inline-delete { margin-left: auto; background: none; border: none; color: #dc2626; cursor: pointer; font-size: 1rem; font-weight: bold; padding: 0 0.4rem; opacity: 0.3; line-height: 1; }
+  .dp-inline-delete:hover { opacity: 1; }
   .dp-card summary strong { font-size: 0.9rem; }
   .dp-card summary .dp-var { font-family: monospace; font-size: 0.72rem; color: #999; }
   .dp-card-body { padding: 0 1rem 1rem; }
@@ -3287,7 +3289,7 @@
     const ftHtml = (dp.finetuneExamples || []).map((ex, i) => renderFtExample(key, i, ex)).join('');
     const actionBtns = `<button type="button" class="dp-btn-reset" style="color:#dc2626;border-color:#fca5a5;" onclick="deleteDpDefault('${esc(key)}')">Delete</button>`;
     return `<details class="dp-card" data-dp-key="${esc(key)}" draggable="true">
-      <summary><span class="dp-drag-handle">&#9776;</span><strong>${esc(dp.label)}</strong> <span class="dp-var">${esc(key)}</span></summary>
+      <summary><span class="dp-drag-handle">&#9776;</span><strong>${esc(dp.label)}</strong> <span class="dp-var">${esc(key)}</span><button class="dp-inline-delete" onclick="event.preventDefault();event.stopPropagation();deleteDpDefault('${esc(key)}')" title="Delete data point">&times;</button></summary>
       <div class="dp-card-body">
         <label>Variable Name</label>
         <input type="text" class="dp-key" value="${esc(key)}" onblur="this.value=this.value.toLowerCase().replace(/[\\s\\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
