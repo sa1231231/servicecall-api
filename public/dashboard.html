@@ -232,15 +232,7 @@
 
   a.icon-link { color: #2563eb; text-decoration: none; font-size: 0.78rem; }
   a.icon-link:hover { text-decoration: underline; }
-  .dash-play-btn {
-    background: none; border: 1px solid #d1d5db; border-radius: 50%;
-    width: 24px; height: 24px; cursor: pointer; font-size: 0.65rem;
-    color: #059669; display: inline-flex; align-items: center;
-    justify-content: center; flex-shrink: 0; vertical-align: middle;
-  }
-  .dash-play-btn:hover { background: #f0fdf4; border-color: #86efac; }
-  .dash-play-btn.playing { color: #dc2626; border-color: #fca5a5; }
-  .dash-audio-inline { display: block; width: 200px; height: 32px; margin-top: 0.25rem; }
+  .dash-audio-inline { width: 200px; height: 32px; vertical-align: middle; }
 
   /* Chip / tag input */
   .chip-input {
@@ -2112,7 +2104,7 @@
           : '<span style="color:#aaa">pending</span>';
 
         const links = [];
-        if (c.recording_url) links.push('<button class="dash-play-btn" onclick="event.stopPropagation();dashTogglePlay(this,\'' + esc(c.recording_url) + '\')">&#9654;</button>');
+        if (c.recording_url) links.push('<audio src="' + esc(c.recording_url) + '" controls preload="none" class="dash-audio-inline" onclick="event.stopPropagation()"></audio>');
         if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
         if (c.transcript) links.push('<a class="icon-link" href="/dashboard/api/agents/' + esc(currentSlug) + '/calls/' + esc(c._id) + '/transcript" download>Transcript</a>');
 
@@ -2193,35 +2185,6 @@
 
   function loadMoreCalls() {
     loadCalls(false);
-  }
-
-  let dashCurrentAudio = null, dashCurrentBtn = null;
-  function dashTogglePlay(btn, url) {
-    if (dashCurrentAudio && dashCurrentBtn) {
-      dashCurrentAudio.pause();
-      dashCurrentBtn.innerHTML = '&#9654;';
-      dashCurrentBtn.classList.remove('playing');
-      const old = document.querySelector('.dash-audio-inline');
-      if (old) old.remove();
-      if (dashCurrentBtn === btn) { dashCurrentAudio = null; dashCurrentBtn = null; return; }
-    }
-    const audioEl = document.createElement('audio');
-    audioEl.src = url;
-    audioEl.controls = true;
-    audioEl.autoplay = true;
-    audioEl.className = 'dash-audio-inline';
-    btn.closest('td').appendChild(audioEl);
-    btn.innerHTML = '&#9632;';
-    btn.classList.add('playing');
-    dashCurrentAudio = audioEl;
-    dashCurrentBtn = btn;
-    audioEl.addEventListener('ended', () => {
-      btn.innerHTML = '&#9654;';
-      btn.classList.remove('playing');
-      audioEl.remove();
-      dashCurrentAudio = null;
-      dashCurrentBtn = null;
-    });
   }
 
   function toggleCallExpand(row) {

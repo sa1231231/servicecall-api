@@ -61,15 +61,7 @@
   .sentiment-unknown { color: #6b7280; }
   .loading { text-align: center; padding: 3rem; color: #888; }
   .error-msg { text-align: center; padding: 2rem; color: #991b1b; }
-  .play-btn {
-    background: none; border: 1px solid #d1d5db; border-radius: 50%;
-    width: 28px; height: 28px; cursor: pointer; font-size: 0.7rem;
-    display: inline-flex; align-items: center; justify-content: center;
-    color: #059669; transition: all 0.15s;
-  }
-  .play-btn:hover { background: #f0fdf4; border-color: #86efac; }
-  .play-btn.playing { color: #dc2626; border-color: #fca5a5; }
-  .call-audio { display: block; width: 200px; height: 32px; margin-top: 0.25rem; }
+  .call-audio { width: 200px; height: 32px; vertical-align: middle; }
 
   .config-grid {
     display: grid; grid-template-columns: 160px 1fr; gap: 0.35rem 1rem;
@@ -692,7 +684,7 @@
         <td data-label="Type">${esc(c.message_type_label || '')}</td>
         <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
         <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
-        <td data-label="Recording">${c.recording_url ? '<button class="play-btn" onclick="event.stopPropagation();togglePlay(this,\'' + esc(c.recording_url) + '\')">&#9654;</button>' : '—'}</td>
+        <td data-label="Recording" onclick="event.stopPropagation()">${c.recording_url ? '<audio src="' + esc(c.recording_url) + '" controls preload="none" class="call-audio"></audio>' : '—'}</td>
         <td class="mobile-collected-data">${renderFields(c.extracted_fields)}</td>
       </tr>
       <tr class="call-expand-row" style="display:none;"><td colspan="7">
@@ -719,38 +711,6 @@
       btn.disabled = true;
       btn.textContent = 'No more calls';
     }
-  }
-
-  // ── Audio playback ──────────────────────────────────────────────
-  let currentAudio = null;
-  let currentBtn = null;
-
-  function togglePlay(btn, url) {
-    if (currentAudio && currentBtn) {
-      currentAudio.pause();
-      currentBtn.innerHTML = '&#9654;';
-      currentBtn.classList.remove('playing');
-      const old = document.querySelector('.call-audio');
-      if (old) old.remove();
-      if (currentBtn === btn) { currentAudio = null; currentBtn = null; return; }
-    }
-    const audioEl = document.createElement('audio');
-    audioEl.src = url;
-    audioEl.controls = true;
-    audioEl.autoplay = true;
-    audioEl.className = 'call-audio';
-    btn.closest('td').appendChild(audioEl);
-    btn.innerHTML = '&#9632;';
-    btn.classList.add('playing');
-    currentAudio = audioEl;
-    currentBtn = btn;
-    audioEl.addEventListener('ended', () => {
-      btn.innerHTML = '&#9654;';
-      btn.classList.remove('playing');
-      audioEl.remove();
-      currentAudio = null;
-      currentBtn = null;
-    });
   }
 
   // ── Search & filter ────────────────────────────────────────────
