@@ -1261,7 +1261,9 @@
 
   function showList() {
     document.getElementById('detailView').style.display = 'none';
+    document.getElementById('settingsView').style.display = 'none';
     document.getElementById('listView').style.display = '';
+    history.replaceState(null, '', '/dashboard/');
   }
 
   // ── DETAIL VIEW ────────────────────────────────────────────────────
@@ -1270,7 +1272,9 @@
     currentSlug = slug;
     callOffset = 0;
     document.getElementById('listView').style.display = 'none';
+    document.getElementById('settingsView').style.display = 'none';
     document.getElementById('detailView').style.display = '';
+    history.replaceState(null, '', '#agent=' + encodeURIComponent(slug));
     document.getElementById('detailConfig').innerHTML = '<div class="loading">Loading...</div>';
     document.getElementById('callLogContent').innerHTML = '<div class="loading">Loading calls...</div>';
 
@@ -2732,6 +2736,7 @@
     document.getElementById('listView').style.display = 'none';
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('settingsView').style.display = '';
+    history.replaceState(null, '', '#settings');
 
     try {
       const res = await fetch('/dashboard/api/settings');
@@ -4569,13 +4574,15 @@
 
   // ── INIT ───────────────────────────────────────────────────────────
   loadAgents().then(() => {
-    // Auto-open agent from hash: #agent=slug
     const hash = window.location.hash;
-    const m = hash.match(/^#agent=(.+)/);
-    if (m) {
-      const slug = decodeURIComponent(m[1]);
-      window.location.hash = '';
-      showDetail(slug);
+    if (hash === '#settings') {
+      showSettings();
+    } else {
+      const m = hash.match(/^#agent=(.+)/);
+      if (m) {
+        const slug = decodeURIComponent(m[1]);
+        showDetail(slug);
+      }
     }
   });
 </script>
