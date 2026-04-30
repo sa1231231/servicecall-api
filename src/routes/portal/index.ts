@@ -7,10 +7,15 @@ import {
   validatePortalToken,
   findClientsByEmail,
   generatePortalToken,
+  getClientDocument,
+  updateClientFields,
+  loadClientsFromDb,
 } from "../../config/client-store.js";
 import { sendEmail } from "../../lib/notify-email.js";
 import { portalGetAgentHandler } from "./get-agent.js";
 import { portalGetCallsHandler } from "./get-calls.js";
+import { ownerConfig } from "../../config/notification-clients.js";
+import { logAudit } from "../../lib/audit.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const portalHtmlPath = path.join(__dirname, "../../../public/portal.html");
@@ -123,3 +128,122 @@ portalRouter.get("/:slug", (_req, res) => {
 // API endpoints — require valid token
 portalRouter.get("/:slug/api/agent", portalAuth, portalGetAgentHandler);
 portalRouter.get("/:slug/api/calls", portalAuth, portalGetCallsHandler);
+
+// ── Self-serve dispatch settings ─────────────────────────────────────────────
+
+const PHONE_RE = /^\+1\d{10}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+portalRouter.patch("/:slug/api/settings", portalAuth, async (req: Request, res: Response) => {
+  const slug = (req as any).portalSlug as string;
+
+  try {
+    const doc = await getClientDocument(slug);
+    if (!doc) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+
+    const body = req.body;
+    if (!body || typeof body !== "object" || Object.keys(body).length === 0) {
+      res.status(400).json({ error: "Request body must be a non-empty object" });
+      return;
+    }
+
+    const PORTAL_EDITABLE = new Set([
+      "dispatch_text_numbers",
+      "dispatch_email",
+      "dispatch_call_number",
+      "dispatch_cc",
+    ]);
+
+    const updates: Record<string, unknown> = {};
+    const errors: string[] = [];
+
+    for (const [key, value] of Object.entries(body)) {
+      if (!PORTAL_EDITABLE.has(key)) continue;
+
+      if (key === "dispatch_text_numbers") {
+        if (!Array.isArray(value)) { errors.push("dispatch_text_numbers must be an array"); continue; }
+        // Re-add owner phone if it was in the original list
+        const nums = value.filter((n: any) => typeof n === "string" && n.trim());
+        for (const n of nums) {
+          if (!PHONE_RE.test(n)) errors.push(`Invalid phone number "${n}". Format: +1XXXXXXXXXX.`);
+        }
+        // Ensure owner phone stays if it was there
+        if (ownerConfig.phone && doc.dispatch_text_numbers?.includes(ownerConfig.phone) && !nums.includes(ownerConfig.phone)) {
+          nums.unshift(ownerConfig.phone);
+        }
+        updates.dispatch_text_numbers = nums;
+      }
+
+      if (key === "dispatch_email") {
+        if (!Array.isArray(value)) { errors.push("dispatch_email must be an array"); continue; }
+        const emails = value.filter((e: any) => typeof e === "string" && e.trim());
+        for (const e of emails) {
+          if (!EMAIL_RE.test(e)) errors.push(`Invalid email "${e}".`);
+        }
+        // Ensure owner email stays if it was there
+        if (ownerConfig.email && doc.dispatch_email?.includes(ownerConfig.email) && !emails.includes(ownerConfig.email)) {
+          emails.unshift(ownerConfig.email);
+        }
+        updates.dispatch_email = emails.length > 0 ? emails : null;
+      }
+
+      if (key === "dispatch_call_number") {
+        const num = typeof value === "string" ? value.trim() : "";
+        if (num && !PHONE_RE.test(num)) errors.push(`Invalid call number "${num}". Format: +1XXXXXXXXXX.`);
+        updates.dispatch_call_number = num || null;
+      }
+
+      if (key === "dispatch_cc") {
+        const cc = typeof value === "string" ? value.trim() : "";
+        if (cc && !EMAIL_RE.test(cc)) errors.push(`Invalid CC email "${cc}".`);
+        updates.dispatch_cc = cc || null;
+      }
+    }
+
+    if (errors.length > 0) {
+      res.status(400).json({ error: "Validation failed", errors });
+      return;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ error: "No valid fields to update" });
+      return;
+    }
+
+    await updateClientFields(slug, updates);
+    await loadClientsFromDb();
+
+    // Audit
+    await logAudit(
+      { ...req, user: { username: `portal:${slug}`, role: "portal" } } as any,
+      "portal_update_settings",
+      slug,
+      { fields: Object.keys(updates) },
+    );
+
+    // Return updated config (filtered same as GET)
+    const updated = await getClientDocument(slug);
+    if (!updated) {
+      res.json({ success: true });
+      return;
+    }
+    const textNumbers = (updated.dispatch_text_numbers || []).filter((n) => n !== ownerConfig.phone);
+    const emails = (updated.dispatch_email || []).filter((e) => e !== ownerConfig.email);
+    const callNumber = updated.dispatch_call_number === ownerConfig.phone ? null : updated.dispatch_call_number;
+    const cc = updated.dispatch_cc === ownerConfig.email ? null : updated.dispatch_cc;
+
+    res.json({
+      success: true,
+      dispatch_text_numbers: textNumbers,
+      dispatch_call_number: callNumber,
+      dispatch_email: emails.length > 0 ? emails : null,
+      dispatch_cc: cc,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});

@@ -266,6 +266,90 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
   });
 
+  // ── 10b. Portal self-serve settings ─────────────────────────────
+
+  describe("Portal self-serve settings", () => {
+    let portalToken: string | undefined;
+
+    it("gets portal token for Demo Meter", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/portal-token`), { headers: authHeaders() });
+      const body = await json(resp);
+      if (!body.has_token) {
+        // Generate one
+        const gen = await fetch(url(`/dashboard/api/agents/${SLUG}/portal-token`), { method: "POST", headers: authHeaders() });
+        const genBody = await json(gen);
+        portalToken = new URL(genBody.portal_url).searchParams.get("token") || undefined;
+      } else {
+        portalToken = new URL(body.portal_url).searchParams.get("token") || undefined;
+      }
+      expect(portalToken).toBeDefined();
+    });
+
+    it("PATCH settings with valid token succeeds", async () => {
+      if (!portalToken) return;
+      const resp = await fetch(url(`/portal/${SLUG}/api/settings?token=${portalToken}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dispatch_text_numbers: ["+13017872841"] }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+    });
+
+    it("PATCH rejects invalid token", async () => {
+      const resp = await fetch(url(`/portal/${SLUG}/api/settings?token=invalid_token`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dispatch_text_numbers: ["+15551234567"] }),
+      });
+      expect(resp.status).toBe(401);
+    });
+
+    it("PATCH rejects invalid phone format", async () => {
+      if (!portalToken) return;
+      const resp = await fetch(url(`/portal/${SLUG}/api/settings?token=${portalToken}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dispatch_text_numbers: ["bad-number"] }),
+      });
+      expect(resp.status).toBe(400);
+      const body = await json(resp);
+      expect(body.errors.length).toBeGreaterThan(0);
+    });
+
+    it("PATCH rejects invalid email format", async () => {
+      if (!portalToken) return;
+      const resp = await fetch(url(`/portal/${SLUG}/api/settings?token=${portalToken}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dispatch_email: ["not-an-email"] }),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("PATCH rejects empty body", async () => {
+      if (!portalToken) return;
+      const resp = await fetch(url(`/portal/${SLUG}/api/settings?token=${portalToken}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("PATCH ignores non-whitelisted fields", async () => {
+      if (!portalToken) return;
+      const resp = await fetch(url(`/portal/${SLUG}/api/settings?token=${portalToken}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shadow_mode: false, agent_ids: ["hacked"] }),
+      });
+      // Should return 400 (no valid fields) since non-whitelisted fields are ignored
+      expect(resp.status).toBe(400);
+    });
+  });
+
   // ── 11. Transcript ─────────────────────────────────────────────────────
 
   describe("Transcript", () => {
