@@ -704,8 +704,10 @@
 
     <div class="settings-section">
       <div class="settings-section-title">Agent Defaults</div>
-      <label for="settings-default-summary-agent">Default Summary Agent ID</label>
-      <input type="text" id="settings-default-summary-agent" placeholder="agent_...">
+      <label>Default Summary Agent ID</label>
+      <div class="chip-input" id="settings-chip-summary" onclick="this.querySelector('input').focus()">
+        <input type="text" placeholder="agent_..." onkeydown="chipKeydown(event, this)" onblur="chipBlur(this)">
+      </div>
       <p class="settings-hint">Pre-filled as the Summary Agent when creating new agents. Leave blank for none.</p>
     </div>
 
@@ -2445,7 +2447,15 @@
       document.getElementById('settings-payment-url').value = settings.stripe_payment_url || '';
       document.getElementById('settings-payment-msg').value = settings.payment_sms_message || '';
       document.getElementById('settings-portal-msg').value = settings.portal_sms_message || '';
-      document.getElementById('settings-default-summary-agent').value = settings.default_summary_agent_id || '';
+      // Populate default summary agent chip
+      const summaryChipContainer = document.getElementById('settings-chip-summary');
+      if (summaryChipContainer && settings.default_summary_agent_id) {
+        const input = summaryChipContainer.querySelector('input');
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        chip.innerHTML = esc(settings.default_summary_agent_id) + '<span class="remove" onclick="removeChip(this)">&times;</span>';
+        summaryChipContainer.insertBefore(chip, input);
+      }
 
       // Initialize template editors for settings SMS fields
       initSettingsTemplateEditors();
@@ -2506,7 +2516,7 @@
       stripe_payment_url: document.getElementById('settings-payment-url').value.trim(),
       payment_sms_message: document.getElementById('settings-payment-msg').value,
       portal_sms_message: document.getElementById('settings-portal-msg').value,
-      default_summary_agent_id: document.getElementById('settings-default-summary-agent').value.trim(),
+      default_summary_agent_id: getChipValues('settings-chip-summary')[0] || '',
     };
 
     try {

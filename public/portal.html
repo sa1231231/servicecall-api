@@ -232,6 +232,23 @@
   .portal-save-btn:hover { background: #1d4ed8; }
   .portal-save-btn:disabled { background: #93b4f5; cursor: not-allowed; }
   .portal-hint { font-size: 0.75rem; color: #888; margin-top: 0.1rem; }
+  .chip-input {
+    display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center;
+    padding: 0.35rem 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;
+    background: #fff; min-height: 2.2rem; cursor: text;
+  }
+  .chip-input:focus-within { border-color: #93b4f5; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px;
+    padding: 0.15rem 0.5rem; font-size: 0.82rem; color: #333;
+  }
+  .chip .remove { cursor: pointer; color: #999; font-size: 0.9rem; }
+  .chip .remove:hover { color: #dc2626; }
+  .chip-input input {
+    border: none; outline: none; font-size: 0.85rem; flex: 1;
+    min-width: 100px; padding: 0.15rem 0; background: transparent;
+  }
 </style>
 </head>
 <body>
@@ -263,6 +280,39 @@
     return d.innerHTML;
   }
 
+  function portalChipKey(e, input) {
+    if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',') {
+      e.preventDefault();
+      const v = input.value.trim().replace(/,$/,'');
+      if (!v) return;
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = esc(v) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span>';
+      input.parentElement.insertBefore(chip, input);
+      input.value = '';
+    }
+    if (e.key === 'Backspace' && !input.value) {
+      const chips = input.parentElement.querySelectorAll('.chip');
+      if (chips.length > 0) chips[chips.length - 1].remove();
+    }
+  }
+
+  function portalChipBlur(input) {
+    const v = input.value.trim().replace(/,$/,'');
+    if (!v) return;
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = esc(v) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span>';
+    input.parentElement.insertBefore(chip, input);
+    input.value = '';
+  }
+
+  function getPortalChips(id) {
+    const el = document.getElementById(id);
+    if (!el) return [];
+    return Array.from(el.querySelectorAll('.chip')).map(c => c.firstChild.textContent.trim());
+  }
+
   function portalToast(msg, type) {
     const el = document.getElementById('portalToast');
     el.textContent = msg;
@@ -275,13 +325,10 @@
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
-    const smsRaw = document.getElementById('portal-sms').value;
-    const emailRaw = document.getElementById('portal-email').value;
+    const smsNums = getPortalChips('portal-sms');
+    const emails = getPortalChips('portal-email');
     const cc = document.getElementById('portal-cc').value.trim();
     const callNum = document.getElementById('portal-call').value.trim();
-
-    const smsNums = smsRaw.split(',').map(s => s.trim()).filter(Boolean);
-    const emails = emailRaw.split(',').map(s => s.trim()).filter(Boolean);
 
     try {
       const resp = await fetch('/portal/' + slug + '/api/settings?token=' + encodeURIComponent(token), {
@@ -466,13 +513,23 @@
       html += '<h2>Dispatch Configuration</h2>';
       html += '<dl class="config-grid">';
 
+      // SMS chips
       html += '<dt>SMS Numbers</dt><dd>' +
-        '<input class="portal-edit-input" id="portal-sms" value="' + esc((agent.dispatch_text_numbers || []).join(', ')) + '" placeholder="+15551234567, +15559876543">' +
-        '<div class="portal-hint">Comma-separated phone numbers that receive SMS notifications.</div></dd>';
+        '<div class="chip-input" id="portal-sms" onclick="this.querySelector(\'input\').focus()">';
+      for (const n of (agent.dispatch_text_numbers || [])) {
+        html += '<span class="chip">' + esc(n) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span></span>';
+      }
+      html += '<input type="text" placeholder="+15551234567" onkeydown="portalChipKey(event,this)" onblur="portalChipBlur(this)">' +
+        '</div><div class="portal-hint">Press Enter or Tab to add a number.</div></dd>';
 
+      // Email chips
       html += '<dt>Email</dt><dd>' +
-        '<input class="portal-edit-input" id="portal-email" value="' + esc((agent.dispatch_email || []).join(', ')) + '" placeholder="email@example.com">' +
-        '<div class="portal-hint">Comma-separated email addresses for dispatch notifications.</div></dd>';
+        '<div class="chip-input" id="portal-email" onclick="this.querySelector(\'input\').focus()">';
+      for (const e of (agent.dispatch_email || [])) {
+        html += '<span class="chip">' + esc(e) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span></span>';
+      }
+      html += '<input type="text" placeholder="email@example.com" onkeydown="portalChipKey(event,this)" onblur="portalChipBlur(this)">' +
+        '</div></dd>';
 
       html += '<dt>CC</dt><dd>' +
         '<input class="portal-edit-input" id="portal-cc" value="' + esc(agent.dispatch_cc || '') + '" placeholder="cc@example.com">' +

@@ -94,6 +94,28 @@
     margin-left: 1rem;
   }
 
+  /* Chip inputs */
+  .chip-input {
+    display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center;
+    padding: 0.35rem 0.5rem; border: 1px solid #d1d5db; border-radius: 6px;
+    background: #fff; min-height: 2.2rem; cursor: text; margin-bottom: 0.25rem;
+  }
+  .chip-input:focus-within { border-color: #93b4f5; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px;
+    padding: 0.15rem 0.5rem; font-size: 0.82rem; color: #333;
+  }
+  .chip .remove {
+    cursor: pointer; color: #999; font-size: 0.9rem; line-height: 1;
+    margin-left: 0.15rem;
+  }
+  .chip .remove:hover { color: #dc2626; }
+  .chip-input input {
+    border: none; outline: none; font-size: 0.85rem; flex: 1;
+    min-width: 100px; padding: 0.15rem 0; background: transparent;
+  }
+
   /* Custom data point cards */
   .custom-dp-card {
     border: 1px solid #d1d5db;
@@ -332,21 +354,27 @@
   <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
   <div class="field-hint">Used in outgoing SMS and email notifications as the business identity — e.g. "Hi Acme Plumbing Co., you have a new call!" If blank, falls back to Business Name.</div>
 
-  <label for="dispatchTextNumbers">Dispatch Text Numbers <span style="font-weight:400;color:#999;">(defaults to owner phone if empty)</span></label>
-  <input type="text" id="dispatchTextNumbers" required placeholder="+15551234567, +15559876543">
-  <div class="field-hint">These numbers receive an SMS with the call summary after every call. Comma-separated. At least one required.</div>
+  <label>Dispatch Text Numbers <span style="font-weight:400;color:#999;">(defaults to owner phone if empty)</span></label>
+  <div class="chip-input" id="chip-dispatch-text" onclick="this.querySelector('input').focus()">
+    <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+  </div>
+  <div class="field-hint">These numbers receive an SMS with the call summary after every call.</div>
 
-  <label for="dispatchCallNumber">Dispatch Call Number</label>
+  <label>Dispatch Call Number</label>
   <input type="text" id="dispatchCallNumber" placeholder="+15551234567">
   <div class="field-hint">If set (along with Summary Agent ID), an AI-powered outbound call is placed to this number after each caller interaction to deliver the summary by voice.</div>
 
-  <label for="dispatchEmail">Dispatch Email(s)</label>
-  <input type="text" id="dispatchEmail" placeholder="dispatch@acme.com, backup@acme.com">
-  <div class="field-hint">These addresses receive an email with the full call summary after every call. Comma-separated.</div>
+  <label>Dispatch Email(s)</label>
+  <div class="chip-input" id="chip-dispatch-email" onclick="this.querySelector('input').focus()">
+    <input type="text" placeholder="dispatch@acme.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+  </div>
+  <div class="field-hint">These addresses receive an email with the full call summary after every call.</div>
 
-  <label for="summaryAgentId">Summary Agent ID (outbound dispatch agent)</label>
-  <input type="text" id="summaryAgentId" placeholder="agent_...">
-  <div class="field-hint">The Retell agent used for outbound dispatch calls. Works with Dispatch Call Number — after a call ends, this agent calls the dispatch number and reads the collected info aloud. Leave blank if you only need SMS/email.</div>
+  <label>Summary Agent ID (outbound dispatch agent)</label>
+  <div class="chip-input" id="chip-summary-agent" onclick="this.querySelector('input').focus()">
+    <input type="text" placeholder="agent_..." onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+  </div>
+  <div class="field-hint">The Retell agent used for outbound dispatch calls. Works with Dispatch Call Number. Leave blank if you only need SMS/email.</div>
 
   <h2>Options</h2>
 
@@ -405,8 +433,8 @@
     .then(r => r.json())
     .then(data => {
       document.getElementById('apiKey').value = data.apiKey;
-      if (data.default_summary_agent_id && !document.getElementById('summaryAgentId').value) {
-        document.getElementById('summaryAgentId').value = data.default_summary_agent_id;
+      if (data.default_summary_agent_id && getFormChipValues('chip-summary-agent').length === 0) {
+        setFormChipValues('chip-summary-agent', [data.default_summary_agent_id]);
       }
       ownerPhone = data.owner_phone || '';
     })
@@ -455,6 +483,53 @@
   const PHONE_RE = /^\+1\d{10}$/;
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+  // ── Chip input helpers ───────────────────────────────────────
+
+  function formChipKeydown(e, input) {
+    if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',') {
+      e.preventDefault();
+      formAddChip(input);
+    }
+    if (e.key === 'Backspace' && !input.value) {
+      const chips = input.parentElement.querySelectorAll('.chip');
+      if (chips.length > 0) chips[chips.length - 1].remove();
+    }
+  }
+
+  function formChipBlur(input) {
+    if (input.value.trim()) formAddChip(input);
+  }
+
+  function formAddChip(input) {
+    const val = input.value.trim().replace(/,$/,'');
+    if (!val) return;
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = escapeHtml(val) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span>';
+    input.parentElement.insertBefore(chip, input);
+    input.value = '';
+  }
+
+  function getFormChipValues(id) {
+    const container = document.getElementById(id);
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.chip')).map(c => c.firstChild.textContent.trim());
+  }
+
+  function setFormChipValues(id, values) {
+    const container = document.getElementById(id);
+    if (!container) return;
+    container.querySelectorAll('.chip').forEach(c => c.remove());
+    const input = container.querySelector('input');
+    for (const v of (values || [])) {
+      if (!v) continue;
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = escapeHtml(v) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span>';
+      container.insertBefore(chip, input);
+    }
+  }
+
   function validatePhone(num) {
     return PHONE_RE.test(num);
   }
@@ -471,7 +546,7 @@
     const errors = [];
 
     // Dispatch text numbers (optional — falls back to owner phone)
-    const textNums = csvToArray(val('dispatchTextNumbers'));
+    const textNums = getFormChipValues('chip-dispatch-text');
     for (const num of textNums) {
       if (!validatePhone(num)) {
         errors.push(`Invalid dispatch text number "${num}". Format: +1XXXXXXXXXX (11 digits starting with +1).`);
@@ -485,7 +560,7 @@
     }
 
     // Dispatch emails (optional)
-    const emails = csvToArray(val('dispatchEmail'));
+    const emails = getFormChipValues('chip-dispatch-email');
     for (const email of emails) {
       if (!validateEmail(email)) {
         errors.push(`Invalid dispatch email "${email}".`);
@@ -493,9 +568,11 @@
     }
 
     // Summary agent ID (optional)
-    const summaryId = val('summaryAgentId');
-    if (summaryId && !validateAgentId(summaryId)) {
-      errors.push(`Invalid Summary Agent ID "${summaryId}". Must start with "agent_".`);
+    const summaryAgentChips = getFormChipValues('chip-summary-agent');
+    for (const id of summaryAgentChips) {
+      if (!validateAgentId(id)) {
+        errors.push(`Invalid Summary Agent ID "${id}". Must start with "agent_".`);
+      }
     }
 
     // Path-level dispatch overrides
@@ -540,27 +617,15 @@
     }
   }
 
-  ['dispatchTextNumbers', 'dispatchCallNumber', 'dispatchEmail', 'summaryAgentId'].forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.addEventListener('blur', () => {
-      const v = el.value.trim();
-      if (!v) { markField(el, true); return; }
-      if (id === 'dispatchTextNumbers') {
-        const nums = csvToArray(v);
-        const allValid = nums.every(n => PHONE_RE.test(n));
-        markField(el, allValid, 'Each number must be +1XXXXXXXXXX format');
-      } else if (id === 'dispatchCallNumber') {
-        markField(el, PHONE_RE.test(v), 'Format: +1XXXXXXXXXX');
-      } else if (id === 'dispatchEmail') {
-        const emails = csvToArray(v);
-        const allValid = emails.every(e => EMAIL_RE.test(e));
-        markField(el, allValid, 'Invalid email format');
-      } else if (id === 'summaryAgentId') {
-        markField(el, v.startsWith('agent_'), 'Must start with "agent_"');
-      }
+  // Inline validation for remaining plain text inputs
+  const callNumEl = document.getElementById('dispatchCallNumber');
+  if (callNumEl) {
+    callNumEl.addEventListener('blur', () => {
+      const v = callNumEl.value.trim();
+      if (!v) { markField(callNumEl, true); return; }
+      markField(callNumEl, PHONE_RE.test(v), 'Format: +1XXXXXXXXXX');
     });
-  });
+  }
 
   // ── Data Point Dropdown Options ─────────────────────────────
 
@@ -1040,7 +1105,7 @@
       return;
     }
 
-    let dispatchTexts = csvToArray(val('dispatchTextNumbers'));
+    let dispatchTexts = getFormChipValues('chip-dispatch-text');
     // Fall back to owner phone if no dispatch numbers provided
     if (dispatchTexts.length === 0 && ownerPhone) {
       dispatchTexts = [ownerPhone];
@@ -1084,11 +1149,11 @@
     const callNum = val('dispatchCallNumber');
     if (callNum) body.client.dispatch_call_number = callNum;
 
-    const emails = csvToArray(val('dispatchEmail'));
+    const emails = getFormChipValues('chip-dispatch-email');
     if (emails.length) body.client.dispatch_email = emails;
 
-    const summaryId = val('summaryAgentId');
-    if (summaryId) body.client.summary_agent_id = summaryId;
+    const summaryChips = getFormChipValues('chip-summary-agent');
+    if (summaryChips.length > 0) body.client.summary_agent_id = summaryChips[0];
 
     body.client.phone_fallback_to_caller = true;
     body.client.hide_not_mentioned = true;
@@ -1249,10 +1314,10 @@
       faqKnowledgeBase: val('faqKnowledgeBase'),
       routingPaths: [],
       clientName: val('clientName'),
-      dispatchTextNumbers: val('dispatchTextNumbers'),
+      dispatchTextNumbers: getFormChipValues('chip-dispatch-text').join(', '),
       dispatchCallNumber: val('dispatchCallNumber'),
-      dispatchEmail: val('dispatchEmail'),
-      summaryAgentId: val('summaryAgentId'),
+      dispatchEmail: getFormChipValues('chip-dispatch-email').join(', '),
+      summaryAgentId: getFormChipValues('chip-summary-agent').join(', '),
       humanRequestMode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
     };
 
@@ -1275,10 +1340,10 @@
     document.getElementById('businessName').value = state.businessName || '';
     document.getElementById('faqKnowledgeBase').value = state.faqKnowledgeBase || '';
     document.getElementById('clientName').value = state.clientName || '';
-    document.getElementById('dispatchTextNumbers').value = state.dispatchTextNumbers || '';
+    setFormChipValues('chip-dispatch-text', csvToArray(state.dispatchTextNumbers || ''));
     document.getElementById('dispatchCallNumber').value = state.dispatchCallNumber || '';
-    document.getElementById('dispatchEmail').value = state.dispatchEmail || '';
-    document.getElementById('summaryAgentId').value = state.summaryAgentId || '';
+    setFormChipValues('chip-dispatch-email', csvToArray(state.dispatchEmail || ''));
+    setFormChipValues('chip-summary-agent', csvToArray(state.summaryAgentId || ''));
 
     const modeRadio = document.querySelector(`input[name="humanRequestMode"][value="${state.humanRequestMode || 'callback'}"]`);
     if (modeRadio) modeRadio.checked = true;
