@@ -22,6 +22,7 @@ export interface VariableDef {
 
 export interface DataPoint {
   composite?: boolean;
+  orphan?: boolean; // Extract-only: no Collect node, extracted passively from context
   label: string;
   variableName: string;
   type: "string" | "enum" | "boolean";

@@ -796,10 +796,15 @@
           <input type="text" class="cc-choices" placeholder="Residential, Commercial">
           <label>Description <span style="color:#dc2626">*</span></label>
           <textarea class="cc-description" placeholder='Auto-filled when you set the variable name'></textarea>
-          <label>Conversation Prompt <span style="color:#dc2626">*</span></label>
-          <textarea class="cc-conversationPrompt" placeholder='How the agent asks for this...'></textarea>
-          <label>Forward Condition <span style="color:#dc2626">*</span></label>
-          <input type="text" class="cc-forwardCondition" placeholder="The caller has provided...">
+          <label style="display:flex;align-items:center;gap:0.4rem;margin-top:0.3rem;cursor:pointer;">
+            <input type="checkbox" class="cc-orphan" onchange="toggleOrphanFields(this)"> Extract only <span style="font-weight:400;color:#888;">(no conversation prompt — extracted passively)</span>
+          </label>
+          <div class="cc-prompt-fields">
+            <label>Conversation Prompt <span style="color:#dc2626">*</span></label>
+            <textarea class="cc-conversationPrompt" placeholder='How the agent asks for this...'></textarea>
+            <label>Forward Condition <span style="color:#dc2626">*</span></label>
+            <input type="text" class="cc-forwardCondition" placeholder="The caller has provided...">
+          </div>
           <button type="button" class="btn-save-as-default" onclick="saveCustomAsDefault(this)" style="margin-top:0.4rem;padding:0.35rem 0.75rem;font-size:0.78rem;font-weight:600;color:#059669;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:5px;cursor:pointer;">Save as Default Variable</button>
         `;
         item.appendChild(fields);
@@ -809,6 +814,11 @@
       const fields = item.querySelector('.chain-custom-fields');
       if (fields) fields.remove();
     }
+  }
+
+  function toggleOrphanFields(checkbox) {
+    const promptFields = checkbox.closest('.chain-custom-fields').querySelector('.cc-prompt-fields');
+    if (promptFields) promptFields.style.display = checkbox.checked ? 'none' : '';
   }
 
   function autoFillCustomDp(input) {
@@ -1033,20 +1043,23 @@
           if (!fields) continue;
           const variableName = slugify(fields.querySelector('.cc-variableName').value.trim());
           if (!variableName) continue;
-          items.push({
+          const isOrphan = fields.querySelector('.cc-orphan')?.checked || false;
+          const dpObj = {
             variableName,
             label: fields.querySelector('.cc-label').value.trim() || variableName,
             type: fields.querySelector('.cc-type').value,
             choices: fields.querySelector('.cc-type').value === 'enum' ? csvToArray(fields.querySelector('.cc-choices').value) : [],
             description: fields.querySelector('.cc-description').value.trim(),
-            conversationPrompt: fields.querySelector('.cc-conversationPrompt').value.trim(),
-            forwardCondition: fields.querySelector('.cc-forwardCondition').value.trim(),
+            conversationPrompt: isOrphan ? '' : fields.querySelector('.cc-conversationPrompt').value.trim(),
+            forwardCondition: isOrphan ? '' : fields.querySelector('.cc-forwardCondition').value.trim(),
             finetuneExamples: [],
             extractSuccessEquation: [
               { left: `{{${variableName}}}`, operator: 'exists' },
               { left: `{{${variableName}}}`, operator: '!=', right: 'Not Mentioned' },
             ],
-          });
+          };
+          if (isOrphan) dpObj.orphan = true;
+          items.push(dpObj);
         } else {
           items.push(dpValue); // built-in ref
         }
@@ -1331,6 +1344,10 @@
           f.querySelector('.cc-description').value = item.description || '';
           f.querySelector('.cc-conversationPrompt').value = item.conversationPrompt || '';
           f.querySelector('.cc-forwardCondition').value = item.forwardCondition || '';
+          if (item.orphan) {
+            const orphanCb = f.querySelector('.cc-orphan');
+            if (orphanCb) { orphanCb.checked = true; toggleOrphanFields(orphanCb); }
+          }
         }
       }
     }
@@ -1443,6 +1460,7 @@
                   conversationPrompt: dp.conversationPrompt || '',
                   forwardCondition: dp.forwardCondition || '',
                 };
+                if (dp.orphan) dpItem.orphan = true;
               }
 
               // If this data point has branch conditions, wrap in nested branches

@@ -696,7 +696,10 @@ export function buildDataChain(
 
   // Variables Router: check each variable, route to first missing one.
   // If a data point has _branchCondition, AND the condition into the edge.
-  const routerEdges = resolvedDataPoints.map((dp, i) => {
+  // Orphan data points are extract-only — skip them in the router.
+  const nonOrphanDps = resolvedDataPoints.filter((dp) => !dp.orphan);
+  const routerEdges = nonOrphanDps.map((dp) => {
+    const i = resolvedDataPoints.indexOf(dp);
     let missingEquations: any[];
     let missingOperator: string;
 
@@ -789,7 +792,9 @@ export function buildDataChain(
   });
 
   // Per-variable: Collect (conversation) + Confirm (extract) → back to router
+  // Orphan data points are extract-only — no Collect+Confirm nodes needed.
   resolvedDataPoints.forEach((dp, i) => {
+    if (dp.orphan) return;
     const chainIds = pathIds.chain[i];
     const chainPos = pathPos.chain[i];
 

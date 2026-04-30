@@ -69,7 +69,7 @@ function resolveSingleDataPoint(
   const obj = dp as Partial<DataPoint> & { variableName?: string };
   if (!obj.variableName)
     throw new Error(`dataPoints[${index}] missing required field: variableName`);
-  return {
+  const resolved: DataPoint = {
     label:
       obj.label ||
       obj.variableName
@@ -83,14 +83,18 @@ function resolveSingleDataPoint(
       `${obj.variableName}. If not mentioned, set to "${NOT_MENTIONED}". If the caller explicitly says they don't know, set to "${CALLER_DOESNT_KNOW}".`,
     conversationPrompt:
       obj.conversationPrompt ||
-      `Ask the caller for their ${obj.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know, acknowledge it and move on.`,
+      (obj.orphan ? "" :
+      `Ask the caller for their ${obj.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know, acknowledge it and move on.`),
     forwardCondition:
       obj.forwardCondition ||
-      `The caller has provided their ${obj.variableName.replace(/_/g, " ")} or has indicated they don't know it`,
+      (obj.orphan ? "" :
+      `The caller has provided their ${obj.variableName.replace(/_/g, " ")} or has indicated they don't know it`),
     finetuneExamples: obj.finetuneExamples || [],
     extractSuccessEquation: obj.extractSuccessEquation ||
       defaultExtractEquation(obj.variableName),
   };
+  if (obj.orphan) resolved.orphan = true;
+  return resolved;
 }
 
 export function resolveDataPoints(

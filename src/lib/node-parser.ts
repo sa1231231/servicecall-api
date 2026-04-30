@@ -20,6 +20,7 @@ export interface ParsedDataPoint {
   variableDefs: Array<{ name: string; type: string; description: string; choices?: string[] }>;
   conversationPrompt: string;
   forwardCondition: string;
+  orphan?: boolean;
 }
 
 export interface ParsedPath {
@@ -263,6 +264,39 @@ function buildParsedPath(
       // Extract the data point info
       const dp = parseDataPointFromNodes(collectNode, confirmNode);
       if (dp) dataChain.push(dp);
+    }
+  }
+
+  // Detect orphan variables: present in front extract but no Collect node
+  const chainVarNames = new Set<string>();
+  for (const dp of dataChain) {
+    chainVarNames.add(dp.variableName);
+    // Also include sub-variables from composite data points
+    for (const vd of dp.variableDefs) chainVarNames.add(vd.name);
+  }
+  const frontVars = frontExtractNode.raw.variables as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(frontVars)) {
+    for (const v of frontVars) {
+      const name = v.name as string;
+      if (!name) continue;
+      if (chainVarNames.has(name)) continue;
+      // Skip known internal/sentinel variables
+      if (name === "_path_taken" || name.endsWith("_collected")) continue;
+      dataChain.push({
+        variableName: name,
+        label: (name).replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+        collectNode: frontExtractNode, // placeholder — no real collect node
+        confirmNode: frontExtractNode,
+        variableDefs: [{
+          name,
+          type: (v.type as string) || "string",
+          description: (v.description as string) || "",
+          ...(v.choices ? { choices: v.choices as string[] } : {}),
+        }],
+        conversationPrompt: "",
+        forwardCondition: "",
+        orphan: true,
+      });
     }
   }
 

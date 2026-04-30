@@ -113,6 +113,7 @@ export async function exportAgentHandler(
           forwardCondition: dp.forwardCondition,
         };
         if (varDef?.choices) dpEntry.choices = varDef.choices;
+        if (dp.orphan) dpEntry.orphan = true;
         if (branchConditions) dpEntry._branchConditions = branchConditions;
 
         dataPoints.push(dpEntry);

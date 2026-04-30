@@ -4188,14 +4188,17 @@
       '<input type="checkbox" ' + showChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(dp.variableName) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKey) + '\')" title="Show in dispatch" style="margin:0;">' +
       '<input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(dp.variableName) + '" class="field-required-toggle" title="Required" style="margin:0;">' +
       '<span class="ne-label">' + esc(dp.label) + '</span>' +
+      (dp.orphan ? '<span style="font-size:0.6rem;color:#6b7280;background:#f3f4f6;padding:0.1rem 0.3rem;border-radius:3px;margin-left:0.25rem;">extract only</span>' : '') +
       '<span class="ne-var">' + esc(dp.variableName) + '</span>' +
       '<span class="ne-actions">';
     if (canEdit) {
       if (!dp.branchConditions || dp.branchConditions.length === 0) {
         html += '<button class="ne-btn" onclick="openBranchEdit(\'' + esc(dp.variableName) + '\',\'' + esc(pathName) + '\')" style="font-size:0.65rem;color:#7c3aed;border-color:#c4b5fd;">IF</button>';
       }
-      html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(dp.collectNodeId) + '\',\'' + esc(dp.label) + '\')">Edit</button>' +
-        '<button class="ne-btn ne-btn-remove" onclick="neRemoveDataPoint(\'' + esc(dp.variableName) + '\',\'' + esc(pathName) + '\')">Remove</button>';
+      if (!dp.orphan) {
+        html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(dp.collectNodeId) + '\',\'' + esc(dp.label) + '\')">Edit</button>';
+      }
+      html += '<button class="ne-btn ne-btn-remove" onclick="neRemoveDataPoint(\'' + esc(dp.variableName) + '\',\'' + esc(pathName) + '\')">Remove</button>';
     }
     html += '</span></div>';
     return html;
