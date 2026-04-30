@@ -2183,15 +2183,19 @@
       return t >= start && t <= end;
     });
     const total = rangeCalls.reduce((s, c) => s + (c.call_cost_cents || 0), 0);
-    const avg = rangeCalls.length > 0 ? total / rangeCalls.length : 0;
+    // Calculate average per calendar month
+    const startD = new Date(startVal);
+    const endD = new Date(endVal);
+    const monthSpan = Math.max(1, (endD.getFullYear() - startD.getFullYear()) * 12 + (endD.getMonth() - startD.getMonth()) + 1);
+    const avgPerMonth = total / monthSpan;
     document.getElementById('callCostSummary').innerHTML =
       '<div style="display:flex;gap:1rem;margin:0.5rem 0 0.75rem;flex-wrap:wrap;">' +
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
       '<div style="font-size:1.1rem;font-weight:700;color:#059669;">$' + (total / 100).toFixed(2) + '</div>' +
       '<div style="font-size:0.72rem;color:#888;">Total Cost</div></div>' +
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
-      '<div style="font-size:1.1rem;font-weight:700;color:#333;">$' + (avg / 100).toFixed(2) + '</div>' +
-      '<div style="font-size:0.72rem;color:#888;">Avg Per Call</div></div>' +
+      '<div style="font-size:1.1rem;font-weight:700;color:#333;">$' + (avgPerMonth / 100).toFixed(2) + '</div>' +
+      '<div style="font-size:0.72rem;color:#888;">Avg / Month</div></div>' +
       '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 1rem;flex:1;min-width:120px;">' +
       '<div style="font-size:1.1rem;font-weight:700;color:#333;">' + rangeCalls.length + '</div>' +
       '<div style="font-size:0.72rem;color:#888;">Calls</div></div>' +
