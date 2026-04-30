@@ -232,6 +232,15 @@
 
   a.icon-link { color: #2563eb; text-decoration: none; font-size: 0.78rem; }
   a.icon-link:hover { text-decoration: underline; }
+  .dash-play-btn {
+    background: none; border: 1px solid #d1d5db; border-radius: 50%;
+    width: 24px; height: 24px; cursor: pointer; font-size: 0.65rem;
+    color: #059669; display: inline-flex; align-items: center;
+    justify-content: center; flex-shrink: 0; vertical-align: middle;
+  }
+  .dash-play-btn:hover { background: #f0fdf4; border-color: #86efac; }
+  .dash-play-btn.playing { color: #dc2626; border-color: #fca5a5; }
+  .dash-audio-inline { display: block; width: 200px; height: 32px; margin-top: 0.25rem; }
 
   /* Chip / tag input */
   .chip-input {
@@ -528,9 +537,11 @@
       -webkit-tap-highlight-color: transparent;
     }
     #callTable tbody tr.clickable-row a,
-    #callTable tbody tr.clickable-row button {
+    #callTable tbody tr.clickable-row button,
+    #callTable tbody tr.clickable-row audio {
       pointer-events: auto;
     }
+    .dash-audio-inline { width: 100%; }
     #callTable tbody tr.clickable-row td {
       display: block;
       padding: 0.15rem 0;
@@ -2101,7 +2112,7 @@
           : '<span style="color:#aaa">pending</span>';
 
         const links = [];
-        if (c.recording_url) links.push('<button style="background:none;border:1px solid #d1d5db;border-radius:50%;width:24px;height:24px;cursor:pointer;font-size:0.65rem;color:#059669;display:inline-flex;align-items:center;justify-content:center;" onclick="event.stopPropagation();dashTogglePlay(this,\'' + esc(c.recording_url) + '\',this.closest(\'tr\').nextElementSibling)">&#9654;</button>');
+        if (c.recording_url) links.push('<button class="dash-play-btn" onclick="event.stopPropagation();dashTogglePlay(this,\'' + esc(c.recording_url) + '\')">&#9654;</button>');
         if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
         if (c.transcript) links.push('<a class="icon-link" href="/dashboard/api/agents/' + esc(currentSlug) + '/calls/' + esc(c._id) + '/transcript" download>Transcript</a>');
 
@@ -2185,33 +2196,29 @@
   }
 
   let dashCurrentAudio = null, dashCurrentBtn = null;
-  function dashTogglePlay(btn, url, expandRow) {
+  function dashTogglePlay(btn, url) {
     if (dashCurrentAudio && dashCurrentBtn) {
       dashCurrentAudio.pause();
       dashCurrentBtn.innerHTML = '&#9654;';
-      dashCurrentBtn.style.color = '#059669';
-      const old = document.querySelector('.dash-audio-player');
+      dashCurrentBtn.classList.remove('playing');
+      const old = document.querySelector('.dash-audio-inline');
       if (old) old.remove();
       if (dashCurrentBtn === btn) { dashCurrentAudio = null; dashCurrentBtn = null; return; }
     }
-    const wrapper = document.createElement('div');
-    wrapper.className = 'dash-audio-player';
-    wrapper.style.cssText = 'padding:0.5rem 1rem;background:#f9fafb;';
-    wrapper.innerHTML = '<audio src="' + esc(url) + '" controls autoplay style="width:100%;height:36px;"></audio>';
-    const audio = wrapper.querySelector('audio');
-    if (expandRow) {
-      expandRow.style.display = '';
-      const td = expandRow.querySelector('td');
-      td.prepend(wrapper);
-    }
+    const audioEl = document.createElement('audio');
+    audioEl.src = url;
+    audioEl.controls = true;
+    audioEl.autoplay = true;
+    audioEl.className = 'dash-audio-inline';
+    btn.closest('td').appendChild(audioEl);
     btn.innerHTML = '&#9632;';
-    btn.style.color = '#dc2626';
-    dashCurrentAudio = audio;
+    btn.classList.add('playing');
+    dashCurrentAudio = audioEl;
     dashCurrentBtn = btn;
-    audio.addEventListener('ended', () => {
+    audioEl.addEventListener('ended', () => {
       btn.innerHTML = '&#9654;';
-      btn.style.color = '#059669';
-      wrapper.remove();
+      btn.classList.remove('playing');
+      audioEl.remove();
       dashCurrentAudio = null;
       dashCurrentBtn = null;
     });
