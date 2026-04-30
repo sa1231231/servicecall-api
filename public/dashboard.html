@@ -233,6 +233,11 @@
   a.icon-link { color: #2563eb; text-decoration: none; font-size: 0.78rem; }
   a.icon-link:hover { text-decoration: underline; }
   .dash-audio-inline { width: 200px; height: 32px; vertical-align: middle; }
+  .range-toggle { display: inline-flex; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; }
+  .range-btn { padding: 0.25rem 0.6rem; font-size: 0.75rem; border: none; background: #fff; cursor: pointer; color: #555; }
+  .range-btn:not(:last-child) { border-right: 1px solid #d1d5db; }
+  .range-btn.active { background: #2563eb; color: #fff; }
+  .range-btn:hover:not(.active) { background: #f3f4f6; }
 
   /* Chip / tag input */
   .chip-input {
@@ -876,6 +881,10 @@
     <input type="date" id="dashCostStart" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
     <span style="color:#888;font-size:0.82rem;">to</span>
     <input type="date" id="dashCostEnd" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
+    <div class="range-toggle" style="margin-left:0.25rem;">
+      <button class="range-btn active" onclick="dashQuickRange(7)">7d</button>
+      <button class="range-btn" onclick="dashQuickRange(30)">30d</button>
+    </div>
   </div>
   <div id="callCostSummary"></div>
   <h2>Call Log</h2>
@@ -1100,9 +1109,10 @@
     const map = {
       dispatched: 'Dispatched',
       shadow_dry_run: 'Shadow',
-      skipped_required_field: 'Skipped (req)',
-      skipped_empty_call: 'Skipped (empty)',
+      skipped_required_field: 'Skipped',
+      skipped_empty_call: 'Empty',
       dispatch_error: 'Error',
+      web_call: 'Web Call',
     };
     return map[o] || o;
   }
@@ -2094,10 +2104,10 @@
       <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${c.from_number === 'unknown' ? 'Web Call' : esc(c.from_number)}</td>
       <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
       <td data-label="Cost" style="font-size:0.78rem;">${c.call_cost_cents != null ? '$' + (c.call_cost_cents / 100).toFixed(2) : '—'}</td>
-      <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
-      <td data-label="Sentiment" class="${sentClass}">${esc(c.user_sentiment || 'Pending')}</td>
+      <td data-label="Outcome" style="white-space:nowrap;"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
+      <td data-label="Sentiment" class="${sentClass}" style="white-space:nowrap;">${esc(c.user_sentiment || 'Pending')}</td>
       <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
-      <td data-label="Links">${links.join(' | ') || '—'}</td>
+      <td data-label="Links" style="white-space:nowrap;">${links.join(' | ') || '—'}</td>
       <td class="mobile-collected-data">${renderFields(c.extracted_fields)}</td>
     </tr>
     <tr class="call-expand-row" style="display:none;"><td colspan="8">
@@ -2149,6 +2159,16 @@
     for (const c of filtered) html += dashBuildCallRow(c);
     html += '</tbody></table>';
     container.innerHTML = html;
+  }
+
+  function dashQuickRange(days) {
+    const end = new Date();
+    const start = new Date(Date.now() - days * 86400000);
+    document.getElementById('dashCostStart').value = start.toISOString().slice(0, 10);
+    document.getElementById('dashCostEnd').value = end.toISOString().slice(0, 10);
+    document.querySelectorAll('#detailView .range-btn').forEach(b => b.classList.remove('active'));
+    event.target.classList.add('active');
+    dashUpdateCostSummary();
   }
 
   function dashUpdateCostSummary() {
