@@ -758,6 +758,25 @@
   </div>
 
   <div class="admin-only">
+    <h2>SMS Blast</h2>
+    <p class="settings-hint" style="margin-bottom:0.75rem;">Send a one-time SMS to all active clients. Messages are sent one per second to avoid spam filters. Use <code>{{client_name}}</code> to personalize.</p>
+    <div style="background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1rem;">
+      <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.3rem;">Message</label>
+      <textarea id="blast-message" rows="4" style="width:100%;padding:0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px;resize:vertical;font-family:inherit;" placeholder="Happy Mother's Day from ServiceCall Saver! We hope {{client_name}} has a wonderful weekend."></textarea>
+      <p class="settings-hint" style="margin-top:0.3rem;">Supports: <code>{{client_name}}</code></p>
+      <div id="blast-preview-info" style="display:none;margin-top:0.5rem;padding:0.5rem;background:#f9fafb;border-radius:6px;font-size:0.82rem;">
+        <strong>Preview:</strong> <span id="blast-preview-count"></span><br>
+        <strong>Sample:</strong> <span id="blast-preview-sample" style="color:#374151;"></span>
+      </div>
+      <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+        <button class="btn-save" style="background:#6b7280;" onclick="previewBlast()">Preview</button>
+        <button class="btn-save" id="btnBlastSend" onclick="confirmBlast()">Send Blast</button>
+      </div>
+      <div id="blast-result" style="display:none;margin-top:0.5rem;padding:0.5rem;border-radius:6px;font-size:0.82rem;"></div>
+    </div>
+  </div>
+
+  <div class="admin-only">
     <h2>Data Point Defaults</h2>
     <p class="settings-hint" style="margin-bottom:0.75rem;">Edit the default configuration for built-in and custom data points. Changes apply to all future agent creations.</p>
     <div id="dpDefaultsContainer"><div class="loading">Loading data point defaults...</div></div>
@@ -2604,6 +2623,82 @@
     } finally {
       btn.disabled = false;
       btn.textContent = 'Save Settings';
+    }
+  }
+
+  // ── SMS BLAST ────────────────────────────────────────────────────────
+
+  async function previewBlast() {
+    const message = document.getElementById('blast-message').value.trim();
+    if (!message) { showToast('Enter a message first', 'error'); return; }
+    try {
+      const res = await fetch('/dashboard/api/blast-sms/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      const data = await res.json();
+      document.getElementById('blast-preview-count').textContent =
+        data.total_recipients + ' number(s) across ' + data.total_clients + ' client(s)';
+      document.getElementById('blast-preview-sample').textContent = data.sample_message;
+      document.getElementById('blast-preview-info').style.display = 'block';
+    } catch (err) {
+      showToast('Preview failed: ' + err.message, 'error');
+    }
+  }
+
+  async function confirmBlast() {
+    const message = document.getElementById('blast-message').value.trim();
+    if (!message) { showToast('Enter a message first', 'error'); return; }
+
+    // Get preview data for confirmation
+    try {
+      const preRes = await fetch('/dashboard/api/blast-sms/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      if (!preRes.ok) throw new Error((await preRes.json()).error || 'Failed');
+      const preview = await preRes.json();
+
+      if (preview.total_recipients === 0) {
+        showToast('No eligible recipients found', 'error');
+        return;
+      }
+
+      if (!confirm('Send SMS to ' + preview.total_recipients + ' number(s) across ' + preview.total_clients + ' client(s)?\n\nThis cannot be undone.')) return;
+
+      const btn = document.getElementById('btnBlastSend');
+      const resultDiv = document.getElementById('blast-result');
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
+      resultDiv.style.display = 'none';
+
+      const res = await fetch('/dashboard/api/blast-sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+
+      const failedHtml = data.failed.length > 0
+        ? '<br>Failed: ' + data.failed.map(f => f.number + ' (' + esc(f.error) + ')').join(', ')
+        : '';
+      resultDiv.innerHTML = '<strong>Sent ' + data.sent + '/' + data.total_recipients + '</strong> to ' + data.total_clients + ' client(s).' + failedHtml;
+      resultDiv.style.display = 'block';
+      resultDiv.style.background = data.failed.length > 0 ? '#fef3c7' : '#d1fae5';
+      showToast('Blast complete: ' + data.sent + ' sent', 'success');
+    } catch (err) {
+      showToast('Blast failed: ' + err.message, 'error');
+      document.getElementById('blast-result').innerHTML = '<strong style="color:#dc2626;">Error:</strong> ' + esc(err.message);
+      document.getElementById('blast-result').style.display = 'block';
+      document.getElementById('blast-result').style.background = '#fee2e2';
+    } finally {
+      const btn = document.getElementById('btnBlastSend');
+      btn.disabled = false;
+      btn.textContent = 'Send Blast';
     }
   }
 

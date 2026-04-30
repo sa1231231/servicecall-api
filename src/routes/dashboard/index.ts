@@ -350,6 +350,47 @@ dashboardApiRouter.patch("/settings", requirePermission("manage_settings"), asyn
   }
 });
 
+// ── SMS Blast ───────────────────────────────────────────────────────────────
+
+import { previewBlast, sendBlast } from "../../lib/blast-sms.js";
+
+dashboardApiRouter.post("/blast-sms/preview", requirePermission("manage_settings"), (req, res) => {
+  const { message } = req.body;
+  if (!message || typeof message !== "string") {
+    res.status(400).json({ error: "message is required" });
+    return;
+  }
+  res.json(previewBlast(message));
+});
+
+dashboardApiRouter.post("/blast-sms", requirePermission("manage_settings"), async (req, res) => {
+  const { message } = req.body;
+  if (!message || typeof message !== "string" || message.trim().length === 0) {
+    res.status(400).json({ error: "message is required" });
+    return;
+  }
+  if (message.length > 1600) {
+    res.status(400).json({ error: "message must be 1600 characters or fewer" });
+    return;
+  }
+
+  try {
+    const result = await sendBlast(message);
+    await logAudit(req, "blast_sms", "global", {
+      recipients: result.total_recipients,
+      clients: result.total_clients,
+      sent: result.sent,
+      failed: result.failed.length,
+      message: message.slice(0, 200),
+    });
+    alertRootIfNeeded(req, "blast_sms", "global", `${result.sent}/${result.total_recipients} sent to ${result.total_clients} clients`);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
+  }
+});
+
 // ── Data Point Defaults ─────────────────────────────────────────────────────
 
 dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
