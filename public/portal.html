@@ -61,6 +61,32 @@
   .sentiment-unknown { color: #6b7280; }
   .loading { text-align: center; padding: 3rem; color: #888; }
   .error-msg { text-align: center; padding: 2rem; color: #991b1b; }
+  .play-btn {
+    background: none; border: 1px solid #d1d5db; border-radius: 50%;
+    width: 28px; height: 28px; cursor: pointer; font-size: 0.7rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #059669; transition: all 0.15s;
+  }
+  .play-btn:hover { background: #f0fdf4; border-color: #86efac; }
+  .play-btn.playing { color: #dc2626; border-color: #fca5a5; }
+  .call-audio { width: 100%; margin-top: 0.35rem; height: 32px; }
+  .search-filter-bar {
+    display: flex; gap: 0.5rem; margin-bottom: 0.75rem; align-items: center; flex-wrap: wrap;
+  }
+  .search-filter-bar input {
+    flex: 1; min-width: 180px; padding: 0.4rem 0.6rem; font-size: 0.82rem;
+    border: 1px solid #d1d5db; border-radius: 6px;
+  }
+  .search-filter-bar input:focus { border-color: #93b4f5; outline: none; }
+  .search-filter-bar select {
+    padding: 0.4rem 0.5rem; font-size: 0.82rem;
+    border: 1px solid #d1d5db; border-radius: 6px; background: #fff;
+  }
+  .page-size-toggle {
+    font-size: 0.75rem; color: #888; margin-left: auto; cursor: pointer;
+    text-decoration: underline;
+  }
+  .page-size-toggle:hover { color: #2563eb; }
 
   .config-grid {
     display: grid; grid-template-columns: 160px 1fr; gap: 0.35rem 1rem;
@@ -210,6 +236,10 @@
       margin-bottom: 0.2rem;
     }
     .btn-load-more { width: 100%; }
+    .search-filter-bar { flex-direction: column; }
+    .search-filter-bar input, .search-filter-bar select { width: 100%; min-width: 0; }
+    .page-size-toggle { margin-left: 0; }
+    .call-audio { height: 36px; }
   }
   .portal-toast {
     position: fixed; top: 0; left: 0; right: 0; z-index: 100;
@@ -610,8 +640,18 @@
       html += '<div id="statsRow" class="stats-row"><div class="loading" style="padding:1rem;width:100%;">Calculating...</div></div>';
       html += '<div class="chart-container"><canvas id="volumeChart" height="220"></canvas></div>';
 
-      // Call log
+      // Call log with search/filter
       html += '<h2>Call Log</h2>';
+      html += '<div class="search-filter-bar">' +
+        '<input type="text" id="callSearch" placeholder="Search calls..." oninput="filterCalls()">' +
+        '<select id="callFilter" onchange="filterCalls()">' +
+        '<option value="">All Outcomes</option>' +
+        '<option value="dispatched">Dispatched</option>' +
+        '<option value="skipped_empty_call">Skipped</option>' +
+        '<option value="skipped_required_field">Missing Field</option>' +
+        '</select>' +
+        '<span class="page-size-toggle" id="pageSizeToggle" onclick="togglePageSize()">Show 200</span>' +
+        '</div>';
       html += '<div id="callLogContent"><div class="loading">Loading calls...</div></div>';
 
       document.getElementById('content').innerHTML = html;
@@ -640,15 +680,8 @@
     // Build analytics from all calls
     buildAnalytics(allCalls);
 
-    // Render call log table from the first page
-    renderCallTable(allCalls.slice(0, CALL_LIMIT));
-    callOffset = Math.min(CALL_LIMIT, allCalls.length);
-
-    // Show load-more if there are more
-    if (allCalls.length > CALL_LIMIT) {
-      const container = document.getElementById('callLogContent');
-      container.insertAdjacentHTML('beforeend', '<button class="btn-load-more" onclick="loadMoreCalls()">Load more</button>');
-    }
+    // Render call log with search/filter/pagination
+    filterCalls();
   }
 
   function renderCallTable(calls) {
@@ -683,7 +716,7 @@
         <td data-label="Type">${esc(c.message_type_label || '')}</td>
         <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
         <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
-        <td data-label="Recording">${c.recording_url ? '<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>' : '—'}</td>
+        <td data-label="Recording">${c.recording_url ? '<button class="play-btn" onclick="event.stopPropagation();togglePlay(this,\'' + esc(c.recording_url) + '\')">&#9654;</button>' : '—'}</td>
         <td class="mobile-collected-data">${renderFields(c.extracted_fields)}</td>
       </tr>
       <tr class="call-expand-row" style="display:none;"><td colspan="7">
@@ -712,9 +745,124 @@
     }
   }
 
-  // ── Legacy loadCalls kept for compatibility ───────────────────────
-  async function loadCalls(fresh) {
-    // Now handled by loadAllCalls
+  // ── Audio playback ──────────────────────────────────────────────
+  let currentAudio = null;
+  let currentBtn = null;
+
+  function togglePlay(btn, url) {
+    // Stop current if playing
+    if (currentAudio && currentBtn) {
+      currentAudio.pause();
+      currentBtn.innerHTML = '&#9654;';
+      currentBtn.classList.remove('playing');
+      // Remove existing audio element
+      const existingAudio = currentBtn.closest('td').querySelector('.call-audio');
+      if (existingAudio) existingAudio.remove();
+      if (currentBtn === btn) { currentAudio = null; currentBtn = null; return; }
+    }
+
+    const audio = new Audio(url);
+    const audioEl = document.createElement('audio');
+    audioEl.src = url;
+    audioEl.controls = true;
+    audioEl.className = 'call-audio';
+    audioEl.autoplay = true;
+    btn.closest('td').appendChild(audioEl);
+
+    btn.innerHTML = '&#9632;';
+    btn.classList.add('playing');
+    currentAudio = audioEl;
+    currentBtn = btn;
+
+    audioEl.addEventListener('ended', () => {
+      btn.innerHTML = '&#9654;';
+      btn.classList.remove('playing');
+      audioEl.remove();
+      currentAudio = null;
+      currentBtn = null;
+    });
+  }
+
+  // ── Search & filter ────────────────────────────────────────────
+  let pageSize = 50;
+
+  function filterCalls() {
+    const query = (document.getElementById('callSearch')?.value || '').toLowerCase();
+    const filter = document.getElementById('callFilter')?.value || '';
+
+    let filtered = allCalls;
+
+    if (filter) {
+      filtered = filtered.filter(c => c.outcome === filter);
+    }
+
+    if (query) {
+      filtered = filtered.filter(c => {
+        const haystack = [
+          c.from_number || '',
+          c.call_summary || '',
+          c.message_type_label || '',
+          ...(c.extracted_fields ? Object.values(c.extracted_fields) : []),
+        ].join(' ').toLowerCase();
+        return haystack.includes(query);
+      });
+    }
+
+    renderFilteredCalls(filtered);
+  }
+
+  function renderFilteredCalls(calls) {
+    const container = document.getElementById('callLogContent');
+    if (calls.length === 0) {
+      container.innerHTML = '<div class="loading">No matching calls.</div>';
+      return;
+    }
+
+    const page = calls.slice(0, pageSize);
+    let html = `<table id="callTable"><thead><tr>
+      <th>Date</th><th>From</th><th>Duration</th><th>Type</th><th>Outcome</th><th>Summary</th><th>Recording</th>
+    </tr></thead><tbody id="callBody">`;
+    html += buildCallRows(page);
+    html += '</tbody></table>';
+
+    if (calls.length > pageSize) {
+      html += '<button class="btn-load-more" onclick="loadFilteredMore()">Load more (' + (calls.length - pageSize) + ' remaining)</button>';
+    }
+    container.innerHTML = html;
+    // Store for load-more
+    container._filteredCalls = calls;
+    container._filteredOffset = pageSize;
+  }
+
+  function loadFilteredMore() {
+    const container = document.getElementById('callLogContent');
+    const calls = container._filteredCalls || allCalls;
+    const offset = container._filteredOffset || pageSize;
+    const next = calls.slice(offset, offset + pageSize);
+    if (next.length === 0) return;
+
+    document.getElementById('callBody').insertAdjacentHTML('beforeend', buildCallRows(next));
+    container._filteredOffset = offset + next.length;
+
+    const btn = container.querySelector('.btn-load-more');
+    const remaining = calls.length - (offset + next.length);
+    if (remaining <= 0) {
+      if (btn) { btn.disabled = true; btn.textContent = 'No more calls'; }
+    } else {
+      if (btn) btn.textContent = 'Load more (' + remaining + ' remaining)';
+    }
+  }
+
+  function togglePageSize() {
+    const toggle = document.getElementById('pageSizeToggle');
+    if (pageSize === 50) {
+      pageSize = 200;
+      if (toggle) toggle.textContent = 'Show 50';
+    } else {
+      pageSize = 50;
+      if (toggle) toggle.textContent = 'Show 200';
+    }
+    filterCalls();
   }
 
   // ── Init ──────────────────────────────────────────────────────────
