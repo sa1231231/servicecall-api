@@ -22,6 +22,14 @@ import { regenerateDataChain, applyRegeneratedChain } from "../../lib/node-regen
 import { getDataPointDefaults } from "../../lib/data-point-defaults.js";
 import { resolveDataPoints } from "../../lib/agent-generator/generate-agent.js";
 import type { DataPoint } from "../../lib/agent-generator/data-point-registry.js";
+import { PATH_TAKEN_VAR } from "../../lib/agent-generator/data-point-registry.js";
+import {
+  makeIdFactory,
+  buildTransitionNode,
+  buildDataChain,
+  type PathIds,
+  type PathPositions,
+} from "../../lib/agent-generator/node-builders.js";
 
 export const nodeEditorRouter = Router({ mergeParams: true });
 
@@ -1585,6 +1593,63 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
           );
           applyRegeneratedChain(canonical, result);
         }
+      }
+    }
+
+    // Create new paths
+    if (Array.isArray(changes.newPaths)) {
+      const closeNodeId = parsed.closeNode?.id;
+      if (!closeNodeId) {
+        res.status(500).json({ error: "Could not find Close node" });
+        return;
+      }
+      const introNode = nodes.find((n) => n.id === parsed.introNode.id);
+      const introEdges = introNode!.edges as Array<Record<string, unknown>>;
+      const existingPathCount = parsed.paths.length;
+
+      for (let npIdx = 0; npIdx < (changes.newPaths as any[]).length; npIdx++) {
+        const np = (changes.newPaths as any[])[npIdx];
+        if (!np.name || !np.transitionCondition || !Array.isArray(np.dataPointKeys) || np.dataPointKeys.length === 0) {
+          res.status(400).json({ error: "New path requires name, transitionCondition, and dataPointKeys (non-empty)" });
+          return;
+        }
+
+        const newDataPoints: DataPoint[] = [];
+        for (const key of np.dataPointKeys) {
+          try {
+            const rdp = resolveDataPoints([key], defaults);
+            newDataPoints.push(rdp[0]);
+          } catch {
+            res.status(400).json({ error: `Unknown data point "${key}" in new path "${np.name}"` });
+            return;
+          }
+        }
+
+        const f = makeIdFactory();
+        const pathIds: PathIds = {
+          transitionId: f.nodeId(),
+          frontExtractId: f.nodeId(),
+          routerId: f.nodeId(),
+          chain: newDataPoints.map(() => ({ convId: f.nodeId(), confirmId: f.nodeId() })),
+        };
+        const pathYBase = (existingPathCount + npIdx) * 2000;
+        const pathPos: PathPositions = {
+          transition: { x: -18, y: -400 + pathYBase },
+          frontExtract: { x: -18, y: 0 + pathYBase },
+          router: { x: -18, y: 450 + pathYBase },
+          chain: newDataPoints.map((_, i) => ({
+            conv: { x: -954 + i * 550, y: 900 + pathYBase },
+            confirm: { x: -954 + i * 550, y: 1350 + pathYBase },
+          })),
+        };
+
+        nodes.push(buildTransitionNode(pathIds, pathPos, f, np.name));
+        nodes.push(...buildDataChain(newDataPoints, pathIds, pathPos, closeNodeId, f, np.name));
+        introEdges.push({
+          destination_node_id: pathIds.transitionId,
+          id: f.edgeId(),
+          transition_condition: { type: "prompt", prompt: np.transitionCondition },
+        });
       }
     }
 

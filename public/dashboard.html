@@ -3377,6 +3377,11 @@
       html += '</div>';
     }
 
+    // Add path button
+    if (canEdit) {
+      html += '<button class="ne-btn" onclick="neAddPath()" style="margin:0.75rem 0;padding:0.4rem 1rem;font-size:0.82rem;color:#2563eb;border:1px dashed #93b4f5;">+ Add Path</button>';
+    }
+
     // Version history
     if (verData.versions.length > 0) {
       html += '<details style="margin-top:1rem;">' +
@@ -3989,6 +3994,34 @@
     showToast('Order updated (save to publish)', 'success');
   }
 
+  // ── Add path ───────────────────────────────────────────────────
+
+  function neAddPath() {
+    const name = prompt('New path name:');
+    if (!name) return;
+    if (neData.paths.some(p => p.name === name)) {
+      showToast('Path "' + name + '" already exists', 'error');
+      return;
+    }
+    const condition = prompt('Transition condition (when should callers enter this path?):');
+    if (!condition) return;
+
+    // Add an empty path — user will add data points after
+    neData.paths.push({
+      name: name,
+      transitionNodeId: 'new-transition-' + name,
+      frontExtractNodeId: 'new-extract-' + name,
+      routerNodeId: 'new-router-' + name,
+      transitionCondition: condition,
+      dataPoints: [],
+      _isNew: true,
+    });
+    neData.transitionConditions[name] = condition;
+    markNeDirty();
+    renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+    showToast('Path "' + name + '" added — add data points then save to publish', 'success');
+  }
+
   // ── Save & Publish ─────────────────────────────────────────────
 
   async function neSaveAndPublish() {
@@ -4018,19 +4051,29 @@
 
     // Per-path data point keys + branch conditions
     changes.paths = {};
+    changes.newPaths = [];
     for (const path of neData.paths) {
-      const pathChanges = {
-        dataPointKeys: path.dataPoints.map(d => d.variableName),
-        branchConditions: {},
-      };
-      for (const dp of path.dataPoints) {
-        if (dp.branchConditions && dp.branchConditions.length > 0) {
-          pathChanges.branchConditions[dp.variableName] = dp.branchConditions;
-        } else if (dp.branchConditions === null) {
-          pathChanges.branchConditions[dp.variableName] = null;
+      if (path._isNew) {
+        if (path.dataPoints.length === 0) continue; // skip empty new paths
+        changes.newPaths.push({
+          name: path.name,
+          transitionCondition: path.transitionCondition || neData.transitionConditions[path.name] || '',
+          dataPointKeys: path.dataPoints.map(d => d.variableName),
+        });
+      } else {
+        const pathChanges = {
+          dataPointKeys: path.dataPoints.map(d => d.variableName),
+          branchConditions: {},
+        };
+        for (const dp of path.dataPoints) {
+          if (dp.branchConditions && dp.branchConditions.length > 0) {
+            pathChanges.branchConditions[dp.variableName] = dp.branchConditions;
+          } else if (dp.branchConditions === null) {
+            pathChanges.branchConditions[dp.variableName] = null;
+          }
         }
+        changes.paths[path.name] = pathChanges;
       }
-      changes.paths[path.name] = pathChanges;
     }
 
     try {
