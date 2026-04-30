@@ -1698,7 +1698,17 @@
   }
 
   function exportAgentConfig(slug) {
-    window.open('/dashboard/api/agents/' + encodeURIComponent(slug) + '/export', '_blank');
+    fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/export')
+      .then(r => { if (!r.ok) throw new Error('Failed: ' + r.status); return r.json(); })
+      .then(data => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = slug + '-config.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      })
+      .catch(err => showToast('Export failed: ' + err.message, 'error'));
   }
 
   function toggleDropdown(btn) {

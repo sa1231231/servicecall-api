@@ -1404,12 +1404,15 @@
             chain: (p.dataPoints || []).map(dp => {
               if (typeof dp === 'string') return dp;
               if (dp._branch) return dp;
+              // If this variableName exists in built-in defaults, use the key
+              if (dp.variableName && BUILTIN_DATA[dp.variableName]) return dp.variableName;
+              // Otherwise treat as custom inline data point
               return {
                 _custom: true,
-                variableName: dp.variableName,
+                variableName: dp.variableName || '',
                 label: dp.label || '',
                 type: dp.type || 'string',
-                choices: (dp.choices || []).join(', '),
+                choices: Array.isArray(dp.choices) ? dp.choices.join(', ') : (dp.choices || ''),
                 description: dp.description || '',
                 conversationPrompt: dp.conversationPrompt || '',
                 forwardCondition: dp.forwardCondition || '',

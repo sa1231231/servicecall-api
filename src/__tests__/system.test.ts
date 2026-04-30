@@ -857,6 +857,67 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
   });
 
+  // ── 23b. Export Agent Config ──────────────────────────────────────
+
+  describe("Export agent config", () => {
+    it("exports Demo Meter config as valid JSON", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/export`), { headers: authHeaders() });
+      expect(resp.status).toBe(200);
+      const config = await json(resp);
+
+      // Verify structure matches servicecall-agent-config format
+      expect(config.version).toBe(1);
+      expect(config.type).toBe("servicecall-agent-config");
+      expect(typeof config.exportedAt).toBe("string");
+
+      // Business config
+      expect(config.business).toBeDefined();
+      expect(typeof config.business.businessName).toBe("string");
+      expect(config.business.businessName.length).toBeGreaterThan(0);
+      expect(typeof config.business.faqKnowledgeBase).toBe("string");
+      expect(["callback", "live_transfer"]).toContain(config.business.human_request_mode);
+
+      // Paths with data points
+      expect(Array.isArray(config.paths)).toBe(true);
+      expect(config.paths.length).toBeGreaterThan(0);
+      for (const path of config.paths) {
+        expect(typeof path.name).toBe("string");
+        expect(typeof path.transitionCondition).toBe("string");
+        expect(Array.isArray(path.dataPoints)).toBe(true);
+        expect(path.dataPoints.length).toBeGreaterThan(0);
+        for (const dp of path.dataPoints) {
+          expect(dp.variableName).toBeDefined();
+          expect(typeof dp.variableName).toBe("string");
+        }
+      }
+
+      // Client config
+      expect(config.client).toBeDefined();
+      expect(config.client.slug).toBe(SLUG);
+      expect(Array.isArray(config.client.dispatch_text_numbers)).toBe(true);
+    });
+
+    it("exported config is compatible with /agents/create format", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/export`), { headers: authHeaders() });
+      const config = await json(resp);
+
+      // The exported JSON should have the fields needed by CreateAgentBody
+      expect(config.business.businessName).toBeDefined();
+      expect(config.business.faqKnowledgeBase).toBeDefined();
+      expect(config.paths.length).toBeGreaterThan(0);
+      for (const path of config.paths) {
+        expect(path.name).toBeDefined();
+        expect(path.transitionCondition).toBeDefined();
+        expect(path.dataPoints.length).toBeGreaterThan(0);
+      }
+      expect(config.client.dispatch_text_numbers.length).toBeGreaterThan(0);
+    });
+
+    it("returns 404 for nonexistent agent", async () => {
+      expect((await fetch(url("/dashboard/api/agents/nonexistent-xyz/export"), { headers: authHeaders() })).status).toBe(404);
+    });
+  });
+
   // ── 24. Form Config ─────────────────────────────────────────────────
 
   describe("Form config fields", () => {
