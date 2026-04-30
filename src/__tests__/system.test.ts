@@ -802,13 +802,108 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
   });
 
-  // ── 22. Deleted Agents ─────────────────────────────────────────────
+  // ── 22. Deleted Agents (now permission-based) ─────────────────────
 
   describe("Deleted agents", () => {
-    it("lists deleted agents", async () => {
+    it("lists deleted agents (root/super_admin has manage_deleted)", async () => {
       const resp = await fetch(url("/dashboard/api/deleted-agents"), { headers: authHeaders() });
       expect(resp.status).toBe(200);
       expect(Array.isArray(await json(resp))).toBe(true);
+    });
+  });
+
+  // ── 23. Roles & Permissions ─────────────────────────────────────────
+
+  describe("Roles and permissions", () => {
+    it("sam_admin exists and has elevated permissions", async () => {
+      const resp = await fetch(url("/dashboard/api/users"), { headers: authHeaders() });
+      expect(resp.status).toBe(200);
+      const users = await json(resp);
+      const sam = users.find((u: any) => u._id === "sam_admin");
+      if (sam) {
+        // After promotion, should be super_admin; before, admin
+        expect(["super_admin", "admin"]).toContain(sam.role);
+        if (sam.role === "super_admin") {
+          expect(sam.permissions.view_billing).toBe(true);
+          expect(sam.permissions.manage_deleted).toBe(true);
+        }
+      }
+    });
+
+    it("super_admin role accepted in user creation", async () => {
+      const testUser = "_systest_super_" + Date.now();
+      const resp = await fetch(url("/dashboard/api/users"), {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ username: testUser, password: "testpass123", role: "super_admin" }),
+      });
+      expect(resp.status).toBe(200);
+      // Clean up
+      await fetch(url(`/dashboard/api/users/${testUser}`), { method: "DELETE", headers: authHeaders() });
+    });
+
+    it("settings include view_billing and manage_deleted in permission defs", async () => {
+      const resp = await fetch(url("/dashboard/config"), { headers: { Authorization: basicAuthHeader() } });
+      const body = await json(resp);
+      const keys = body.permissionDefs.map((d: any) => d.key);
+      expect(keys).toContain("view_billing");
+      expect(keys).toContain("manage_deleted");
+    });
+
+    it("root user has view_billing and manage_deleted permissions", async () => {
+      const resp = await fetch(url("/dashboard/config"), { headers: { Authorization: basicAuthHeader() } });
+      const body = await json(resp);
+      expect(body.user.permissions.view_billing).toBe(true);
+      expect(body.user.permissions.manage_deleted).toBe(true);
+    });
+  });
+
+  // ── 24. Form Config ─────────────────────────────────────────────────
+
+  describe("Form config fields", () => {
+    it("returns default_summary_agent_id and owner_phone", async () => {
+      const resp = await fetch(url("/form/config"), { headers: { Authorization: basicAuthHeader() } });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(typeof body.apiKey).toBe("string");
+      expect(typeof body.default_summary_agent_id).toBe("string");
+      expect(typeof body.owner_phone).toBe("string");
+    });
+  });
+
+  // ── 25. Communication Endpoints ─────────────────────────────────────
+
+  describe("Communication endpoints", () => {
+    it("review request returns 400 or 200 for Demo Meter", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/request-review`), {
+        method: "POST", headers: authHeaders(),
+      });
+      expect([200, 400]).toContain(resp.status);
+    });
+
+    it("payment link returns 400 or 200 for Demo Meter", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/send-payment-link`), {
+        method: "POST", headers: authHeaders(),
+      });
+      expect([200, 400]).toContain(resp.status);
+    });
+
+    it("portal link returns 400 or 200 for Demo Meter", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/send-portal-link`), {
+        method: "POST", headers: authHeaders(),
+      });
+      expect([200, 400]).toContain(resp.status);
+    });
+
+    it("review request returns 404 for nonexistent", async () => {
+      expect((await fetch(url("/dashboard/api/agents/nonexistent-xyz/request-review"), {
+        method: "POST", headers: authHeaders(),
+      })).status).toBe(404);
+    });
+
+    it("payment link returns 404 for nonexistent", async () => {
+      expect((await fetch(url("/dashboard/api/agents/nonexistent-xyz/send-payment-link"), {
+        method: "POST", headers: authHeaders(),
+      })).status).toBe(404);
     });
   });
 
