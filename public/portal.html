@@ -330,16 +330,39 @@
     const cc = document.getElementById('portal-cc').value.trim();
     const callNum = document.getElementById('portal-call').value.trim();
 
+    // Collect per-path overrides if they exist
+    const dbtUpdates = {};
+    document.querySelectorAll('[id^="portal-dbt-sms-"]').forEach(el => {
+      const pathKey = el.id.replace('portal-dbt-sms-', '');
+      if (!dbtUpdates[pathKey]) dbtUpdates[pathKey] = {};
+      dbtUpdates[pathKey].dispatch_text_numbers = getPortalChips(el.id);
+    });
+    document.querySelectorAll('[id^="portal-dbt-email-"]').forEach(el => {
+      const pathKey = el.id.replace('portal-dbt-email-', '');
+      if (!dbtUpdates[pathKey]) dbtUpdates[pathKey] = {};
+      dbtUpdates[pathKey].dispatch_email = getPortalChips(el.id);
+    });
+    document.querySelectorAll('[id^="portal-dbt-call-"]').forEach(el => {
+      const pathKey = el.id.replace('portal-dbt-call-', '');
+      if (!dbtUpdates[pathKey]) dbtUpdates[pathKey] = {};
+      dbtUpdates[pathKey].dispatch_call_number = el.value.trim();
+    });
+
+    const payload = {
+      dispatch_text_numbers: smsNums,
+      dispatch_email: emails,
+      dispatch_cc: cc,
+      dispatch_call_number: callNum,
+    };
+    if (Object.keys(dbtUpdates).length > 0) {
+      payload.dispatch_by_type = dbtUpdates;
+    }
+
     try {
       const resp = await fetch('/portal/' + slug + '/api/settings?token=' + encodeURIComponent(token), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dispatch_text_numbers: smsNums,
-          dispatch_email: emails,
-          dispatch_cc: cc,
-          dispatch_call_number: callNum,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await resp.json();
       if (!resp.ok) {
@@ -540,6 +563,35 @@
         '</dd>';
 
       html += '</dl>';
+      // Per-path overrides (only shown if any exist)
+      if (agent.dispatch_by_type && Object.keys(agent.dispatch_by_type).length > 0) {
+        html += '<h2 style="margin-top:1.5rem;">Per-Path Dispatch Overrides</h2>';
+        html += '<p style="font-size:0.8rem;color:#888;margin-top:-0.5rem;">These override the default dispatch settings for specific call routing paths.</p>';
+        for (const [pathKey, override] of Object.entries(agent.dispatch_by_type)) {
+          const label = agent.path_labels?.[pathKey] || pathKey;
+          html += '<div style="margin:0.75rem 0;padding:0.75rem;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;">';
+          html += '<div style="font-weight:600;font-size:0.85rem;margin-bottom:0.5rem;">' + esc(label) + '</div>';
+          html += '<dl class="config-grid">';
+          // SMS
+          html += '<dt>SMS</dt><dd><div class="chip-input" id="portal-dbt-sms-' + esc(pathKey) + '" onclick="this.querySelector(\'input\').focus()">';
+          for (const n of (override.dispatch_text_numbers || [])) {
+            html += '<span class="chip">' + esc(n) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span></span>';
+          }
+          html += '<input type="text" placeholder="+15551234567" onkeydown="portalChipKey(event,this)" onblur="portalChipBlur(this)"></div></dd>';
+          // Email
+          html += '<dt>Email</dt><dd><div class="chip-input" id="portal-dbt-email-' + esc(pathKey) + '" onclick="this.querySelector(\'input\').focus()">';
+          for (const e of (override.dispatch_email || [])) {
+            html += '<span class="chip">' + esc(e) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span></span>';
+          }
+          html += '<input type="text" placeholder="email@example.com" onkeydown="portalChipKey(event,this)" onblur="portalChipBlur(this)"></div></dd>';
+          // Call
+          if (override.dispatch_call_number) {
+            html += '<dt>Call</dt><dd><input class="portal-edit-input" id="portal-dbt-call-' + esc(pathKey) + '" value="' + esc(override.dispatch_call_number) + '" placeholder="+15551234567"></dd>';
+          }
+          html += '</dl></div>';
+        }
+      }
+
       html += '<button class="portal-save-btn" id="portalSaveBtn" onclick="portalSaveSettings()">Save Changes</button>';
 
       // Analytics section

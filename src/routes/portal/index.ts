@@ -155,6 +155,7 @@ portalRouter.patch("/:slug/api/settings", portalAuth, async (req: Request, res: 
       "dispatch_email",
       "dispatch_call_number",
       "dispatch_cc",
+      "dispatch_by_type",
     ]);
 
     const updates: Record<string, unknown> = {};
@@ -200,6 +201,41 @@ portalRouter.patch("/:slug/api/settings", portalAuth, async (req: Request, res: 
         const cc = typeof value === "string" ? value.trim() : "";
         if (cc && !EMAIL_RE.test(cc)) errors.push(`Invalid CC email "${cc}".`);
         updates.dispatch_cc = cc || null;
+      }
+
+      if (key === "dispatch_by_type" && typeof value === "object" && value !== null) {
+        const existingDbt = doc.dispatch_by_type || {};
+        const newDbt: Record<string, any> = { ...existingDbt };
+
+        for (const [pathKey, override] of Object.entries(value as Record<string, any>)) {
+          if (!existingDbt[pathKey]) continue; // only edit existing overrides
+          const o: any = {};
+          if (Array.isArray(override.dispatch_text_numbers)) {
+            const nums = override.dispatch_text_numbers.filter((n: any) => typeof n === "string" && n.trim());
+            for (const n of nums) {
+              if (!PHONE_RE.test(n)) errors.push(`Invalid phone "${n}" in override "${pathKey}".`);
+            }
+            // Protect owner phone
+            if (ownerConfig.phone && existingDbt[pathKey]?.dispatch_text_numbers?.includes(ownerConfig.phone) && !nums.includes(ownerConfig.phone)) {
+              nums.unshift(ownerConfig.phone);
+            }
+            o.dispatch_text_numbers = nums;
+          }
+          if (Array.isArray(override.dispatch_email)) {
+            const emails = override.dispatch_email.filter((e: any) => typeof e === "string" && e.trim());
+            for (const e of emails) {
+              if (!EMAIL_RE.test(e)) errors.push(`Invalid email "${e}" in override "${pathKey}".`);
+            }
+            o.dispatch_email = emails;
+          }
+          if (typeof override.dispatch_call_number === "string") {
+            const num = override.dispatch_call_number.trim();
+            if (num && !PHONE_RE.test(num)) errors.push(`Invalid call number "${num}" in override "${pathKey}".`);
+            o.dispatch_call_number = num || null;
+          }
+          newDbt[pathKey] = { ...existingDbt[pathKey], ...o };
+        }
+        updates.dispatch_by_type = newDbt;
       }
     }
 
