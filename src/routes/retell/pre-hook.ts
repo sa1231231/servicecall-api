@@ -59,50 +59,19 @@ export async function preHookHandler(req: Request, res: Response) {
     }
   }
 
-  // 4) If we can't identify the client, pass through without blocking
-  if (!client) {
-    console.log("retell-pre-hook: unknown agent/number, passing through", {
-      agent_id: agentId,
-      to_number: toNumber,
-    });
-    res.status(200).json({ [responseKey]: {} });
-    return;
-  }
-
-  // 5) Check if agent is active
-  if (client.active === false) {
-    console.log("retell-pre-hook: agent inactive, rejecting call", {
-      agent_id: resolvedAgentId,
-      client: slug,
-      to_number: toNumber,
-    });
-    // Override the call to deliver a short unavailable message then hang up.
-    // This works regardless of whether the inbound agent is set on the number.
-    res.status(200).json({
-      [responseKey]: {
-        agent_override: {
-          agent: {
-            end_call_after_silence_ms: 10000,
-            max_call_duration_ms: 60000,
-          },
-          ...(eventType === "call_inbound"
-            ? { conversation_flow: { begin_message: "We're sorry, this number is currently unavailable. Goodbye." } }
-            : { retell_llm: { begin_message: "We're sorry, this service is currently unavailable." } }),
-        },
-      },
-    });
-    return;
-  }
+  // 4) Log and pass through
+  // Note: active/inactive rejection is handled at the Retell phone number level
+  // (inbound_agents cleared via toggle-active endpoint), not here.
+  console.log("retell-pre-hook: inbound call validated", {
+    agent_id: resolvedAgentId,
+    client: slug ?? "unknown",
+    to_number: toNumber,
+    event_type: eventType,
+    active: client?.active !== false,
+  });
 
   // TODO: Verify business has credit balance > 0
 
-  console.log("retell-pre-hook: inbound call validated", {
-    agent_id: resolvedAgentId,
-    client: slug,
-    to_number: toNumber,
-    event_type: eventType,
-  });
-
-  // Accept — pass through with no overrides (inbound agent on the number handles it)
+  // Pass through — let Retell handle with the bound inbound agent
   res.status(200).json({ [responseKey]: {} });
 }

@@ -1173,7 +1173,7 @@
     const nv = cb.checked;
     cb.disabled = true;
     try {
-      const res = await fetch('/dashboard/api/agents/' + slug, {
+      const res = await fetch('/dashboard/api/agents/' + slug + '/active', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ active: nv }),
@@ -1841,10 +1841,9 @@
       updates.trial_start_date = newTrialStart;
     }
 
+    // Active toggle is handled via dedicated endpoint (updates Retell phone numbers)
     const active = document.getElementById('edit-active').checked;
-    if (active !== (originalDoc.active !== false)) {
-      updates.active = active;
-    }
+    const activeChanged = active !== (originalDoc.active !== false);
 
     const shadowMode = document.getElementById('edit-shadow-mode').checked;
     if (shadowMode !== (originalDoc.shadow_mode ?? false)) {
@@ -1978,7 +1977,7 @@
       }
     }
 
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(updates).length === 0 && !activeChanged) {
       showToast('No changes to save', 'success');
       btn.disabled = false;
       btn.textContent = 'Save Changes';
@@ -1986,21 +1985,42 @@
     }
 
     try {
-      const res = await fetch('/dashboard/api/agents/' + currentSlug, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed: ' + res.status);
+      // Handle active toggle via dedicated endpoint (updates Retell phone numbers)
+      if (activeChanged) {
+        const activeRes = await fetch('/dashboard/api/agents/' + currentSlug + '/active', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active }),
+        });
+        if (!activeRes.ok) {
+          const d = await activeRes.json();
+          throw new Error(d.error || 'Failed to toggle active: ' + activeRes.status);
+        }
       }
-      const data = await res.json();
-      originalDoc = JSON.parse(JSON.stringify(data.doc));
-      showToast('Saved ' + Object.keys(updates).length + ' field(s)', 'success');
+
+      // Handle other field updates via generic PATCH
+      if (Object.keys(updates).length > 0) {
+        const res = await fetch('/dashboard/api/agents/' + currentSlug, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed: ' + res.status);
+        }
+      }
+
+      // Refresh the full doc from server
+      const freshRes = await fetch('/dashboard/api/agents/' + currentSlug);
+      const freshDoc = await freshRes.json();
+      originalDoc = JSON.parse(JSON.stringify(freshDoc));
+
+      const totalChanges = Object.keys(updates).length + (activeChanged ? 1 : 0);
+      showToast('Saved ' + totalChanges + ' field(s)', 'success');
 
       // Update header badges if shadow mode or active changed
-      if ('shadow_mode' in updates || 'active' in updates) {
+      if ('shadow_mode' in updates || activeChanged) {
         const sc = originalDoc.shadow_mode ? 'badge-shadow' : 'badge-live';
         const sl = originalDoc.shadow_mode ? 'Shadow' : 'Live';
         const inactiveBadge = originalDoc.active === false
