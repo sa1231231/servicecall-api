@@ -3043,10 +3043,6 @@
     const role = document.getElementById('newUserRole')?.value || 'operator';
     const container = document.getElementById('newUserPermsContainer');
     if (!container) return;
-    if (role === 'admin') {
-      container.innerHTML = '<p style="font-size:0.75rem;color:#888;margin:0;">Admins have all permissions.</p>';
-      return;
-    }
     const perms = defaultPermissions[role] || {};
     container.innerHTML = '<p style="font-size:0.75rem;color:#666;margin:0 0 0.25rem;font-weight:600;">Permissions:</p>' + renderPermChecks(perms, 'new-user', false);
   }
