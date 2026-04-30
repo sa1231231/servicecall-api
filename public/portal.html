@@ -470,15 +470,12 @@
 
     const total = filtered.length;
     const dispatched = filtered.filter(c => c.outcome === 'dispatched').length;
-    const avgMs = total > 0 ? filtered.reduce((s, c) => s + (c.duration_ms || 0), 0) / total : 0;
-
     // Stat cards
     const statsEl = document.getElementById('statsRow');
     if (statsEl) {
       statsEl.innerHTML =
         '<div class="stat-card"><div class="stat-value">' + total + '</div><div class="stat-label">Total Calls</div></div>' +
-        '<div class="stat-card"><div class="stat-value">' + dispatched + '</div><div class="stat-label">Dispatched</div></div>' +
-        '<div class="stat-card"><div class="stat-value">' + fmtDuration(avgMs) + '</div><div class="stat-label">Avg Duration</div></div>';
+        '<div class="stat-card"><div class="stat-value">' + dispatched + '</div><div class="stat-label">Dispatched</div></div>';
     }
 
     // Day labels — short format for 30 days, longer for 7
