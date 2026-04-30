@@ -54,10 +54,22 @@ export async function portalGetAgentHandler(
       dispatch_email: emails.length > 0 ? emails : null,
     };
 
-    // Only include overrides if any exist
+    // Only include path overrides if any exist
     if (Object.keys(filteredDbt).length > 0) {
       response.dispatch_by_type = filteredDbt;
       response.path_labels = pathLabels;
+    }
+
+    // Call routing overrides (from_number → dispatch_to)
+    const callOverrides = doc.dispatch_call_overrides || {};
+    const filteredCallOverrides: Record<string, string> = {};
+    for (const [fromNum, toNum] of Object.entries(callOverrides)) {
+      if (toNum !== ownerConfig.phone) {
+        filteredCallOverrides[fromNum] = toNum as string;
+      }
+    }
+    if (Object.keys(filteredCallOverrides).length > 0) {
+      response.dispatch_call_overrides = filteredCallOverrides;
     }
 
     res.json(response);

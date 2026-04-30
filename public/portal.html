@@ -556,6 +556,18 @@
         '<input class="portal-edit-input" id="portal-call" value="' + esc(agent.dispatch_call_number || '') + '" placeholder="+15551234567">' +
         '</dd>';
 
+      // Call routing overrides (from_number → dispatch_to)
+      if (agent.dispatch_call_overrides && Object.keys(agent.dispatch_call_overrides).length > 0) {
+        html += '<dt>Call Routing</dt><dd>';
+        html += '<div style="font-size:0.78rem;color:#888;margin-bottom:0.3rem;">Calls from specific numbers route to different dispatch numbers.</div>';
+        html += '<table style="width:100%;font-size:0.82rem;border-collapse:collapse;">';
+        html += '<tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding:0.25rem 0.5rem;color:#555;font-size:0.75rem;">From Number</th><th style="text-align:left;padding:0.25rem 0.5rem;color:#555;font-size:0.75rem;">Dispatches To</th></tr>';
+        for (const [fromNum, toNum] of Object.entries(agent.dispatch_call_overrides)) {
+          html += '<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:0.3rem 0.5rem;font-family:monospace;">' + esc(fromNum) + '</td><td style="padding:0.3rem 0.5rem;font-family:monospace;">' + esc(toNum) + '</td></tr>';
+        }
+        html += '</table></dd>';
+      }
+
       html += '</dl>';
       // Per-path overrides (only shown if any exist)
       if (agent.dispatch_by_type && Object.keys(agent.dispatch_by_type).length > 0) {
