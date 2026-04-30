@@ -3216,12 +3216,12 @@
       if (!groups[cat] || groups[cat].length === 0) continue;
       const label = dpCategoryLabels[cat] || cat.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
       html += `<div class="dp-category-section" data-category="${esc(cat)}">
-        <div class="dp-category-header" onclick="toggleDpCategory(this)">
+        <div class="dp-category-header">
           <span class="dp-cat-drag-handle" draggable="true" onclick="event.stopPropagation()" title="Drag to reorder category" style="cursor:grab;color:#aaa;font-size:0.9rem;padding:0 0.15rem;">&#9776;</span>
-          <h3>${esc(label)}</h3>
+          <h3 class="dp-cat-label" onclick="editCategoryLabel(this, '${esc(cat)}')" title="Click to rename" style="cursor:text;">${esc(label)}</h3>
           <span class="dp-cat-count">${groups[cat].length}</span>
           <button class="dp-cat-delete" onclick="event.stopPropagation();deleteCategory('${esc(cat)}')" title="Delete category" style="margin-left:auto;background:none;border:none;color:#dc2626;cursor:pointer;font-size:0.75rem;padding:0.1rem 0.3rem;border-radius:4px;opacity:0.4;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.4'">&#10005;</button>
-          <span class="dp-cat-toggle">&#9660;</span>
+          <span class="dp-cat-toggle" onclick="toggleDpCategory(this.closest('.dp-category-header'))" style="cursor:pointer;">&#9660;</span>
         </div>
         <div class="dp-category-body">`;
       for (const { key, dp } of groups[cat]) {
@@ -3231,6 +3231,49 @@
     }
     container.innerHTML = html;
     initDpDragDrop();
+  }
+
+  function editCategoryLabel(h3, cat) {
+    const currentLabel = h3.textContent;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentLabel;
+    input.style.cssText = 'font-size:0.85rem;font-weight:600;color:#334155;border:1px solid #93b4f5;border-radius:4px;padding:0.1rem 0.3rem;margin:0;outline:none;width:auto;';
+    h3.replaceWith(input);
+    input.focus();
+    input.select();
+
+    async function save() {
+      const newLabel = input.value.trim() || currentLabel;
+      const newH3 = document.createElement('h3');
+      newH3.className = 'dp-cat-label';
+      newH3.setAttribute('onclick', "editCategoryLabel(this, '" + cat + "')");
+      newH3.title = 'Click to rename';
+      newH3.style.cursor = 'text';
+      newH3.textContent = newLabel;
+      input.replaceWith(newH3);
+
+      if (newLabel !== currentLabel) {
+        dpCategoryLabels[cat] = newLabel;
+        try {
+          await fetch('/dashboard/api/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ category_labels: { ...dpCategoryLabels } }),
+          });
+          populateCategoryDropdown();
+          showToast('Category renamed to "' + newLabel + '"', 'success');
+        } catch (err) {
+          showToast('Rename failed: ' + err.message, 'error');
+        }
+      }
+    }
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { input.value = currentLabel; input.blur(); }
+    });
   }
 
   function toggleDpCategory(header) {
