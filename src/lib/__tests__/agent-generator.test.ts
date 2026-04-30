@@ -157,6 +157,47 @@ describe("custom data point defaults include 'Caller Doesn\\'t Know' handling", 
   });
 });
 
+// ── orphan data points ──────────────────────────────────────────────────────
+
+describe("orphan data points", () => {
+  it("resolves orphan flag and sets empty prompt/condition", () => {
+    const resolved = resolveDataPoints([
+      { variableName: "is_location_specific", type: "boolean", description: "Location check", orphan: true },
+    ], TEST_DEFAULTS);
+    expect(resolved[0].orphan).toBe(true);
+    expect(resolved[0].conversationPrompt).toBe("");
+    expect(resolved[0].forwardCondition).toBe("");
+  });
+
+  it("orphan with explicit prompt preserves it", () => {
+    const resolved = resolveDataPoints([
+      { variableName: "custom_flag", orphan: true, conversationPrompt: "custom", forwardCondition: "custom" },
+    ], TEST_DEFAULTS);
+    expect(resolved[0].orphan).toBe(true);
+    expect(resolved[0].conversationPrompt).toBe("custom");
+    expect(resolved[0].forwardCondition).toBe("custom");
+  });
+
+  it("non-orphan gets default prompt when none provided", () => {
+    const resolved = resolveDataPoints([{ variableName: "my_var" }], TEST_DEFAULTS);
+    expect(resolved[0].orphan).toBeUndefined();
+    expect(resolved[0].conversationPrompt).not.toBe("");
+    expect(resolved[0].forwardCondition).not.toBe("");
+  });
+
+  it("orphan mixed with normal data points", () => {
+    const resolved = resolveDataPoints([
+      "full_name",
+      { variableName: "is_loaded", type: "boolean", description: "Is loaded", orphan: true },
+      "phone_number",
+    ], TEST_DEFAULTS);
+    expect(resolved).toHaveLength(3);
+    expect(resolved[0].orphan).toBeUndefined();
+    expect(resolved[1].orphan).toBe(true);
+    expect(resolved[2].orphan).toBeUndefined();
+  });
+});
+
 // ── generateAgent ───────────────────────────────────────────────────────────
 
 describe("generateAgent", () => {

@@ -217,6 +217,48 @@ describe("exportAgentHandler", () => {
     expect(res._json.paths[0].dataPoints[0].choices).toEqual(["Residential", "Commercial"]);
   });
 
+  it("includes orphan flag in exported data points", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      paths: [{
+        name: "path1",
+        transitionNode: { id: "tn" },
+        routerNode: { raw: { edges: [] } },
+        dataChain: [
+          {
+            variableName: "full_name",
+            label: "Full Name",
+            conversationPrompt: "Ask for name",
+            forwardCondition: "Name given",
+            collectNode: { id: "cn1" },
+            variableDefs: [{ type: "string", description: "Name" }],
+          },
+          {
+            variableName: "is_loaded",
+            label: "Is Loaded",
+            conversationPrompt: "",
+            forwardCondition: "",
+            collectNode: { id: "cn2" },
+            variableDefs: [{ type: "boolean", description: "Loaded check" }],
+            orphan: true,
+          },
+        ],
+      }],
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.paths[0].dataPoints).toHaveLength(2);
+    expect(res._json.paths[0].dataPoints[0].orphan).toBeUndefined();
+    expect(res._json.paths[0].dataPoints[1].orphan).toBe(true);
+    expect(res._json.paths[0].dataPoints[1].variableName).toBe("is_loaded");
+  });
+
   it("returns 500 when parser throws", async () => {
     mockGetClientDocument.mockResolvedValue({
       name: "Test",

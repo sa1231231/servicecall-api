@@ -159,8 +159,10 @@ export function regenerateDataChain(
   });
 
   // ── Variables Router ──────────────────────────────────────────────────
-
-  const routerEdges = newDataPoints.map((dp, i) => {
+  // Orphan data points are extract-only — skip them in the router.
+  const nonOrphanDps = newDataPoints.filter((dp) => !dp.orphan);
+  const routerEdges = nonOrphanDps.map((dp) => {
+    const i = newDataPoints.indexOf(dp);
     let missingEquations: any[];
     let missingOperator: string;
 
@@ -238,6 +240,7 @@ export function regenerateDataChain(
   // ── Per-variable: Collect + Confirm ───────────────────────────────────
 
   newDataPoints.forEach((dp, i) => {
+    if (dp.orphan) return; // Extract-only: no Collect+Confirm nodes
     const ids = chainIds[i];
     const existing = existingByVar.get(dp.variableName);
 

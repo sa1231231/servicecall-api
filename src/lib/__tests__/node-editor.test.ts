@@ -268,6 +268,114 @@ describe("parseConversationFlow", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ORPHAN DATA POINTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe("orphan data points", () => {
+  it("generate agent with orphan DP — no Collect/Confirm nodes for it", () => {
+    const { agent } = generateAgent(baseConfig, [
+      "full_name",
+      { variableName: "is_loaded", type: "boolean" as const, description: "Is loaded", orphan: true,
+        label: "Is Loaded", conversationPrompt: "", forwardCondition: "",
+        finetuneExamples: [], extractSuccessEquation: [{ left: "{{is_loaded}}", operator: "exists" }] },
+    ], undefined, TEST_DEFAULTS);
+
+    const nodes = (agent.conversationFlow as any).nodes as any[];
+    const nodeNames = nodes.map((n: any) => n.name);
+    // Should have Collect Full Name but NOT Collect Is Loaded
+    expect(nodeNames.some((n: string) => n.includes("Full Name") && n.includes("Collect"))).toBe(true);
+    expect(nodeNames.some((n: string) => n.includes("Is Loaded") && n.includes("Collect"))).toBe(false);
+  });
+
+  it("orphan variable appears in front extract node", () => {
+    const { agent } = generateAgent(baseConfig, [
+      "full_name",
+      { variableName: "is_loaded", type: "boolean" as const, description: "Is loaded", orphan: true,
+        label: "Is Loaded", conversationPrompt: "", forwardCondition: "",
+        finetuneExamples: [], extractSuccessEquation: [{ left: "{{is_loaded}}", operator: "exists" }] },
+    ], undefined, TEST_DEFAULTS);
+
+    const nodes = (agent.conversationFlow as any).nodes as any[];
+    const extractNode = nodes.find((n: any) => n.type === "extract_dynamic_variables" && n.name.includes("Extract"));
+    expect(extractNode).toBeDefined();
+    const varNames = (extractNode.variables as any[]).map((v: any) => v.name);
+    expect(varNames).toContain("is_loaded");
+    expect(varNames).toContain("full_name");
+  });
+
+  it("orphan variable not in router edges", () => {
+    const { agent } = generateAgent(baseConfig, [
+      "full_name",
+      { variableName: "is_loaded", type: "boolean" as const, description: "Is loaded", orphan: true,
+        label: "Is Loaded", conversationPrompt: "", forwardCondition: "",
+        finetuneExamples: [], extractSuccessEquation: [{ left: "{{is_loaded}}", operator: "exists" }] },
+    ], undefined, TEST_DEFAULTS);
+
+    const nodes = (agent.conversationFlow as any).nodes as any[];
+    const router = nodes.find((n: any) => n.type === "branch" && n.name.includes("Router"));
+    expect(router).toBeDefined();
+    // Router should only have 1 edge (for full_name), not 2
+    expect(router.edges).toHaveLength(1);
+  });
+
+  it("validates successfully with orphan data point", () => {
+    const { agent } = generateAgent(baseConfig, [
+      "full_name",
+      { variableName: "is_loaded", type: "boolean" as const, description: "Is loaded", orphan: true,
+        label: "Is Loaded", conversationPrompt: "", forwardCondition: "",
+        finetuneExamples: [], extractSuccessEquation: [{ left: "{{is_loaded}}", operator: "exists" }] },
+    ], undefined, TEST_DEFAULTS);
+
+    expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
+  });
+
+  it("parser detects orphan variables from front extract", () => {
+    const { agent } = generateAgent(baseConfig, [
+      "full_name",
+      { variableName: "is_loaded", type: "boolean" as const, description: "Is loaded", orphan: true,
+        label: "Is Loaded", conversationPrompt: "", forwardCondition: "",
+        finetuneExamples: [], extractSuccessEquation: [{ left: "{{is_loaded}}", operator: "exists" }] },
+    ], undefined, TEST_DEFAULTS);
+
+    const parsed = parseConversationFlow(agent);
+    const path = parsed.paths[0];
+    // Should have 2 data points: full_name (normal) + is_loaded (orphan)
+    expect(path.dataChain).toHaveLength(2);
+    const orphan = path.dataChain.find((dp) => dp.variableName === "is_loaded");
+    expect(orphan).toBeDefined();
+    expect(orphan!.orphan).toBe(true);
+    expect(orphan!.conversationPrompt).toBe("");
+  });
+
+  it("round-trip: generate → parse → regenerate with orphan preserved", () => {
+    const { agent } = generateAgent(baseConfig, [
+      "full_name",
+      { variableName: "is_loaded", type: "boolean" as const, description: "Is loaded", orphan: true,
+        label: "Is Loaded", conversationPrompt: "", forwardCondition: "",
+        finetuneExamples: [], extractSuccessEquation: [{ left: "{{is_loaded}}", operator: "exists" }] },
+    ], undefined, TEST_DEFAULTS);
+
+    const parsed = parseConversationFlow(agent);
+    const path = parsed.paths[0];
+    const dps = dataPointsFromChain(path.dataChain);
+    // Preserve orphan flag
+    for (const dp of dps) {
+      const parsedDp = path.dataChain.find((p) => p.variableName === dp.variableName);
+      if (parsedDp?.orphan) dp.orphan = true;
+    }
+
+    const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+    applyRegeneratedChain(agent, result);
+
+    expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
+    const reParsed = parseConversationFlow(agent);
+    expect(reParsed.paths[0].dataChain).toHaveLength(2);
+    const reOrphan = reParsed.paths[0].dataChain.find((dp) => dp.variableName === "is_loaded");
+    expect(reOrphan?.orphan).toBe(true);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // NODE VALIDATOR
 // ═══════════════════════════════════════════════════════════════════════════════
 
