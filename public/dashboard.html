@@ -1111,7 +1111,7 @@
       });
 
       let html = `<table><thead><tr>
-        <th>Name</th><th>Slug</th><th>Agent IDs</th><th>Trial</th><th>Status</th><th>Shadow Mode</th>
+        <th>Name</th><th>Slug</th><th>Agent IDs</th><th>Trial</th><th>Status</th><th>Active</th><th>Shadow Mode</th>
       </tr></thead><tbody>`;
 
       for (const a of agents) {
@@ -1144,6 +1144,13 @@
           <td><span class="badge ${sc}" data-status>${sl}</span></td>
           <td onclick="event.stopPropagation()">
             <label class="toggle">
+              <input type="checkbox" ${a.active !== false ? 'checked' : ''}
+                onchange="toggleActive('${esc(a.slug)}', this)">
+              <span class="slider"></span>
+            </label>
+          </td>
+          <td onclick="event.stopPropagation()">
+            <label class="toggle">
               <input type="checkbox" ${a.shadow_mode ? 'checked' : ''}
                 onchange="toggleShadow('${esc(a.slug)}', this)">
               <span class="slider"></span>
@@ -1156,6 +1163,23 @@
     } catch (err) {
       document.getElementById('agentList').innerHTML = '<div class="error-msg">Error: ' + esc(err.message) + '</div>';
     }
+  }
+
+  async function toggleActive(slug, cb) {
+    const nv = cb.checked;
+    cb.disabled = true;
+    try {
+      const res = await fetch('/dashboard/api/agents/' + slug, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: nv }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      showToast(slug + ' is now ' + (nv ? 'active' : 'INACTIVE'), 'success');
+    } catch (err) {
+      cb.checked = !nv;
+      showToast('Failed: ' + err.message, 'error');
+    } finally { cb.disabled = false; }
   }
 
   async function toggleShadow(slug, cb) {
