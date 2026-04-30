@@ -188,7 +188,7 @@ async function sessionAuth(req: Request, res: Response, next: NextFunction): Pro
     user = {
       username: username || "admin",
       role: "admin",
-      permissions: { ...DEFAULT_PERMISSIONS.admin },
+      permissions: { ...DEFAULT_PERMISSIONS.super_admin },
       isRoot: true,
     };
   }

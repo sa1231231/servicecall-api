@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 
-export function requireRole(...allowed: Array<"admin" | "operator" | "viewer">) {
+export function requireRole(...allowed: Array<"super_admin" | "admin" | "operator" | "viewer">) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({ error: "Authentication required" });

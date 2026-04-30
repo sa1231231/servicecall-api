@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { getDb } from "./db.js";
 
-export type Role = "admin" | "operator" | "viewer";
+export type Role = "super_admin" | "admin" | "operator" | "viewer";
 
 // Granular permission keys
 export const PERMISSION_DEFS: Array<{
@@ -17,13 +17,16 @@ export const PERMISSION_DEFS: Array<{
   { key: "manage_settings",    label: "Manage Settings",     description: "Edit global settings (business contact, SMS templates, etc.)" },
   { key: "manage_data_points", label: "Manage Data Points",  description: "Create, edit, delete, and reorder data point defaults" },
   { key: "manage_users",       label: "Manage Users",        description: "Create and remove user accounts" },
+  { key: "view_billing",      label: "View Billing",        description: "View call costs, cost charts, and billing data" },
+  { key: "manage_deleted",    label: "Manage Deleted",      description: "View, restore, and permanently delete soft-deleted agents" },
 ];
 
 export const PERMISSION_KEYS = PERMISSION_DEFS.map((d) => d.key);
 
 // Default permissions per role (used when creating new users)
 export const DEFAULT_PERMISSIONS: Record<Role, Record<string, boolean>> = {
-  admin:    Object.fromEntries(PERMISSION_KEYS.map((k) => [k, true])),
+  super_admin: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, true])),
+  admin: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, k !== "view_billing" && k !== "manage_deleted"])),
   operator: {
     create_agents: true,
     edit_agents: true,
@@ -33,6 +36,8 @@ export const DEFAULT_PERMISSIONS: Record<Role, Record<string, boolean>> = {
     manage_settings: false,
     manage_data_points: false,
     manage_users: false,
+    view_billing: false,
+    manage_deleted: false,
   },
   viewer: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, false])),
 };
@@ -70,6 +75,7 @@ export function resolvePermissions(
   role: Role,
   stored?: Record<string, boolean>,
 ): Record<string, boolean> {
+  if (role === "super_admin") return { ...DEFAULT_PERMISSIONS.super_admin };
   if (role === "admin") return { ...DEFAULT_PERMISSIONS.admin };
   const base = { ...DEFAULT_PERMISSIONS[role] };
   if (stored) {

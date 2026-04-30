@@ -877,7 +877,7 @@
   <h2>Configuration</h2>
   <div id="detailConfig"></div>
   <div id="nodeEditorContainer"></div>
-  <div style="display:flex;align-items:center;gap:0.5rem;margin-top:1rem;flex-wrap:wrap;">
+  <div data-perm="view_billing" style="display:flex;align-items:center;gap:0.5rem;margin-top:1rem;flex-wrap:wrap;">
     <span style="font-size:0.82rem;font-weight:600;color:#555;">Cost Range:</span>
     <input type="date" id="dashCostStart" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
     <span style="color:#888;font-size:0.82rem;">to</span>
@@ -887,8 +887,8 @@
       <button class="range-btn" onclick="dashQuickRange(30)">30d</button>
     </div>
   </div>
-  <div id="callCostSummary"></div>
-  <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;margin-bottom:1rem;">
+  <div id="callCostSummary" data-perm="view_billing"></div>
+  <div data-perm="view_billing" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;margin-bottom:1rem;">
     <canvas id="costChart" height="200"></canvas>
   </div>
   <h2>Call Log</h2>
@@ -2099,6 +2099,9 @@
       : (c.user_sentiment || '').toLowerCase().includes('negative') ? 'sentiment-negative'
       : 'sentiment-unknown';
     const summary = c.call_summary ? esc(c.call_summary) : '<span style="color:#aaa">pending</span>';
+    const costCell = hasPerm('view_billing') && c.call_cost_cents != null
+      ? '<td data-label="Cost" style="font-size:0.78rem;">$' + (c.call_cost_cents / 100).toFixed(2) + '</td>'
+      : hasPerm('view_billing') ? '<td data-label="Cost" style="font-size:0.78rem;">—</td>' : '';
     const links = [];
     if (c.recording_url) links.push('<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>');
     if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
@@ -2107,7 +2110,7 @@
       <td data-label="Date">${fmtDate(c.created_at)}</td>
       <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${c.from_number === 'unknown' ? 'Web Call' : esc(c.from_number)}</td>
       <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
-      <td data-label="Cost" style="font-size:0.78rem;">${c.call_cost_cents != null ? '$' + (c.call_cost_cents / 100).toFixed(2) : '—'}</td>
+      ${costCell}
       <td data-label="Outcome" style="white-space:nowrap;"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
       <td data-label="Sentiment" class="${sentClass}" style="white-space:nowrap;">${esc(c.user_sentiment || 'Pending')}</td>
       <td data-label="Summary" class="td-summary" title="${esc(c.call_summary || '')}">${summary}</td>
@@ -2132,7 +2135,7 @@
       // Reset to normal view
       const container = document.getElementById('callLogContent');
       let html = `<table id="callTable"><thead><tr>
-        <th>Date</th><th>From</th><th>Duration</th><th>Cost</th><th>Outcome</th>
+        <th>Date</th><th>From</th><th>Duration</th>${hasPerm('view_billing') ? '<th>Cost</th>' : ''}<th>Outcome</th>
         <th>Sentiment</th><th>Summary</th><th>Links</th>
       </tr></thead><tbody id="callBody">`;
       for (const c of dashAllCalls) html += dashBuildCallRow(c);

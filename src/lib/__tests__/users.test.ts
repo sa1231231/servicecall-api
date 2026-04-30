@@ -80,10 +80,17 @@ describe("PERMISSION_DEFS", () => {
 // ── DEFAULT_PERMISSIONS ─────────────────────────────────────────────────────
 
 describe("DEFAULT_PERMISSIONS", () => {
-  it("admin has all permissions set to true", () => {
+  it("super_admin has all permissions set to true", () => {
     for (const key of PERMISSION_KEYS) {
-      expect(DEFAULT_PERMISSIONS.admin[key]).toBe(true);
+      expect(DEFAULT_PERMISSIONS.super_admin[key]).toBe(true);
     }
+  });
+
+  it("admin has most permissions true but not billing/deleted", () => {
+    expect(DEFAULT_PERMISSIONS.admin.create_agents).toBe(true);
+    expect(DEFAULT_PERMISSIONS.admin.edit_agents).toBe(true);
+    expect(DEFAULT_PERMISSIONS.admin.view_billing).toBe(false);
+    expect(DEFAULT_PERMISSIONS.admin.manage_deleted).toBe(false);
   });
 
   it("viewer has all permissions set to false", () => {
@@ -108,8 +115,8 @@ describe("DEFAULT_PERMISSIONS", () => {
 // ── resolvePermissions ──────────────────────────────────────────────────────
 
 describe("resolvePermissions", () => {
-  it("admin always gets all permissions regardless of stored", () => {
-    const perms = resolvePermissions("admin", { delete_agents: false });
+  it("super_admin always gets all permissions regardless of stored", () => {
+    const perms = resolvePermissions("super_admin", { delete_agents: false });
     expect(perms.delete_agents).toBe(true);
     for (const key of PERMISSION_KEYS) {
       expect(perms[key]).toBe(true);

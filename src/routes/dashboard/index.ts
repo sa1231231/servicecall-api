@@ -90,12 +90,12 @@ dashboardApiRouter.use("/agents/:slug/nodes", requirePermission("edit_agents"), 
 
 // ── Soft-Deleted Agents (Recovery) ──────────────────────────────────────────
 
-dashboardApiRouter.get("/deleted-agents", requireRoot, async (_req, res) => {
+dashboardApiRouter.get("/deleted-agents", requirePermission("manage_deleted"), async (_req, res) => {
   const deleted = await listDeletedClients();
   res.json(deleted);
 });
 
-dashboardApiRouter.post("/deleted-agents/:slug/restore", requireRoot, async (req, res) => {
+dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("manage_deleted"), async (req, res) => {
   const slug = String(req.params.slug);
   try {
     // Restore the Retell agent names (strip "[DELETED — expires ...]" suffix)
@@ -131,7 +131,7 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requireRoot, async (req
   }
 });
 
-dashboardApiRouter.delete("/deleted-agents/:slug", requireRoot, async (req, res) => {
+dashboardApiRouter.delete("/deleted-agents/:slug", requirePermission("manage_deleted"), async (req, res) => {
   const slug = String(req.params.slug);
   try {
     // Actually delete from Retell now (permanent delete)
@@ -487,7 +487,7 @@ dashboardApiRouter.post("/users", requirePermission("manage_users"), async (req,
     res.status(400).json({ error: "Password must be at least 6 characters" });
     return;
   }
-  if (role !== "admin" && role !== "operator" && role !== "viewer") {
+  if (role !== "super_admin" && role !== "admin" && role !== "operator" && role !== "viewer") {
     res.status(400).json({ error: "Role must be 'admin', 'operator', or 'viewer'" });
     return;
   }
