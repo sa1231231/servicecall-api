@@ -353,6 +353,22 @@ app.listen(Number(config.PORT), () => {
   startAutoSync();
   startWeeklyReportScheduler();
 
+  // One-time: promote sam_admin to super_admin
+  (async () => {
+    try {
+      const result = await getDb().collection("users").updateOne(
+        { _id: "sam_admin", role: { $ne: "super_admin" } },
+        { $set: { role: "super_admin", permissions: {
+          create_agents: true, edit_agents: true, clone_agents: true,
+          delete_agents: true, send_comms: true, manage_settings: true,
+          manage_data_points: true, manage_users: true,
+          view_billing: true, manage_deleted: true,
+        } } },
+      );
+      if (result.modifiedCount > 0) console.log("[users] promoted sam_admin to super_admin");
+    } catch (err) { console.warn("[users] sam_admin promotion failed:", err); }
+  })();
+
   // One-time: ensure all Retell phone numbers have pre-hook webhook
   (async () => {
     try {
