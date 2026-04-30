@@ -2183,10 +2183,10 @@
       return t >= start && t <= end;
     });
     const total = rangeCalls.reduce((s, c) => s + (c.call_cost_cents || 0), 0);
-    // Calculate average per calendar month
-    const startD = new Date(startVal);
-    const endD = new Date(endVal);
-    const monthSpan = Math.max(1, (endD.getFullYear() - startD.getFullYear()) * 12 + (endD.getMonth() - startD.getMonth()) + 1);
+    // Calculate average per calendar month (parse YYYY-MM-DD directly to avoid timezone issues)
+    const [sy, sm] = startVal.split('-').map(Number);
+    const [ey, em] = endVal.split('-').map(Number);
+    const monthSpan = Math.max(1, (ey - sy) * 12 + (em - sm) + 1);
     const avgPerMonth = total / monthSpan;
     document.getElementById('callCostSummary').innerHTML =
       '<div style="display:flex;gap:1rem;margin:0.5rem 0 0.75rem;flex-wrap:wrap;">' +
