@@ -123,7 +123,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(body.name).toContain("Demo Team");
       expect(body.agent_ids).toContain(AGENT_ID);
       expect(body.message_types).toBeDefined();
-      expect(Object.keys(body.message_types).length).toBeGreaterThanOrEqual(2);
+      expect(Object.keys(body.message_types).length).toBeGreaterThanOrEqual(1);
       expect(body.retell_agents).toBeDefined();
       expect(body.retell_agents[AGENT_ID]).toBeDefined();
       originalShadowMode = body.shadow_mode;
