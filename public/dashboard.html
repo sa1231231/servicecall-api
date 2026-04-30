@@ -2079,7 +2079,7 @@
 
         html += `<tr class="clickable-row" onclick="toggleCallExpand(this)">
           <td data-label="Date">${fmtDate(c.created_at)}</td>
-          <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${esc(c.from_number)}</td>
+          <td data-label="From" style="font-family:monospace;font-size:0.78rem;">${c.from_number === 'unknown' ? 'Web Call' : esc(c.from_number)}</td>
           <td data-label="Duration">${fmtDuration(c.duration_ms)}</td>
           <td data-label="Outcome"><span class="badge badge-${c.outcome}">${outcomeLabel(c.outcome)}</span></td>
           <td data-label="Sentiment" class="${sentClass}">${esc(c.user_sentiment || 'Pending')}</td>
