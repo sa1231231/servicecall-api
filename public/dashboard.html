@@ -1922,18 +1922,20 @@
       if (mtChanged) updates.message_types = updatedMt;
     }
 
-    // dispatch_by_type overrides
-    const dbtInputs = document.querySelectorAll('.dbt-sms');
-    if (dbtInputs.length > 0) {
+    // dispatch_by_type overrides (read from chip inputs)
+    const dbtCallInputs = document.querySelectorAll('.dbt-call');
+    const dbtChipContainers = document.querySelectorAll('[id^="dbt-sms-"]');
+    if (dbtCallInputs.length > 0 || dbtChipContainers.length > 0) {
       const newDbt = {};
-      for (const input of dbtInputs) {
-        const mtKey = input.dataset.mtKey;
-        const sms = input.value.split(',').map(s => s.trim()).filter(Boolean);
-        const emailInput = document.querySelector(`.dbt-email[data-mt-key="${mtKey}"]`);
+      const seenKeys = new Set();
+      // Collect from chip SMS inputs
+      dbtChipContainers.forEach(container => {
+        const mtKey = container.id.replace('dbt-sms-', '');
+        seenKeys.add(mtKey);
+        const sms = getChipValues(container.id);
+        const emails = getChipValues('dbt-email-' + mtKey);
         const callInput = document.querySelector(`.dbt-call[data-mt-key="${mtKey}"]`);
-        const emails = emailInput ? emailInput.value.split(',').map(s => s.trim()).filter(Boolean) : [];
         const call = callInput ? callInput.value.trim() : '';
-
         if (sms.length || emails.length || call) {
           const entry = {};
           if (sms.length) entry.dispatch_text_numbers = sms;
@@ -1941,7 +1943,7 @@
           if (call) entry.dispatch_call_number = call;
           newDbt[mtKey] = entry;
         }
-      }
+      });
       const origDbt = originalDoc.dispatch_by_type || {};
       if (JSON.stringify(newDbt) !== JSON.stringify(origDbt)) {
         updates.dispatch_by_type = Object.keys(newDbt).length > 0 ? newDbt : null;
@@ -3397,9 +3399,9 @@
         '<div style="margin-top:0.5rem;font-size:0.8rem;">' +
         '<div style="color:#888;margin-bottom:0.5rem;">Override who gets notified for this path. Blank = use Default Dispatch.</div>' +
         '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">SMS Numbers</label>' +
-        '<input type="text" class="dbt-sms" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_text_numbers || []).join(', ')) + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
+        chipInputHtml('dbt-sms-' + mtKey, dbt.dispatch_text_numbers || [], '+15551234567') + '</div>' +
         '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Email(s)</label>' +
-        '<input type="text" class="dbt-email" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_email || []).join(', ')) + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
+        chipInputHtml('dbt-email-' + mtKey, dbt.dispatch_email || [], 'email@example.com') + '</div>' +
         '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Dispatch Call Number</label>' +
         '<input type="text" class="dbt-call" data-mt-key="' + esc(mtKey) + '" value="' + esc(dbt.dispatch_call_number || '') + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
         '</div></details>';

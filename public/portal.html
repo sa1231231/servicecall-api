@@ -327,7 +327,6 @@
 
     const smsNums = getPortalChips('portal-sms');
     const emails = getPortalChips('portal-email');
-    const cc = document.getElementById('portal-cc').value.trim();
     const callNum = document.getElementById('portal-call').value.trim();
 
     // Collect per-path overrides if they exist
@@ -351,7 +350,6 @@
     const payload = {
       dispatch_text_numbers: smsNums,
       dispatch_email: emails,
-      dispatch_cc: cc,
       dispatch_call_number: callNum,
     };
     if (Object.keys(dbtUpdates).length > 0) {
@@ -553,10 +551,6 @@
       }
       html += '<input type="text" placeholder="email@example.com" onkeydown="portalChipKey(event,this)" onblur="portalChipBlur(this)">' +
         '</div></dd>';
-
-      html += '<dt>CC</dt><dd>' +
-        '<input class="portal-edit-input" id="portal-cc" value="' + esc(agent.dispatch_cc || '') + '" placeholder="cc@example.com">' +
-        '</dd>';
 
       html += '<dt>Call Number</dt><dd>' +
         '<input class="portal-edit-input" id="portal-call" value="' + esc(agent.dispatch_call_number || '') + '" placeholder="+15551234567">' +

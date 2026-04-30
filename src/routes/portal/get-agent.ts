@@ -19,7 +19,6 @@ export async function portalGetAgentHandler(
     const textNumbers = (doc.dispatch_text_numbers || []).filter((n) => n !== ownerConfig.phone);
     const emails = (doc.dispatch_email || []).filter((e) => e !== ownerConfig.email);
     const callNumber = doc.dispatch_call_number === ownerConfig.phone ? null : doc.dispatch_call_number;
-    const cc = doc.dispatch_cc === ownerConfig.email ? null : doc.dispatch_cc;
 
     // Per-path dispatch overrides (only include paths that have overrides)
     const dbt = doc.dispatch_by_type || {};
@@ -53,7 +52,6 @@ export async function portalGetAgentHandler(
       dispatch_text_numbers: textNumbers,
       dispatch_call_number: callNumber,
       dispatch_email: emails.length > 0 ? emails : null,
-      dispatch_cc: cc,
     };
 
     // Only include overrides if any exist

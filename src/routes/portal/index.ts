@@ -154,7 +154,6 @@ portalRouter.patch("/:slug/api/settings", portalAuth, async (req: Request, res: 
       "dispatch_text_numbers",
       "dispatch_email",
       "dispatch_call_number",
-      "dispatch_cc",
       "dispatch_by_type",
     ]);
 
@@ -195,12 +194,6 @@ portalRouter.patch("/:slug/api/settings", portalAuth, async (req: Request, res: 
         const num = typeof value === "string" ? value.trim() : "";
         if (num && !PHONE_RE.test(num)) errors.push(`Invalid call number "${num}". Format: +1XXXXXXXXXX.`);
         updates.dispatch_call_number = num || null;
-      }
-
-      if (key === "dispatch_cc") {
-        const cc = typeof value === "string" ? value.trim() : "";
-        if (cc && !EMAIL_RE.test(cc)) errors.push(`Invalid CC email "${cc}".`);
-        updates.dispatch_cc = cc || null;
       }
 
       if (key === "dispatch_by_type" && typeof value === "object" && value !== null) {
@@ -269,14 +262,11 @@ portalRouter.patch("/:slug/api/settings", portalAuth, async (req: Request, res: 
     const textNumbers = (updated.dispatch_text_numbers || []).filter((n) => n !== ownerConfig.phone);
     const emails = (updated.dispatch_email || []).filter((e) => e !== ownerConfig.email);
     const callNumber = updated.dispatch_call_number === ownerConfig.phone ? null : updated.dispatch_call_number;
-    const cc = updated.dispatch_cc === ownerConfig.email ? null : updated.dispatch_cc;
-
     res.json({
       success: true,
       dispatch_text_numbers: textNumbers,
       dispatch_call_number: callNumber,
       dispatch_email: emails.length > 0 ? emails : null,
-      dispatch_cc: cc,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
