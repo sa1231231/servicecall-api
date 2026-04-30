@@ -3370,19 +3370,20 @@
           '<div style="font-size:0.72rem;font-weight:600;color:#888;text-transform:uppercase;margin-bottom:0.25rem;">Email Preview</div>' +
           '<div class="preview-email" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:0.6rem;font-size:0.75rem;"></div></div></div></div>';
 
-        // Dispatch override
-        html += '<details style="margin-top:0.65rem;">' +
-          '<summary style="font-size:0.8rem;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">' + (Object.keys(dbt).length ? '(configured)' : '(none)') + '</span></summary>' +
-          '<div style="margin-top:0.5rem;font-size:0.8rem;">' +
-          '<div style="color:#888;margin-bottom:0.5rem;">Override who gets notified for this path. Blank = use Default Dispatch.</div>' +
-          '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">SMS Numbers</label>' +
-          '<input type="text" class="dbt-sms" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_text_numbers || []).join(', ')) + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
-          '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Email(s)</label>' +
-          '<input type="text" class="dbt-email" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_email || []).join(', ')) + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
-          '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Dispatch Call Number</label>' +
-          '<input type="text" class="dbt-call" data-mt-key="' + esc(mtKey) + '" value="' + esc(dbt.dispatch_call_number || '') + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
-          '</div></details>';
       }
+
+      // Dispatch override (always shown, regardless of message_types match)
+      html += '<details style="margin-top:0.65rem;">' +
+        '<summary style="font-size:0.8rem;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">' + (Object.keys(dbt).length ? '(configured)' : '(none)') + '</span></summary>' +
+        '<div style="margin-top:0.5rem;font-size:0.8rem;">' +
+        '<div style="color:#888;margin-bottom:0.5rem;">Override who gets notified for this path. Blank = use Default Dispatch.</div>' +
+        '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">SMS Numbers</label>' +
+        '<input type="text" class="dbt-sms" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_text_numbers || []).join(', ')) + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
+        '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Email(s)</label>' +
+        '<input type="text" class="dbt-email" data-mt-key="' + esc(mtKey) + '" value="' + esc((dbt.dispatch_email || []).join(', ')) + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
+        '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Dispatch Call Number</label>' +
+        '<input type="text" class="dbt-call" data-mt-key="' + esc(mtKey) + '" value="' + esc(dbt.dispatch_call_number || '') + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
+        '</div></details>';
 
       html += '</div>';
     }
