@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
-import { sendSmsToAll } from "../../lib/notify-sms.js";
+import { sendSms, sendSmsToAll } from "../../lib/notify-sms.js";
 import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
 import { ownerConfig } from "../../config/notification-clients.js";
 import { agentIdToClient, agentIdToSlug } from "../../_cache/clients.js";
@@ -11,7 +11,7 @@ import { sendOwnerCallMonitor } from "../../lib/owner-monitor.js";
 import { triggerDispatchCall } from "../../lib/dispatch-call.js";
 import { saveCallLog, type CallLogDocument } from "../../lib/call-log.js";
 import { resolveDispatch } from "../../lib/resolve-dispatch.js";
-import { recordCall } from "../../lib/call-spike-monitor.js";
+import { checkAgentAlerts } from "../../lib/agent-alerts.js";
 
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
@@ -103,6 +103,22 @@ export async function postHookHandler(req: Request, res: Response) {
       call_cost_cents: call.call_cost?.combined_cost ?? undefined,
       created_at: new Date(),
     };
+  }
+
+  // Per-agent call surge & cost surge alerts (runs for ALL calls — web, shadow, dispatched)
+  const alerts = checkAgentAlerts(agentId, call.call_cost?.combined_cost);
+  if (alerts.callSurge.fired) {
+    const surgeSubject = `[CALL SURGE] ${clientConfig.name} — ${alerts.callSurge.count} calls in the last hour`;
+    const surgeBody = `Call surge detected for "${clientConfig.name}" (${clientSlug}).\n\n${alerts.callSurge.count} calls received in the last hour.\n\nThis alert will not repeat for 1 hour.\n\n— Service Call Saver Monitor`;
+    sendSms(ownerConfig.phone, surgeSubject).catch(() => {});
+    sendEmail({ to: ownerConfig.email, subject: surgeSubject, body: surgeBody }).catch(() => {});
+  }
+  if (alerts.costSurge.fired) {
+    const dollars = (alerts.costSurge.totalCents / 100).toFixed(2);
+    const costSubject = `[COST SURGE] ${clientConfig.name} — $${dollars} in calls today`;
+    const costBody = `Daily cost surge for "${clientConfig.name}" (${clientSlug}).\n\nTotal call cost today: $${dollars} (threshold: $10.00).\n\nThis alert fires once per day per agent.\n\n— Service Call Saver Monitor`;
+    sendSms(ownerConfig.phone, costSubject).catch(() => {});
+    sendEmail({ to: ownerConfig.email, subject: costSubject, body: costBody }).catch(() => {});
   }
 
   // Skip dispatch for web calls — log only
@@ -317,16 +333,6 @@ export async function postHookHandler(req: Request, res: Response) {
     }).catch((err) => {
       console.error(`retell-post-hook: webhook failed for "${clientConfig.name}": ${err.message}`);
     });
-  }
-
-  // Call spike detection
-  const spike = recordCall(clientSlug);
-  if (spike.spike) {
-    sendEmail({
-      to: ownerConfig.email,
-      subject: `[SPIKE ALERT] ${effectiveName} — ${spike.count} calls in 5 minutes`,
-      body: `Call spike detected for "${effectiveName}" (${clientSlug}).\n\n${spike.count} calls received in the last 5 minutes.\n\nThis alert will not repeat for 30 minutes.\n\n— Service Call Saver Monitor`,
-    }).catch(() => {});
   }
 
   res.status(200).json({ success: true });

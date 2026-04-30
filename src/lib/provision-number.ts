@@ -5,10 +5,13 @@ import { config } from "../config.js";
 const twilioClient = Twilio(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN);
 const retell = new Retell({ apiKey: config.RETELL_API_KEY });
 
+const DEFAULT_AREA_CODE = 815;
+
 interface ProvisionOptions {
   agentId: string;
   clientName: string;
-  dispatchCallNumber: string;
+  dispatchCallNumber?: string;
+  areaCode?: number;
 }
 
 interface ProvisionResult {
@@ -30,7 +33,8 @@ export async function provisionPhoneNumber(
   options: ProvisionOptions,
 ): Promise<ProvisionResult> {
   const { agentId, clientName, dispatchCallNumber } = options;
-  const areaCode = extractAreaCode(dispatchCallNumber);
+  const areaCode = options.areaCode
+    ?? (dispatchCallNumber ? extractAreaCode(dispatchCallNumber) : DEFAULT_AREA_CODE);
 
   console.log(`[provision] starting for "${clientName}" (area code ${areaCode})`);
 

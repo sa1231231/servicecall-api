@@ -25,11 +25,12 @@ export async function provisionNumberHandler(
     return;
   }
 
-  const dispatchCallNumber = doc.dispatch_call_number;
-  if (!dispatchCallNumber) {
-    res.status(400).json({ error: `Client "${slug}" has no dispatch_call_number to derive area code from` });
-    return;
-  }
+  // Derive area code: client-level dispatch call > per-path override > default (815)
+  const dispatchCallNumber = doc.dispatch_call_number
+    || (doc.dispatch_by_type
+      ? Object.values(doc.dispatch_by_type as Record<string, any>).find((o: any) => o.dispatch_call_number)?.dispatch_call_number
+      : null)
+    || undefined;
 
   try {
     const result = await provisionPhoneNumber({

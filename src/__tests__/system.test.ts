@@ -40,6 +40,7 @@ const hasConfig = !!BASE_URL && BASE_URL.startsWith("http") && !!API_KEY;
 describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () => {
   let originalShadowMode: boolean | undefined;
   let originalHideNotMentioned: boolean | undefined;
+  let originalActive: boolean | undefined;
 
   afterAll(async () => {
     if (originalShadowMode !== undefined) {
@@ -52,6 +53,12 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       await fetch(url(`/dashboard/api/agents/${SLUG}`), {
         method: "PATCH", headers: authHeaders(),
         body: JSON.stringify({ hide_not_mentioned: originalHideNotMentioned }),
+      });
+    }
+    if (originalActive !== undefined) {
+      await fetch(url(`/dashboard/api/agents/${SLUG}/active`), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ active: originalActive }),
       });
     }
   });
@@ -128,6 +135,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(body.retell_agents[AGENT_ID]).toBeDefined();
       originalShadowMode = body.shadow_mode;
       originalHideNotMentioned = body.hide_not_mentioned;
+      originalActive = body.active;
     });
 
     it("returns call logs", async () => {
@@ -346,12 +354,19 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
 
     it("GET /portal/:slug/api/agent includes dispatch_call_overrides when present", async () => {
-      // Use J&A Fleet which has call overrides
+      // Use J&A Fleet which has call overrides — use existing token to avoid invalidating client's portal link
       const jaToken = await (async () => {
-        const resp = await fetch(url("/dashboard/api/agents/j-a/portal-token"), { method: "POST", headers: authHeaders() });
-        if (!resp.ok) return null;
-        const body = await json(resp);
-        return new URL(body.portal_url).searchParams.get("token");
+        const getResp = await fetch(url("/dashboard/api/agents/j-a/portal-token"), { headers: authHeaders() });
+        if (!getResp.ok) return null;
+        const getBody = await json(getResp);
+        if (getBody.has_token && getBody.portal_url) {
+          return new URL(getBody.portal_url).searchParams.get("token");
+        }
+        // No existing token — generate one (safe since they didn't have one)
+        const postResp = await fetch(url("/dashboard/api/agents/j-a/portal-token"), { method: "POST", headers: authHeaders() });
+        if (!postResp.ok) return null;
+        const postBody = await json(postResp);
+        return new URL(postBody.portal_url).searchParams.get("token");
       })();
       if (!jaToken) return;
       const resp = await fetch(url(`/portal/j-a/api/agent?token=${jaToken}`));
@@ -382,6 +397,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
   describe("Portal self-serve settings", () => {
     let portalToken: string | undefined;
+    let origDispatchTextNumbers: string[] | undefined;
 
     it("gets portal token for Demo Meter", async () => {
       const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/portal-token`), { headers: authHeaders() });
@@ -395,6 +411,15 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         portalToken = new URL(body.portal_url).searchParams.get("token") || undefined;
       }
       expect(portalToken).toBeDefined();
+
+      // Save original dispatch_text_numbers for restoration
+      if (portalToken) {
+        const agentResp = await fetch(url(`/portal/${SLUG}/api/agent?token=${portalToken}`));
+        if (agentResp.ok) {
+          const agentBody = await json(agentResp);
+          origDispatchTextNumbers = agentBody.dispatch_text_numbers;
+        }
+      }
     });
 
     it("PATCH settings with valid token succeeds", async () => {
@@ -407,6 +432,15 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(resp.status).toBe(200);
       const body = await json(resp);
       expect(body.success).toBe(true);
+
+      // Restore original dispatch_text_numbers
+      if (origDispatchTextNumbers) {
+        await fetch(url(`/portal/${SLUG}/api/settings?token=${portalToken}`), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dispatch_text_numbers: origDispatchTextNumbers }),
+        });
+      }
     });
 
     it("PATCH rejects invalid token", async () => {
@@ -641,11 +675,23 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
 
     it("PUT reorder works", async () => {
+      // Save original category/sortOrder for full_name
+      const origDp = await json(await fetch(url("/dashboard/api/data-point-defaults"), { headers: authHeaders() }));
+      const origFullName = origDp.defaults?.full_name;
+      const origCat = origFullName?.category || "caller_info";
+      const origSort = origFullName?.sortOrder ?? 0;
+
       const resp = await fetch(url("/dashboard/api/data-point-defaults/reorder"), {
         method: "PUT", headers: authHeaders(),
-        body: JSON.stringify({ items: [{ key: "full_name", category: "general", sortOrder: 0 }] }),
+        body: JSON.stringify({ items: [{ key: "full_name", category: "general", sortOrder: 99 }] }),
       });
       expect(resp.status).toBe(200);
+
+      // Restore original
+      await fetch(url("/dashboard/api/data-point-defaults/reorder"), {
+        method: "PUT", headers: authHeaders(),
+        body: JSON.stringify({ items: [{ key: "full_name", category: origCat, sortOrder: origSort }] }),
+      });
     });
 
     it("DELETE removes custom data point", async () => {
@@ -697,6 +743,10 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
   describe("Settings category_order", () => {
     it("saves and retrieves category_order", async () => {
+      // Save original
+      const orig = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
+      const origOrder = orig.category_order;
+
       const order = ["billing", "trucking", "caller_info"];
       const patchResp = await fetch(url("/dashboard/api/settings"), {
         method: "PATCH", headers: authHeaders(),
@@ -711,10 +761,10 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       const dpResp = await json(await fetch(url("/dashboard/api/data-point-defaults"), { headers: authHeaders() }));
       expect(dpResp.categoryOrder).toEqual(order);
 
-      // Restore default
+      // Restore original (not null — preserve user's settings)
       await fetch(url("/dashboard/api/settings"), {
         method: "PATCH", headers: authHeaders(),
-        body: JSON.stringify({ category_order: null }),
+        body: JSON.stringify({ category_order: origOrder ?? null }),
       });
     });
   });
@@ -955,7 +1005,11 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
   describe("Settings category_labels", () => {
     it("saves and retrieves custom category labels", async () => {
-      const labels = { custom_cat: "My Custom Category" };
+      // Save original
+      const orig = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
+      const origLabels = orig.category_labels;
+
+      const labels = { ...(origLabels || {}), _systest_cat: "System Test Category" };
       const patchResp = await fetch(url("/dashboard/api/settings"), {
         method: "PATCH", headers: authHeaders(),
         body: JSON.stringify({ category_labels: labels }),
@@ -963,18 +1017,17 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(patchResp.status).toBe(200);
 
       const verify = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
-      expect(verify.category_labels.custom_cat).toBe("My Custom Category");
+      expect(verify.category_labels._systest_cat).toBe("System Test Category");
 
       // Verify data-point-defaults returns merged labels
       const dpResp = await json(await fetch(url("/dashboard/api/data-point-defaults"), { headers: authHeaders() }));
-      expect(dpResp.categoryLabels.custom_cat).toBe("My Custom Category");
-      // Built-in labels should still be present
+      expect(dpResp.categoryLabels._systest_cat).toBe("System Test Category");
       expect(dpResp.categoryLabels.caller_info).toBeDefined();
 
-      // Clean up
+      // Restore original (remove only the test key)
       await fetch(url("/dashboard/api/settings"), {
         method: "PATCH", headers: authHeaders(),
-        body: JSON.stringify({ category_labels: null }),
+        body: JSON.stringify({ category_labels: origLabels ?? null }),
       });
     });
   });

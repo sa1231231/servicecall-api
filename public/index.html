@@ -536,6 +536,24 @@
     }
   }
 
+  // Element-based chip helpers (for path-level chip inputs found by class)
+  function getChipValues(el) {
+    if (!el) return [];
+    return Array.from(el.querySelectorAll('.chip')).map(c => c.firstChild.textContent.trim());
+  }
+  function setChipValues(el, values) {
+    if (!el) return;
+    el.querySelectorAll('.chip').forEach(c => c.remove());
+    const input = el.querySelector('input');
+    for (const v of (values || [])) {
+      if (!v) continue;
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = escapeHtml(v) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span>';
+      el.insertBefore(chip, input);
+    }
+  }
+
   function validatePhone(num) {
     return PHONE_RE.test(num);
   }
@@ -584,11 +602,11 @@
     // Path-level dispatch overrides
     pathsContainer.querySelectorAll('.path-card').forEach((card, i) => {
       const num = i + 1;
-      const pathSms = csvToArray(card.querySelector('.path-dispatch-sms').value);
+      const pathSms = getChipValues(card.querySelector('.path-dispatch-sms'));
       for (const n of pathSms) {
         if (!validatePhone(n)) errors.push(`Path #${num} dispatch SMS "${n}" invalid. Format: +1XXXXXXXXXX.`);
       }
-      const pathEmails = csvToArray(card.querySelector('.path-dispatch-email').value);
+      const pathEmails = getChipValues(card.querySelector('.path-dispatch-email'));
       for (const e of pathEmails) {
         if (!validateEmail(e)) errors.push(`Path #${num} dispatch email "${e}" invalid.`);
       }
@@ -942,9 +960,13 @@
           <div style="margin-top:0.5rem;">
             <div class="field-hint" style="margin-bottom:0.5rem;">Override who gets notified for this specific path.</div>
             <label>SMS Numbers</label>
-            <input type="text" class="path-dispatch-sms" placeholder="+15551234567, +15559876543">
+            <div class="chip-input path-dispatch-sms" onclick="this.querySelector('input').focus()">
+              <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+            </div>
             <label>Email(s)</label>
-            <input type="text" class="path-dispatch-email" placeholder="auto-team@shop.com">
+            <div class="chip-input path-dispatch-email" onclick="this.querySelector('input').focus()">
+              <input type="text" placeholder="auto-team@shop.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+            </div>
             <label>Dispatch Call Number</label>
             <input type="text" class="path-dispatch-call" placeholder="+15551234567">
           </div>
@@ -963,8 +985,8 @@
     const condition = card.querySelector('.path-condition').value.trim();
     const chainRoot = card.querySelector('.chain-list[data-chain-root]');
     const chainData = chainRoot ? serializeChain(chainRoot) : [];
-    const sms = card.querySelector('.path-dispatch-sms').value;
-    const email = card.querySelector('.path-dispatch-email').value;
+    const smsVals = getChipValues(card.querySelector('.path-dispatch-sms'));
+    const emailVals = getChipValues(card.querySelector('.path-dispatch-email'));
     const call = card.querySelector('.path-dispatch-call').value;
 
     // Create new card with copied name
@@ -973,8 +995,8 @@
     // Fill in the new card's fields
     const newCard = pathsContainer.lastElementChild;
     newCard.querySelector('.path-condition').value = condition;
-    newCard.querySelector('.path-dispatch-sms').value = sms;
-    newCard.querySelector('.path-dispatch-email').value = email;
+    setChipValues(newCard.querySelector('.path-dispatch-sms'), smsVals);
+    setChipValues(newCard.querySelector('.path-dispatch-email'), emailVals);
     newCard.querySelector('.path-dispatch-call').value = call;
 
     // Restore the chain data into the new card
@@ -1067,8 +1089,8 @@
       if (dataPoints.length === 0) errors.push(`Path #${num}: Add at least one data point.`);
 
       if (errors.length === 0) {
-        const pathSms = csvToArray(card.querySelector('.path-dispatch-sms').value);
-        const pathEmail = csvToArray(card.querySelector('.path-dispatch-email').value);
+        const pathSms = getChipValues(card.querySelector('.path-dispatch-sms'));
+        const pathEmail = getChipValues(card.querySelector('.path-dispatch-email'));
         const pathCall = card.querySelector('.path-dispatch-call').value.trim();
 
         const pathEntry = { name, transitionCondition: condition, dataPoints };
@@ -1333,8 +1355,8 @@
         name: card.querySelector('.path-name').value,
         condition: card.querySelector('.path-condition').value,
         chain: chainRoot ? serializeChain(chainRoot) : [],
-        dispatchSms: card.querySelector('.path-dispatch-sms').value,
-        dispatchEmail: card.querySelector('.path-dispatch-email').value,
+        dispatchSms: getChipValues(card.querySelector('.path-dispatch-sms')).join(', '),
+        dispatchEmail: getChipValues(card.querySelector('.path-dispatch-email')).join(', '),
         dispatchCall: card.querySelector('.path-dispatch-call').value,
       });
     });
@@ -1487,8 +1509,8 @@
       const card = pathsContainer.lastElementChild;
       card.querySelector('.path-name').value = p.name || '';
       card.querySelector('.path-condition').value = p.condition || '';
-      card.querySelector('.path-dispatch-sms').value = p.dispatchSms || '';
-      card.querySelector('.path-dispatch-email').value = p.dispatchEmail || '';
+      setChipValues(card.querySelector('.path-dispatch-sms'), csvToArray(p.dispatchSms || ''));
+      setChipValues(card.querySelector('.path-dispatch-email'), csvToArray(p.dispatchEmail || ''));
       card.querySelector('.path-dispatch-call').value = p.dispatchCall || '';
 
       const chainRoot = card.querySelector('.chain-list[data-chain-root]');

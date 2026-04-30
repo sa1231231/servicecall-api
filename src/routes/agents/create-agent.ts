@@ -202,21 +202,25 @@ export async function createAgentHandler(
     let provisionedNumber: string | null = null;
     let provisionError: string | null = null;
 
-    const dispatchCall = body.client.dispatch_call_number;
-    if (dispatchCall) {
-      try {
-        const result = await provisionPhoneNumber({
-          agentId,
-          clientName: body.business.businessName,
-          dispatchCallNumber: dispatchCall,
-        });
-        provisionedNumber = result.phoneNumber;
-        console.log(`[create-agent] provisioned number ${provisionedNumber} for "${slug}"`);
-      } catch (provErr: unknown) {
-        const msg = provErr instanceof Error ? provErr.message : String(provErr);
-        provisionError = msg;
-        console.error(`[create-agent] provisioning failed for "${slug}":`, msg);
-      }
+    // Derive area code: client-level dispatch call > per-path override > default (815)
+    const dispatchCall = body.client.dispatch_call_number
+      || (body.client.dispatch_by_type
+        ? Object.values(body.client.dispatch_by_type).find(o => o.dispatch_call_number)?.dispatch_call_number
+        : null)
+      || undefined;
+
+    try {
+      const result = await provisionPhoneNumber({
+        agentId,
+        clientName: body.business.businessName,
+        dispatchCallNumber: dispatchCall || undefined,
+      });
+      provisionedNumber = result.phoneNumber;
+      console.log(`[create-agent] provisioned number ${provisionedNumber} for "${slug}"`);
+    } catch (provErr: unknown) {
+      const msg = provErr instanceof Error ? provErr.message : String(provErr);
+      provisionError = msg;
+      console.error(`[create-agent] provisioning failed for "${slug}":`, msg);
     }
 
     // ── 7. Return response ─────────────────────────────────────────────────
