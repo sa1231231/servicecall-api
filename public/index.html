@@ -1388,6 +1388,7 @@
     reader.onload = (e) => {
       try {
         const config = JSON.parse(e.target.result);
+        const dbt = config.client?.dispatch_by_type || {};
         // Convert export format to form state
         const state = {
           businessName: config.business?.businessName || '',
@@ -1398,30 +1399,64 @@
           dispatchCallNumber: config.client?.dispatch_call_number || '',
           dispatchEmail: (config.client?.dispatch_email || []).join(', '),
           summaryAgentId: config.client?.summary_agent_id || '',
-          routingPaths: (config.paths || []).map(p => ({
-            name: p.name,
-            condition: p.transitionCondition || '',
-            chain: (p.dataPoints || []).map(dp => {
-              if (typeof dp === 'string') return dp;
-              if (dp._branch) return dp;
-              // If this variableName exists in built-in defaults, use the key
-              if (dp.variableName && BUILTIN_DATA[dp.variableName]) return dp.variableName;
-              // Otherwise treat as custom inline data point
-              return {
-                _custom: true,
-                variableName: dp.variableName || '',
-                label: dp.label || '',
-                type: dp.type || 'string',
-                choices: Array.isArray(dp.choices) ? dp.choices.join(', ') : (dp.choices || ''),
-                description: dp.description || '',
-                conversationPrompt: dp.conversationPrompt || '',
-                forwardCondition: dp.forwardCondition || '',
-              };
-            }),
-            dispatchSms: '',
-            dispatchEmail: '',
-            dispatchCall: '',
-          })),
+          routingPaths: (config.paths || []).map(p => {
+            // Convert data points, wrapping branch-conditioned ones
+            const chain = [];
+            for (const dp of (p.dataPoints || [])) {
+              if (typeof dp === 'string') { chain.push(dp); continue; }
+              if (dp._branch) { chain.push(dp); continue; }
+
+              // Resolve the data point item (built-in key or custom)
+              let dpItem;
+              if (dp.variableName && BUILTIN_DATA[dp.variableName]) {
+                dpItem = dp.variableName;
+              } else {
+                dpItem = {
+                  _custom: true,
+                  variableName: dp.variableName || '',
+                  label: dp.label || '',
+                  type: dp.type || 'string',
+                  choices: Array.isArray(dp.choices) ? dp.choices.join(', ') : (dp.choices || ''),
+                  description: dp.description || '',
+                  conversationPrompt: dp.conversationPrompt || '',
+                  forwardCondition: dp.forwardCondition || '',
+                };
+              }
+
+              // If this data point has branch conditions, wrap in nested branches
+              if (dp._branchConditions && dp._branchConditions.length > 0) {
+                // Build nested branch: innermost first, then wrap outward
+                let wrapped = dpItem;
+                for (let bi = dp._branchConditions.length - 1; bi >= 0; bi--) {
+                  const bc = dp._branchConditions[bi];
+                  wrapped = {
+                    _branch: true,
+                    variable: bc.variable || '',
+                    operator: bc.operator || '==',
+                    value: bc.value || '',
+                    ifChain: [wrapped],
+                    elseChain: [],
+                  };
+                }
+                chain.push(wrapped);
+              } else {
+                chain.push(dpItem);
+              }
+            }
+
+            // Look up per-path dispatch overrides
+            const pathKey = p.name?.toLowerCase().replace(/\s+/g, '_') || '';
+            const pathDbt = dbt[pathKey] || {};
+
+            return {
+              name: p.name,
+              condition: p.transitionCondition || '',
+              chain,
+              dispatchSms: (pathDbt.dispatch_text_numbers || []).join(', '),
+              dispatchEmail: (pathDbt.dispatch_email || []).join(', '),
+              dispatchCall: pathDbt.dispatch_call_number || '',
+            };
+          }),
         };
         loadFormState(state);
         showResult('Loaded config from ' + file.name, 'success');
