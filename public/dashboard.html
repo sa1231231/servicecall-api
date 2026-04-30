@@ -717,6 +717,12 @@
     </div>
 
     <div class="settings-section">
+      <div class="settings-section-title">Category Order</div>
+      <p class="settings-hint">Drag to reorder how data point categories appear in the create form and settings.</p>
+      <div id="categoryOrderList" style="margin-top:0.5rem;"></div>
+    </div>
+
+    <div class="settings-section">
       <div class="settings-section-title">Billing &amp; Trials</div>
       <label for="settings-trial-days">Free Trial Length (days)</label>
       <input type="number" id="settings-trial-days" min="1" max="90" placeholder="14" style="width:80px;">
@@ -2595,6 +2601,52 @@
       document.getElementById('settings-payment-url').value = settings.stripe_payment_url || '';
       document.getElementById('settings-payment-msg').value = settings.payment_sms_message || '';
       document.getElementById('settings-portal-msg').value = settings.portal_sms_message || '';
+      // Populate category order
+      const defaultCatOrder = ['caller_info','location','service_details','scheduling','property','home_services','legal_intake','trucking','billing'];
+      const catLabels = { caller_info:'Caller Info', location:'Location', service_details:'Service Details', scheduling:'Scheduling', property:'Property', home_services:'Home Services', legal_intake:'Legal Intake', trucking:'Trucking', billing:'Billing', general:'General', custom:'Custom' };
+      const catOrder = settings.category_order || defaultCatOrder;
+      // Add any categories not in the saved order
+      const allCats = new Set([...catOrder, ...defaultCatOrder]);
+      const catList = document.getElementById('categoryOrderList');
+      if (catList) {
+        catList.innerHTML = '';
+        for (const cat of allCats) {
+          if (!catOrder.includes(cat) && !defaultCatOrder.includes(cat)) continue;
+          const row = document.createElement('div');
+          row.draggable = true;
+          row.dataset.cat = cat;
+          row.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.35rem 0.5rem;margin-bottom:0.25rem;background:#fff;border:1px solid #e5e7eb;border-radius:6px;font-size:0.82rem;cursor:grab;';
+          row.innerHTML = '<span style="color:#aaa;">&#9776;</span> ' + esc(catLabels[cat] || cat);
+          catList.appendChild(row);
+        }
+        // Sort to match saved order
+        const sorted = [...allCats].filter(c => catOrder.includes(c) || defaultCatOrder.includes(c));
+        sorted.sort((a, b) => {
+          const ai = catOrder.indexOf(a); const bi = catOrder.indexOf(b);
+          return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+        });
+        for (const cat of sorted) {
+          const el = catList.querySelector(`[data-cat="${cat}"]`);
+          if (el) catList.appendChild(el);
+        }
+        // Drag-drop
+        let dragEl = null;
+        catList.addEventListener('dragstart', e => { dragEl = e.target.closest('[data-cat]'); if (dragEl) dragEl.style.opacity = '0.4'; });
+        catList.addEventListener('dragend', () => { if (dragEl) dragEl.style.opacity = '1'; dragEl = null; });
+        catList.addEventListener('dragover', e => {
+          e.preventDefault();
+          if (!dragEl) return;
+          const after = [...catList.querySelectorAll('[data-cat]:not([style*="opacity: 0.4"])')].reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = e.clientY - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) return { offset, element: child };
+            return closest;
+          }, { offset: Number.NEGATIVE_INFINITY }).element;
+          if (after) catList.insertBefore(dragEl, after);
+          else catList.appendChild(dragEl);
+        });
+      }
+
       // Populate default summary agent chip
       const summaryChipContainer = document.getElementById('settings-chip-summary');
       if (summaryChipContainer && settings.default_summary_agent_id) {
@@ -2665,6 +2717,7 @@
       payment_sms_message: document.getElementById('settings-payment-msg').value,
       portal_sms_message: document.getElementById('settings-portal-msg').value,
       default_summary_agent_id: getChipValues('settings-chip-summary')[0] || '',
+      category_order: [...document.querySelectorAll('#categoryOrderList [data-cat]')].map(el => el.dataset.cat),
     };
 
     try {

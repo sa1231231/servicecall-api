@@ -395,7 +395,9 @@ dashboardApiRouter.post("/blast-sms", requirePermission("manage_settings"), asyn
 
 dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
   const defaults = await getDataPointDefaultsWithCategory();
-  res.json({ defaults, categoryOrder: CATEGORY_ORDER, categoryLabels: CATEGORY_LABELS });
+  const settings = await getSettings();
+  const categoryOrder = settings.category_order || CATEGORY_ORDER;
+  res.json({ defaults, categoryOrder, categoryLabels: CATEGORY_LABELS });
 });
 
 dashboardApiRouter.patch("/data-point-defaults/:key", requirePermission("manage_data_points"), async (req, res) => {
