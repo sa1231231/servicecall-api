@@ -266,7 +266,60 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
   });
 
-  // ── 10b. Portal self-serve settings ─────────────────────────────
+  // ── 10b. Portal API ─────────────────────────────────────────────
+
+  describe("Portal API", () => {
+    let portalToken: string | undefined;
+
+    it("generates portal token", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/portal-token`), { method: "POST", headers: authHeaders() });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.portal_url).toBeDefined();
+      portalToken = new URL(body.portal_url).searchParams.get("token") || undefined;
+    });
+
+    it("GET portal-token returns status", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/portal-token`), { headers: authHeaders() });
+      expect(resp.status).toBe(200);
+      expect((await json(resp)).has_token).toBe(true);
+    });
+
+    it("GET /portal/:slug/api/agent returns filtered config", async () => {
+      if (!portalToken) return;
+      const resp = await fetch(url(`/portal/${SLUG}/api/agent?token=${portalToken}`));
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.name).toBeDefined();
+      expect(Array.isArray(body.dispatch_text_numbers)).toBe(true);
+      expect(typeof body.shadow_mode).toBe("boolean");
+      // CC should not be present
+      expect(body.dispatch_cc).toBeUndefined();
+    });
+
+    it("GET /portal/:slug/api/calls returns call log", async () => {
+      if (!portalToken) return;
+      const resp = await fetch(url(`/portal/${SLUG}/api/calls?token=${portalToken}&limit=5`));
+      expect(resp.status).toBe(200);
+      expect(Array.isArray(await json(resp))).toBe(true);
+    });
+
+    it("GET /portal/:slug/api/agent rejects bad token", async () => {
+      expect((await fetch(url(`/portal/${SLUG}/api/agent?token=invalid`))).status).toBe(401);
+    });
+
+    it("POST /portal/request-link returns success for any email", async () => {
+      const resp = await fetch(url("/portal/request-link"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "nonexistent@example.com" }),
+      });
+      expect(resp.status).toBe(200);
+      expect((await json(resp)).success).toBe(true);
+    });
+  });
+
+  // ── 10c. Portal self-serve settings ─────────────────────────────
 
   describe("Portal self-serve settings", () => {
     let portalToken: string | undefined;
@@ -464,6 +517,164 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       ]);
       expect(r1.status).toBe(401);
       expect(r2.status).toBe(401);
+    });
+    it("rejects duplicate without slug", async () => {
+      expect((await fetch(url("/agents/duplicate"), { method: "POST", headers: authHeaders(), body: "{}" })).status).toBe(400);
+    });
+    it("rejects provision-number without slug", async () => {
+      expect((await fetch(url("/agents/provision-number"), { method: "POST", headers: authHeaders(), body: "{}" })).status).toBe(400);
+    });
+  });
+
+  // ── 17. Data Point Defaults ─────────────────────────────────────────
+
+  describe("Data point defaults", () => {
+    let createdKey: string | undefined;
+
+    it("GET returns defaults with categories", async () => {
+      const resp = await fetch(url("/dashboard/api/data-point-defaults"), { headers: authHeaders() });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.defaults).toBeDefined();
+      expect(body.defaults.full_name).toBeDefined();
+      expect(typeof body.defaults.full_name.label).toBe("string");
+      expect(body.categoryOrder).toBeDefined();
+    });
+
+    it("GET /form/data-points returns same data with auth", async () => {
+      const resp = await fetch(url("/form/data-points"), { headers: { Authorization: basicAuthHeader() } });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.dataPoints || body).toBeDefined();
+    });
+
+    it("POST creates custom data point", async () => {
+      createdKey = "_systest_dp_" + Date.now();
+      const resp = await fetch(url("/dashboard/api/data-point-defaults"), {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ key: createdKey, label: "System Test DP", category: "custom", type: "string" }),
+      });
+      expect(resp.status).toBe(200);
+      expect((await json(resp)).success).toBe(true);
+    });
+
+    it("POST rejects duplicate key", async () => {
+      expect((await fetch(url("/dashboard/api/data-point-defaults"), {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ key: "full_name", label: "Dup" }),
+      })).status).toBe(400);
+    });
+
+    it("PATCH updates data point", async () => {
+      if (!createdKey) return;
+      const resp = await fetch(url(`/dashboard/api/data-point-defaults/${createdKey}`), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ description: "Updated desc" }),
+      });
+      expect(resp.status).toBe(200);
+    });
+
+    it("PATCH returns 404 for nonexistent", async () => {
+      expect((await fetch(url("/dashboard/api/data-point-defaults/nonexistent_xyz"), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ description: "test" }),
+      })).status).toBe(404);
+    });
+
+    it("PUT reorder works", async () => {
+      const resp = await fetch(url("/dashboard/api/data-point-defaults/reorder"), {
+        method: "PUT", headers: authHeaders(),
+        body: JSON.stringify({ items: [{ key: "full_name", category: "general", sortOrder: 0 }] }),
+      });
+      expect(resp.status).toBe(200);
+    });
+
+    it("DELETE removes custom data point", async () => {
+      if (!createdKey) return;
+      expect((await fetch(url(`/dashboard/api/data-point-defaults/${createdKey}`), {
+        method: "DELETE", headers: authHeaders(),
+      })).status).toBe(200);
+    });
+
+    it("DELETE returns 404 for nonexistent", async () => {
+      expect((await fetch(url("/dashboard/api/data-point-defaults/nonexistent_xyz"), {
+        method: "DELETE", headers: authHeaders(),
+      })).status).toBe(404);
+    });
+  });
+
+  // ── 18. Settings CRUD ──────────────────────────────────────────────
+
+  describe("Settings CRUD", () => {
+    let origPortalMsg: string | undefined;
+
+    it("PATCH updates a setting and persists", async () => {
+      const getResp = await fetch(url("/dashboard/api/settings"), { headers: authHeaders() });
+      const settings = await json(getResp);
+      origPortalMsg = settings.portal_sms_message;
+
+      const testMsg = "Test portal msg {{portal_url}} - " + Date.now();
+      const patchResp = await fetch(url("/dashboard/api/settings"), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ portal_sms_message: testMsg }),
+      });
+      expect(patchResp.status).toBe(200);
+
+      // Verify persistence
+      const verify = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
+      expect(verify.portal_sms_message).toBe(testMsg);
+
+      // Restore
+      if (origPortalMsg !== undefined) {
+        await fetch(url("/dashboard/api/settings"), {
+          method: "PATCH", headers: authHeaders(),
+          body: JSON.stringify({ portal_sms_message: origPortalMsg }),
+        });
+      }
+    });
+  });
+
+  // ── 19. Clone Agent ────────────────────────────────────────────────
+
+  describe("Clone agent", () => {
+    it("rejects for nonexistent client", async () => {
+      const resp = await fetch(url("/dashboard/api/agents/nonexistent-xyz/clone"), {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ name: "Clone Test" }),
+      });
+      expect([400, 404]).toContain(resp.status);
+    });
+  });
+
+  // ── 20. Test Notification ──────────────────────────────────────────
+
+  describe("Test notification", () => {
+    it("sends or fails gracefully for Demo Meter", async () => {
+      const resp = await fetch(url(`/qa/test-notify/${SLUG}`), { method: "POST", headers: authHeaders() });
+      expect([200, 502]).toContain(resp.status);
+    });
+    it("returns 404 for nonexistent client", async () => {
+      expect((await fetch(url("/qa/test-notify/nonexistent-xyz"), { method: "POST", headers: authHeaders() })).status).toBe(404);
+    });
+  });
+
+  // ── 21. Client Login Page ──────────────────────────────────────────
+
+  describe("Client login page", () => {
+    it("GET /client serves login HTML without auth", async () => {
+      const resp = await fetch(url("/client"));
+      expect(resp.status).toBe(200);
+      expect(await resp.text()).toContain("html");
+    });
+  });
+
+  // ── 22. Deleted Agents ─────────────────────────────────────────────
+
+  describe("Deleted agents", () => {
+    it("lists deleted agents", async () => {
+      const resp = await fetch(url("/dashboard/api/deleted-agents"), { headers: authHeaders() });
+      expect(resp.status).toBe(200);
+      expect(Array.isArray(await json(resp))).toBe(true);
     });
   });
 
