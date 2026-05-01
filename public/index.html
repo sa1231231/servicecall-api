@@ -309,6 +309,141 @@
   .path-card-summary .card-actions { display: flex; gap: 0.3rem; }
   .path-card-summary .card-actions button { padding: 0.2rem 0.5rem; font-size: 0.7rem; }
 
+  /* Tree + detail editor (Tier 2) */
+  /* Hide the original path-card stack — kept in the DOM as source of truth. */
+  #routingPaths { display: none !important; }
+  /* Hide the original "+ Add Routing Path" button at the bottom of the section */
+  .btn-add-path { display: none !important; }
+
+  .path-builder {
+    display: grid; grid-template-columns: 280px 1fr;
+    gap: 0.75rem; min-height: 420px;
+    border: 1px solid #d4d4d8; border-radius: 8px; overflow: hidden;
+    background: #fafafa;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 768px) {
+    .path-builder { grid-template-columns: 1fr; min-height: auto; }
+  }
+  .path-builder-tree {
+    background: #fff; border-right: 1px solid #e5e7eb;
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  .path-builder-tree-header {
+    padding: 0.5rem 0.75rem; border-bottom: 1px solid #f3f4f6;
+    display: flex; align-items: center; justify-content: space-between;
+    background: #fafbfc;
+  }
+  .path-builder-tree-header span { font-size: 0.78rem; font-weight: 600; color: #374151; }
+  .path-builder-tree-header button {
+    padding: 0.2rem 0.5rem; font-size: 0.72rem;
+    background: #6366f1; color: #fff; border: none; border-radius: 4px;
+    cursor: pointer; font-weight: 500;
+  }
+  .path-builder-tree-header button:hover { background: #4f46e5; }
+  .path-builder-tree-list {
+    list-style: none; padding: 0.4rem 0; margin: 0;
+    overflow-y: auto; flex: 1 1 auto;
+    font-size: 0.82rem;
+  }
+  .path-builder-tree-list ul {
+    list-style: none; margin: 0; padding-left: 1.1rem;
+    border-left: 1px dashed #e5e7eb; margin-left: 0.65rem;
+  }
+  .tree-node {
+    display: flex; align-items: center; gap: 0.35rem;
+    padding: 0.25rem 0.5rem 0.25rem 0.4rem;
+    cursor: pointer; border-radius: 4px;
+    margin: 0 0.25rem 0.1rem;
+    border: 1px solid transparent;
+    user-select: none;
+  }
+  .tree-node:hover { background: #f3f4f6; }
+  .tree-node.selected {
+    background: #eef2ff; border-color: #c7d2fe;
+  }
+  .tree-node .tree-icon {
+    flex-shrink: 0; width: 16px; text-align: center; font-size: 0.7rem;
+  }
+  .tree-node[data-type="path"] .tree-icon { color: #3730a3; }
+  .tree-node[data-type="dp"] .tree-icon { color: #6b7280; }
+  .tree-node[data-type="branch"] .tree-icon { color: #d97706; }
+  .tree-node[data-type="end"] .tree-icon { color: #16a34a; }
+  .tree-node[data-type="end"][data-end-mode="transfer"] .tree-icon { color: #2563eb; }
+  .tree-node .tree-label {
+    flex: 1 1 auto; min-width: 0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+    color: #111827;
+  }
+  .tree-node[data-type="path"] .tree-label { font-weight: 600; color: #1f2937; }
+  .tree-node[data-type="end"] .tree-label { color: #6b7280; font-style: italic; }
+  .tree-node .tree-q-count {
+    font-size: 0.66rem; color: #9ca3af;
+    padding: 0.05rem 0.3rem; background: #f9fafb; border-radius: 8px;
+  }
+  .tree-node .tree-actions {
+    display: none; flex-shrink: 0; gap: 0.15rem;
+  }
+  .tree-node:hover .tree-actions, .tree-node.selected .tree-actions { display: inline-flex; }
+  .tree-node .tree-actions button {
+    border: 0; background: transparent; cursor: pointer;
+    color: #6b7280; padding: 0 0.2rem; font-size: 0.72rem; line-height: 1;
+  }
+  .tree-node .tree-actions button:hover { color: #1f2937; }
+  .tree-node .tree-actions button.tree-act-remove:hover { color: #dc2626; }
+  .tree-branch-side-label {
+    font-size: 0.65rem; color: #9ca3af;
+    padding: 0.1rem 0.5rem 0.1rem 1.1rem; font-weight: 600; text-transform: uppercase;
+  }
+  .path-builder-tree-empty {
+    padding: 1.5rem 1rem; text-align: center; color: #9ca3af; font-size: 0.78rem;
+  }
+
+  .path-builder-detail {
+    background: #fff; padding: 0.75rem 1rem; overflow-y: auto;
+    min-height: 0;
+  }
+  .path-builder-detail h4 {
+    margin: 0 0 0.5rem; font-size: 0.85rem; color: #1f2937;
+    display: flex; align-items: center; gap: 0.4rem;
+  }
+  .path-builder-detail h4 .detail-type-badge {
+    font-size: 0.65rem; padding: 0.1rem 0.45rem; border-radius: 8px;
+    font-weight: 600; background: #f3f4f6; color: #4b5563;
+  }
+  .path-builder-detail label {
+    display: block; font-size: 0.74rem; color: #4b5563;
+    font-weight: 500; margin: 0.6rem 0 0.2rem;
+  }
+  .path-builder-detail input,
+  .path-builder-detail select {
+    width: 100%; padding: 0.4rem 0.5rem; font-size: 0.82rem;
+    border: 1px solid #d1d5db; border-radius: 4px;
+    box-sizing: border-box;
+  }
+  .path-builder-detail .detail-empty {
+    padding: 2rem 1rem; text-align: center; color: #9ca3af; font-size: 0.85rem;
+  }
+  .path-builder-detail .detail-toggle-row {
+    display: flex; align-items: center; gap: 0.4rem;
+    padding: 0.25rem 0; font-size: 0.8rem;
+  }
+  .path-builder-detail .detail-toggle-row input { width: auto; }
+  .path-builder-detail .detail-add-row {
+    display: flex; gap: 0.4rem; margin-top: 0.5rem; flex-wrap: wrap;
+  }
+  .path-builder-detail .detail-add-row button {
+    padding: 0.3rem 0.6rem; font-size: 0.74rem;
+    border: 1px solid #d1d5db; background: #fff; border-radius: 4px;
+    cursor: pointer; color: #374151;
+  }
+  .path-builder-detail .detail-add-row button:hover { background: #f9fafb; }
+  .path-builder-detail .detail-add-row button.primary {
+    background: #6366f1; color: #fff; border-color: #6366f1;
+  }
+  .path-builder-detail .detail-add-row button.primary:hover { background: #4f46e5; }
+
   /* Flow diagram preview */
   .flow-diagram-wrap {
     position: sticky; bottom: 0;
@@ -542,9 +677,26 @@
 
     <h3 style="font-size:0.95rem;margin:1.25rem 0 0.25rem;">Routing Paths</h3>
     <p style="font-size:0.8rem;color:#666;margin-top:0;">
-      Each path represents a caller intent branch. Build the data collection chain by adding data points in order.
-      Use branches for conditional logic. A single "Default" path works for simple agents.
+      Each path represents a caller intent branch. Click a node on the left to edit its details on the right.
     </p>
+
+    <!-- Tier 2 tree+detail editor. The hidden #routingPaths div below is the
+         underlying source of truth (kept for collectFormState compatibility);
+         the tree is a UI layer that reads from it and writes back. -->
+    <div class="path-builder">
+      <aside class="path-builder-tree">
+        <div class="path-builder-tree-header">
+          <span>Paths</span>
+          <button type="button" onclick="treeAddPath()">+ Path</button>
+        </div>
+        <ul class="path-builder-tree-list" id="pathTreeList"></ul>
+      </aside>
+      <main class="path-builder-detail" id="pathTreeDetail">
+        <div class="detail-empty">Select a path or data point on the left to edit.</div>
+      </main>
+    </div>
+
+    <!-- Source-of-truth path-card stack (hidden via CSS) -->
     <div id="routingPaths"></div>
     <button type="button" class="btn-add-path" onclick="addPathCard()">+ Add Routing Path</button>
   </div>
@@ -2170,6 +2322,9 @@
     if (pathsContainer.children.length === 0) {
       addPathCard('Default');
     }
+    // Re-render the tree + diagram view layers after state restoration
+    if (typeof renderPathTree === 'function') renderPathTree();
+    if (typeof renderFlowDiagram === 'function') renderFlowDiagram();
   }
 
   // ── Auto-save to localStorage ─────────────────────────────
@@ -2326,7 +2481,386 @@
   }
 
   // Load lists and check auto-save after data points are ready
-  setTimeout(() => { loadAllLists(); checkAutoSave(); renderFlowDiagram(); }, 500);
+  setTimeout(() => { loadAllLists(); checkAutoSave(); renderFlowDiagram(); renderPathTree(); }, 500);
+
+  // ── Tree + detail editor (Tier 2) ─────────────────────────────────────
+  // The hidden #routingPaths DOM is the source of truth. The tree is a view
+  // over it; clicking a tree node renders the corresponding edit form in the
+  // detail panel. Edits are written back to #routingPaths so existing
+  // collectFormState / loadFormState / autosave / draft logic keep working
+  // without modification. After every write the tree + diagram re-render.
+
+  // Currently selected node in the tree, by ref shape:
+  //   { kind: 'path', pathId } | { kind: 'dp', pathId, itemId }
+  //   { kind: 'branch', pathId, itemId }
+  let treeSelected = null;
+
+  function renderPathTree() {
+    const list = document.getElementById('pathTreeList');
+    if (!list) return;
+    const cards = pathsContainer.querySelectorAll('.path-card');
+    if (cards.length === 0) {
+      list.innerHTML = '<li class="path-builder-tree-empty">No paths yet — click "+ Path" to start.</li>';
+      // Clear detail too
+      treeSelected = null;
+      document.getElementById('pathTreeDetail').innerHTML =
+        '<div class="detail-empty">Select a path or data point on the left to edit.</div>';
+      return;
+    }
+    let html = '';
+    cards.forEach((card) => {
+      const pathId = card.dataset.pathId;
+      const name = (card.querySelector('.path-name')?.value || '').trim() || '(unnamed path)';
+      const root = card.querySelector('.chain-list[data-chain-root]');
+      const count = root ? countChainDataPoints(root) : 0;
+      const endMode = card.querySelector('.path-end-mode:checked')?.value || 'callback';
+      const isSel = treeSelected?.kind === 'path' && treeSelected.pathId === pathId;
+      html += `<li>
+        <div class="tree-node ${isSel ? 'selected' : ''}" data-type="path" data-path-id="${esc(pathId)}"
+             onclick="treeSelect({kind:'path',pathId:'${esc(pathId)}'})">
+          <span class="tree-icon">▦</span>
+          <span class="tree-label">${esc(name)}</span>
+          <span class="tree-q-count">${count}</span>
+          <div class="tree-actions" onclick="event.stopPropagation()">
+            <button type="button" class="tree-act-up" title="Move up" onclick="treeMovePath('${esc(pathId)}',-1)">▲</button>
+            <button type="button" class="tree-act-down" title="Move down" onclick="treeMovePath('${esc(pathId)}',1)">▼</button>
+            <button type="button" class="tree-act-remove" title="Remove" onclick="treeRemovePath('${esc(pathId)}')">×</button>
+          </div>
+        </div>`;
+      // Chain
+      html += renderTreeChain(root, pathId);
+      // End-mode terminal
+      const endLabel = endMode === 'transfer' ? 'Live Transfer' : 'Callback';
+      html += `<div class="tree-node" data-type="end" data-end-mode="${endMode}"
+               onclick="treeSelect({kind:'path',pathId:'${esc(pathId)}'})"
+               style="margin-left:1.1rem;cursor:default;">
+        <span class="tree-icon">${endMode === 'transfer' ? '◆' : '●'}</span>
+        <span class="tree-label">${endLabel}</span>
+      </div>`;
+      html += `</li>`;
+    });
+    list.innerHTML = html;
+  }
+
+  function renderTreeChain(chainList, pathId) {
+    if (!chainList) return '';
+    let html = '<ul>';
+    for (const child of chainList.children) {
+      if (child.dataset.type === 'datapoint') {
+        const itemId = child.dataset.itemId;
+        const sel = child.querySelector('.chain-dp-select');
+        const variable = sel?.value || '';
+        const label = !variable ? '(unset)'
+          : variable === '__custom__'
+            ? ((child.querySelector('input[type="text"]')?.value || 'custom').trim() || 'custom')
+            : variable;
+        const isSel = treeSelected?.kind === 'dp' && treeSelected.itemId === itemId;
+        html += `<li>
+          <div class="tree-node ${isSel ? 'selected' : ''}" data-type="dp" data-item-id="${esc(itemId)}"
+               onclick="treeSelect({kind:'dp',pathId:'${esc(pathId)}',itemId:'${esc(itemId)}'})">
+            <span class="tree-icon">▢</span>
+            <span class="tree-label">${esc(label)}</span>
+            <div class="tree-actions" onclick="event.stopPropagation()">
+              <button type="button" class="tree-act-up" title="Move up" onclick="treeMoveItem('${esc(itemId)}',-1)">▲</button>
+              <button type="button" class="tree-act-down" title="Move down" onclick="treeMoveItem('${esc(itemId)}',1)">▼</button>
+              <button type="button" class="tree-act-remove" title="Remove" onclick="treeRemoveItem('${esc(itemId)}')">×</button>
+            </div>
+          </div>
+        </li>`;
+      } else if (child.dataset.type === 'branch') {
+        const itemId = child.dataset.itemId;
+        const variable = child.querySelector('.branch-variable')?.value || '?';
+        const op = child.querySelector('.branch-operator')?.value || '==';
+        const value = child.querySelector('.branch-value-select')?.value || '?';
+        const opLabel = op === '!=' ? '≠' : '=';
+        const isSel = treeSelected?.kind === 'branch' && treeSelected.itemId === itemId;
+        html += `<li>
+          <div class="tree-node ${isSel ? 'selected' : ''}" data-type="branch" data-item-id="${esc(itemId)}"
+               onclick="treeSelect({kind:'branch',pathId:'${esc(pathId)}',itemId:'${esc(itemId)}'})">
+            <span class="tree-icon">◇</span>
+            <span class="tree-label">if ${esc(variable)} ${opLabel} ${esc(value)}</span>
+            <div class="tree-actions" onclick="event.stopPropagation()">
+              <button type="button" class="tree-act-up" title="Move up" onclick="treeMoveItem('${esc(itemId)}',-1)">▲</button>
+              <button type="button" class="tree-act-down" title="Move down" onclick="treeMoveItem('${esc(itemId)}',1)">▼</button>
+              <button type="button" class="tree-act-remove" title="Remove" onclick="treeRemoveItem('${esc(itemId)}')">×</button>
+            </div>
+          </div>`;
+        const sides = child.querySelectorAll(':scope > .branch-side');
+        const ifList = sides[0]?.querySelector(':scope > .chain-list');
+        const elseList = sides[1]?.querySelector(':scope > .chain-list');
+        html += `<div class="tree-branch-side-label">Then</div>`;
+        html += renderTreeChain(ifList, pathId);
+        html += `<div class="tree-branch-side-label">Else</div>`;
+        html += renderTreeChain(elseList, pathId);
+        html += `</li>`;
+      }
+    }
+    html += '</ul>';
+    return html;
+  }
+
+  function esc(str) {
+    if (str === undefined || str === null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function treeSelect(ref) {
+    treeSelected = ref;
+    renderPathTree();
+    renderDetailPanel(ref);
+  }
+
+  function getCardByPathId(pathId) {
+    return pathsContainer.querySelector(`[data-path-id="${pathId}"]`);
+  }
+
+  function getItemById(pathId, itemId) {
+    const card = getCardByPathId(pathId);
+    if (!card) return null;
+    return card.querySelector(`[data-item-id="${itemId}"]`);
+  }
+
+  // ── Detail panel ──────────────────────────────────────────────────────
+
+  function renderDetailPanel(ref) {
+    const detail = document.getElementById('pathTreeDetail');
+    if (!detail) return;
+    if (!ref) {
+      detail.innerHTML = '<div class="detail-empty">Select a path or data point on the left to edit.</div>';
+      return;
+    }
+    if (ref.kind === 'path') return renderDetailPath(ref.pathId);
+    if (ref.kind === 'dp') return renderDetailDataPoint(ref.pathId, ref.itemId);
+    if (ref.kind === 'branch') return renderDetailBranch(ref.pathId, ref.itemId);
+  }
+
+  function renderDetailPath(pathId) {
+    const detail = document.getElementById('pathTreeDetail');
+    const card = getCardByPathId(pathId);
+    if (!card) { detail.innerHTML = ''; return; }
+    const name = card.querySelector('.path-name')?.value || '';
+    const cond = card.querySelector('.path-condition')?.value || '';
+    const endMode = card.querySelector('.path-end-mode:checked')?.value || 'callback';
+    const dispatchCall = card.querySelector('.path-dispatch-call')?.value || '';
+    detail.innerHTML = `
+      <h4>Path <span class="detail-type-badge">routing</span></h4>
+      <label>Path Name</label>
+      <input type="text" id="detailPathName" value="${esc(name)}" placeholder="e.g. Service Call">
+      <label>Transition Condition (when does the AI route here?)</label>
+      <input type="text" id="detailPathCond" value="${esc(cond)}" placeholder="e.g. Caller wants service">
+
+      <label style="margin-top:0.75rem;">End of path</label>
+      <div class="detail-toggle-row">
+        <input type="radio" name="detailEndMode" id="detailEndCallback" value="callback" ${endMode==='callback'?'checked':''}>
+        <label for="detailEndCallback" style="display:inline;margin:0;">Callback</label>
+      </div>
+      <div class="detail-toggle-row">
+        <input type="radio" name="detailEndMode" id="detailEndTransfer" value="transfer" ${endMode==='transfer'?'checked':''}>
+        <label for="detailEndTransfer" style="display:inline;margin:0;">Live Transfer</label>
+      </div>
+
+      <details style="margin-top:0.75rem;">
+        <summary style="font-size:0.78rem;font-weight:600;color:#4b5563;cursor:pointer;">Dispatch Override (optional)</summary>
+        <div style="margin-top:0.4rem;">
+          <label>Dispatch Call</label>
+          <input type="text" id="detailPathDispatchCall" value="${esc(dispatchCall)}" placeholder="+15551234567">
+        </div>
+      </details>
+
+      <div class="detail-add-row">
+        <button type="button" class="primary" onclick="treeAddDataPoint('${esc(pathId)}')">+ Data Point</button>
+        <button type="button" onclick="treeAddBranch('${esc(pathId)}')">+ Branch</button>
+      </div>
+    `;
+    // Wire field syncs
+    document.getElementById('detailPathName').addEventListener('input', (e) => {
+      card.querySelector('.path-name').value = e.target.value;
+      onTreeFormChange();
+    });
+    document.getElementById('detailPathCond').addEventListener('input', (e) => {
+      card.querySelector('.path-condition').value = e.target.value;
+      onTreeFormChange();
+    });
+    detail.querySelectorAll('input[name="detailEndMode"]').forEach((radio) => {
+      radio.addEventListener('change', (e) => {
+        const want = e.target.value;
+        card.querySelectorAll('.path-end-mode').forEach((r) => { r.checked = (r.value === want); });
+        onTreeFormChange();
+      });
+    });
+    document.getElementById('detailPathDispatchCall').addEventListener('input', (e) => {
+      card.querySelector('.path-dispatch-call').value = e.target.value;
+      onTreeFormChange();
+    });
+  }
+
+  function renderDetailDataPoint(pathId, itemId) {
+    const detail = document.getElementById('pathTreeDetail');
+    const card = getCardByPathId(pathId);
+    const item = card?.querySelector(`.chain-item[data-item-id="${itemId}"]`);
+    if (!item) { detail.innerHTML = ''; return; }
+    const sel = item.querySelector('.chain-dp-select');
+    const currentVal = sel?.value || '';
+    const options = sel?.innerHTML || '';
+    detail.innerHTML = `
+      <h4>Data Point <span class="detail-type-badge">collect</span></h4>
+      <label>Variable</label>
+      <select id="detailDpVar">${options}</select>
+      <p style="font-size:0.72rem;color:#6b7280;margin-top:0.4rem;">
+        Pick a built-in data point or "Custom" to define a new one. Editing the underlying conversation prompt or extraction logic happens in Settings → Categories.
+      </p>
+    `;
+    document.getElementById('detailDpVar').value = currentVal;
+    document.getElementById('detailDpVar').addEventListener('change', (e) => {
+      sel.value = e.target.value;
+      // Trigger the existing onChainDpChange logic so custom DP fields render correctly
+      if (typeof onChainDpChange === 'function') onChainDpChange(sel);
+      onTreeFormChange();
+    });
+  }
+
+  function renderDetailBranch(pathId, itemId) {
+    const detail = document.getElementById('pathTreeDetail');
+    const card = getCardByPathId(pathId);
+    const item = card?.querySelector(`.chain-branch[data-item-id="${itemId}"]`);
+    if (!item) { detail.innerHTML = ''; return; }
+    const varSel = item.querySelector('.branch-variable');
+    const opSel = item.querySelector('.branch-operator');
+    const valSel = item.querySelector('.branch-value-select');
+    detail.innerHTML = `
+      <h4>Branch <span class="detail-type-badge">if/else</span></h4>
+      <label>Variable</label>
+      <select id="detailBranchVar">${varSel?.innerHTML || ''}</select>
+      <label>Operator</label>
+      <select id="detailBranchOp">${opSel?.innerHTML || ''}</select>
+      <label>Value</label>
+      <select id="detailBranchVal">${valSel?.innerHTML || ''}</select>
+      <p style="font-size:0.72rem;color:#6b7280;margin-top:0.4rem;">
+        When the agent reaches this point, the data points under "Then" run only when the condition is true. "Else" runs otherwise.
+      </p>
+      <div class="detail-add-row">
+        <button type="button" class="primary" onclick="treeAddDataPointToBranch('${esc(pathId)}','${esc(itemId)}','if')">+ Data Point (Then)</button>
+        <button type="button" class="primary" onclick="treeAddDataPointToBranch('${esc(pathId)}','${esc(itemId)}','else')">+ Data Point (Else)</button>
+      </div>
+    `;
+    document.getElementById('detailBranchVar').value = varSel?.value || '';
+    document.getElementById('detailBranchOp').value = opSel?.value || '==';
+    document.getElementById('detailBranchVal').value = valSel?.value || '';
+    document.getElementById('detailBranchVar').addEventListener('change', (e) => {
+      if (varSel) {
+        varSel.value = e.target.value;
+        if (typeof onBranchVariableChange === 'function') onBranchVariableChange(varSel);
+      }
+      onTreeFormChange();
+      // Re-render to refresh the value dropdown options
+      renderDetailBranch(pathId, itemId);
+    });
+    document.getElementById('detailBranchOp').addEventListener('change', (e) => {
+      if (opSel) opSel.value = e.target.value;
+      onTreeFormChange();
+    });
+    document.getElementById('detailBranchVal').addEventListener('change', (e) => {
+      if (valSel) valSel.value = e.target.value;
+      onTreeFormChange();
+    });
+  }
+
+  // ── Tree actions ──────────────────────────────────────────────────────
+
+  function treeAddPath() {
+    addPathCard('');
+    const cards = pathsContainer.querySelectorAll('.path-card');
+    const last = cards[cards.length - 1];
+    if (last) treeSelected = { kind: 'path', pathId: last.dataset.pathId };
+    onTreeFormChange();
+  }
+
+  function treeRemovePath(pathId) {
+    if (!confirm('Remove this path and everything in it?')) return;
+    const card = getCardByPathId(pathId);
+    if (card) card.remove();
+    if (treeSelected?.pathId === pathId) treeSelected = null;
+    renumberPaths();
+    onTreeFormChange();
+  }
+
+  function treeMovePath(pathId, dir) {
+    const card = getCardByPathId(pathId);
+    if (!card) return;
+    if (dir < 0 && card.previousElementSibling) card.parentNode.insertBefore(card, card.previousElementSibling);
+    else if (dir > 0 && card.nextElementSibling) card.parentNode.insertBefore(card.nextElementSibling, card);
+    renumberPaths();
+    onTreeFormChange();
+  }
+
+  function treeAddDataPoint(pathId) {
+    const card = getCardByPathId(pathId);
+    if (!card) return;
+    const root = card.querySelector('.chain-list[data-chain-root]');
+    if (!root) return;
+    addChainItem(root);
+    const items = root.querySelectorAll(':scope > .chain-item');
+    const last = items[items.length - 1];
+    if (last) treeSelected = { kind: 'dp', pathId, itemId: last.dataset.itemId };
+    onTreeFormChange();
+  }
+
+  function treeAddBranch(pathId) {
+    const card = getCardByPathId(pathId);
+    if (!card) return;
+    const root = card.querySelector('.chain-list[data-chain-root]');
+    if (!root) return;
+    const branch = addChainBranch(root);
+    if (branch) treeSelected = { kind: 'branch', pathId, itemId: branch.dataset.itemId };
+    onTreeFormChange();
+  }
+
+  function treeAddDataPointToBranch(pathId, branchId, side) {
+    const item = getItemById(pathId, branchId);
+    if (!item) return;
+    const sides = item.querySelectorAll(':scope > .branch-side');
+    const targetSide = side === 'else' ? sides[1] : sides[0];
+    const list = targetSide?.querySelector(':scope > .chain-list');
+    if (!list) return;
+    addChainItem(list);
+    const items = list.querySelectorAll(':scope > .chain-item');
+    const last = items[items.length - 1];
+    if (last) treeSelected = { kind: 'dp', pathId, itemId: last.dataset.itemId };
+    onTreeFormChange();
+  }
+
+  // Find item element (chain-item or chain-branch) anywhere within any path-card.
+  function findItem(itemId) {
+    return pathsContainer.querySelector(`[data-item-id="${itemId}"]`);
+  }
+
+  function treeRemoveItem(itemId) {
+    const item = findItem(itemId);
+    if (!item) return;
+    if (item.dataset.type === 'branch' &&
+        !confirm('Remove this branch and everything in it?')) return;
+    item.remove();
+    if (treeSelected?.itemId === itemId) treeSelected = null;
+    onTreeFormChange();
+  }
+
+  function treeMoveItem(itemId, dir) {
+    const item = findItem(itemId);
+    if (!item) return;
+    if (dir < 0 && item.previousElementSibling) item.parentNode.insertBefore(item, item.previousElementSibling);
+    else if (dir > 0 && item.nextElementSibling) item.parentNode.insertBefore(item.nextElementSibling, item);
+    onTreeFormChange();
+  }
+
+  // Called after any tree-driven mutation.
+  function onTreeFormChange() {
+    renderPathTree();
+    if (treeSelected) renderDetailPanel(treeSelected);
+    scheduleAutoSave();
+    scheduleDiagramRender();
+  }
 
   // ── Flow diagram (Tier 1) ───────────────────────────────────────────────
   // Read-only SVG preview of the agent's call flow. Renders the intro, each
