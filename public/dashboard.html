@@ -424,6 +424,51 @@
     padding: 0.6rem 0.75rem; font-size: 0.78rem; color: #555;
     white-space: pre-wrap; max-height: 120px; overflow-y: auto; margin-bottom: 0.75rem;
   }
+  /* Top-level node-editor groups (System / Intro / Closing / Identity / Routing Paths) */
+  .ne-group {
+    margin-bottom: 0.75rem; border: 1px solid #e5e7eb; border-radius: 8px;
+    background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  .ne-group > summary {
+    list-style: none; cursor: pointer; padding: 0.6rem 0.85rem;
+    font-size: 0.92rem; font-weight: 600; color: #1a1a1a;
+    display: flex; align-items: center; gap: 0.45rem;
+    border-radius: 8px;
+  }
+  .ne-group > summary::-webkit-details-marker { display: none; }
+  .ne-group > summary::before {
+    content: '▸'; color: #888; font-size: 0.7rem; transition: transform 0.15s;
+    width: 0.8rem; display: inline-block;
+  }
+  .ne-group[open] > summary::before { transform: rotate(90deg); }
+  .ne-group[open] > summary { border-bottom: 1px solid #e5e7eb; }
+  .ne-group-body { padding: 0.65rem 0.85rem 0.85rem; }
+  .ne-group-body > h3 {
+    font-size: 0.78rem; font-weight: 600; color: #555;
+    margin: 0.6rem 0 0.3rem; text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .ne-group-body > h3:first-child { margin-top: 0; }
+  /* Each routing path inside the Routing Paths group is its own collapsible */
+  .ne-path-collapse {
+    border: 1px solid #e5e7eb; border-radius: 6px; background: #fafafa;
+    margin-bottom: 0.5rem;
+  }
+  .ne-path-collapse > summary {
+    list-style: none; cursor: pointer; padding: 0.5rem 0.7rem;
+    font-size: 0.88rem; font-weight: 600; color: #333;
+    display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  }
+  .ne-path-collapse > summary::-webkit-details-marker { display: none; }
+  .ne-path-collapse > summary::before {
+    content: '▸'; color: #888; font-size: 0.7rem; transition: transform 0.15s;
+    width: 0.8rem; display: inline-block; margin-right: 0.25rem;
+  }
+  .ne-path-collapse[open] > summary::before { transform: rotate(90deg); }
+  .ne-path-collapse[open] > summary { border-bottom: 1px solid #e5e7eb; background: #fff; }
+  .ne-path-summary-label { display: flex; align-items: center; gap: 0.35rem; flex: 1; min-width: 0; }
+  .ne-path-summary-label .ne-path-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ne-path-summary-label .ne-path-count { color: #999; font-size: 0.75rem; font-weight: 400; }
+  .ne-path-body { padding: 0.6rem 0.7rem 0.75rem; background: #fff; }
   .ne-path { margin-bottom: 1rem; }
   .ne-path-header {
     font-size: 0.9rem; font-weight: 600; color: #333;
@@ -4248,36 +4293,44 @@
 
   function renderNodeEditor(data, verData) {
     const canEdit = hasPerm('edit_agents');
+
+    // Capture which routing-path collapsibles are currently expanded so we
+    // can restore the same open set after innerHTML wipes the DOM. Keyed by
+    // path name (the data-path-name attribute on the <details> element).
+    const previouslyOpenPaths = new Set();
+    document.querySelectorAll('#nodeEditorContainer .ne-path-collapse[open]').forEach((el) => {
+      const n = el.getAttribute('data-path-name');
+      if (n) previouslyOpenPaths.add(n);
+    });
+
+    // Helper: a small "field block" — label + inline Edit button + preview pane.
+    // Used for every prompt-style entry inside the System/Intro/Closing groups.
+    function fieldBlock(label, value, editHandler, opts = {}) {
+      const sub = opts.sub ? ' <span style="font-weight:400;color:#888;">' + opts.sub + '</span>' : '';
+      const preview = (value || '').slice(0, opts.previewMax ?? 300);
+      const ellipsis = (value || '').length > (opts.previewMax ?? 300) ? '...' : '';
+      let h = '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+        '<span style="font-size:0.82rem;font-weight:600;color:#555;">' + label + sub + '</span>';
+      if (canEdit && editHandler) {
+        h += '<button class="ne-btn" onclick="' + editHandler + '" style="font-size:0.7rem;">Edit</button>';
+      }
+      h += '</div>';
+      h += '<div class="ne-global-prompt">' + esc(preview) + ellipsis + '</div>';
+      return h;
+    }
+
     let html = '<h2>Node Editor</h2>';
     html += '<button class="btn-save" id="ne-publish-btn" onclick="neSaveAndPublish()" style="' + (neDirty ? '' : 'display:none;') + 'margin-bottom:0.75rem;background:#059669;">Save &amp; Publish to Retell</button>';
 
-    // Global prompt
-    html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
-      '<span style="font-size:0.82rem;font-weight:600;color:#555;">Global Prompt</span>';
-    if (canEdit) {
-      html += '<button class="ne-btn" onclick="openGlobalPromptEdit()" style="font-size:0.7rem;">Edit</button>';
-    }
-    html += '</div>';
-    html += '<div class="ne-global-prompt">' + esc(data.globalPrompt).slice(0, 500) +
-      (data.globalPrompt.length > 500 ? '...' : '') + '</div>';
-
-    // FAQ Knowledge Base
+    // ── System group: System Prompt + FAQ + Human Request Mode ───────────
+    html += '<details class="ne-group" open><summary>System</summary><div class="ne-group-body">';
+    html += fieldBlock('System Prompt', data.globalPrompt, 'openGlobalPromptEdit()', { previewMax: 500 });
     if (data.faqNodeId) {
-      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
-        '<span style="font-size:0.82rem;font-weight:600;color:#555;">FAQ / Knowledge Base</span>';
-      if (canEdit) {
-        html += '<button class="ne-btn" onclick="openFaqEdit()" style="font-size:0.7rem;">Edit</button>';
-      }
-      html += '</div>';
-      const faqPreview = (data.faqKnowledgeBase || '').slice(0, 300);
-      html += '<div class="ne-global-prompt">' + esc(faqPreview) +
-        (data.faqKnowledgeBase.length > 300 ? '...' : '') + '</div>';
+      html += fieldBlock('FAQ / Knowledge Base', data.faqKnowledgeBase, 'openFaqEdit()');
     }
-
-    // Human request mode
     if (data.humanRequestMode) {
       const modeLabel = data.humanRequestMode === 'live_transfer' ? 'Live Transfer' : 'Callback';
-      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;padding:0.35rem 0.5rem;background:#fefce8;border:1px solid #fde68a;border-radius:5px;font-size:0.78rem;">' +
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;padding:0.35rem 0.5rem;background:#fefce8;border:1px solid #fde68a;border-radius:5px;font-size:0.78rem;">' +
         '<span style="color:#92400e;font-weight:600;">Human Request Mode:</span>' +
         '<span style="color:#555;">' + modeLabel + '</span>';
       if (canEdit) {
@@ -4287,102 +4340,80 @@
       }
       html += '</div>';
     }
+    html += '</div></details>';
 
-    // Intro prompt
-    if (data.introNodeId) {
-      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
-        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Intro Prompt</span>';
-      if (canEdit) {
-        html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(data.introNodeId) + '\',\'Intro\')" style="font-size:0.7rem;">Edit</button>';
+    // ── Intro group: Intro Prompt + Transition Prompt ────────────────────
+    if (data.introNodeId || data.transitionPrompt !== undefined) {
+      html += '<details class="ne-group" open><summary>Intro</summary><div class="ne-group-body">';
+      if (data.introNodeId) {
+        html += fieldBlock('Intro Prompt', data.introPrompt, "openPromptEdit('" + esc(data.introNodeId) + "','Intro')");
       }
-      html += '</div>';
-      html += '<div class="ne-global-prompt">' + esc((data.introPrompt || '').slice(0, 300)) +
-        ((data.introPrompt || '').length > 300 ? '...' : '') + '</div>';
-    }
-
-    // Transition prompt (shared across all paths)
-    if (data.transitionPrompt !== undefined) {
-      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
-        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Transition Prompt</span>';
-      if (canEdit) {
-        html += '<button class="ne-btn" onclick="openTransitionPromptEdit()" style="font-size:0.7rem;">Edit</button>';
+      if (data.transitionPrompt !== undefined) {
+        html += fieldBlock('Transition Prompt', data.transitionPrompt, 'openTransitionPromptEdit()');
       }
-      html += '</div>';
-      html += '<div class="ne-global-prompt">' + esc((data.transitionPrompt || '').slice(0, 300)) +
-        ((data.transitionPrompt || '').length > 300 ? '...' : '') + '</div>';
+      html += '</div></details>';
     }
 
-    // Closing prompts (Close, Closing Remarks, Closing Statement)
-    if (data.closePrompt !== undefined) {
-      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
-        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Close Prompt</span>';
-      if (canEdit) {
-        html += '<button class="ne-btn" onclick="openClosePromptEdit()" style="font-size:0.7rem;">Edit</button>';
+    // ── Closing Prompts group ────────────────────────────────────────────
+    const hasClosing = data.closePrompt !== undefined ||
+      data.closingRemarksPrompt !== undefined ||
+      data.closingStatementText !== undefined ||
+      data.liveTransferRecoveryPrompt !== undefined;
+    if (hasClosing) {
+      html += '<details class="ne-group" open><summary>Closing Prompts</summary><div class="ne-group-body">';
+      if (data.closePrompt !== undefined) {
+        html += fieldBlock('Close Prompt', data.closePrompt, 'openClosePromptEdit()');
       }
-      html += '</div>';
-      html += '<div class="ne-global-prompt">' + esc((data.closePrompt || '').slice(0, 300)) +
-        ((data.closePrompt || '').length > 300 ? '...' : '') + '</div>';
-    }
-    if (data.closingRemarksPrompt !== undefined) {
-      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
-        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Closing Remarks Prompt</span>';
-      if (canEdit) {
-        html += '<button class="ne-btn" onclick="openClosingRemarksPromptEdit()" style="font-size:0.7rem;">Edit</button>';
+      if (data.closingRemarksPrompt !== undefined) {
+        html += fieldBlock('Closing Remarks Prompt', data.closingRemarksPrompt, 'openClosingRemarksPromptEdit()');
       }
-      html += '</div>';
-      html += '<div class="ne-global-prompt">' + esc((data.closingRemarksPrompt || '').slice(0, 300)) +
-        ((data.closingRemarksPrompt || '').length > 300 ? '...' : '') + '</div>';
-    }
-    if (data.closingStatementText !== undefined) {
-      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
-        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Closing Statement <span style="font-weight:400;color:#888;">(spoken verbatim)</span></span>';
-      if (canEdit) {
-        html += '<button class="ne-btn" onclick="openClosingStatementEdit()" style="font-size:0.7rem;">Edit</button>';
+      if (data.closingStatementText !== undefined) {
+        html += fieldBlock('Closing Statement', data.closingStatementText, 'openClosingStatementEdit()',
+          { sub: '(spoken verbatim)' });
       }
-      html += '</div>';
-      html += '<div class="ne-global-prompt">' + esc((data.closingStatementText || '').slice(0, 300)) +
-        ((data.closingStatementText || '').length > 300 ? '...' : '') + '</div>';
-    }
-    // Live Transfer Recovery — only present on agents created with the feature.
-    // Older agents return no `liveTransferRecoveryPrompt` field, so this section
-    // is hidden for them by design.
-    if (data.liveTransferRecoveryPrompt !== undefined) {
-      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
-        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Live Transfer Recovery <span style="font-weight:400;color:#888;">(if transfer fails)</span></span>';
-      if (canEdit) {
-        html += '<button class="ne-btn" onclick="openLiveTransferRecoveryEdit()" style="font-size:0.7rem;">Edit</button>';
+      // Live Transfer Recovery — only present on agents created with the feature.
+      if (data.liveTransferRecoveryPrompt !== undefined) {
+        html += fieldBlock('Live Transfer Recovery', data.liveTransferRecoveryPrompt, 'openLiveTransferRecoveryEdit()',
+          { sub: '(if transfer fails)' });
       }
-      html += '</div>';
-      html += '<div class="ne-global-prompt">' + esc((data.liveTransferRecoveryPrompt || '').slice(0, 300)) +
-        ((data.liveTransferRecoveryPrompt || '').length > 300 ? '...' : '') + '</div>';
+      html += '</div></details>';
     }
 
-    // Display name
+    // ── Identity group: Display Name + Notification Greeting ─────────────
+    html += '<details class="ne-group" open><summary>Identity &amp; Notifications</summary><div class="ne-group-body">';
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
       '<span style="font-size:0.82rem;font-weight:600;color:#555;">Display Name</span></div>' +
       '<div style="margin-bottom:0.75rem;">' +
       '<input class="edit-input" id="ne-display-name" value="' + esc(originalDoc?.name || '') + '" placeholder="Business name" style="margin-bottom:0.15rem;">' +
       '<div class="config-hint">Appears in SMS/email notifications as the business identity.</div></div>';
-
-    // Notification greeting
     const greetingVal = originalDoc?.notification_greeting || '';
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
       '<span style="font-size:0.82rem;font-weight:600;color:#555;">Notification Greeting</span></div>' +
-      '<div style="margin-bottom:0.75rem;">' +
+      '<div>' +
       '<div class="tmpl-editor-wrap">' +
       '<div class="tmpl-editor" contenteditable="true" id="ne-greeting-editor" data-placeholder="Hi {{business_name}}, you have a new call!"></div>' +
       '<input type="hidden" id="ne-greeting-hidden" value="' + esc(greetingVal) + '">' +
       '</div>' +
       '<div class="config-hint">First line of every SMS/email. Leave blank for default. Type <code>{{</code> for variables.</div></div>';
+    html += '</div></details>';
 
-    // Paths
+    // ── Routing Paths group: each path is its own collapsible ────────────
+    html += '<details class="ne-group" open><summary>Routing Paths <span style="color:#888;font-weight:400;font-size:0.78rem;">(' + data.paths.length + ')</span></summary><div class="ne-group-body">';
+
     for (const path of data.paths) {
-      html += '<div class="ne-path">';
-      html += '<div class="ne-path-header"><span>' + esc(path.name) + ' <span style="color:#999;font-size:0.75rem;">(' + path.dataPoints.length + ' questions)</span></span>';
+      const isOpen = previouslyOpenPaths.has(path.name);
+      html += '<details class="ne-path-collapse" data-path-name="' + esc(path.name) + '"' + (isOpen ? ' open' : '') + '>';
+      html += '<summary>' +
+        '<span class="ne-path-summary-label">' +
+          '<span class="ne-path-name">' + esc(path.name) + '</span>' +
+          '<span class="ne-path-count">(' + path.dataPoints.length + ' questions)</span>' +
+        '</span>';
       if (canEdit) {
-        html += '<button class="ne-btn" onclick="neEditPathName(\'' + esc(path.name) + '\')" style="font-size:0.68rem;">Rename</button>';
+        // stopPropagation so clicking Rename doesn't toggle the disclosure.
+        html += '<button class="ne-btn" onclick="event.stopPropagation();neEditPathName(\'' + esc(path.name) + '\')" style="font-size:0.68rem;">Rename</button>';
       }
-      html += '</div>';
+      html += '</summary>';
+      html += '<div class="ne-path-body">';
 
       // Transition condition
       html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;padding:0.3rem 0.5rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:5px;font-size:0.78rem;">' +
@@ -4482,13 +4513,17 @@
             (endMode === 'transfer' && transferDest ? ' to <code>' + transferDest + '</code>' : '') + '</div>') +
         '</div>';
 
-      html += '</div>';
+      // Close the per-path body + the path's <details> wrapper.
+      html += '</div></details>';
     }
 
-    // Add path button
+    // "+ Add Path" button lives inside the Routing Paths group.
     if (canEdit) {
-      html += '<button class="ne-btn" onclick="neAddPath()" style="margin:0.75rem 0;padding:0.4rem 1rem;font-size:0.82rem;color:#2563eb;border:1px dashed #93b4f5;">+ Add Path</button>';
+      html += '<button class="ne-btn" onclick="neAddPath()" style="margin:0.5rem 0 0;padding:0.4rem 1rem;font-size:0.82rem;color:#2563eb;border:1px dashed #93b4f5;">+ Add Path</button>';
     }
+
+    // Close Routing Paths group.
+    html += '</div></details>';
 
     // Version history
     if (verData.versions.length > 0) {
@@ -4807,7 +4842,7 @@
 
   function openGlobalPromptEdit() {
     if (!neData) return;
-    document.getElementById('promptModalTitle').textContent = 'Edit Global Prompt';
+    document.getElementById('promptModalTitle').textContent = 'Edit System Prompt';
     document.getElementById('promptModalDesc').textContent = 'System prompt used across all nodes in the conversation flow.';
     document.getElementById('promptModalText').value = neData.globalPrompt;
     document.getElementById('promptModal').style.display = '';
@@ -4816,7 +4851,7 @@
       markNeDirty();
       closePromptModal();
       renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
-      showToast('Global prompt updated (save to publish)', 'success');
+      showToast('System prompt updated (save to publish)', 'success');
     };
   }
 
