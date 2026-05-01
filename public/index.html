@@ -294,16 +294,21 @@
   /* ── Form sub-tabs ────────────────────────────────────────────────
      Mirrors the .ne-subtabs pattern in dashboard.html (Node Editor) so
      operators see the same horizontal tab strip + same groupings on
-     create as they do when later editing the agent. */
+     create as they do when later editing the agent.
+     overflow-x:auto + nowrap on labels lets the strip scroll
+     horizontally on narrow viewports rather than truncating
+     "Identity & Routing Paths" inside its button. */
   .form-subtabs {
-    display: flex; gap: 0.25rem; flex-wrap: wrap;
+    display: flex; gap: 0.25rem; flex-wrap: nowrap;
     border-bottom: 1px solid #e5e7eb; margin: 0 0 1rem;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
   }
   .form-subtab {
-    padding: 0.55rem 1rem; font-size: 0.92rem; font-weight: 500;
+    padding: 0.55rem 0.9rem; font-size: 0.92rem; font-weight: 500;
     color: #555; background: transparent; border: 0;
     border-bottom: 2px solid transparent; border-radius: 0;
     cursor: pointer; font-family: inherit; margin-bottom: -1px;
+    white-space: nowrap; flex-shrink: 0;
   }
   .form-subtab:hover { color: #1e40af; }
   .form-subtab.active {
