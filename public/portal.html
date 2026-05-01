@@ -134,6 +134,31 @@
     margin-bottom: 0.5rem;
   }
 
+  /* ── Sidebar tabs ──────────────────────────────────────────────── */
+  .portal-tabs-shell {
+    display: grid; grid-template-columns: 160px 1fr; gap: 1rem;
+    margin-top: 0.75rem;
+  }
+  .portal-tabs-nav {
+    display: flex; flex-direction: column; gap: 0.2rem;
+    position: sticky; top: 0.75rem; align-self: start;
+  }
+  .portal-tab {
+    text-align: left; padding: 0.5rem 0.75rem; font-size: 0.85rem;
+    background: transparent; color: #444; border: 0;
+    border-left: 3px solid transparent; border-radius: 4px;
+    cursor: pointer; font-weight: 500; font-family: inherit;
+  }
+  .portal-tab:hover { background: #f3f4f6; }
+  .portal-tab.active {
+    background: #eef2ff; color: #1e40af; border-left-color: #2563eb;
+    font-weight: 600;
+  }
+  .portal-tab-content { min-width: 0; }
+  .portal-tab-pane { display: none; }
+  .portal-tab-pane.active { display: block; }
+  .portal-tab-pane > h2:first-child { margin-top: 0; }
+
   .footer {
     text-align: center; margin-top: 3rem; padding: 1rem;
     font-size: 0.75rem; color: #999;
@@ -142,6 +167,21 @@
   .footer a:hover { text-decoration: underline; }
 
   /* ── Mobile responsive ─────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    .portal-tabs-shell { grid-template-columns: 1fr; gap: 0.5rem; }
+    .portal-tabs-nav {
+      flex-direction: row; overflow-x: auto; position: static;
+      gap: 0.25rem; padding-bottom: 0.25rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .portal-tab {
+      flex-shrink: 0; border-left: 0; border-bottom: 3px solid transparent;
+      border-radius: 4px 4px 0 0;
+    }
+    .portal-tab.active {
+      border-left: 0; border-bottom-color: #2563eb;
+    }
+  }
   @media (max-width: 640px) {
     body { margin: 1rem auto; padding: 0 0.5rem; }
     h1 { font-size: 1.25rem; }
@@ -537,6 +577,48 @@
     });
   }
 
+  // ── Tab state ─────────────────────────────────────────────────────
+  // Portal page is split into 3 tabs: dispatch, analytics, calls. Header
+  // (agent name + badge) stays pinned above. Analytics + calls share data
+  // (loadAllCalls), so we lazy-load that fetch on first activation of either.
+  const VALID_PORTAL_TABS = ['dispatch', 'analytics', 'calls'];
+  let activePortalTab = 'dispatch';
+  let portalCallsLoaded = false;
+
+  function parsePortalTabFromHash() {
+    const m = (window.location.hash || '').match(/[#&]tab=([^&]+)/);
+    if (!m) return null;
+    const t = decodeURIComponent(m[1]);
+    return VALID_PORTAL_TABS.includes(t) ? t : null;
+  }
+
+  function setPortalTabHash(tab) {
+    // Preserve other hash params (token may live in hash on some entry flows)
+    const h = window.location.hash || '';
+    const cleaned = h.replace(/[#&]tab=[^&]*/g, '').replace(/^#/, '');
+    const params = (cleaned ? cleaned + '&' : '') + 'tab=' + encodeURIComponent(tab);
+    history.replaceState(null, '', '#' + params);
+  }
+
+  function switchPortalTab(tabId) {
+    if (!VALID_PORTAL_TABS.includes(tabId)) tabId = 'dispatch';
+    document.querySelectorAll('.portal-tab').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tabId);
+    });
+    document.querySelectorAll('.portal-tab-pane').forEach(p => {
+      p.classList.toggle('active', p.id === 'portal-tab-' + tabId);
+    });
+    activePortalTab = tabId;
+    setPortalTabHash(tabId);
+
+    // Lazy-load calls (and analytics, which is computed from the calls list)
+    // when the user first lands on either tab.
+    if ((tabId === 'analytics' || tabId === 'calls') && !portalCallsLoaded) {
+      portalCallsLoaded = true;
+      loadAllCalls();
+    }
+  }
+
   // ── Load agent details ────────────────────────────────────────────
   async function loadPortal() {
     try {
@@ -545,10 +627,21 @@
       const sc = agent.shadow_mode ? 'badge-shadow' : 'badge-live';
       const sl = agent.shadow_mode ? 'Shadow' : 'Live';
 
+      // Header (pinned above tabs)
       let html = `<h1>${esc(agent.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span></h1>`;
       html += '<p class="subtitle">Call history and dispatch configuration</p>';
 
-      // Dispatch config (editable)
+      // Tab shell
+      html += '<div class="portal-tabs-shell">';
+      html += '  <nav class="portal-tabs-nav" role="tablist">';
+      html += '    <button class="portal-tab active" data-tab="dispatch"  role="tab" onclick="switchPortalTab(\'dispatch\')">Dispatch</button>';
+      html += '    <button class="portal-tab"        data-tab="analytics" role="tab" onclick="switchPortalTab(\'analytics\')">Analytics</button>';
+      html += '    <button class="portal-tab"        data-tab="calls"     role="tab" onclick="switchPortalTab(\'calls\')">Call Log</button>';
+      html += '  </nav>';
+      html += '  <section class="portal-tab-content">';
+
+      // ── Dispatch tab ───────────────────────────────────────────────
+      html += '<div id="portal-tab-dispatch" class="portal-tab-pane active">';
       html += '<h2>Dispatch Configuration</h2>';
       html += '<dl class="config-grid">';
 
@@ -608,20 +701,21 @@
             html += '<span class="chip">' + esc(e) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span></span>';
           }
           html += '<input type="text" placeholder="email@example.com" onkeydown="portalChipKey(event,this)" onblur="portalChipBlur(this)"></div></dd>';
-          // Call
-          if (override.dispatch_call_number) {
-            html += '<dt>Call</dt><dd><input class="portal-edit-input" id="portal-dbt-call-' + esc(pathKey) + '" value="' + esc(override.dispatch_call_number) + '" placeholder="+15551234567"></dd>';
-          }
+          // Call number — always show so users can add one for paths that don't have it yet
+          html += '<dt>Call</dt><dd><input class="portal-edit-input" id="portal-dbt-call-' + esc(pathKey) + '" value="' + esc(override.dispatch_call_number || '') + '" placeholder="+15551234567">' +
+            '<div class="portal-hint">Leave blank to use the default Call Number above.</div></dd>';
           html += '</dl></div>';
         }
       }
 
       html += '<button class="portal-save-btn" id="portalSaveBtn" onclick="portalSaveSettings()">Save Changes</button>';
+      html += '</div>'; // /portal-tab-dispatch
 
-      // Analytics section
+      // ── Analytics tab ──────────────────────────────────────────────
+      html += '<div id="portal-tab-analytics" class="portal-tab-pane">';
       const defaultEnd = new Date().toISOString().slice(0, 10);
       const defaultStart = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:1.5rem 0 0.75rem;flex-wrap:wrap;gap:0.5rem;">';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 0.75rem;flex-wrap:wrap;gap:0.5rem;">';
       html += '<h2 id="analyticsHeading" style="margin:0;border:none;padding:0;">Analytics</h2>';
       html += '<div style="display:flex;gap:0.4rem;align-items:center;font-size:0.82rem;flex-wrap:wrap;">';
       html += '<input type="date" id="portalDateStart" value="' + defaultStart + '" onchange="portalDateRangeChanged()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">';
@@ -634,18 +728,25 @@
       html += '</div></div>';
       html += '<div id="statsRow" class="stats-row"><div class="loading" style="padding:1rem;width:100%;">Calculating...</div></div>';
       html += '<div class="chart-container"><canvas id="volumeChart" height="220"></canvas></div>';
+      html += '</div>'; // /portal-tab-analytics
 
-      // Call log with search/filter
+      // ── Call log tab ───────────────────────────────────────────────
+      html += '<div id="portal-tab-calls" class="portal-tab-pane">';
       html += '<h2>Call Log</h2>';
       html += '<div style="margin-bottom:0.75rem;">' +
         '<input type="text" id="callSearch" placeholder="Search calls..." oninput="filterCalls()" style="width:100%;padding:0.4rem 0.6rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">' +
         '</div>';
       html += '<div id="callLogContent"><div class="loading">Loading calls...</div></div>';
+      html += '</div>'; // /portal-tab-calls
+
+      html += '  </section>';
+      html += '</div>'; // /portal-tabs-shell
 
       document.getElementById('content').innerHTML = html;
 
-      // Load all calls for analytics, then render
-      await loadAllCalls();
+      // Activate the desired tab (lazy-loads calls if not on Dispatch).
+      const desiredTab = parsePortalTabFromHash() || 'dispatch';
+      switchPortalTab(desiredTab);
     } catch (err) {
       if (err.message !== 'Unauthorized') {
         document.getElementById('content').innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
