@@ -200,9 +200,9 @@ export function generateAgent(
 
   // Validate and resolve data points per path
   const resolvedPaths: ResolvedPath[] = paths.map((p) => {
-    if (!p.dataPoints || p.dataPoints.length === 0) {
-      throw new Error(`Path "${p.name}" has no data points`);
-    }
+    // Empty data-point arrays are allowed — useful for "if intent matches,
+    // transfer/callback immediately" paths where no data collection happens.
+    const dataPoints = p.dataPoints || [];
     const endMode: PathEndMode = p.endMode === "transfer" ? "transfer" : "callback";
     if (endMode === "transfer" && !p.transferDestination) {
       throw new Error(
@@ -212,7 +212,7 @@ export function generateAgent(
     try {
       return {
         name: p.name,
-        resolved: resolveDataPoints(p.dataPoints, defaults),
+        resolved: dataPoints.length === 0 ? [] : resolveDataPoints(dataPoints, defaults),
         endMode,
         transferDestination: p.transferDestination,
       };
@@ -288,8 +288,6 @@ When listing anything — services, time slots, examples, options — never list
     const pPos = pos.paths[pathIdx];
     const pathLabel = isMultiPath ? rp.name : undefined;
 
-    allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel));
-
     // Variables Router's else_edge points here when all data is collected.
     // - "callback": shared Close node
     // - "transfer": this path's Pre-Transfer node
@@ -298,9 +296,17 @@ When listing anything — services, time slots, examples, options — never list
         ? pIds.preTransferId
         : ids.closeId;
 
-    allNodes.push(
-      ...buildDataChain(rp.resolved, pIds, pPos, terminalId, f, pathLabel),
-    );
+    if (rp.resolved.length === 0) {
+      // Empty data chain: transition skips the entire collection scaffold and
+      // jumps straight to the terminal (Close for callback, Pre-Transfer for
+      // transfer). No Extract / Router / collect / confirm nodes generated.
+      allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel, terminalId));
+    } else {
+      allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel));
+      allNodes.push(
+        ...buildDataChain(rp.resolved, pIds, pPos, terminalId, f, pathLabel),
+      );
+    }
 
     if (rp.endMode === "transfer") {
       if (!rp.transferDestination) {

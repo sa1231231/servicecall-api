@@ -251,6 +251,10 @@ export function buildTransitionNode(
   pathPos: PathPositions,
   f: IdFactory,
   pathName?: string,
+  // Optional override for the skip_response_edge destination. Used when the
+  // path has no data points — the caller passes the terminal node id (close
+  // or pre-transfer) so the transition skips straight there.
+  targetId?: string,
 ) {
   return {
     instruction: {
@@ -267,7 +271,7 @@ Do not ask any questions here.`,
     type: "conversation",
     display_position: pathPos.transition,
     skip_response_edge: {
-      destination_node_id: pathIds.frontExtractId,
+      destination_node_id: targetId ?? pathIds.frontExtractId,
       id: `skip-response-edge-${f.nextTs()}-${randomSuffix(9)}`,
       transition_condition: {
         type: "prompt",

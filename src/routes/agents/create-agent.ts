@@ -109,10 +109,11 @@ export async function createAgentHandler(
         res.status(400).json({ error: `paths[${i}].transitionCondition is required` });
         return;
       }
-      if (!Array.isArray(p.dataPoints) || p.dataPoints.length === 0) {
-        res.status(400).json({ error: `paths[${i}].dataPoints must be non-empty` });
+      if (!Array.isArray(p.dataPoints)) {
+        res.status(400).json({ error: `paths[${i}].dataPoints must be an array` });
         return;
       }
+      // dataPoints can be empty — caller intent matched + immediate transfer/callback
       if (p.end_mode && p.end_mode !== "callback" && p.end_mode !== "transfer") {
         res.status(400).json({ error: `paths[${i}].end_mode must be "callback" or "transfer"` });
         return;

@@ -251,12 +251,41 @@ describe("edge cases", () => {
     expect(flagVar.type).toBe("boolean");
   });
 
-  it("throws on empty data points in a path", () => {
-    expect(() =>
-      generateAgent(baseConfig, [], [
-        { name: "Empty Path", transitionCondition: "test", dataPoints: [] },
-      ], TEST_DEFAULTS),
-    ).toThrow(/Path "Empty Path" has no data points/);
+  it("allows empty data points in a callback path (transition skips to Close)", () => {
+    const { agent } = generateAgent(baseConfig, [], [
+      { name: "Empty Path", transitionCondition: "test", dataPoints: [] },
+    ], TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const close = flow.nodes.find((n: any) => n.name === "Close");
+    const transition = flow.nodes.find((n: any) => n.name === "Conversation");
+    expect(close).toBeDefined();
+    expect(transition).toBeDefined();
+    expect(transition.skip_response_edge.destination_node_id).toBe(close.id);
+    // No Extract / Variables Router nodes generated for this path
+    const extracts = flow.nodes.filter((n: any) => n.type === "extract_dynamic_variables");
+    expect(extracts).toHaveLength(0);
+  });
+
+  it("allows empty data points in a transfer path (transition skips to Pre-Transfer)", () => {
+    const { agent } = generateAgent(baseConfig, [], [
+      {
+        name: "Immediate Transfer",
+        transitionCondition: "caller wants live person",
+        dataPoints: [],
+        endMode: "transfer",
+        transferDestination: "+18005551234",
+      },
+    ], TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    // Transition node points at the per-path Pre-Transfer node
+    const transition = flow.nodes.find((n: any) => n.type === "conversation" && n.skip_response_edge);
+    const preTransfer = flow.nodes.find((n: any) =>
+      n.type === "conversation" && /Pre-?Transfer|Hold on a moment/.test(JSON.stringify(n.instruction || "")));
+    expect(preTransfer).toBeDefined();
+    expect(transition.skip_response_edge.destination_node_id).toBe(preTransfer.id);
+    // Per-path transfer call node still generated
+    const perPathTransfer = flow.nodes.find((n: any) => n.type === "transfer_call");
+    expect(perPathTransfer).toBeDefined();
   });
 
   it("includes path name in error for bad data point reference", () => {

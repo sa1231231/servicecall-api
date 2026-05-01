@@ -226,7 +226,20 @@ describe("createAgentHandler — validation", () => {
     expect(res._json.error).toContain("transitionCondition");
   });
 
-  it("400 when paths[i].dataPoints empty", async () => {
+  it("400 when paths[i].dataPoints not an array", async () => {
+    const res = mockRes();
+    await createAgentHandler(
+      mockReq(makeBody({
+        dataPoints: undefined,
+        paths: [{ name: "p", transitionCondition: "c", dataPoints: "not-an-array" as any }],
+      })),
+      res,
+    );
+    expect(res._status).toBe(400);
+    expect(res._json.error).toContain("dataPoints");
+  });
+
+  it("accepts paths[i].dataPoints empty (immediate callback path)", async () => {
     const res = mockRes();
     await createAgentHandler(
       mockReq(makeBody({
@@ -235,8 +248,7 @@ describe("createAgentHandler — validation", () => {
       })),
       res,
     );
-    expect(res._status).toBe(400);
-    expect(res._json.error).toContain("dataPoints");
+    expect(res._status).toBe(201);
   });
 
   it("400 when paths[i].end_mode invalid", async () => {

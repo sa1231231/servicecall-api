@@ -1829,7 +1829,7 @@
 
       if (!name) errors.push(`Path #${num}: Path Name is required.`);
       if (!condition) errors.push(`Path #${num}: Transition Condition is required.`);
-      if (dataPoints.length === 0) errors.push(`Path #${num}: Add at least one data point.`);
+      // dataPoints can be empty — useful for "if intent matches, transfer/callback immediately"
 
       if (errors.length === 0) {
         const pathSms = getChipValues(card.querySelector('.path-dispatch-sms'));
