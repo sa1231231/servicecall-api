@@ -914,8 +914,11 @@
         <p class="settings-hint" style="margin-bottom:0.75rem;">Send a one-time SMS to all active clients. Messages are sent one per second to avoid spam filters. Use <code>{{client_name}}</code> to personalize.</p>
         <div style="background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1.5rem;">
           <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.3rem;">Message</label>
-          <textarea id="blast-message" rows="4" style="width:100%;padding:0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px;resize:vertical;font-family:inherit;" placeholder="Happy Mother's Day from ServiceCall Saver! We hope {{client_name}} has a wonderful weekend."></textarea>
-          <p class="settings-hint" style="margin-top:0.3rem;">Supports: <code>{{client_name}}</code></p>
+          <div class="tmpl-editor-wrap">
+            <div class="tmpl-editor" contenteditable="true" id="blast-message-editor" data-placeholder="Happy Mother's Day from ServiceCall Saver! We hope {{client_name}} has a wonderful weekend." style="min-height:5rem;"></div>
+            <input type="hidden" id="blast-message">
+          </div>
+          <p class="settings-hint" style="margin-top:0.3rem;">Type <code>{{</code> to insert <code>client_name</code> as a green pill.</p>
           <div id="blast-preview-info" style="display:none;margin-top:0.5rem;padding:0.5rem;background:#f9fafb;border-radius:6px;font-size:0.82rem;">
             <strong>Preview:</strong> <span id="blast-preview-count"></span><br>
             <strong>Sample:</strong> <span id="blast-preview-sample" style="color:#374151;"></span>
@@ -3174,6 +3177,7 @@
       { editor: 'settings-review-msg-editor', hidden: 'settings-review-msg', vars: ['google_review_url'] },
       { editor: 'settings-payment-msg-editor', hidden: 'settings-payment-msg', vars: ['stripe_payment_url'] },
       { editor: 'settings-portal-msg-editor', hidden: 'settings-portal-msg', vars: ['portal_url'] },
+      { editor: 'blast-message-editor', hidden: 'blast-message', vars: ['client_name'] },
     ];
     for (const { editor, hidden, vars } of editors) {
       const editorEl = document.getElementById(editor);
@@ -4868,8 +4872,8 @@
   function openClosePromptEdit() {
     if (!neData) return;
     document.getElementById('promptModalTitle').textContent = 'Edit Close Prompt';
-    document.getElementById('promptModalDesc').textContent = 'Spoken right after data collection wraps up. AI instruction (the agent paraphrases). You can use {{business_name}}.';
-    document.getElementById('promptModalText').value = neData.closePrompt || '';
+    document.getElementById('promptModalDesc').textContent = 'Spoken right after data collection wraps up. AI instruction (the agent paraphrases). Type {{ to insert business_name as a green pill.';
+    useTemplateEditor(['business_name'], neData.closePrompt || '');
     document.getElementById('promptModal').style.display = '';
     promptModalCb = (text) => {
       neData.closePrompt = text;
@@ -4883,8 +4887,8 @@
   function openClosingRemarksPromptEdit() {
     if (!neData) return;
     document.getElementById('promptModalTitle').textContent = 'Edit Closing Remarks Prompt';
-    document.getElementById('promptModalDesc').textContent = 'Final farewell instruction. AI instruction (the agent paraphrases). You can use {{business_name}}.';
-    document.getElementById('promptModalText').value = neData.closingRemarksPrompt || '';
+    document.getElementById('promptModalDesc').textContent = 'Final farewell instruction. AI instruction (the agent paraphrases). Type {{ to insert business_name as a green pill.';
+    useTemplateEditor(['business_name'], neData.closingRemarksPrompt || '');
     document.getElementById('promptModal').style.display = '';
     promptModalCb = (text) => {
       neData.closingRemarksPrompt = text;
@@ -4898,8 +4902,8 @@
   function openClosingStatementEdit() {
     if (!neData) return;
     document.getElementById('promptModalTitle').textContent = 'Edit Closing Statement';
-    document.getElementById('promptModalDesc').textContent = 'Spoken word-for-word as the call ends. Static text — not paraphrased. You can use {{business_name}}.';
-    document.getElementById('promptModalText').value = neData.closingStatementText || '';
+    document.getElementById('promptModalDesc').textContent = 'Spoken word-for-word as the call ends. Static text — not paraphrased. Type {{ to insert business_name as a green pill.';
+    useTemplateEditor(['business_name'], neData.closingStatementText || '');
     document.getElementById('promptModal').style.display = '';
     promptModalCb = (text) => {
       neData.closingStatementText = text;

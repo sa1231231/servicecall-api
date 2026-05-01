@@ -290,6 +290,42 @@
     border: none; background: none; padding: 0 0.25rem;
   }
   .path-dp-order li .dp-remove:hover { color: #991b1b; }
+
+  /* ── Template editor (variable autocomplete + green pills) ────── */
+  .tmpl-editor-wrap { position: relative; }
+  .tmpl-editor {
+    min-height: 2.2em; padding: 0.4rem 0.6rem; border: 1px solid #d1d5db; border-radius: 6px;
+    font-size: 0.85rem; font-family: inherit; line-height: 1.6; outline: none;
+    background: #fff; white-space: pre-wrap; word-break: break-word;
+  }
+  .tmpl-editor:focus { border-color: #93b4f5; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+  .tmpl-editor:empty::before {
+    content: attr(data-placeholder); color: #aaa;
+  }
+  .tmpl-var-tag {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: #dcfce7; color: #166534; border: 1px solid #86efac; border-radius: 4px;
+    padding: 0 0.35rem; font-size: 0.75rem; font-family: monospace; font-weight: 500;
+    vertical-align: baseline; line-height: 1.5; margin: 0 1px;
+    user-select: all; cursor: default;
+  }
+  .tmpl-var-tag .tmpl-var-x {
+    cursor: pointer; margin-left: 2px; color: #166534; font-size: 0.7rem; font-weight: bold;
+    opacity: 0.6;
+  }
+  .tmpl-var-tag .tmpl-var-x:hover { opacity: 1; color: #991b1b; }
+  .tmpl-autocomplete {
+    display: none; position: absolute; left: 0; z-index: 30;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1); min-width: 180px;
+    padding: 0.2rem 0; max-height: 160px; overflow-y: auto;
+  }
+  .tmpl-autocomplete.open { display: block; }
+  .tmpl-ac-item {
+    padding: 0.35rem 0.7rem; font-size: 0.8rem; font-family: monospace;
+    cursor: pointer; color: #333;
+  }
+  .tmpl-ac-item:hover, .tmpl-ac-item.active { background: #f3f4f6; }
 </style>
 </head>
 <body>
@@ -346,18 +382,27 @@
 
   <details style="margin-top:1rem;">
     <summary style="cursor:pointer;font-weight:600;">Closing Prompts (optional)</summary>
-    <div class="field-hint" style="margin-top:0.5rem;">These three prompts run at the end of every call. Sensible defaults are pre-filled. You can use <code>{{business_name}}</code> — it will be replaced with the business name on save.</div>
+    <div class="field-hint" style="margin-top:0.5rem;">These three prompts run at the end of every call. Sensible defaults are pre-filled. Type <code>{{</code> to insert <code>business_name</code> as a green pill — it will be replaced with the business name on save.</div>
 
     <label for="closePrompt">Close Prompt</label>
-    <textarea id="closePrompt" rows="3"></textarea>
+    <div class="tmpl-editor-wrap">
+      <div class="tmpl-editor" contenteditable="true" id="closePromptEditor" data-placeholder="Thank the caller…"></div>
+      <input type="hidden" id="closePrompt">
+    </div>
     <div class="field-hint">Spoken right after data collection wraps up. AI instruction (the agent paraphrases).</div>
 
     <label for="closingRemarksPrompt">Closing Remarks Prompt</label>
-    <textarea id="closingRemarksPrompt" rows="3"></textarea>
+    <div class="tmpl-editor-wrap">
+      <div class="tmpl-editor" contenteditable="true" id="closingRemarksPromptEditor" data-placeholder="Thank them and wish them a great day…"></div>
+      <input type="hidden" id="closingRemarksPrompt">
+    </div>
     <div class="field-hint">Final farewell instruction. AI instruction (the agent paraphrases).</div>
 
     <label for="closingStatementText">Closing Statement (spoken verbatim)</label>
-    <textarea id="closingStatementText" rows="2"></textarea>
+    <div class="tmpl-editor-wrap">
+      <div class="tmpl-editor" contenteditable="true" id="closingStatementTextEditor" data-placeholder="Alright, bye now!"></div>
+      <input type="hidden" id="closingStatementText">
+    </div>
     <div class="field-hint">Spoken word-for-word as the call ends. Static text, not paraphrased.</div>
   </details>
 
@@ -426,10 +471,39 @@
   const DEFAULT_CLOSING_REMARKS_PROMPT = 'You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ';
   const DEFAULT_CLOSING_STATEMENT_TEXT = 'Alright, bye now!';
 
-  // Pre-fill closing prompts on initial load (will be overwritten by auto-save / draft / template restoration if present).
+  // Pre-fill closing prompts on initial load (will be overwritten by
+  // auto-save / draft / template restoration if present).
   document.getElementById('closePrompt').value = DEFAULT_CLOSE_PROMPT;
   document.getElementById('closingRemarksPrompt').value = DEFAULT_CLOSING_REMARKS_PROMPT;
   document.getElementById('closingStatementText').value = DEFAULT_CLOSING_STATEMENT_TEXT;
+
+  // Closing-prompt template editors. Returned API includes renderToEditor
+  // so we can update the visual editor whenever the hidden value changes
+  // (default fill, draft restore, JSON import).
+  const closingEditors = {
+    closePrompt: initTemplateEditor(
+      document.getElementById('closePromptEditor'),
+      document.getElementById('closePrompt'),
+      ['business_name'],
+    ),
+    closingRemarksPrompt: initTemplateEditor(
+      document.getElementById('closingRemarksPromptEditor'),
+      document.getElementById('closingRemarksPrompt'),
+      ['business_name'],
+    ),
+    closingStatementText: initTemplateEditor(
+      document.getElementById('closingStatementTextEditor'),
+      document.getElementById('closingStatementText'),
+      ['business_name'],
+    ),
+  };
+
+  // Helper: set a hidden closing-prompt input AND re-render its editor.
+  function setClosingPrompt(key, value) {
+    const hidden = document.getElementById(key);
+    hidden.value = value || '';
+    closingEditors[key]?.renderToEditor(hidden.value);
+  }
 
   function showResult(message, type) {
     resultDiv.innerHTML = '<span class="result-dismiss">click to dismiss</span>' + escapeHtml(message);
@@ -446,6 +520,173 @@
 
   function escapeHtml(str) {
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Template editor with variable autocomplete + green pills ───────
+  // Mirrors the same UX as dashboard.html. Wraps a contenteditable div
+  // backed by a hidden input — the hidden input value is what the form
+  // submits. Typing `{{` opens an autocomplete of validVars; selecting one
+  // inserts a non-editable green pill that round-trips back to `{{var}}`.
+  function initTemplateEditor(editorEl, hiddenEl, validVars, onChange) {
+    const wrap = editorEl.closest('.tmpl-editor-wrap');
+    let acList = wrap.querySelector('.tmpl-autocomplete');
+    if (!acList) {
+      acList = document.createElement('div');
+      acList.className = 'tmpl-autocomplete';
+      wrap.appendChild(acList);
+    }
+    let acIndex = -1;
+
+    function renderToEditor(template) {
+      const parts = (template || '').split(/(\{\{\w+\}\})/g);
+      editorEl.innerHTML = '';
+      for (const part of parts) {
+        const m = part.match(/^\{\{(\w+)\}\}$/);
+        if (m) {
+          editorEl.appendChild(createVarTag(m[1]));
+        } else if (part) {
+          editorEl.appendChild(document.createTextNode(part));
+        }
+      }
+    }
+
+    function createVarTag(varName) {
+      const tag = document.createElement('span');
+      tag.className = 'tmpl-var-tag';
+      tag.contentEditable = 'false';
+      tag.dataset.var = varName;
+      tag.innerHTML = varName + '<span class="tmpl-var-x">&times;</span>';
+      tag.querySelector('.tmpl-var-x').addEventListener('click', () => {
+        tag.remove();
+        editorEl.dispatchEvent(new Event('input'));
+      });
+      return tag;
+    }
+
+    function readTemplate() {
+      let result = '';
+      for (const node of editorEl.childNodes) {
+        if (node.nodeType === 3) {
+          result += node.textContent;
+        } else if (node.dataset && node.dataset.var) {
+          result += '{{' + node.dataset.var + '}}';
+        }
+      }
+      return result;
+    }
+
+    function syncHidden() {
+      hiddenEl.value = readTemplate();
+      if (onChange) onChange();
+    }
+
+    function closeAc() { acList.classList.remove('open'); acIndex = -1; }
+
+    function showAc(partial, range) {
+      const vars = (typeof validVars === 'function' ? validVars() : validVars);
+      const matches = vars.filter(v => v.startsWith(partial));
+      if (matches.length === 0) { closeAc(); return; }
+      acIndex = 0;
+      acList.innerHTML = matches.map((v, i) =>
+        '<div class="tmpl-ac-item' + (i === 0 ? ' active' : '') + '" data-var="' + escapeHtml(v) + '">' + escapeHtml(v) + '</div>'
+      ).join('');
+      acList.classList.add('open');
+      acList.style.top = (editorEl.offsetHeight + 2) + 'px';
+      acList.querySelectorAll('.tmpl-ac-item').forEach(item => {
+        item.onmousedown = (e) => {
+          e.preventDefault();
+          insertVar(item.dataset.var, range);
+        };
+      });
+    }
+
+    function insertVar(varName, range) {
+      closeAc();
+      if (range) {
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const textNode = range.startContainer;
+        if (textNode.nodeType === 3) {
+          const text = textNode.textContent;
+          const curPos = range.startOffset;
+          const bracePos = text.lastIndexOf('{{', curPos);
+          if (bracePos >= 0) {
+            range.setStart(textNode, bracePos);
+            range.setEnd(textNode, curPos);
+            range.deleteContents();
+          }
+        }
+      }
+      const sel = window.getSelection();
+      if (sel.rangeCount) {
+        const r = sel.getRangeAt(0);
+        const tag = createVarTag(varName);
+        r.insertNode(tag);
+        r.setStartAfter(tag);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      syncHidden();
+    }
+
+    editorEl.addEventListener('input', () => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) { closeAc(); syncHidden(); return; }
+      const range = sel.getRangeAt(0).cloneRange();
+      const node = range.startContainer;
+      if (node.nodeType === 3) {
+        const text = node.textContent;
+        const pos = range.startOffset;
+        const before = text.slice(0, pos);
+        const braceMatch = before.match(/\{\{(\w*)$/);
+        if (braceMatch) {
+          showAc(braceMatch[1], range);
+          syncHidden();
+          return;
+        }
+      }
+      closeAc();
+      syncHidden();
+    });
+
+    editorEl.addEventListener('keydown', (e) => {
+      if (!acList.classList.contains('open')) return;
+      const items = acList.querySelectorAll('.tmpl-ac-item');
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault();
+        const active = items[Math.max(0, acIndex)];
+        if (active) {
+          const sel = window.getSelection();
+          const range = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+          insertVar(active.dataset.var, range);
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        items[acIndex]?.classList.remove('active');
+        acIndex = Math.min(acIndex + 1, items.length - 1);
+        items[acIndex]?.classList.add('active');
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        items[acIndex]?.classList.remove('active');
+        acIndex = Math.max(acIndex - 1, 0);
+        items[acIndex]?.classList.add('active');
+      } else if (e.key === 'Escape') {
+        closeAc();
+      }
+    });
+
+    editorEl.addEventListener('blur', () => { setTimeout(closeAc, 150); });
+
+    editorEl.addEventListener('paste', (e) => {
+      e.preventDefault();
+      const text = e.clipboardData.getData('text/plain');
+      document.execCommand('insertText', false, text);
+    });
+
+    renderToEditor(hiddenEl.value);
+    return { renderToEditor, readTemplate, syncHidden };
   }
 
   // Populated dynamically from /form/data-points
@@ -1573,9 +1814,9 @@
     document.getElementById('businessName').value = state.businessName || '';
     document.getElementById('faqKnowledgeBase').value = state.faqKnowledgeBase || '';
     document.getElementById('clientName').value = state.clientName || '';
-    document.getElementById('closePrompt').value = state.closePrompt || DEFAULT_CLOSE_PROMPT;
-    document.getElementById('closingRemarksPrompt').value = state.closingRemarksPrompt || DEFAULT_CLOSING_REMARKS_PROMPT;
-    document.getElementById('closingStatementText').value = state.closingStatementText || DEFAULT_CLOSING_STATEMENT_TEXT;
+    setClosingPrompt('closePrompt', state.closePrompt || DEFAULT_CLOSE_PROMPT);
+    setClosingPrompt('closingRemarksPrompt', state.closingRemarksPrompt || DEFAULT_CLOSING_REMARKS_PROMPT);
+    setClosingPrompt('closingStatementText', state.closingStatementText || DEFAULT_CLOSING_STATEMENT_TEXT);
     setFormChipValues('chip-dispatch-text', csvToArray(state.dispatchTextNumbers || ''));
     document.getElementById('dispatchCallNumber').value = state.dispatchCallNumber || '';
     setFormChipValues('chip-dispatch-email', csvToArray(state.dispatchEmail || ''));
