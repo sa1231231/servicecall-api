@@ -177,6 +177,28 @@
   .portal-tab-pane.active { display: block; }
   .portal-tab-pane > h2:first-child { margin-top: 0; }
 
+  /* Per-path dispatch override tabs (one button per routing path,
+     centered, with each path's SMS/Email/Call inputs in its own pane) */
+  .portal-path-tabs {
+    display: flex; gap: 0.25rem; flex-wrap: wrap;
+    justify-content: center;
+    border-bottom: 1px solid #e5e7eb;
+    margin: 0.5rem 0 0.75rem;
+  }
+  .portal-path-tab {
+    padding: 0.4rem 0.85rem; font-size: 0.85rem; font-weight: 500;
+    color: #555; background: transparent; border: 0;
+    border-bottom: 2px solid transparent; border-radius: 0;
+    cursor: pointer; font-family: inherit; margin-bottom: -1px;
+    white-space: nowrap;
+  }
+  .portal-path-tab:hover { color: #1e40af; }
+  .portal-path-tab.active {
+    color: #1e40af; font-weight: 600; border-bottom-color: #2563eb;
+  }
+  .portal-path-pane { display: none; }
+  .portal-path-pane.active { display: block; }
+
   .footer {
     text-align: center; margin-top: 3rem; padding: 1rem;
     font-size: 0.75rem; color: #999;
@@ -599,7 +621,7 @@
   // Portal page is split into 3 tabs: dispatch, analytics, calls. Header
   // (agent name + badge) stays pinned above. Analytics + calls share data
   // (loadAllCalls), so we lazy-load that fetch on first activation of either.
-  const VALID_PORTAL_TABS = ['dispatch', 'analytics', 'calls'];
+  const VALID_PORTAL_TABS = ['dispatch', 'activity'];
   let activePortalTab = 'dispatch';
   let portalCallsLoaded = false;
 
@@ -607,6 +629,9 @@
     const m = (window.location.hash || '').match(/[#&]tab=([^&]+)/);
     if (!m) return null;
     const t = decodeURIComponent(m[1]);
+    // Map legacy tab names from when Analytics and Call Log were separate
+    // tabs — bookmarks pointing to either now land on the merged Activity.
+    if (t === 'analytics' || t === 'calls') return 'activity';
     return VALID_PORTAL_TABS.includes(t) ? t : null;
   }
 
@@ -629,12 +654,23 @@
     activePortalTab = tabId;
     setPortalTabHash(tabId);
 
-    // Lazy-load calls (and analytics, which is computed from the calls list)
-    // when the user first lands on either tab.
-    if ((tabId === 'analytics' || tabId === 'calls') && !portalCallsLoaded) {
+    // Lazy-load calls (the merged Activity tab combines analytics + log).
+    if (tabId === 'activity' && !portalCallsLoaded) {
       portalCallsLoaded = true;
       loadAllCalls();
     }
+  }
+
+  // Switch between per-path dispatch override panes inside the Dispatch tab.
+  // Each path's inputs are kept in the DOM (just hidden by .active toggling)
+  // so portalSaveSettings can collect from all paths in one pass.
+  function switchPortalPathTab(key) {
+    document.querySelectorAll('.portal-path-tab').forEach((b) => {
+      b.classList.toggle('active', b.dataset.pathKey === key);
+    });
+    document.querySelectorAll('.portal-path-pane').forEach((p) => {
+      p.classList.toggle('active', p.dataset.pathKey === key);
+    });
   }
 
   // ── Load agent details ────────────────────────────────────────────
@@ -649,12 +685,13 @@
       let html = `<h1>${esc(agent.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span></h1>`;
       html += '<p class="subtitle">Call history and dispatch configuration</p>';
 
-      // Tab shell
+      // Tab shell — Analytics + Call Log are merged into "Activity" (graph
+      // on top, call log below) so clients see usage trends and the actual
+      // calls in one place.
       html += '<div class="portal-tabs-shell">';
       html += '  <nav class="portal-tabs-nav" role="tablist">';
-      html += '    <button class="portal-tab active" data-tab="dispatch"  role="tab" onclick="switchPortalTab(\'dispatch\')">Dispatch</button>';
-      html += '    <button class="portal-tab"        data-tab="analytics" role="tab" onclick="switchPortalTab(\'analytics\')">Analytics</button>';
-      html += '    <button class="portal-tab"        data-tab="calls"     role="tab" onclick="switchPortalTab(\'calls\')">Call Log</button>';
+      html += '    <button class="portal-tab active" data-tab="dispatch" role="tab" onclick="switchPortalTab(\'dispatch\')">Dispatch</button>';
+      html += '    <button class="portal-tab"        data-tab="activity" role="tab" onclick="switchPortalTab(\'activity\')">Activity</button>';
       html += '  </nav>';
       html += '  <section class="portal-tab-content">';
 
@@ -707,14 +744,30 @@
         '</div></dd>';
 
       html += '</dl>';
-      // Per-path overrides (only shown if any exist)
+      // Per-path overrides — render as a centered tab strip with one tab
+      // per path. The save handler reads from #portal-dbt-{sms,email,call}-{key}
+      // via querySelectorAll, which matches elements regardless of whether
+      // their parent pane is currently visible — so hiding inactive panes
+      // doesn't affect the save payload.
       if (agent.dispatch_by_type && Object.keys(agent.dispatch_by_type).length > 0) {
         html += '<h2 style="margin-top:1.5rem;">Per-Path Dispatch Overrides</h2>';
         html += '<p style="font-size:0.8rem;color:#888;margin-top:-0.5rem;">These override the default dispatch settings for specific call routing paths.</p>';
-        for (const [pathKey, override] of Object.entries(agent.dispatch_by_type)) {
+
+        const dbtEntries = Object.entries(agent.dispatch_by_type);
+
+        // Tab strip — one button per path, centered.
+        html += '<div class="portal-path-tabs">';
+        dbtEntries.forEach(([pathKey, _override], i) => {
           const label = agent.path_labels?.[pathKey] || pathKey;
-          html += '<div style="margin:0.75rem 0;padding:0.75rem;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;">';
-          html += '<div style="font-weight:600;font-size:0.85rem;margin-bottom:0.5rem;">' + esc(label) + '</div>';
+          html += '<button type="button" class="portal-path-tab' + (i === 0 ? ' active' : '') +
+            '" data-path-key="' + esc(pathKey) + '" onclick="switchPortalPathTab(\'' + esc(pathKey) + '\')">' +
+            esc(label) + '</button>';
+        });
+        html += '</div>';
+
+        // Panes — one per path, first active.
+        dbtEntries.forEach(([pathKey, override], i) => {
+          html += '<div class="portal-path-pane' + (i === 0 ? ' active' : '') + '" data-path-key="' + esc(pathKey) + '">';
           html += '<dl class="config-grid">';
           // SMS
           html += '<dt>SMS</dt><dd><div class="chip-input" id="portal-dbt-sms-' + esc(pathKey) + '" onclick="this.querySelector(\'input\').focus()">';
@@ -732,14 +785,15 @@
           html += '<dt>Call</dt><dd><input class="portal-edit-input" id="portal-dbt-call-' + esc(pathKey) + '" value="' + esc(override.dispatch_call_number || '') + '" placeholder="+15551234567">' +
             '<div class="portal-hint">Leave blank to use the default Call Number above.</div></dd>';
           html += '</dl></div>';
-        }
+        });
       }
 
       html += '<button class="portal-save-btn" id="portalSaveBtn" onclick="portalSaveSettings()">Save Changes</button>';
       html += '</div>'; // /portal-tab-dispatch
 
-      // ── Analytics tab ──────────────────────────────────────────────
-      html += '<div id="portal-tab-analytics" class="portal-tab-pane">';
+      // ── Activity tab (Analytics + Call Log) ───────────────────────
+      // Graph on top (date range, stats, volume chart) → Call Log below.
+      html += '<div id="portal-tab-activity" class="portal-tab-pane">';
       const defaultEnd = new Date().toISOString().slice(0, 10);
       const defaultStart = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
       html += '<div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 0.75rem;flex-wrap:wrap;gap:0.5rem;">';
@@ -755,16 +809,13 @@
       html += '</div></div>';
       html += '<div id="statsRow" class="stats-row"><div class="loading" style="padding:1rem;width:100%;">Calculating...</div></div>';
       html += '<div class="chart-container"><canvas id="volumeChart" height="220"></canvas></div>';
-      html += '</div>'; // /portal-tab-analytics
 
-      // ── Call log tab ───────────────────────────────────────────────
-      html += '<div id="portal-tab-calls" class="portal-tab-pane">';
-      html += '<h2>Call Log</h2>';
+      html += '<h2 style="margin-top:1.5rem;">Call Log</h2>';
       html += '<div style="margin-bottom:0.75rem;">' +
         '<input type="text" id="callSearch" placeholder="Search calls..." oninput="filterCalls()" style="width:100%;padding:0.4rem 0.6rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">' +
         '</div>';
       html += '<div id="callLogContent"><div class="loading">Loading calls...</div></div>';
-      html += '</div>'; // /portal-tab-calls
+      html += '</div>'; // /portal-tab-activity
 
       html += '  </section>';
       html += '</div>'; // /portal-tabs-shell
