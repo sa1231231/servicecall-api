@@ -37,9 +37,25 @@
     color: #444;
     border-bottom: 2px solid #e5e7eb;
   }
-  td { border-bottom: 1px solid #f0f0f0; }
+  td { border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
-  .td-summary { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .td-summary { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Call log table — tighten so each row stays on a single line on desktop.
+     Without nowrap, the audio player (200px) and Type column (variable) can
+     squeeze the others until Date wraps to 3-4 lines. */
+  #callTable th, #callTable td { padding: 0.5rem 0.6rem; }
+  #callTable td[data-label="Date"],
+  #callTable td[data-label="From"],
+  #callTable td[data-label="Duration"],
+  #callTable td[data-label="Type"],
+  #callTable td[data-label="Outcome"] {
+    white-space: nowrap;
+  }
+  #callTable td[data-label="Date"],
+  #callTable td[data-label="Duration"] {
+    font-variant-numeric: tabular-nums;
+  }
   .mobile-collected-data { display: none; }
   .clickable-row { cursor: pointer; }
   .clickable-row:hover td { background: #f0f5ff; }
@@ -61,7 +77,9 @@
   .sentiment-unknown { color: #6b7280; }
   .loading { text-align: center; padding: 3rem; color: #888; }
   .error-msg { text-align: center; padding: 2rem; color: #991b1b; }
-  .call-audio { width: 200px; height: 32px; vertical-align: middle; }
+  /* Smaller default audio player so Recording column doesn't crowd the
+     row. Mobile rule (line ~235) overrides to width: 100%. */
+  .call-audio { width: 170px; height: 30px; vertical-align: middle; }
 
   .config-grid {
     display: grid; grid-template-columns: 160px 1fr; gap: 0.35rem 1rem;
