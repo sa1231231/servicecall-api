@@ -56,6 +56,7 @@ interface CreateAgentBody {
     name?: string;
     dispatch_text_numbers: string[];
     dispatch_call_number?: string | null;
+    dispatch_call_overrides?: Record<string, string>;
     dispatch_email?: string[] | null;
     dispatch_cc?: string | null;
     dispatch_by_type?: Record<string, {
@@ -67,6 +68,9 @@ interface CreateAgentBody {
     path_end_modes?: Record<string, "callback" | "transfer">;
     outbound_from_number?: string | null;
     summary_agent_id?: string | null;
+    webhook_url?: string;
+    notification_greeting?: string;
+    weekly_report_enabled?: boolean;
     phone_fallback_to_caller?: boolean;
     hide_not_mentioned?: boolean;
     shadow_mode?: boolean;
@@ -242,6 +246,23 @@ export async function createAgentHandler(
       if (Object.keys(endModes).length > 0) {
         jsonEntry.path_end_modes = endModes;
       }
+    }
+
+    // Carry over additional client fields that the export endpoint emits
+    // but `deriveNotificationConfig` doesn't read. These let a JSON
+    // import round-trip a full client config (used for backup → restore
+    // and template-based bootstrap of new agents).
+    if (body.client.dispatch_call_overrides) {
+      jsonEntry.dispatch_call_overrides = body.client.dispatch_call_overrides;
+    }
+    if (body.client.webhook_url) {
+      jsonEntry.webhook_url = body.client.webhook_url;
+    }
+    if (body.client.notification_greeting) {
+      jsonEntry.notification_greeting = body.client.notification_greeting;
+    }
+    if (typeof body.client.weekly_report_enabled === "boolean") {
+      jsonEntry.weekly_report_enabled = body.client.weekly_report_enabled;
     }
 
     await persistClient(slug, jsonEntry);

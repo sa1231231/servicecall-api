@@ -701,6 +701,22 @@
   let pathCounter = 0;
   let chainItemCounter = 0;
 
+  // Imported client fields that the form has no UI for. Populated by
+  // `loadFromJsonFile` when a config is imported, applied to body.client
+  // on submit, and re-emitted by `exportFormAsJson` for symmetry. The
+  // dashboard's per-agent edit UI (Settings tab + Node Editor) handles
+  // editing these on existing agents — the create form just round-trips
+  // them so a backup → restore preserves the full client config.
+  let importedClientExtras = {
+    dispatch_call_overrides: null,   // Record<string, string> or null
+    dispatch_cc: null,               // string or null
+    webhook_url: null,               // string or null
+    notification_greeting: null,     // string or null
+    weekly_report_enabled: null,     // boolean or null
+    outbound_from_number: null,      // string or null
+    path_end_modes: null,            // Record<path, "callback"|"transfer"> or null
+  };
+
   // Auto-load API key and defaults from server environment
   let ownerPhone = '';
   fetch('/form/config')
@@ -1489,6 +1505,18 @@
     body.client.hide_not_mentioned = true;
     body.client.shadow_mode = true;
 
+    // Apply any imported-but-not-edited client fields. The form has no UI
+    // for these — they're carried over from a JSON import so a backup →
+    // restore preserves the full client config (call routing overrides,
+    // webhook URL, custom greeting, etc.).
+    if (importedClientExtras.dispatch_call_overrides) body.client.dispatch_call_overrides = importedClientExtras.dispatch_call_overrides;
+    if (importedClientExtras.dispatch_cc) body.client.dispatch_cc = importedClientExtras.dispatch_cc;
+    if (importedClientExtras.webhook_url) body.client.webhook_url = importedClientExtras.webhook_url;
+    if (importedClientExtras.notification_greeting) body.client.notification_greeting = importedClientExtras.notification_greeting;
+    if (importedClientExtras.weekly_report_enabled !== null) body.client.weekly_report_enabled = importedClientExtras.weekly_report_enabled;
+    if (importedClientExtras.outbound_from_number) body.client.outbound_from_number = importedClientExtras.outbound_from_number;
+    if (importedClientExtras.path_end_modes) body.client.path_end_modes = importedClientExtras.path_end_modes;
+
     submitBtn.disabled = true;
     submitBtn.textContent = 'Creating...';
 
@@ -1706,6 +1734,16 @@
         dispatch_email: getFormChipValues('chip-dispatch-email'),
         summary_agent_id: getFormChipValues('chip-summary-agent')[0] || null,
         shadow_mode: true,
+        // Carry imported extras through export so a load → export cycle
+        // preserves them. These have no form UI but the create-agent
+        // endpoint accepts them on import.
+        ...(importedClientExtras.dispatch_call_overrides ? { dispatch_call_overrides: importedClientExtras.dispatch_call_overrides } : {}),
+        ...(importedClientExtras.dispatch_cc ? { dispatch_cc: importedClientExtras.dispatch_cc } : {}),
+        ...(importedClientExtras.webhook_url ? { webhook_url: importedClientExtras.webhook_url } : {}),
+        ...(importedClientExtras.notification_greeting ? { notification_greeting: importedClientExtras.notification_greeting } : {}),
+        ...(importedClientExtras.weekly_report_enabled !== null ? { weekly_report_enabled: importedClientExtras.weekly_report_enabled } : {}),
+        ...(importedClientExtras.outbound_from_number ? { outbound_from_number: importedClientExtras.outbound_from_number } : {}),
+        ...(importedClientExtras.path_end_modes ? { path_end_modes: importedClientExtras.path_end_modes } : {}),
       },
     };
 
@@ -1726,6 +1764,19 @@
       try {
         const config = JSON.parse(e.target.result);
         const dbt = config.client?.dispatch_by_type || {};
+
+        // Capture client fields that have no UI but should round-trip via
+        // import → submit. Applied to body.client in the form-submit handler.
+        const c = config.client || {};
+        importedClientExtras = {
+          dispatch_call_overrides: c.dispatch_call_overrides && Object.keys(c.dispatch_call_overrides).length ? c.dispatch_call_overrides : null,
+          dispatch_cc: c.dispatch_cc || null,
+          webhook_url: c.webhook_url || null,
+          notification_greeting: c.notification_greeting || null,
+          weekly_report_enabled: typeof c.weekly_report_enabled === 'boolean' ? c.weekly_report_enabled : null,
+          outbound_from_number: c.outbound_from_number || null,
+          path_end_modes: c.path_end_modes && Object.keys(c.path_end_modes).length ? c.path_end_modes : null,
+        };
         // Convert export format to form state
         const state = {
           businessName: config.business?.businessName || '',

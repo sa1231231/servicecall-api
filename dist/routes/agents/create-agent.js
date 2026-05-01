@@ -168,6 +168,22 @@ export async function createAgentHandler(req, res) {
                 jsonEntry.path_end_modes = endModes;
             }
         }
+        // Carry over additional client fields that the export endpoint emits
+        // but `deriveNotificationConfig` doesn't read. These let a JSON
+        // import round-trip a full client config (used for backup → restore
+        // and template-based bootstrap of new agents).
+        if (body.client.dispatch_call_overrides) {
+            jsonEntry.dispatch_call_overrides = body.client.dispatch_call_overrides;
+        }
+        if (body.client.webhook_url) {
+            jsonEntry.webhook_url = body.client.webhook_url;
+        }
+        if (body.client.notification_greeting) {
+            jsonEntry.notification_greeting = body.client.notification_greeting;
+        }
+        if (typeof body.client.weekly_report_enabled === "boolean") {
+            jsonEntry.weekly_report_enabled = body.client.weekly_report_enabled;
+        }
         await persistClient(slug, jsonEntry);
         console.log(`[create-agent] client "${slug}" registered with agent ${agentId}`);
         // ── 6. Provision phone number ──────────────────────────────────────────
