@@ -146,11 +146,6 @@ export async function loadClientsFromDb(): Promise<void> {
 
   for (const doc of docs) {
     const slug = doc._id;
-    // Transition shim: docs that haven't been migrated yet still carry agent_ids: []
-    // instead of agent_id. Normalize to single before registering.
-    if (!doc.agent_id && Array.isArray((doc as any).agent_ids) && (doc as any).agent_ids.length > 0) {
-      doc.agent_id = (doc as any).agent_ids[0];
-    }
     if (typeof doc.agent_id !== "string" || !doc.agent_id) {
       console.log(`[client-store] skipping "${slug}" (missing agent_id)`);
       continue;
@@ -320,14 +315,8 @@ export async function restoreClient(slug: string): Promise<void> {
     { $unset: { deletedAt: "" } },
   );
   const doc = await clients().findOne({ _id: slug } as any);
-  if (doc) {
-    // Apply same transition shim as loadClientsFromDb in case the doc still has agent_ids
-    if (!doc.agent_id && Array.isArray((doc as any).agent_ids) && (doc as any).agent_ids.length > 0) {
-      doc.agent_id = (doc as any).agent_ids[0];
-    }
-    if (typeof doc.agent_id === "string" && doc.agent_id) {
-      registerInMemory(slug, toClientConfig(doc));
-    }
+  if (doc && typeof doc.agent_id === "string" && doc.agent_id) {
+    registerInMemory(slug, toClientConfig(doc));
   }
   console.log(`[client-store] restored client "${slug}"`);
 }
@@ -380,8 +369,8 @@ export async function purgeExpiredClients(days = 30): Promise<number> {
         }
       }
     }
-    // Belt-and-suspenders: also delete the agent_id (or legacy agent_ids[0]) if not in retell_agents map
-    const fallbackAgentId = (doc as any).agent_id || ((doc as any).agent_ids ?? [])[0];
+    // Belt-and-suspenders: also delete the agent_id if not in retell_agents map
+    const fallbackAgentId = (doc as any).agent_id;
     if (fallbackAgentId && !retellAgents[fallbackAgentId]) {
       try {
         await retell.agent.delete(fallbackAgentId);

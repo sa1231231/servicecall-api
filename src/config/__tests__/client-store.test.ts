@@ -295,18 +295,6 @@ describe("loadClientsFromDb", () => {
     expect(mockPhoneNumberToClient["+15551111111"]?.slug).toBe("a");
   });
 
-  it("normalizes legacy agent_ids array to single agent_id (transition shim)", async () => {
-    mockFind.mockReturnValue(chainable([
-      // Legacy doc shape: only has agent_ids, not agent_id
-      { _id: "legacy", name: "Legacy", agent_ids: ["agent_legacy"] },
-    ]));
-
-    await loadClientsFromDb();
-
-    expect(mockNotificationClients.legacy).toBeDefined();
-    expect(mockAgentIdToClient.agent_legacy).toBeDefined();
-  });
-
   it("excludes soft-deleted docs (filter by deletedAt: $exists: false)", async () => {
     mockFind.mockReturnValue(chainable([]));
     await loadClientsFromDb();

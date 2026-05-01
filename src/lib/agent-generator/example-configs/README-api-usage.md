@@ -80,7 +80,7 @@ curl -X POST https://servicecall-api-production.up.railway.app/agents/create \
   "conversation_flow_id": "cf_xyz789...",
   "notification_config": {
     "name": "Poop 911",
-    "agent_ids": ["agent_abc123..."],
+    "agent_id": "agent_abc123...",
     "dispatch_text_numbers": ["+15551234567"],
     "dispatch_call_number": null,
     "summary_agent_id": null,
