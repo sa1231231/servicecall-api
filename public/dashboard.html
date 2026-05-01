@@ -2102,12 +2102,6 @@
   function renderTabDispatch(doc) {
     let html = `<h2>Default Dispatch</h2>
     <dl class="config-grid">
-      <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}
-        <div class="config-hint">These numbers receive an SMS with the call summary after every call. Routing path overrides (in Node Editor) take priority when configured.</div></dd>
-
-      <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}
-        <div class="config-hint">These addresses receive an email with the full call summary after every call.</div></dd>
-
       <dt title="Phone number called by the outbound summary agent after intake">Dispatch Call</dt><dd>
         <input class="edit-input" id="edit-dispatch-call" value="${esc(doc.dispatch_call_number || '')}" placeholder="Phone number or empty" style="margin-bottom:0.25rem;">
         <div class="config-hint">If set with a Summary Agent, an AI outbound call is placed to this number after each call to deliver the summary by voice.</div>
@@ -2120,6 +2114,13 @@
           </div>
         </details>
       </dd>
+
+      <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}
+        <div class="config-hint">These numbers receive an SMS with the call summary after every call. Routing path overrides (in Node Editor) take priority when configured.</div></dd>
+
+      <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}
+        <div class="config-hint">These addresses receive an email with the full call summary after every call.</div></dd>
+
       <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook">
         <div class="config-hint">Call data is POSTed as JSON to this URL after each dispatch. Use for CRM integrations, Zapier, etc.</div></dd>
     </dl>`;
