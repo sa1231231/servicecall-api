@@ -407,9 +407,9 @@
   -->
   <div class="form-subtabs" role="tablist">
     <button type="button" class="form-subtab active" data-form-tab="business" onclick="switchFormTab('business')">Business</button>
+    <button type="button" class="form-subtab" data-form-tab="paths" onclick="switchFormTab('paths')">Identity &amp; Routing Paths</button>
     <button type="button" class="form-subtab" data-form-tab="closing" onclick="switchFormTab('closing')">Closing Prompts</button>
     <button type="button" class="form-subtab" data-form-tab="dispatch" onclick="switchFormTab('dispatch')">Default Dispatch</button>
-    <button type="button" class="form-subtab" data-form-tab="paths" onclick="switchFormTab('paths')">Identity &amp; Routing Paths</button>
   </div>
 
   <!-- ── Business pane ──────────────────────────────────────────
@@ -443,6 +443,27 @@
       <textarea id="liveTransferRecoveryPrompt" rows="3"></textarea>
       <div class="field-hint">Spoken if the live transfer fails to connect, before the call wraps up. You can use <code>{{business_name}}</code> — it will be replaced with the business name on save.</div>
     </div>
+  </div>
+
+  <!-- ── Identity & Routing Paths pane ──────────────────────────
+       Comes second so operators set up the conversation shape
+       (display name + which paths exist + their data points)
+       right after declaring the business — the heart of the
+       agent. Mirrors the Node Editor's tab of the same name. -->
+  <div class="form-subtab-pane" data-form-pane="paths">
+    <h2>Identity &amp; Routing Paths</h2>
+
+    <label for="clientName">Display Name (used in outgoing SMS &amp; emails)</label>
+    <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
+    <div class="field-hint">Used in outgoing SMS and email notifications as the business identity — e.g. "Hi Acme Plumbing Co., you have a new call!" If blank, falls back to Business Name.</div>
+
+    <h3 style="font-size:0.95rem;margin:1.25rem 0 0.25rem;">Routing Paths</h3>
+    <p style="font-size:0.8rem;color:#666;margin-top:0;">
+      Each path represents a caller intent branch. Build the data collection chain by adding data points in order.
+      Use branches for conditional logic. A single "Default" path works for simple agents.
+    </p>
+    <div id="routingPaths"></div>
+    <button type="button" class="btn-add-path" onclick="addPathCard()">+ Add Routing Path</button>
   </div>
 
   <!-- ── Closing Prompts pane ───────────────────────────────────
@@ -501,25 +522,6 @@
     <div class="field-hint">These addresses receive an email with the full call summary after every call.</div>
   </div>
 
-  <!-- ── Identity & Routing Paths pane ──────────────────────────
-       Mirrors the Node Editor's "Identity & Routing Paths" tab
-       (Display Name first, then the path list). -->
-  <div class="form-subtab-pane" data-form-pane="paths">
-    <h2>Identity &amp; Routing Paths</h2>
-
-    <label for="clientName">Display Name (used in outgoing SMS &amp; emails)</label>
-    <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
-    <div class="field-hint">Used in outgoing SMS and email notifications as the business identity — e.g. "Hi Acme Plumbing Co., you have a new call!" If blank, falls back to Business Name.</div>
-
-    <h3 style="font-size:0.95rem;margin:1.25rem 0 0.25rem;">Routing Paths</h3>
-    <p style="font-size:0.8rem;color:#666;margin-top:0;">
-      Each path represents a caller intent branch. Build the data collection chain by adding data points in order.
-      Use branches for conditional logic. A single "Default" path works for simple agents.
-    </p>
-    <div id="routingPaths"></div>
-    <button type="button" class="btn-add-path" onclick="addPathCard()">+ Add Routing Path</button>
-  </div>
-
   <button type="submit" id="submitBtn" style="margin-top:1.25rem;">Create Agent</button>
 </form>
 
@@ -533,7 +535,7 @@
   // Toggles which .form-subtab-pane is visible. Auto-switches to the
   // tab containing the first invalid required field on submit so the
   // browser's HTML5 validation popover can target a visible element.
-  const FORM_TABS = ['business', 'closing', 'dispatch', 'paths'];
+  const FORM_TABS = ['business', 'paths', 'closing', 'dispatch'];
   function switchFormTab(id) {
     if (!FORM_TABS.includes(id)) id = 'business';
     document.querySelectorAll('.form-subtab').forEach((b) => {
