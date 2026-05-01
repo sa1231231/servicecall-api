@@ -641,12 +641,37 @@
       html += '  <section class="portal-tab-content">';
 
       // ── Dispatch tab ───────────────────────────────────────────────
+      // Field order matches the agent-dashboard "Default Dispatch" section
+      // exactly: Dispatch Call (with Call Routing nested) → Dispatch Text →
+      // Dispatch Email. Same labels too, so operators looking at both views
+      // see the same vocabulary.
       html += '<div id="portal-tab-dispatch" class="portal-tab-pane active">';
-      html += '<h2>Default Dispatch Configuration</h2>';
+      html += '<h2>Default Dispatch</h2>';
       html += '<dl class="config-grid">';
 
-      // SMS chips
-      html += '<dt>SMS Numbers</dt><dd>' +
+      // Dispatch Call (with Call Routing nested as a <details>, matching
+      // the dashboard pattern). Read-only routing table — only the call
+      // number itself is editable in the portal.
+      const overrides = agent.dispatch_call_overrides || {};
+      const overrideCount = Object.keys(overrides).length;
+      html += '<dt>Dispatch Call</dt><dd>' +
+        '<input class="portal-edit-input" id="portal-call" value="' + esc(agent.dispatch_call_number || '') + '" placeholder="+15551234567">';
+      if (overrideCount > 0) {
+        html += '<details style="margin-top:0.35rem;">' +
+          '<summary style="font-size:0.78rem;color:#666;cursor:pointer;">Call Routing <span style="font-weight:400;color:#999;">(' + overrideCount + ' configured)</span></summary>' +
+          '<div style="margin-top:0.4rem;">' +
+          '<div class="portal-hint" style="margin-bottom:0.3rem;">Calls from specific numbers route to different dispatch numbers.</div>' +
+          '<table style="width:100%;font-size:0.82rem;border-collapse:collapse;">' +
+          '<tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding:0.25rem 0.5rem;color:#555;font-size:0.75rem;">From Number</th><th style="text-align:left;padding:0.25rem 0.5rem;color:#555;font-size:0.75rem;">Dispatches To</th></tr>';
+        for (const [fromNum, toNum] of Object.entries(overrides)) {
+          html += '<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:0.3rem 0.5rem;font-family:monospace;">' + esc(fromNum) + '</td><td style="padding:0.3rem 0.5rem;font-family:monospace;">' + esc(toNum) + '</td></tr>';
+        }
+        html += '</table></div></details>';
+      }
+      html += '</dd>';
+
+      // Dispatch Text (SMS)
+      html += '<dt>Dispatch Text</dt><dd>' +
         '<div class="chip-input" id="portal-sms" onclick="this.querySelector(\'input\').focus()">';
       for (const n of (agent.dispatch_text_numbers || [])) {
         html += '<span class="chip">' + esc(n) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span></span>';
@@ -654,30 +679,14 @@
       html += '<input type="text" placeholder="+15551234567" onkeydown="portalChipKey(event,this)" onblur="portalChipBlur(this)">' +
         '</div><div class="portal-hint">Press Enter or Tab to add a number.</div></dd>';
 
-      // Email chips
-      html += '<dt>Email</dt><dd>' +
+      // Dispatch Email
+      html += '<dt>Dispatch Email</dt><dd>' +
         '<div class="chip-input" id="portal-email" onclick="this.querySelector(\'input\').focus()">';
       for (const e of (agent.dispatch_email || [])) {
         html += '<span class="chip">' + esc(e) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span></span>';
       }
       html += '<input type="text" placeholder="email@example.com" onkeydown="portalChipKey(event,this)" onblur="portalChipBlur(this)">' +
         '</div></dd>';
-
-      html += '<dt>Call Number</dt><dd>' +
-        '<input class="portal-edit-input" id="portal-call" value="' + esc(agent.dispatch_call_number || '') + '" placeholder="+15551234567">' +
-        '</dd>';
-
-      // Call routing overrides (from_number → dispatch_to)
-      if (agent.dispatch_call_overrides && Object.keys(agent.dispatch_call_overrides).length > 0) {
-        html += '<dt>Call Routing</dt><dd>';
-        html += '<div style="font-size:0.78rem;color:#888;margin-bottom:0.3rem;">Calls from specific numbers route to different dispatch numbers.</div>';
-        html += '<table style="width:100%;font-size:0.82rem;border-collapse:collapse;">';
-        html += '<tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding:0.25rem 0.5rem;color:#555;font-size:0.75rem;">From Number</th><th style="text-align:left;padding:0.25rem 0.5rem;color:#555;font-size:0.75rem;">Dispatches To</th></tr>';
-        for (const [fromNum, toNum] of Object.entries(agent.dispatch_call_overrides)) {
-          html += '<tr style="border-bottom:1px solid #f3f4f6;"><td style="padding:0.3rem 0.5rem;font-family:monospace;">' + esc(fromNum) + '</td><td style="padding:0.3rem 0.5rem;font-family:monospace;">' + esc(toNum) + '</td></tr>';
-        }
-        html += '</table></dd>';
-      }
 
       html += '</dl>';
       // Per-path overrides (only shown if any exist)
