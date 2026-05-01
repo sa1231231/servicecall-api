@@ -155,7 +155,7 @@ describe("toClientConfig", () => {
     });
 });
 // ── DB-backed functions (mocked) ────────────────────────────────────────────
-const { mockFindOne, mockFind, mockReplaceOne, mockUpdateOne, mockDeleteOne, mockDeleteMany, mockNotificationClients, mockAgentIdToClient, mockAgentIdToSlug, mockPhoneNumberToClient, } = vi.hoisted(() => ({
+const { mockFindOne, mockFind, mockReplaceOne, mockUpdateOne, mockDeleteOne, mockDeleteMany, mockNotificationClients, mockAgentIdToClient, mockAgentIdToSlug, mockPhoneNumberToClient, mockRetellAgentDelete, mockRetellFlowDelete, } = vi.hoisted(() => ({
     mockFindOne: vi.fn(),
     mockFind: vi.fn(),
     mockReplaceOne: vi.fn(),
@@ -166,6 +166,8 @@ const { mockFindOne, mockFind, mockReplaceOne, mockUpdateOne, mockDeleteOne, moc
     mockAgentIdToClient: {},
     mockAgentIdToSlug: {},
     mockPhoneNumberToClient: {},
+    mockRetellAgentDelete: vi.fn(),
+    mockRetellFlowDelete: vi.fn(),
 }));
 vi.mock("../../lib/db.js", () => ({
     getDb: () => ({
@@ -185,7 +187,17 @@ vi.mock("../../_cache/clients.js", () => ({
     agentIdToSlug: mockAgentIdToSlug,
     phoneNumberToClient: mockPhoneNumberToClient,
 }));
-const { loadClientsFromDb, persistClient, updateClientField, updateClientFields, softDeleteClient, restoreClient, listDeletedClients, deleteClient, getClientDocument, getAllClientDocuments, getAllClientSummaries, generatePortalToken, findClientsByEmail, validatePortalToken, } = await import("../client-store.js");
+// purgeExpiredClients does dynamic imports of retell-sdk + ../config.js.
+vi.mock("retell-sdk", () => ({
+    default: class {
+        agent = { delete: mockRetellAgentDelete };
+        conversationFlow = { delete: mockRetellFlowDelete };
+    },
+}));
+vi.mock("../../config.js", () => ({
+    config: { RETELL_API_KEY: "test_key" },
+}));
+const { loadClientsFromDb, persistClient, updateClientField, updateClientFields, softDeleteClient, restoreClient, listDeletedClients, deleteClient, getClientDocument, getAllClientDocuments, getAllClientSummaries, generatePortalToken, findClientsByEmail, validatePortalToken, purgeExpiredClients, } = await import("../client-store.js");
 function chainable(items) {
     return {
         sort: vi.fn().mockReturnThis(),
@@ -472,5 +484,166 @@ describe("findClientsByEmail / validatePortalToken", () => {
     it("validatePortalToken returns false for non-matching token", async () => {
         mockFindOne.mockResolvedValue(null);
         expect(await validatePortalToken("acme", "wrong")).toBe(false);
+    });
+});
+describe("purgeExpiredClients", () => {
+    beforeEach(() => {
+        mockRetellAgentDelete.mockResolvedValue({});
+        mockRetellFlowDelete.mockResolvedValue({});
+    });
+    it("returns 0 and skips Retell when nothing is expired", async () => {
+        mockFind.mockReturnValue(chainable([]));
+        const count = await purgeExpiredClients();
+        expect(count).toBe(0);
+        expect(mockRetellAgentDelete).not.toHaveBeenCalled();
+        expect(mockRetellFlowDelete).not.toHaveBeenCalled();
+        expect(mockDeleteMany).not.toHaveBeenCalled();
+    });
+    it("queries with deletedAt < cutoff (default 30 days back)", async () => {
+        mockFind.mockReturnValue(chainable([]));
+        const before = Date.now();
+        await purgeExpiredClients();
+        const filter = mockFind.mock.calls[0][0];
+        expect(filter.deletedAt).toBeDefined();
+        const cutoff = filter.deletedAt.$lt;
+        expect(cutoff).toBeInstanceOf(Date);
+        // Cutoff should be ~30 days before "now"
+        const cutoffMs = cutoff.getTime();
+        const expectedMin = before - 30 * 86_400_000 - 1000;
+        const expectedMax = before - 30 * 86_400_000 + 1000;
+        expect(cutoffMs).toBeGreaterThanOrEqual(expectedMin);
+        expect(cutoffMs).toBeLessThanOrEqual(expectedMax);
+    });
+    it("respects a custom days argument", async () => {
+        mockFind.mockReturnValue(chainable([]));
+        await purgeExpiredClients(7);
+        const cutoff = mockFind.mock.calls[0][0].deletedAt.$lt;
+        const cutoffMs = cutoff.getTime();
+        const expected = Date.now() - 7 * 86_400_000;
+        expect(Math.abs(cutoffMs - expected)).toBeLessThan(1500);
+    });
+    it("deletes Retell agents and flows for expired docs", async () => {
+        mockFind.mockReturnValue(chainable([
+            {
+                _id: "old-1",
+                agent_ids: ["agent_a"],
+                retell_agents: {
+                    agent_a: {
+                        conversationFlow: { conversation_flow_id: "cf_a" },
+                    },
+                },
+            },
+        ]));
+        mockDeleteMany.mockResolvedValue({ deletedCount: 1 });
+        const count = await purgeExpiredClients();
+        expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_a");
+        expect(mockRetellFlowDelete).toHaveBeenCalledWith("cf_a");
+        expect(mockDeleteMany).toHaveBeenCalledTimes(1);
+        expect(count).toBe(1);
+    });
+    it("supports response_engine.conversation_flow_id when conversationFlow is missing", async () => {
+        mockFind.mockReturnValue(chainable([
+            {
+                _id: "old-2",
+                agent_ids: ["agent_b"],
+                retell_agents: {
+                    agent_b: {
+                        response_engine: { conversation_flow_id: "cf_b" },
+                    },
+                },
+            },
+        ]));
+        mockDeleteMany.mockResolvedValue({ deletedCount: 1 });
+        await purgeExpiredClients();
+        expect(mockRetellFlowDelete).toHaveBeenCalledWith("cf_b");
+    });
+    it("does NOT call flow delete when no flow id is present", async () => {
+        mockFind.mockReturnValue(chainable([
+            {
+                _id: "no-flow",
+                agent_ids: ["agent_x"],
+                retell_agents: { agent_x: {} },
+            },
+        ]));
+        mockDeleteMany.mockResolvedValue({ deletedCount: 1 });
+        await purgeExpiredClients();
+        expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_x");
+        expect(mockRetellFlowDelete).not.toHaveBeenCalled();
+    });
+    it("deletes agent_ids not present in retell_agents map (belt and suspenders)", async () => {
+        mockFind.mockReturnValue(chainable([
+            {
+                _id: "extra-ids",
+                agent_ids: ["agent_in_map", "agent_not_in_map"],
+                retell_agents: {
+                    agent_in_map: {},
+                },
+            },
+        ]));
+        mockDeleteMany.mockResolvedValue({ deletedCount: 1 });
+        await purgeExpiredClients();
+        expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_in_map");
+        expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_not_in_map");
+        expect(mockRetellAgentDelete).toHaveBeenCalledTimes(2);
+    });
+    it("continues purging when an individual Retell agent delete throws", async () => {
+        mockFind.mockReturnValue(chainable([
+            {
+                _id: "fail-agent",
+                agent_ids: ["agent_x"],
+                retell_agents: {
+                    agent_x: { conversationFlow: { conversation_flow_id: "cf_x" } },
+                },
+            },
+        ]));
+        mockRetellAgentDelete.mockRejectedValue(new Error("retell agent gone"));
+        mockDeleteMany.mockResolvedValue({ deletedCount: 1 });
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => { });
+        const count = await purgeExpiredClients();
+        // Even if Retell agent delete fails, flow delete still runs and DB still purges.
+        expect(mockRetellFlowDelete).toHaveBeenCalledWith("cf_x");
+        expect(mockDeleteMany).toHaveBeenCalledTimes(1);
+        expect(count).toBe(1);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("could not delete Retell agent"));
+        warn.mockRestore();
+    });
+    it("continues purging when an individual Retell flow delete throws", async () => {
+        mockFind.mockReturnValue(chainable([
+            {
+                _id: "fail-flow",
+                agent_ids: ["agent_y"],
+                retell_agents: {
+                    agent_y: { conversationFlow: { conversation_flow_id: "cf_y" } },
+                },
+            },
+        ]));
+        mockRetellFlowDelete.mockRejectedValue(new Error("flow gone"));
+        mockDeleteMany.mockResolvedValue({ deletedCount: 1 });
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => { });
+        const count = await purgeExpiredClients();
+        expect(count).toBe(1);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("could not delete Retell flow"));
+        warn.mockRestore();
+    });
+    it("processes multiple expired clients independently", async () => {
+        mockFind.mockReturnValue(chainable([
+            { _id: "a", agent_ids: ["agent_a"], retell_agents: { agent_a: {} } },
+            { _id: "b", agent_ids: ["agent_b"], retell_agents: { agent_b: {} } },
+        ]));
+        mockDeleteMany.mockResolvedValue({ deletedCount: 2 });
+        const count = await purgeExpiredClients();
+        expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_a");
+        expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_b");
+        expect(count).toBe(2);
+    });
+    it("uses the same cutoff for query and deleteMany", async () => {
+        mockFind.mockReturnValue(chainable([
+            { _id: "x", agent_ids: ["agent_x"], retell_agents: { agent_x: {} } },
+        ]));
+        mockDeleteMany.mockResolvedValue({ deletedCount: 1 });
+        await purgeExpiredClients(15);
+        const findCutoff = mockFind.mock.calls[0][0].deletedAt.$lt;
+        const deleteCutoff = mockDeleteMany.mock.calls[0][0].deletedAt.$lt;
+        expect(deleteCutoff.getTime()).toBe(findCutoff.getTime());
     });
 });

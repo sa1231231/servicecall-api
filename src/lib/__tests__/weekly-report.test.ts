@@ -1,7 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Shared mutable state for the mock ─────────────────────────────────────
-const { callLogDocs } = vi.hoisted(() => ({ callLogDocs: [] as any[] }));
+const { callLogDocs, weeklyReportDocs } = vi.hoisted(() => ({
+  callLogDocs: [] as any[],
+  weeklyReportDocs: new Map<string, { last_report_sent: Date }>(),
+}));
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 vi.mock("../db.js", () => ({
@@ -20,8 +23,19 @@ vi.mock("../db.js", () => ({
           });
         },
       }),
-      findOne: async () => null,
-      replaceOne: async () => ({ matchedCount: 1 }),
+      findOne: async (filter: any) => {
+        if (name === "weekly_reports" && filter?._id) {
+          const entry = weeklyReportDocs.get(filter._id);
+          return entry ? { _id: filter._id, ...entry } : null;
+        }
+        return null;
+      },
+      replaceOne: async (filter: any, doc: any) => {
+        if (name === "weekly_reports" && filter?._id) {
+          weeklyReportDocs.set(filter._id, { last_report_sent: doc.last_report_sent });
+        }
+        return { matchedCount: 1 };
+      },
     }),
   }),
 }));
@@ -41,7 +55,11 @@ vi.mock("../../config/client-store.js", () => ({
 // ── Imports (after mocks) ─────────────────────────────────────────────────
 import { sendEmail } from "../notify-email.js";
 import { sendSmsToAll } from "../notify-sms.js";
-import { sendWeeklyReportForClient, runWeeklyReports } from "../weekly-report.js";
+import {
+  sendWeeklyReportForClient,
+  runWeeklyReports,
+  startWeeklyReportScheduler,
+} from "../weekly-report.js";
 import { getAllClientDocuments } from "../../config/client-store.js";
 import type { JsonClientEntry } from "../../config/client-store.js";
 
@@ -84,6 +102,7 @@ const recentDate = () => new Date(Date.now() - 3_600_000);
 beforeEach(() => {
   vi.clearAllMocks();
   callLogDocs.length = 0;
+  weeklyReportDocs.clear();
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -286,5 +305,196 @@ describe("runWeeklyReports", () => {
 
     expect(result).toEqual({ sent: [], skipped: [], errors: [] });
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("captures error when getAllClientDocuments rejects", async () => {
+    vi.mocked(getAllClientDocuments).mockRejectedValue(new Error("db down"));
+
+    await expect(runWeeklyReports()).rejects.toThrow("db down");
+  });
+});
+
+// ── last_report_sent dedup (via scheduler) ─────────────────────────────────
+
+describe("getLastReportSent / setLastReportSent (via sendWeeklyReportForClient)", () => {
+  it("setLastReportSent persists to weekly_reports collection", async () => {
+    callLogDocs.push(
+      { client_slug: "test-client", message_type_key: "service_request", created_at: recentDate() },
+    );
+    await sendWeeklyReportForClient(makeClientDoc());
+
+    expect(weeklyReportDocs.has("test-client")).toBe(true);
+    expect(weeklyReportDocs.get("test-client")?.last_report_sent).toBeInstanceOf(Date);
+  });
+
+  it("a re-run updates the timestamp (replaceOne with upsert)", async () => {
+    callLogDocs.push(
+      { client_slug: "test-client", message_type_key: "service_request", created_at: recentDate() },
+    );
+
+    await sendWeeklyReportForClient(makeClientDoc());
+    const first = weeklyReportDocs.get("test-client")?.last_report_sent;
+
+    // Wait a moment so timestamps differ
+    await new Promise((r) => setTimeout(r, 5));
+
+    await sendWeeklyReportForClient(makeClientDoc());
+    const second = weeklyReportDocs.get("test-client")?.last_report_sent;
+
+    expect(second).toBeDefined();
+    expect(second!.getTime()).toBeGreaterThanOrEqual(first!.getTime());
+  });
+});
+
+// ── startWeeklyReportScheduler + scheduledCheck ────────────────────────────
+
+describe("startWeeklyReportScheduler", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("registers a 1-hour interval", () => {
+    const setIntervalSpy = vi.spyOn(global, "setInterval");
+    startWeeklyReportScheduler();
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+    expect(setIntervalSpy.mock.calls[0][1]).toBe(3_600_000);
+    setIntervalSpy.mockRestore();
+  });
+
+  it("scheduledCheck no-ops when not Monday 12pm ET", async () => {
+    // Tuesday — should skip everything
+    vi.setSystemTime(new Date("2026-05-05T16:00:00Z")); // Tue 12pm ET
+    vi.mocked(getAllClientDocuments).mockResolvedValue([
+      makeClientDoc({ _id: "a" }),
+    ] as any);
+
+    const setIntervalSpy = vi.spyOn(global, "setInterval");
+    startWeeklyReportScheduler();
+    const tickFn = setIntervalSpy.mock.calls[0][0] as () => Promise<void>;
+    setIntervalSpy.mockRestore();
+
+    await tickFn();
+
+    expect(getAllClientDocuments).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("scheduledCheck runs reports when it IS Monday 12pm ET", async () => {
+    // Monday 2026-05-04 at 16:00 UTC = 12pm EDT
+    vi.setSystemTime(new Date("2026-05-04T16:00:00Z"));
+    callLogDocs.push(
+      { client_slug: "a", message_type_key: "service_request", created_at: new Date("2026-05-04T15:00:00Z") },
+    );
+    vi.mocked(getAllClientDocuments).mockResolvedValue([
+      makeClientDoc({ _id: "a", weekly_report_enabled: true }),
+    ] as any);
+
+    const setIntervalSpy = vi.spyOn(global, "setInterval");
+    startWeeklyReportScheduler();
+    const tickFn = setIntervalSpy.mock.calls[0][0] as () => Promise<void>;
+    setIntervalSpy.mockRestore();
+
+    await tickFn();
+
+    expect(getAllClientDocuments).toHaveBeenCalled();
+    expect(sendEmail).toHaveBeenCalled();
+  });
+
+  it("skips clients with weekly_report_enabled === false", async () => {
+    vi.setSystemTime(new Date("2026-05-04T16:00:00Z"));
+    vi.mocked(getAllClientDocuments).mockResolvedValue([
+      makeClientDoc({ _id: "opted-out", weekly_report_enabled: false }),
+    ] as any);
+
+    const setIntervalSpy = vi.spyOn(global, "setInterval");
+    startWeeklyReportScheduler();
+    const tickFn = setIntervalSpy.mock.calls[0][0] as () => Promise<void>;
+    setIntervalSpy.mockRestore();
+
+    await tickFn();
+
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("skips clients with non-array agent_ids", async () => {
+    vi.setSystemTime(new Date("2026-05-04T16:00:00Z"));
+    vi.mocked(getAllClientDocuments).mockResolvedValue([
+      makeClientDoc({ _id: "broken", agent_ids: undefined as any }),
+    ] as any);
+
+    const setIntervalSpy = vi.spyOn(global, "setInterval");
+    startWeeklyReportScheduler();
+    const tickFn = setIntervalSpy.mock.calls[0][0] as () => Promise<void>;
+    setIntervalSpy.mockRestore();
+
+    await tickFn();
+
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("dedupes — skips client when last_report_sent is within 6 days", async () => {
+    vi.setSystemTime(new Date("2026-05-04T16:00:00Z"));
+    weeklyReportDocs.set("a", {
+      last_report_sent: new Date("2026-05-04T10:00:00Z"), // 6 hours ago
+    });
+    vi.mocked(getAllClientDocuments).mockResolvedValue([
+      makeClientDoc({ _id: "a" }),
+    ] as any);
+
+    const setIntervalSpy = vi.spyOn(global, "setInterval");
+    startWeeklyReportScheduler();
+    const tickFn = setIntervalSpy.mock.calls[0][0] as () => Promise<void>;
+    setIntervalSpy.mockRestore();
+
+    await tickFn();
+
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("re-sends when last_report_sent is older than 6 days", async () => {
+    vi.setSystemTime(new Date("2026-05-04T16:00:00Z"));
+    weeklyReportDocs.set("a", {
+      last_report_sent: new Date("2026-04-25T16:00:00Z"), // 9 days ago
+    });
+    vi.mocked(getAllClientDocuments).mockResolvedValue([
+      makeClientDoc({ _id: "a" }),
+    ] as any);
+
+    const setIntervalSpy = vi.spyOn(global, "setInterval");
+    startWeeklyReportScheduler();
+    const tickFn = setIntervalSpy.mock.calls[0][0] as () => Promise<void>;
+    setIntervalSpy.mockRestore();
+
+    await tickFn();
+
+    expect(sendEmail).toHaveBeenCalled();
+  });
+
+  it("catches per-client errors so one failure does not stop the whole run", async () => {
+    vi.setSystemTime(new Date("2026-05-04T16:00:00Z"));
+    vi.mocked(getAllClientDocuments).mockResolvedValue([
+      makeClientDoc({ _id: "fail" }),
+      makeClientDoc({ _id: "ok" }),
+    ] as any);
+    // Force first sendWeeklyReportForClient call to throw at email
+    vi.mocked(sendEmail)
+      .mockRejectedValueOnce(new Error("email blow up"))
+      .mockResolvedValue({ id: "rs" });
+
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const setIntervalSpy = vi.spyOn(global, "setInterval");
+    startWeeklyReportScheduler();
+    const tickFn = setIntervalSpy.mock.calls[0][0] as () => Promise<void>;
+    setIntervalSpy.mockRestore();
+
+    await tickFn();
+
+    // Both clients attempted (sendEmail called twice across the run)
+    expect(vi.mocked(sendEmail).mock.calls.length).toBeGreaterThanOrEqual(2);
+    err.mockRestore();
   });
 });

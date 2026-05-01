@@ -1,5 +1,25 @@
 import { describe, it, expect } from "vitest";
 import { notificationClients, agentIdToClient, } from "../../_cache/clients.js";
+import { ownerConfig, setOwnerConfig } from "../notification-clients.js";
+describe("setOwnerConfig", () => {
+    it("mutates the exported ownerConfig email and phone", () => {
+        const originalEmail = ownerConfig.email;
+        const originalPhone = ownerConfig.phone;
+        setOwnerConfig("new@x.com", "+15551234567");
+        expect(ownerConfig.email).toBe("new@x.com");
+        expect(ownerConfig.phone).toBe("+15551234567");
+        // Restore so we don't pollute other tests that read ownerConfig.
+        setOwnerConfig(originalEmail, originalPhone);
+    });
+    it("ownerConfig retains the same object reference (so callers holding it stay live)", () => {
+        const ref = ownerConfig;
+        setOwnerConfig("a@b.com", "+10000000000");
+        expect(ownerConfig).toBe(ref);
+        expect(ref.email).toBe("a@b.com");
+        // Restore
+        setOwnerConfig("samasra93@gmail.com", "+13017872841");
+    });
+});
 describe("notificationClients", () => {
     it("has dispatch_email as arrays or null", () => {
         for (const [key, client] of Object.entries(notificationClients)) {
