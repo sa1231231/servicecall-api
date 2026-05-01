@@ -957,6 +957,7 @@
         <div id="nodeEditorContainer"></div>
       </div>
       <div id="tab-billing" class="agent-tab-pane" data-perm="view_billing">
+        <div id="billingTrialStart" style="margin-bottom:0.75rem;"></div>
         <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
           <span style="font-size:0.82rem;font-weight:600;color:#555;">Cost Range:</span>
           <input type="date" id="dashCostStart" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
@@ -1999,6 +2000,7 @@
     // Render tab content
     renderTabSettings(doc);
     renderTabDispatch(doc);
+    renderTabBillingHeader(doc);
     // nodes/billing/calls tabs render lazily on activation (see switchAgentTab).
 
     // Reset per-tab dirty + lazy-load flags for this agent
@@ -2016,11 +2018,6 @@
 
       <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}
         <div class="config-hint">Retell agent IDs linked to this client. Inbound calls from these agents trigger dispatch notifications.</div></dd>
-
-      <dt title="When the client's free trial started">Trial Start Date</dt><dd>
-        <input type="date" class="edit-input" id="edit-trial-start" value="${doc.trial_start_date ? doc.trial_start_date.slice(0, 10) : ''}" style="width:auto;">
-        <div class="config-hint">When this client's free trial started. Trial length is set globally in Settings.</div>
-      </dd>
 
       <dt title="When off, inbound calls to this agent are silently rejected">Agent Active</dt><dd>
         <label class="toggle">
@@ -2052,6 +2049,54 @@
     }
 
     document.getElementById('tab-settings').innerHTML = html;
+  }
+
+  // Renders the editable header above the Billing tab's read-only sections.
+  // Currently just the Trial Start Date — auto-saves on change since the
+  // rest of the Billing tab has no Save button.
+  function renderTabBillingHeader(doc) {
+    const target = document.getElementById('billingTrialStart');
+    if (!target) return;
+    if (!hasPerm('edit_agents')) {
+      target.innerHTML = '';
+      return;
+    }
+    const v = doc.trial_start_date ? doc.trial_start_date.slice(0, 10) : '';
+    target.innerHTML =
+      '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">' +
+      '<label for="edit-trial-start" style="font-size:0.82rem;font-weight:600;color:#555;" title="When this client\'s free trial started. Trial length is set globally in Settings.">Trial Start Date:</label>' +
+      '<input type="date" class="edit-input" id="edit-trial-start" value="' + esc(v) + '" style="width:auto;padding:0.3rem 0.4rem;font-size:0.78rem;" onchange="saveTrialStartDate(this)">' +
+      '</div>';
+  }
+
+  // Auto-save handler for the Trial Start Date input in the Billing tab.
+  // PATCHes the single field and updates originalDoc so the Settings tab's
+  // diff-based save isn't confused. Mirrors the toggleActive / toggleShadow
+  // pattern (single-field side-channel save).
+  async function saveTrialStartDate(input) {
+    if (!currentSlug) return;
+    const newVal = input.value || null;
+    const origVal = originalDoc?.trial_start_date ? originalDoc.trial_start_date.slice(0, 10) : null;
+    if (newVal === origVal) return;
+    input.disabled = true;
+    try {
+      const res = await fetch('/dashboard/api/agents/' + currentSlug, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trial_start_date: newVal }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed: ' + res.status);
+      }
+      if (originalDoc) originalDoc.trial_start_date = newVal;
+      showToast('Trial start date saved', 'success');
+    } catch (err) {
+      input.value = origVal || '';
+      showToast('Save failed: ' + err.message, 'error');
+    } finally {
+      input.disabled = false;
+    }
   }
 
   function renderTabDispatch(doc) {
@@ -2185,11 +2230,8 @@
     // existing values on the doc are preserved untouched. Re-add a chip
     // input here if per-agent overrides become needed again.
 
-    const newTrialStart = document.getElementById('edit-trial-start').value || null;
-    const origTrialStart = originalDoc.trial_start_date ? originalDoc.trial_start_date.slice(0, 10) : null;
-    if (newTrialStart !== origTrialStart) {
-      updates.trial_start_date = newTrialStart;
-    }
+    // Trial Start Date moved to the Billing tab — it auto-saves on change
+    // there via saveTrialStartDate(). Not part of the Settings save bundle.
 
     // Active flag — dedicated endpoint (updates Retell phone bindings)
     const active = document.getElementById('edit-active').checked;
