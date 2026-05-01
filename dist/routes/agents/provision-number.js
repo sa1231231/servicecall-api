@@ -1,5 +1,6 @@
 import { getClientDocument, updateClientField } from "../../config/client-store.js";
 import { provisionPhoneNumber } from "../../lib/provision-number.js";
+import { logPhoneEvent } from "../../lib/phone-number-history.js";
 export async function provisionNumberHandler(req, res) {
     const { slug } = req.body;
     if (!slug) {
@@ -29,6 +30,7 @@ export async function provisionNumberHandler(req, res) {
             dispatchCallNumber,
         });
         await updateClientField(slug, "outbound_from_number", result.phoneNumber);
+        await logPhoneEvent(slug, result.phoneNumber, result.phoneNumberSid, "provisioned");
         res.json({
             success: true,
             phone_number: result.phoneNumber,

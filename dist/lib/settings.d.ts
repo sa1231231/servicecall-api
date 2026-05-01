@@ -1,3 +1,9 @@
+export interface CostRates {
+    twilio_sms_cents: number;
+    resend_email_cents: number;
+    twilio_number_monthly_cents: number;
+}
+export declare const DEFAULT_COST_RATES: CostRates;
 export interface GlobalSettings {
     google_review_url: string;
     review_sms_message: string;
@@ -10,6 +16,7 @@ export interface GlobalSettings {
     default_summary_agent_id: string;
     category_order?: string[];
     category_labels?: Record<string, string>;
+    cost_rates?: CostRates;
 }
 export declare function getSettings(): Promise<GlobalSettings>;
 export declare function updateSettings(updates: Partial<GlobalSettings>): Promise<GlobalSettings>;

@@ -769,6 +769,19 @@
       <p class="settings-hint">Type {{ to insert {{portal_url}}.</p>
     </div>
 
+    <div class="settings-section">
+      <div class="settings-section-title">Cost Rates (used for COGS estimates)</div>
+      <label>Twilio SMS — cents per outbound message</label>
+      <input type="number" id="settings-rate-sms-cents" step="0.01" min="0" placeholder="0.79">
+      <p class="settings-hint">US Twilio is ~$0.0079/SMS = 0.79¢. Adjust if your bill differs.</p>
+      <label>Resend — cents per email (marginal)</label>
+      <input type="number" id="settings-rate-email-cents" step="0.01" min="0" placeholder="0.04">
+      <p class="settings-hint">$20/50,000 ≈ $0.0004 = 0.04¢. Resend's $20 base is treated as a fixed cost, not COGS.</p>
+      <label>Twilio phone number — cents per number per month</label>
+      <input type="number" id="settings-rate-number-monthly-cents" step="1" min="0" placeholder="115">
+      <p class="settings-hint">~$1.15/month per US number = 115¢.</p>
+    </div>
+
     <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:0.5rem;">Save Settings</button>
   </div>
 
@@ -904,6 +917,10 @@
   <div id="callCostSummary" data-perm="view_billing"></div>
   <div data-perm="view_billing" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;margin-bottom:1rem;">
     <canvas id="costChart" height="200"></canvas>
+  </div>
+  <div data-perm="view_billing" id="cogsSection" style="margin-bottom:1rem;">
+    <h2 style="margin-bottom:0.5rem;">Cost of Goods Sold</h2>
+    <div id="cogsContent"><div class="loading">Loading...</div></div>
   </div>
   <h2>Call Log</h2>
   <div style="margin-bottom:0.75rem;">
@@ -1183,7 +1200,7 @@
       });
 
       let html = `<table><thead><tr>
-        <th>Name</th><th>Slug</th><th>Agent IDs</th><th>Trial</th><th>Status</th><th>Active</th><th>Shadow Mode</th>
+        <th>Name</th><th>Slug</th><th>Agent IDs</th><th>Trial</th><th>Status</th><th title="Month-to-date cost of goods sold">MTD COGS</th><th>Active</th><th>Shadow Mode</th>
       </tr></thead><tbody>`;
 
       for (const a of agents) {
@@ -1192,6 +1209,10 @@
         const ids = a.agent_ids.length > 0
           ? a.agent_ids.map(id => id.substring(0, 16) + '...').join(', ')
           : '<span style="color:#aaa">none</span>';
+        const cogsCents = a.mtd_cogs_cents ?? 0;
+        const cogsHtml = cogsCents > 0
+          ? `$${(cogsCents / 100).toFixed(2)}`
+          : '<span style="color:#aaa">$0.00</span>';
 
         // Trial badge
         let trialHtml = '<span style="color:#aaa">—</span>';
@@ -1214,6 +1235,7 @@
           <td class="agent-ids" title="${esc(a.agent_ids.join(', '))}">${ids}</td>
           <td>${trialHtml}</td>
           <td><span class="badge ${sc}" data-status>${sl}</span></td>
+          <td style="font-variant-numeric:tabular-nums;text-align:right;">${cogsHtml}</td>
           <td onclick="event.stopPropagation()">
             <label class="toggle">
               <input type="checkbox" ${a.active !== false ? 'checked' : ''}
@@ -1307,11 +1329,60 @@
 
     loadCalls(true);
     loadPortalLink(slug);
+    loadCogs(slug);
 
     // Load node editor if agent has Retell agent IDs
     if (originalDoc && originalDoc.agent_ids && originalDoc.agent_ids.length > 0) {
       loadNodeEditor(slug, originalDoc.agent_ids[0]);
     }
+  }
+
+  async function loadCogs(slug) {
+    const target = document.getElementById('cogsContent');
+    if (!target) return;
+    target.innerHTML = '<div class="loading">Loading costs...</div>';
+    try {
+      const res = await fetch('/dashboard/api/billing/cogs/' + encodeURIComponent(slug));
+      if (!res.ok) throw new Error('Failed: ' + res.status);
+      const data = await res.json();
+      renderCogs(data);
+    } catch (err) {
+      target.innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+    }
+  }
+
+  function renderCogs(data) {
+    const fmt = (cents) => '$' + (Math.max(0, cents) / 100).toFixed(2);
+    const monthLabel = (ym, isPartial) => {
+      const [y, m] = ym.split('-').map(Number);
+      const monthName = new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+      return isPartial ? `${monthName} <span style="color:#888;font-style:italic;">(MTD)</span>` : monthName;
+    };
+    const rows = [data.current, ...data.history];
+    let html = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">';
+    html += '<thead style="background:#f8fafc;"><tr>' +
+      '<th style="text-align:left;padding:0.5rem 0.75rem;">Month</th>' +
+      '<th style="text-align:right;padding:0.5rem 0.75rem;">Retell</th>' +
+      '<th style="text-align:right;padding:0.5rem 0.75rem;">SMS</th>' +
+      '<th style="text-align:right;padding:0.5rem 0.75rem;">Email</th>' +
+      '<th style="text-align:right;padding:0.5rem 0.75rem;">Numbers</th>' +
+      '<th style="text-align:right;padding:0.5rem 0.75rem;font-weight:700;">Total</th>' +
+      '</tr></thead><tbody>';
+    for (const row of rows) {
+      const bg = row.is_partial ? 'background:#fefce8;' : '';
+      html += `<tr style="border-top:1px solid #f1f5f9;${bg}">
+        <td style="padding:0.5rem 0.75rem;">${monthLabel(row.month, row.is_partial)}</td>
+        <td style="padding:0.5rem 0.75rem;text-align:right;font-variant-numeric:tabular-nums;">${fmt(row.retell_cents)}</td>
+        <td style="padding:0.5rem 0.75rem;text-align:right;font-variant-numeric:tabular-nums;" title="${row.sms_count} sent">${fmt(row.sms_cents)}</td>
+        <td style="padding:0.5rem 0.75rem;text-align:right;font-variant-numeric:tabular-nums;" title="${row.email_count} sent">${fmt(row.email_cents)}</td>
+        <td style="padding:0.5rem 0.75rem;text-align:right;font-variant-numeric:tabular-nums;" title="${row.phone_number_days} number-days">${fmt(row.phone_cents)}</td>
+        <td style="padding:0.5rem 0.75rem;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;">${fmt(row.total_cents)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+    html += `<div style="margin-top:0.5rem;font-size:0.72rem;color:#888;">Rates: ${data.rates.twilio_sms_cents}¢/SMS · ${data.rates.resend_email_cents}¢/email · $${(data.rates.twilio_number_monthly_cents / 100).toFixed(2)}/number/month. Adjust in Settings → Cost Rates.</div>`;
+    document.getElementById('cogsContent').innerHTML = html;
   }
 
   let originalDoc = null; // stash for diffing on save
@@ -2778,6 +2849,13 @@
       document.getElementById('settings-payment-url').value = settings.stripe_payment_url || '';
       document.getElementById('settings-payment-msg').value = settings.payment_sms_message || '';
       document.getElementById('settings-portal-msg').value = settings.portal_sms_message || '';
+      const rates = settings.cost_rates || {};
+      const smsEl = document.getElementById('settings-rate-sms-cents');
+      const emailEl = document.getElementById('settings-rate-email-cents');
+      const numEl = document.getElementById('settings-rate-number-monthly-cents');
+      if (smsEl) smsEl.value = rates.twilio_sms_cents ?? '';
+      if (emailEl) emailEl.value = rates.resend_email_cents ?? '';
+      if (numEl) numEl.value = rates.twilio_number_monthly_cents ?? '';
       // Populate default summary agent chip
       const summaryChipContainer = document.getElementById('settings-chip-summary');
       if (summaryChipContainer && settings.default_summary_agent_id) {
@@ -2850,6 +2928,11 @@
       payment_sms_message: document.getElementById('settings-payment-msg').value,
       portal_sms_message: document.getElementById('settings-portal-msg').value,
       default_summary_agent_id: getChipValues('settings-chip-summary')[0] || '',
+      cost_rates: {
+        twilio_sms_cents: parseFloat(document.getElementById('settings-rate-sms-cents').value) || 0,
+        resend_email_cents: parseFloat(document.getElementById('settings-rate-email-cents').value) || 0,
+        twilio_number_monthly_cents: parseFloat(document.getElementById('settings-rate-number-monthly-cents').value) || 0,
+      },
     };
 
     try {

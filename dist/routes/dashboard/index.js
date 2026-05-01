@@ -284,6 +284,21 @@ dashboardApiRouter.post("/agents/:slug/send-portal-link", requirePermission("sen
         res.status(502).json({ error: "Failed to send portal link", details: msg });
     }
 });
+// ── Billing / COGS ──────────────────────────────────────────────────────────
+import { getClientCogs } from "../../lib/billing-cogs.js";
+dashboardApiRouter.get("/billing/cogs/:slug", async (req, res) => {
+    try {
+        const slug = req.params.slug;
+        const monthsBack = Math.min(Math.max(Number(req.query.months) || 6, 1), 24);
+        const cogs = await getClientCogs(slug, monthsBack);
+        res.json(cogs);
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[billing/cogs] error:`, msg);
+        res.status(500).json({ error: msg });
+    }
+});
 // ── Global Settings ─────────────────────────────────────────────────────────
 dashboardApiRouter.get("/settings", async (_req, res) => {
     res.json(await getSettings());

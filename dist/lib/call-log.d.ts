@@ -20,6 +20,8 @@ export interface CallLogDocument {
     public_log_url?: string;
     transcript?: string;
     call_cost_cents?: number;
+    sms_count?: number;
+    email_count?: number;
     created_at: Date;
 }
 /** Save a call log document (fire-and-forget safe). */

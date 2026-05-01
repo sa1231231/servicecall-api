@@ -89,6 +89,7 @@ export async function postHookHandler(req: Request, res: Response) {
     typeKey = "",
     typeLabel = "",
     fields: Record<string, string> = {},
+    counts: { sms_count?: number; email_count?: number } = {},
   ): CallLogDocument {
     return {
       _id: call.call_id ?? `unknown_${Date.now()}`,
@@ -105,6 +106,8 @@ export async function postHookHandler(req: Request, res: Response) {
       outcome,
       shadow_mode: client.shadow_mode ?? false,
       call_cost_cents: call.call_cost?.combined_cost ?? undefined,
+      sms_count: counts.sms_count,
+      email_count: counts.email_count,
       created_at: new Date(),
     };
   }
@@ -230,7 +233,7 @@ export async function postHookHandler(req: Request, res: Response) {
     }
 
 
-    saveCallLog(buildCallLog("shadow_dry_run", typeKey, messageType.label, fieldValues)).catch(() => {});
+    saveCallLog(buildCallLog("shadow_dry_run", typeKey, messageType.label, fieldValues, { sms_count: 1, email_count: 1 })).catch(() => {});
     sendOwnerCallMonitor(call, clientConfig, "shadow_dry_run").catch(() => {});
     res.status(200).json({ success: true, outcome: "shadow_dry_run" });
     return;
@@ -320,7 +323,10 @@ export async function postHookHandler(req: Request, res: Response) {
     ).catch(() => {});
   }
 
-  saveCallLog(buildCallLog("dispatched", typeKey, messageType.label, fieldValues)).catch(() => {});
+  saveCallLog(buildCallLog("dispatched", typeKey, messageType.label, fieldValues, {
+    sms_count: dispatch.text_numbers.length,
+    email_count: dispatch.email?.length ?? 0,
+  })).catch(() => {});
   sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => {});
 
   // Fire-and-forget: webhook

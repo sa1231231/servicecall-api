@@ -1,5 +1,10 @@
 import { getDb } from "./db.js";
 import { setOwnerConfig } from "../config/notification-clients.js";
+export const DEFAULT_COST_RATES = {
+    twilio_sms_cents: 0.79,
+    resend_email_cents: 0.04,
+    twilio_number_monthly_cents: 115,
+};
 function collection() {
     return getDb().collection("settings");
 }
@@ -17,6 +22,11 @@ export async function getSettings() {
         default_summary_agent_id: doc?.default_summary_agent_id ?? "",
         category_order: doc?.category_order ?? undefined,
         category_labels: doc?.category_labels ?? undefined,
+        cost_rates: {
+            twilio_sms_cents: doc?.cost_rates?.twilio_sms_cents ?? DEFAULT_COST_RATES.twilio_sms_cents,
+            resend_email_cents: doc?.cost_rates?.resend_email_cents ?? DEFAULT_COST_RATES.resend_email_cents,
+            twilio_number_monthly_cents: doc?.cost_rates?.twilio_number_monthly_cents ?? DEFAULT_COST_RATES.twilio_number_monthly_cents,
+        },
     };
 }
 export async function updateSettings(updates) {
@@ -43,6 +53,15 @@ export async function updateSettings(updates) {
         setObj.category_order = updates.category_order;
     if (updates.category_labels !== undefined)
         setObj.category_labels = updates.category_labels;
+    if (updates.cost_rates !== undefined) {
+        // Merge into a complete CostRates object so nested writes don't drop sibling keys
+        const current = await getSettings();
+        setObj.cost_rates = {
+            twilio_sms_cents: updates.cost_rates.twilio_sms_cents ?? current.cost_rates.twilio_sms_cents,
+            resend_email_cents: updates.cost_rates.resend_email_cents ?? current.cost_rates.resend_email_cents,
+            twilio_number_monthly_cents: updates.cost_rates.twilio_number_monthly_cents ?? current.cost_rates.twilio_number_monthly_cents,
+        };
+    }
     if (Object.keys(setObj).length === 0) {
         return getSettings();
     }

@@ -266,6 +266,8 @@ export async function createAgentHandler(
         dispatchCallNumber: dispatchCall || undefined,
       });
       provisionedNumber = result.phoneNumber;
+      const { logPhoneEvent } = await import("../../lib/phone-number-history.js");
+      await logPhoneEvent(slug, result.phoneNumber, result.phoneNumberSid, "provisioned");
       console.log(`[create-agent] provisioned number ${provisionedNumber} for "${slug}"`);
     } catch (provErr: unknown) {
       const msg = provErr instanceof Error ? provErr.message : String(provErr);
