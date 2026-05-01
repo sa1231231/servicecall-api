@@ -475,10 +475,24 @@
   .flow-diagram-wrap.collapsed .flow-diagram-header .chevron { transform: rotate(-90deg); }
   .flow-diagram-wrap.collapsed .flow-diagram-body { display: none; }
   .flow-diagram-body {
-    max-height: 380px; overflow: auto; padding: 0.5rem;
+    position: relative;
+    height: 380px; overflow: hidden; padding: 0;
     background: linear-gradient(180deg, #fafbfc 0%, #ffffff 100%);
   }
-  .flow-diagram-body svg { display: block; }
+  .flow-diagram-host { width: 100%; height: 100%; }
+  .flow-diagram-host svg { display: block; user-select: none; touch-action: none; }
+  .flow-diagram-toolbar {
+    position: absolute; bottom: 8px; right: 8px;
+    display: flex; gap: 4px; background: rgba(255,255,255,0.92);
+    border: 1px solid #e5e7eb; border-radius: 6px; padding: 2px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .flow-diagram-toolbar button {
+    width: 28px; height: 24px; padding: 0 6px; border: 0; background: transparent;
+    font-size: 13px; line-height: 1; cursor: pointer; color: #4b5563;
+    border-radius: 4px; font-weight: 600;
+  }
+  .flow-diagram-toolbar button:hover { background: #f3f4f6; color: #111827; }
   .flow-node { cursor: pointer; }
   .flow-node:hover .flow-node-bg { filter: brightness(0.96); }
   .flow-node-bg.node-intro { fill: #eef2ff; stroke: #6366f1; stroke-width: 2; }
@@ -787,7 +801,12 @@
       <span class="chevron">&#9662;</span>
     </div>
     <div class="flow-diagram-body">
-      <div id="flowDiagramSvgHost"></div>
+      <div id="flowDiagramSvgHost" class="flow-diagram-host"></div>
+      <div class="flow-diagram-toolbar">
+        <button type="button" onclick="flowZoom(1.25)" title="Zoom in">+</button>
+        <button type="button" onclick="flowZoom(0.8)" title="Zoom out">−</button>
+        <button type="button" onclick="flowFit()" title="Fit to view">Fit</button>
+      </div>
     </div>
   </div>
 </form>
@@ -2505,6 +2524,7 @@
   setTimeout(() => {
     loadAllLists(); checkAutoSave(); renderFlowDiagram(); renderPathTree();
     if (typeof refreshTreeHeaderContext === 'function') refreshTreeHeaderContext();
+    if (typeof initFlowInteractions === 'function') initFlowInteractions();
   }, 500);
 
   // ── Tree + detail editor (Tier 2) ─────────────────────────────────────
@@ -2968,6 +2988,93 @@
   }
 
   let flowDiagramTimer = null;
+  // Pan/zoom state — persists across re-renders so typing in the form doesn't
+  // snap the user's view back to default. `null` view means "fit natural size".
+  let flowDiagramView = null;     // { x, y, w, h } — current viewBox
+  let flowDiagramBaseSize = null; // { w, h } — natural size from last render
+
+  function applyFlowView() {
+    const svg = document.querySelector('#flowDiagramSvgHost svg');
+    if (!svg || !flowDiagramView) return;
+    const v = flowDiagramView;
+    svg.setAttribute('viewBox', `${v.x} ${v.y} ${v.w} ${v.h}`);
+  }
+
+  function flowZoom(factor, anchorClientX, anchorClientY) {
+    if (!flowDiagramBaseSize) return;
+    const svg = document.querySelector('#flowDiagramSvgHost svg');
+    if (!svg) return;
+    const v = flowDiagramView ?? { x: 0, y: 0, w: flowDiagramBaseSize.w, h: flowDiagramBaseSize.h };
+    const minW = flowDiagramBaseSize.w * 0.25;
+    const maxW = flowDiagramBaseSize.w * 4;
+    const newW = Math.max(minW, Math.min(maxW, v.w / factor));
+    const newH = v.h * (newW / v.w);
+    const rect = svg.getBoundingClientRect();
+    const ax = anchorClientX != null ? anchorClientX : rect.left + rect.width / 2;
+    const ay = anchorClientY != null ? anchorClientY : rect.top + rect.height / 2;
+    const fx = (ax - rect.left) / rect.width;
+    const fy = (ay - rect.top) / rect.height;
+    const sx = v.x + fx * v.w;
+    const sy = v.y + fy * v.h;
+    flowDiagramView = { x: sx - fx * newW, y: sy - fy * newH, w: newW, h: newH };
+    applyFlowView();
+  }
+
+  function flowFit() { flowDiagramView = null; renderFlowDiagram(); }
+
+  function initFlowInteractions() {
+    const host = document.getElementById('flowDiagramSvgHost');
+    if (!host || host.dataset.interactionsBound) return;
+    host.dataset.interactionsBound = '1';
+
+    host.addEventListener('wheel', (e) => {
+      if (!flowDiagramBaseSize) return;
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+      flowZoom(factor, e.clientX, e.clientY);
+    }, { passive: false });
+
+    let drag = null;
+    host.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.flow-node')) return; // node click — let it through
+      const svg = host.querySelector('svg');
+      if (!svg || !flowDiagramBaseSize) return;
+      drag = {
+        startX: e.clientX, startY: e.clientY,
+        view: flowDiagramView ?? { x: 0, y: 0, w: flowDiagramBaseSize.w, h: flowDiagramBaseSize.h },
+        rect: svg.getBoundingClientRect(),
+        moved: false,
+      };
+      svg.style.cursor = 'grabbing';
+      try { host.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+    host.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const dx = (e.clientX - drag.startX) * (drag.view.w / drag.rect.width);
+      const dy = (e.clientY - drag.startY) * (drag.view.h / drag.rect.height);
+      if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > 3) drag.moved = true;
+      flowDiagramView = { x: drag.view.x - dx, y: drag.view.y - dy, w: drag.view.w, h: drag.view.h };
+      applyFlowView();
+    });
+    const endDrag = () => {
+      if (!drag) return;
+      const svg = host.querySelector('svg');
+      if (svg) svg.style.cursor = 'grab';
+      if (drag.moved) {
+        // Swallow the synthetic click that follows a drag-release over a node.
+        host.dataset.suppressClick = '1';
+        setTimeout(() => delete host.dataset.suppressClick, 0);
+      }
+      drag = null;
+    };
+    host.addEventListener('pointerup', endDrag);
+    host.addEventListener('pointercancel', endDrag);
+
+    host.addEventListener('click', (e) => {
+      if (host.dataset.suppressClick) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+  }
+
   function scheduleDiagramRender() {
     if (flowDiagramTimer) clearTimeout(flowDiagramTimer);
     flowDiagramTimer = setTimeout(() => { renderFlowDiagram(); }, 300);
@@ -3202,12 +3309,18 @@
     let totalHeight = FD_INTRO_Y + FD_INTRO_H + 20;
     for (const n of allNodes) totalHeight = Math.max(totalHeight, n.y + n.h + 20);
 
-    // Build SVG
+    // Build SVG. Width/height come from CSS (host fills the body); viewBox
+    // is the pan/zoom surface — we restore prior view if the user has already
+    // panned or zoomed, so a debounced re-render mid-edit doesn't snap back.
     const svgNS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', String(Math.max(totalWidth, 600)));
-    svg.setAttribute('height', String(totalHeight));
-    svg.setAttribute('viewBox', `0 0 ${Math.max(totalWidth, 600)} ${totalHeight}`);
+    flowDiagramBaseSize = { w: Math.max(totalWidth, 600), h: totalHeight };
+    const view = flowDiagramView ?? { x: 0, y: 0, w: flowDiagramBaseSize.w, h: flowDiagramBaseSize.h };
+    svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.style.width = '100%';
+    svg.style.height = '100%';
+    svg.style.cursor = 'grab';
 
     // Edges first (so nodes draw on top)
     const nodeById = new Map(allNodes.map((n) => [n.id, n]));
