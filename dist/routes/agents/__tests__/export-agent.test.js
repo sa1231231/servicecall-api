@@ -492,4 +492,91 @@ describe("exportAgentHandler", () => {
         expect(res._status).toBe(400);
         expect(res._json.error).toContain("No canonical JSON");
     });
+    it("exports closing prompts from canonical Close / Closing Remarks / Closing Statement nodes", async () => {
+        mockGetClientDocument.mockResolvedValue({
+            name: "Test",
+            agent_ids: ["agent_1"],
+            retell_agents: { agent_1: { agent_name: "Test" } },
+        });
+        mockParseConversationFlow.mockReturnValue(makeParsed({
+            allNodes: [
+                { name: "Close", raw: { instruction: { text: "Thanks {{business_name}}!" } } },
+                { name: "Closing Remarks", raw: { instruction: { text: "Have a great day." } } },
+                { name: "Closing Statement", raw: { instruction: { text: "Bye now!" } } },
+            ],
+        }));
+        const res = mockRes();
+        await exportAgentHandler(mockReq("test"), res);
+        expect(res._json.business.closePrompt).toBe("Thanks {{business_name}}!");
+        expect(res._json.business.closingRemarksPrompt).toBe("Have a great day.");
+        expect(res._json.business.closingStatementText).toBe("Bye now!");
+    });
+    it("omits closing prompts when nodes are absent or empty", async () => {
+        mockGetClientDocument.mockResolvedValue({
+            name: "Test",
+            agent_ids: ["agent_1"],
+            retell_agents: { agent_1: { agent_name: "Test" } },
+        });
+        mockParseConversationFlow.mockReturnValue(makeParsed({
+            allNodes: [{ name: "Close", raw: { instruction: { text: "" } } }],
+        }));
+        const res = mockRes();
+        await exportAgentHandler(mockReq("test"), res);
+        expect(res._json.business.closePrompt).toBeUndefined();
+        expect(res._json.business.closingRemarksPrompt).toBeUndefined();
+        expect(res._json.business.closingStatementText).toBeUndefined();
+    });
+    it("exports per-path end_mode from parsed.paths[i].endMode", async () => {
+        mockGetClientDocument.mockResolvedValue({
+            name: "Test",
+            agent_ids: ["agent_1"],
+            retell_agents: { agent_1: { agent_name: "Test" } },
+        });
+        mockParseConversationFlow.mockReturnValue(makeParsed({
+            paths: [
+                {
+                    name: "emergency",
+                    transitionNode: { id: "tn1" },
+                    routerNode: { raw: { edges: [] } },
+                    dataChain: [],
+                    endMode: "transfer",
+                },
+                {
+                    name: "quote",
+                    transitionNode: { id: "tn2" },
+                    routerNode: { raw: { edges: [] } },
+                    dataChain: [],
+                    endMode: "callback",
+                },
+            ],
+        }));
+        const res = mockRes();
+        await exportAgentHandler(mockReq("test"), res);
+        expect(res._json.paths[0].end_mode).toBe("transfer");
+        expect(res._json.paths[1].end_mode).toBe("callback");
+    });
+    it("exports client.path_end_modes + dispatch_call_overrides + webhook_url + notification_greeting", async () => {
+        mockGetClientDocument.mockResolvedValue({
+            name: "Test",
+            agent_ids: ["agent_1"],
+            retell_agents: { agent_1: { agent_name: "Test" } },
+            path_end_modes: { emergency: "transfer" },
+            dispatch_call_overrides: { "+15551111111": "+15552222222" },
+            webhook_url: "https://example.com/hook",
+            notification_greeting: "Hi {{business_name}},",
+            weekly_report_enabled: true,
+            dispatch_cc: "cc@example.com",
+            outbound_from_number: "+15553334444",
+        });
+        mockParseConversationFlow.mockReturnValue(makeParsed());
+        const res = mockRes();
+        await exportAgentHandler(mockReq("test"), res);
+        expect(res._json.client.path_end_modes).toEqual({ emergency: "transfer" });
+        expect(res._json.client.dispatch_call_overrides).toEqual({ "+15551111111": "+15552222222" });
+        expect(res._json.client.webhook_url).toBe("https://example.com/hook");
+        expect(res._json.client.notification_greeting).toBe("Hi {{business_name}},");
+        expect(res._json.client.weekly_report_enabled).toBe(true);
+        expect(res._json.client.dispatch_cc).toBe("cc@example.com");
+        expect(res._json.client.outbound_from_number).toBe("+15553334444");
+    });
 });

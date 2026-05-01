@@ -587,6 +587,25 @@ nodeEditorRouter.post("/:agentId/rollback", async (req, res) => {
         // Fetch fresh state and store
         const fresh = await pullLatest(agentId);
         await storeCanonical(slug, agentId, fresh.canonicalJson, resolved.doc);
+        // Re-derive path_end_modes from the rolled-back flow so the MongoDB
+        // shorthand stays in sync with the restored Pre-Transfer / Transfer Call
+        // structure. Without this, the dashboard's stored end-mode field could
+        // disagree with what's actually in the flow.
+        try {
+            const restoredParsed = parseConversationFlow(fresh.canonicalJson);
+            const nextEndModes = {};
+            for (const pp of restoredParsed.paths) {
+                if (pp.endMode === "transfer")
+                    nextEndModes[pp.name] = "transfer";
+            }
+            await getDb()
+                .collection("clients")
+                .updateOne({ _id: slug }, { $set: { path_end_modes: nextEndModes } });
+            await loadClientsFromDb();
+        }
+        catch (e) {
+            console.warn(`[node-editor] rollback: could not re-derive path_end_modes: ${e instanceof Error ? e.message : e}`);
+        }
         // Snapshot the restored state
         await createVersionSnapshot(slug, agentId, fresh.canonicalJson, "rollback", `Restored from version ${version.version}`, req.user?.username ?? "unknown");
         await logAudit(req, "rollback_agent", `${slug}/${agentId}`, {

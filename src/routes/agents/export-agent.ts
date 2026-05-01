@@ -46,9 +46,26 @@ export async function exportAgentHandler(
         : fullText;
     }
 
-    // Detect human request mode
-    const hasTransferCall = parsed.allNodes.some((n) => n.name === "Transfer Call");
-    const humanRequestMode = hasTransferCall ? "live_transfer" : "callback";
+    // Detect human request mode (caller-asks-for-human path).
+    // Per-path end mode (callback vs transfer at end-of-flow) is read from
+    // each ParsedPath.endMode below; the global "Transfer Call" node is the
+    // human-request transfer node, distinct from per-path "Transfer Call (X)".
+    const hasGlobalTransferCall = parsed.allNodes.some((n) => n.name === "Transfer Call");
+    const humanRequestMode = hasGlobalTransferCall ? "live_transfer" : "callback";
+
+    // Extract closing-prompt text from the canonical's closing-sequence nodes
+    // (Close, Closing Remarks, Closing Statement). These are global, shared
+    // across all callback-mode paths. If absent we omit the field so the
+    // create-form import falls back to defaults.
+    function findInstructionText(nodeName: string): string | undefined {
+      const node = parsed.allNodes.find((n) => n.name === nodeName);
+      const instr = node?.raw.instruction as Record<string, unknown> | undefined;
+      const text = instr?.text as string | undefined;
+      return text && text.length > 0 ? text : undefined;
+    }
+    const closePrompt = findInstructionText("Close");
+    const closingRemarksPrompt = findInstructionText("Closing Remarks");
+    const closingStatementText = findInstructionText("Closing Statement");
 
     // Extract transition conditions from intro edges
     const introEdges = parsed.introNode.raw.edges as Array<Record<string, unknown>> | undefined;
@@ -123,6 +140,7 @@ export async function exportAgentHandler(
         name: path.name,
         transitionCondition,
         dataPoints,
+        end_mode: path.endMode,
       };
     });
 
@@ -137,6 +155,11 @@ export async function exportAgentHandler(
         faqKnowledgeBase,
         introFinetuneExamples: [],
         human_request_mode: humanRequestMode,
+        // Closing prompts (omitted if the node text is empty so that import
+        // falls back to defaults rather than persisting an empty string).
+        ...(closePrompt !== undefined ? { closePrompt } : {}),
+        ...(closingRemarksPrompt !== undefined ? { closingRemarksPrompt } : {}),
+        ...(closingStatementText !== undefined ? { closingStatementText } : {}),
       },
       paths,
       client: {
@@ -144,9 +167,16 @@ export async function exportAgentHandler(
         name: doc.name,
         dispatch_text_numbers: doc.dispatch_text_numbers ?? [],
         dispatch_call_number: doc.dispatch_call_number ?? null,
+        dispatch_call_overrides: doc.dispatch_call_overrides ?? undefined,
         dispatch_email: doc.dispatch_email ?? null,
+        dispatch_cc: doc.dispatch_cc ?? null,
         dispatch_by_type: doc.dispatch_by_type ?? undefined,
+        path_end_modes: doc.path_end_modes ?? undefined,
         summary_agent_id: doc.summary_agent_id ?? null,
+        outbound_from_number: doc.outbound_from_number ?? null,
+        webhook_url: doc.webhook_url ?? undefined,
+        notification_greeting: doc.notification_greeting ?? undefined,
+        weekly_report_enabled: doc.weekly_report_enabled ?? undefined,
         shadow_mode: doc.shadow_mode ?? false,
         hide_not_mentioned: doc.hide_not_mentioned ?? false,
         phone_fallback_to_caller: doc.phone_fallback_to_caller ?? true,
