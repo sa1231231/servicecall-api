@@ -486,7 +486,7 @@
 
     <label>Dispatch Call</label>
     <input type="text" id="dispatchCallNumber" placeholder="+15551234567">
-    <div class="field-hint">If set (along with Summary Agent ID), an AI-powered outbound call is placed to this number after each caller interaction to deliver the summary by voice.</div>
+    <div class="field-hint">If set, an AI-powered outbound call is placed to this number after each caller interaction to deliver the summary by voice. Uses the global default Summary Agent (set in Settings → Agent Defaults).</div>
 
     <label>Dispatch Text <span style="font-weight:400;color:#999;">(defaults to owner phone if empty)</span></label>
     <div class="chip-input" id="chip-dispatch-text" onclick="this.querySelector('input').focus()">
@@ -499,12 +499,6 @@
       <input type="text" placeholder="dispatch@acme.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
     </div>
     <div class="field-hint">These addresses receive an email with the full call summary after every call.</div>
-
-    <label>Summary Agent ID (outbound dispatch agent)</label>
-    <div class="chip-input" id="chip-summary-agent" onclick="this.querySelector('input').focus()">
-      <input type="text" placeholder="agent_..." onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
-    </div>
-    <div class="field-hint">The Retell agent used for outbound dispatch calls. Works with Dispatch Call. Leave blank if you only need SMS/email.</div>
   </div>
 
   <!-- ── Identity & Routing Paths pane ──────────────────────────
@@ -824,12 +818,17 @@
 
   // Auto-load API key and defaults from server environment
   let ownerPhone = '';
+  // The Summary Agent ID input was removed from the form (the global default
+  // configured in Settings → Agent Defaults is sufficient for now). This var
+  // holds whichever value the create-agent endpoint should receive — the
+  // global default by default, or an imported value from a JSON config.
+  let summaryAgentIdValue = '';
   fetch('/form/config')
     .then(r => r.json())
     .then(data => {
       document.getElementById('apiKey').value = data.apiKey;
-      if (data.default_summary_agent_id && getFormChipValues('chip-summary-agent').length === 0) {
-        setFormChipValues('chip-summary-agent', [data.default_summary_agent_id]);
+      if (data.default_summary_agent_id) {
+        summaryAgentIdValue = data.default_summary_agent_id;
       }
       ownerPhone = data.owner_phone || '';
     })
@@ -980,13 +979,9 @@
       }
     }
 
-    // Summary agent ID (optional)
-    const summaryAgentChips = getFormChipValues('chip-summary-agent');
-    for (const id of summaryAgentChips) {
-      if (!validateAgentId(id)) {
-        errors.push(`Invalid Summary Agent ID "${id}". Must start with "agent_".`);
-      }
-    }
+    // Summary agent ID — global default applied at submit time, no UI to
+    // validate. If JSON import provided one and it's malformed, the server
+    // rejects it, so an extra client-side check buys nothing here.
 
     // Path-level dispatch overrides
     pathsContainer.querySelectorAll('.path-card').forEach((card, i) => {
@@ -1604,8 +1599,10 @@
     const emails = getFormChipValues('chip-dispatch-email');
     if (emails.length) body.client.dispatch_email = emails;
 
-    const summaryChips = getFormChipValues('chip-summary-agent');
-    if (summaryChips.length > 0) body.client.summary_agent_id = summaryChips[0];
+    // Summary Agent ID is no longer a visible input — read from the
+    // module var, which defaults to /form/config's default_summary_agent_id
+    // and gets overridden by JSON import if present.
+    if (summaryAgentIdValue) body.client.summary_agent_id = summaryAgentIdValue;
 
     body.client.phone_fallback_to_caller = true;
     body.client.hide_not_mentioned = true;
@@ -1785,7 +1782,8 @@
       dispatchTextNumbers: getFormChipValues('chip-dispatch-text').join(', '),
       dispatchCallNumber: val('dispatchCallNumber'),
       dispatchEmail: getFormChipValues('chip-dispatch-email').join(', '),
-      summaryAgentId: getFormChipValues('chip-summary-agent').join(', '),
+      // Summary Agent ID has no UI; persisted via summaryAgentIdValue var.
+      summaryAgentId: summaryAgentIdValue || '',
       humanRequestMode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
       closePrompt: val('closePrompt'),
       closingRemarksPrompt: val('closingRemarksPrompt'),
@@ -1840,7 +1838,7 @@
         dispatch_text_numbers: getFormChipValues('chip-dispatch-text'),
         dispatch_call_number: val('dispatchCallNumber') || null,
         dispatch_email: getFormChipValues('chip-dispatch-email'),
-        summary_agent_id: getFormChipValues('chip-summary-agent')[0] || null,
+        summary_agent_id: summaryAgentIdValue || null,
         shadow_mode: true,
         // Carry imported extras through export so a load → export cycle
         // preserves them. These have no form UI but the create-agent
@@ -1898,6 +1896,8 @@
           dispatchTextNumbers: (config.client?.dispatch_text_numbers || []).join(', '),
           dispatchCallNumber: config.client?.dispatch_call_number || '',
           dispatchEmail: (config.client?.dispatch_email || []).join(', '),
+          // Imported summary_agent_id flows into summaryAgentIdValue (see
+          // loadFormState) — overrides the global default for this submit.
           summaryAgentId: config.client?.summary_agent_id || '',
           routingPaths: (config.paths || []).map(p => {
             // Convert data points, wrapping branch-conditioned ones
@@ -1981,7 +1981,8 @@
     setFormChipValues('chip-dispatch-text', csvToArray(state.dispatchTextNumbers || ''));
     document.getElementById('dispatchCallNumber').value = state.dispatchCallNumber || '';
     setFormChipValues('chip-dispatch-email', csvToArray(state.dispatchEmail || ''));
-    setFormChipValues('chip-summary-agent', csvToArray(state.summaryAgentId || ''));
+    // No UI for summary agent — restore directly into the module var.
+    if (state.summaryAgentId) summaryAgentIdValue = state.summaryAgentId;
 
     const modeRadio = document.querySelector(`input[name="humanRequestMode"][value="${state.humanRequestMode || 'callback'}"]`);
     if (modeRadio) modeRadio.checked = true;
