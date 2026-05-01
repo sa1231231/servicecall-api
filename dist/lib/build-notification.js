@@ -80,7 +80,10 @@ export function buildNotificationMessages(input) {
         .map((f) => `<strong>${escapeHtml(f.label)}:</strong> ${escapeHtml(f.value)}`)
         .join("<br>");
     // Build message bodies
-    const greeting = `Hi ${clientConfig.name}, you have a new call!`;
+    const effectiveName = allVars.business_name || clientConfig.name;
+    const greeting = clientConfig.notification_greeting
+        ? clientConfig.notification_greeting.replace(/\{\{business_name\}\}/g, effectiveName)
+        : `Hi ${effectiveName}, you have a new call!`;
     const urgentSuffix = messageType.additional_text
         ? `\n\n${messageType.additional_text}`
         : "";

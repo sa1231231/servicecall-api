@@ -1,7 +1,8 @@
 interface ProvisionOptions {
     agentId: string;
     clientName: string;
-    dispatchCallNumber: string;
+    dispatchCallNumber?: string;
+    areaCode?: number;
 }
 interface ProvisionResult {
     phoneNumber: string;

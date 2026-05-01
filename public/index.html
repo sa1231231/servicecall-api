@@ -992,6 +992,18 @@
           <button type="button" class="btn-chain-add" onclick="addChainItem(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Data Point</button>
           <button type="button" class="btn-chain-branch" onclick="addChainBranch(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Branch</button>
         </div>
+        <div style="margin-top:0.75rem;">
+          <label style="font-size:0.85rem;font-weight:600;color:#555;">End of path</label>
+          <div class="toggle-row">
+            <input type="radio" name="endMode_${id}" id="endModeCallback_${id}" class="path-end-mode" value="callback" checked>
+            <label for="endModeCallback_${id}">Callback — caller hangs up; we call the dispatch number back</label>
+          </div>
+          <div class="toggle-row">
+            <input type="radio" name="endMode_${id}" id="endModeTransfer_${id}" class="path-end-mode" value="transfer">
+            <label for="endModeTransfer_${id}">Live transfer — caller is transferred straight to the dispatch number</label>
+          </div>
+          <div class="field-hint">Live transfer uses this path's Dispatch Call Number override if set, otherwise the client default.</div>
+        </div>
         <details style="margin-top:0.75rem;">
           <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">(optional)</span></summary>
           <div style="margin-top:0.5rem;">
@@ -1025,6 +1037,8 @@
     const smsVals = getChipValues(card.querySelector('.path-dispatch-sms'));
     const emailVals = getChipValues(card.querySelector('.path-dispatch-email'));
     const call = card.querySelector('.path-dispatch-call').value;
+    const endModeRadio = card.querySelector('.path-end-mode:checked');
+    const endMode = endModeRadio ? endModeRadio.value : 'callback';
 
     // Create new card with copied name
     addPathCard(name ? name + ' (Copy)' : '');
@@ -1035,6 +1049,8 @@
     setChipValues(newCard.querySelector('.path-dispatch-sms'), smsVals);
     setChipValues(newCard.querySelector('.path-dispatch-email'), emailVals);
     newCard.querySelector('.path-dispatch-call').value = call;
+    const newEndRadio = newCard.querySelector(`.path-end-mode[value="${endMode}"]`);
+    if (newEndRadio) newEndRadio.checked = true;
 
     // Restore the chain data into the new card
     const newChainRoot = newCard.querySelector('.chain-list[data-chain-root]');
@@ -1132,8 +1148,10 @@
         const pathSms = getChipValues(card.querySelector('.path-dispatch-sms'));
         const pathEmail = getChipValues(card.querySelector('.path-dispatch-email'));
         const pathCall = card.querySelector('.path-dispatch-call').value.trim();
+        const endModeRadio = card.querySelector('.path-end-mode:checked');
+        const endMode = endModeRadio ? endModeRadio.value : 'callback';
 
-        const pathEntry = { name, transitionCondition: condition, dataPoints };
+        const pathEntry = { name, transitionCondition: condition, dataPoints, end_mode: endMode };
         if (pathSms.length || pathEmail.length || pathCall) {
           pathEntry.dispatchOverride = {};
           if (pathSms.length) pathEntry.dispatchOverride.dispatch_text_numbers = pathSms;
@@ -1401,6 +1419,7 @@
 
     pathsContainer.querySelectorAll('.path-card').forEach(card => {
       const chainRoot = card.querySelector('.chain-list[data-chain-root]');
+      const endModeRadio = card.querySelector('.path-end-mode:checked');
       state.routingPaths.push({
         name: card.querySelector('.path-name').value,
         condition: card.querySelector('.path-condition').value,
@@ -1408,6 +1427,7 @@
         dispatchSms: getChipValues(card.querySelector('.path-dispatch-sms')).join(', '),
         dispatchEmail: getChipValues(card.querySelector('.path-dispatch-email')).join(', '),
         dispatchCall: card.querySelector('.path-dispatch-call').value,
+        endMode: endModeRadio ? endModeRadio.value : 'callback',
       });
     });
 
@@ -1420,6 +1440,7 @@
       name: p.name,
       transitionCondition: p.transitionCondition,
       dataPoints: p.dataPoints,
+      end_mode: p.end_mode || 'callback',
     }));
 
     const config = {
@@ -1534,6 +1555,7 @@
               dispatchSms: (pathDbt.dispatch_text_numbers || []).join(', '),
               dispatchEmail: (pathDbt.dispatch_email || []).join(', '),
               dispatchCall: pathDbt.dispatch_call_number || '',
+              endMode: p.end_mode === 'transfer' ? 'transfer' : 'callback',
             };
           }),
         };
@@ -1572,6 +1594,9 @@
       setChipValues(card.querySelector('.path-dispatch-sms'), csvToArray(p.dispatchSms || ''));
       setChipValues(card.querySelector('.path-dispatch-email'), csvToArray(p.dispatchEmail || ''));
       card.querySelector('.path-dispatch-call').value = p.dispatchCall || '';
+      const restoreEndMode = p.endMode === 'transfer' ? 'transfer' : 'callback';
+      const endRadio = card.querySelector(`.path-end-mode[value="${restoreEndMode}"]`);
+      if (endRadio) endRadio.checked = true;
 
       const chainRoot = card.querySelector('.chain-list[data-chain-root]');
       if (chainRoot) {

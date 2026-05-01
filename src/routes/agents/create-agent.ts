@@ -49,6 +49,7 @@ interface CreateAgentBody {
     name: string;
     transitionCondition: string;
     dataPoints: RawDataPoint[];
+    end_mode?: "callback" | "transfer";
   }>;
   client: {
     slug: string;
@@ -63,6 +64,7 @@ interface CreateAgentBody {
       dispatch_cc?: string | null;
       dispatch_call_number?: string | null;
     }>;
+    path_end_modes?: Record<string, "callback" | "transfer">;
     outbound_from_number?: string | null;
     summary_agent_id?: string | null;
     phone_fallback_to_caller?: boolean;
@@ -107,6 +109,20 @@ export async function createAgentHandler(
         res.status(400).json({ error: `paths[${i}].dataPoints must be non-empty` });
         return;
       }
+      if (p.end_mode && p.end_mode !== "callback" && p.end_mode !== "transfer") {
+        res.status(400).json({ error: `paths[${i}].end_mode must be "callback" or "transfer"` });
+        return;
+      }
+      if (p.end_mode === "transfer") {
+        const perPath = body.client?.dispatch_by_type?.[p.name]?.dispatch_call_number;
+        const fallback = body.client?.dispatch_call_number;
+        if (!perPath && !fallback) {
+          res.status(400).json({
+            error: `paths[${i}] ("${p.name}") end_mode is "transfer" but no dispatch call number is set (per-path or client default)`,
+          });
+          return;
+        }
+      }
     }
   }
 
@@ -147,10 +163,30 @@ export async function createAgentHandler(
       closingStatementText: body.business.closingStatementText?.trim() || undefined,
     };
     const dpDefaults = await getDataPointDefaults();
+    // Resolve per-path transfer destination from dispatch_by_type → client default.
+    const pathConfigs: PathConfig[] | undefined = hasPaths
+      ? body.paths!.map((p) => {
+          const endMode: "callback" | "transfer" =
+            p.end_mode === "transfer" ? "transfer" : "callback";
+          const transferDestination =
+            endMode === "transfer"
+              ? body.client?.dispatch_by_type?.[p.name]?.dispatch_call_number ||
+                body.client?.dispatch_call_number ||
+                undefined
+              : undefined;
+          return {
+            name: p.name,
+            transitionCondition: p.transitionCondition,
+            dataPoints: p.dataPoints,
+            endMode,
+            transferDestination: transferDestination ?? undefined,
+          };
+        })
+      : undefined;
     const { agent: agentJson, resolved, resolvedPaths } = generateAgent(
       agentConfig,
       body.dataPoints ?? [],
-      body.paths as PathConfig[] | undefined,
+      pathConfigs,
       dpDefaults,
     );
 
@@ -195,6 +231,17 @@ export async function createAgentHandler(
     // Apply per-path dispatch overrides if provided
     if (body.client.dispatch_by_type) {
       jsonEntry.dispatch_by_type = body.client.dispatch_by_type;
+    }
+
+    // Apply per-path end modes (callback/transfer). Only persist non-default entries.
+    if (hasPaths) {
+      const endModes: Record<string, "callback" | "transfer"> = {};
+      for (const p of body.paths!) {
+        if (p.end_mode === "transfer") endModes[p.name] = "transfer";
+      }
+      if (Object.keys(endModes).length > 0) {
+        jsonEntry.path_end_modes = endModes;
+      }
     }
 
     await persistClient(slug, jsonEntry);

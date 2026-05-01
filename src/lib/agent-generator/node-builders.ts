@@ -7,6 +7,9 @@ export const DEFAULT_CLOSE_PROMPT = `Thank the caller for all the information, a
 export const DEFAULT_CLOSING_REMARKS_PROMPT = `You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. `;
 export const DEFAULT_CLOSING_STATEMENT_TEXT = `Alright, bye now!`;
 
+// Spoken right before a per-path live transfer kicks off.
+export const DEFAULT_PRE_TRANSFER_PROMPT = `Thanks for the information. Hold on a moment — connecting you to our team at {{business_name}} now.`;
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface IdFactory {
@@ -21,6 +24,8 @@ export interface PathIds {
   frontExtractId: string;
   routerId: string;
   chain: Array<{ convId: string; confirmId: string }>;
+  preTransferId?: string;
+  transferCallId?: string;
 }
 
 export type HumanRequestMode = "live_transfer" | "callback";
@@ -52,6 +57,8 @@ export interface PathPositions {
   frontExtract: Position;
   router: Position;
   chain: Array<{ conv: Position; confirm: Position }>;
+  preTransfer?: Position;
+  transferCall?: Position;
 }
 
 interface Positions {
@@ -135,16 +142,26 @@ function resolveFinetuneExamples(
 
 // ── Pre-allocate IDs ─────────────────────────────────────────────────────────
 
-export function generateIds(f: IdFactory, pathDataPoints: DataPoint[][]): Ids {
-  const paths: PathIds[] = pathDataPoints.map((dps) => ({
-    transitionId: f.nodeId(),
-    frontExtractId: f.nodeId(),
-    routerId: f.nodeId(),
-    chain: dps.map(() => ({
-      convId: f.nodeId(),
-      confirmId: f.nodeId(),
-    })),
-  }));
+export function generateIds(
+  f: IdFactory,
+  pathDataPoints: DataPoint[][],
+  pathEndModes?: Array<"callback" | "transfer">,
+): Ids {
+  const paths: PathIds[] = pathDataPoints.map((dps, idx) => {
+    const isTransfer = pathEndModes?.[idx] === "transfer";
+    return {
+      transitionId: f.nodeId(),
+      frontExtractId: f.nodeId(),
+      routerId: f.nodeId(),
+      chain: dps.map(() => ({
+        convId: f.nodeId(),
+        confirmId: f.nodeId(),
+      })),
+      ...(isTransfer
+        ? { preTransferId: f.nodeId(), transferCallId: f.nodeId() }
+        : {}),
+    };
+  });
 
   return {
     introId: f.nodeId(),
@@ -170,9 +187,13 @@ const BASE_X = -954;
 const STEP_X = 550;
 const PATH_Y_OFFSET = 2000;
 
-export function layoutPositions(pathDataPoints: DataPoint[][]): Positions {
+export function layoutPositions(
+  pathDataPoints: DataPoint[][],
+  pathEndModes?: Array<"callback" | "transfer">,
+): Positions {
   const paths: PathPositions[] = pathDataPoints.map((dps, pathIdx) => {
     const yBase = pathIdx * PATH_Y_OFFSET;
+    const isTransfer = pathEndModes?.[pathIdx] === "transfer";
     return {
       transition: { x: -18, y: -400 + yBase },
       frontExtract: { x: -18, y: 0 + yBase },
@@ -181,6 +202,12 @@ export function layoutPositions(pathDataPoints: DataPoint[][]): Positions {
         conv: { x: BASE_X + i * STEP_X, y: 900 + yBase },
         confirm: { x: BASE_X + i * STEP_X, y: 1350 + yBase },
       })),
+      ...(isTransfer
+        ? {
+            preTransfer: { x: -18, y: 1800 + yBase },
+            transferCall: { x: 540, y: 1800 + yBase },
+          }
+        : {}),
     };
   });
 
@@ -483,6 +510,71 @@ export function buildTransferCallNode(ids: Ids, pos: Positions, f: IdFactory) {
     type: "transfer_call",
     speak_during_execution: false,
     display_position: { x: pos.humanReq.x + 360, y: pos.humanReq.y + 96 },
+  };
+}
+
+// ── Per-path transfer (used when a path's end mode is "transfer") ────────────
+
+export function buildPreTransferNode(
+  pathIds: PathIds,
+  pathPos: PathPositions,
+  agentConfig: AgentConfig,
+  pathLabel: string | undefined,
+  f: IdFactory,
+) {
+  if (!pathIds.preTransferId || !pathIds.transferCallId || !pathPos.preTransfer) {
+    throw new Error("buildPreTransferNode: pathIds/pos missing transfer slots");
+  }
+  const text = renderTemplate(DEFAULT_PRE_TRANSFER_PROMPT, {
+    business_name: agentConfig.businessName,
+  });
+  return {
+    instruction: { type: "prompt", text },
+    always_edge: {
+      destination_node_id: pathIds.transferCallId,
+      id: `always-edge-${f.nextTs()}-${randomSuffix(9)}`,
+      transition_condition: { type: "prompt", prompt: "Always" },
+    },
+    name: pathLabel ? `Pre-Transfer (${pathLabel})` : "Pre-Transfer",
+    edges: [],
+    id: pathIds.preTransferId,
+    type: "conversation",
+    display_position: pathPos.preTransfer,
+  };
+}
+
+export function buildPerPathTransferCallNode(
+  pathIds: PathIds,
+  pathPos: PathPositions,
+  ids: Ids,
+  resolvedNumber: string,
+  pathLabel: string | undefined,
+  f: IdFactory,
+) {
+  if (!pathIds.transferCallId || !pathPos.transferCall) {
+    throw new Error("buildPerPathTransferCallNode: pathIds/pos missing transfer slots");
+  }
+  return {
+    custom_sip_headers: {},
+    transfer_destination: { type: "predefined", number: resolvedNumber },
+    edge: {
+      destination_node_id: ids.transferFailedId,
+      id: f.edgeId(),
+      transition_condition: { type: "prompt", prompt: "Transfer failed" },
+    },
+    name: pathLabel ? `Transfer Call (${pathLabel})` : "Transfer Call",
+    ignore_e164_validation: false,
+    id: pathIds.transferCallId,
+    transfer_option: {
+      cold_transfer_mode: "sip_invite",
+      enable_bridge_audio_cue: true,
+      type: "cold_transfer",
+      agent_detection_timeout_ms: 30000,
+      show_transferee_as_caller: false,
+    },
+    type: "transfer_call",
+    speak_during_execution: false,
+    display_position: pathPos.transferCall,
   };
 }
 

@@ -36,6 +36,7 @@ export interface ClientNotificationConfig {
     dispatch_cc?: string | null;
     dispatch_call_number?: string | null;
   }>;
+  path_end_modes?: Record<string, "callback" | "transfer">;
   summary_agent_id: string | null;
   outbound_from_number: string | null;
   dispatch_email: string[] | null;

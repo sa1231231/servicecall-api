@@ -490,3 +490,89 @@ describe("if/else branch support", () => {
     expect(resolved[0].variableName).toBe("full_name");
   });
 });
+
+// ── Per-path end mode (callback vs live transfer) ───────────────────────────
+
+describe("per-path end mode", () => {
+  it("default end mode is callback — variables router else_edge → Close", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "A", transitionCondition: "A", dataPoints: ["full_name"] },
+        { name: "B", transitionCondition: "B", dataPoints: ["city"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const closeNode = flow.nodes.find((n: any) => n.name === "Close");
+    expect(closeNode).toBeDefined();
+    const routerA = flow.nodes.find((n: any) => n.name === "Variables Router (A)");
+    const routerB = flow.nodes.find((n: any) => n.name === "Variables Router (B)");
+    expect(routerA.else_edge.destination_node_id).toBe(closeNode.id);
+    expect(routerB.else_edge.destination_node_id).toBe(closeNode.id);
+    expect(flow.nodes.find((n: any) => n.name?.startsWith("Pre-Transfer"))).toBeUndefined();
+    expect(flow.nodes.find((n: any) => n.type === "transfer_call")).toBeUndefined();
+  });
+
+  it("end_mode=transfer wires router → Pre-Transfer → Transfer Call (number baked in)", () => {
+    const dest = "+18005551234";
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "Emergency", transitionCondition: "emergency", dataPoints: ["full_name"], endMode: "transfer", transferDestination: dest },
+        { name: "Quote", transitionCondition: "quote", dataPoints: ["city"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+
+    // Transfer-mode path: router → pre-transfer → transfer_call
+    const routerEmergency = flow.nodes.find((n: any) => n.name === "Variables Router (Emergency)");
+    const preTransfer = flow.nodes.find((n: any) => n.name === "Pre-Transfer (Emergency)");
+    const transferCall = flow.nodes.find((n: any) => n.name === "Transfer Call (Emergency)");
+    expect(preTransfer).toBeDefined();
+    expect(transferCall).toBeDefined();
+    expect(routerEmergency.else_edge.destination_node_id).toBe(preTransfer.id);
+    expect(preTransfer.always_edge.destination_node_id).toBe(transferCall.id);
+    expect(transferCall.type).toBe("transfer_call");
+    expect(transferCall.transfer_destination.number).toBe(dest);
+
+    // Callback-mode path stays on Close
+    const close = flow.nodes.find((n: any) => n.name === "Close");
+    const routerQuote = flow.nodes.find((n: any) => n.name === "Variables Router (Quote)");
+    expect(routerQuote.else_edge.destination_node_id).toBe(close.id);
+
+    // Shared Transfer Failed node exists once
+    const transferFailed = flow.nodes.filter((n: any) => n.name === "Transfer Failed");
+    expect(transferFailed).toHaveLength(1);
+    expect(transferCall.edge.destination_node_id).toBe(transferFailed[0].id);
+  });
+
+  it("rejects transfer end_mode without a transferDestination", () => {
+    expect(() =>
+      generateAgent(
+        baseConfig,
+        [],
+        [{ name: "Emergency", transitionCondition: "x", dataPoints: ["full_name"], endMode: "transfer" }],
+        TEST_DEFAULTS,
+      ),
+    ).toThrow(/no dispatch call number/i);
+  });
+
+  it("does not duplicate Transfer Failed when humanRequestMode is also live_transfer", () => {
+    const { agent } = generateAgent(
+      { ...baseConfig, humanRequestMode: "live_transfer" } as any,
+      [],
+      [
+        { name: "Emergency", transitionCondition: "x", dataPoints: ["full_name"], endMode: "transfer", transferDestination: "+18005551234" },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    expect(flow.nodes.filter((n: any) => n.name === "Transfer Failed")).toHaveLength(1);
+    // Both per-path (Transfer Call (Emergency)) and the global Transfer Call should exist
+    expect(flow.nodes.filter((n: any) => n.type === "transfer_call").length).toBe(2);
+  });
+});

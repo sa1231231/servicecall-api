@@ -30,6 +30,10 @@ export async function enrichCallLog(callId, data) {
         console.error(`[call-log] failed to enrich call ${callId}:`, err.message);
     }
 }
+/** Get a single call log by ID. */
+export async function getCallLogById(callId) {
+    return callLogs().findOne({ _id: callId });
+}
 /** Get call logs for a client, sorted newest first. */
 export async function getCallLogsByClient(clientSlug, limit = 50, offset = 0) {
     return callLogs()

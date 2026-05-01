@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { getDb } from "../lib/db.js";
-import { notificationClients, agentIdToClient, agentIdToSlug, } from "../_cache/clients.js";
+import { notificationClients, agentIdToClient, agentIdToSlug, phoneNumberToClient, } from "../_cache/clients.js";
 // ── Helpers ──────────────────────────────────────────────────────────────────
 export function ruleToFunction(rule, rules, defaultType) {
     // Multi-path: ordered rules, first match wins
@@ -26,6 +26,8 @@ export function toClientConfig(entry) {
         dispatch_text_numbers: entry.dispatch_text_numbers,
         dispatch_call_number: entry.dispatch_call_number,
         dispatch_call_overrides: entry.dispatch_call_overrides,
+        dispatch_by_type: entry.dispatch_by_type,
+        path_end_modes: entry.path_end_modes,
         summary_agent_id: entry.summary_agent_id,
         outbound_from_number: entry.outbound_from_number,
         dispatch_email: entry.dispatch_email,
@@ -33,9 +35,12 @@ export function toClientConfig(entry) {
         resolve_type: ruleToFunction(entry.resolve_rule, entry.resolve_rules, entry.default_message_type),
         message_types: entry.message_types,
         default_message_type: entry.default_message_type,
+        webhook_url: entry.webhook_url,
+        notification_greeting: entry.notification_greeting,
         phone_fallback_to_caller: entry.phone_fallback_to_caller,
         hide_not_mentioned: entry.hide_not_mentioned,
         shadow_mode: entry.shadow_mode,
+        active: entry.active,
     };
 }
 function registerInMemory(slug, config) {
@@ -43,6 +48,9 @@ function registerInMemory(slug, config) {
     for (const agentId of config.agent_ids) {
         agentIdToClient[agentId] = config;
         agentIdToSlug[agentId] = slug;
+    }
+    if (config.outbound_from_number) {
+        phoneNumberToClient[config.outbound_from_number] = { slug, config };
     }
 }
 // ── Collection accessor ──────────────────────────────────────────────────────
@@ -52,7 +60,7 @@ function clients() {
 // ── Public API ───────────────────────────────────────────────────────────────
 /** Load all clients from MongoDB and populate the in-memory maps. */
 export async function loadClientsFromDb() {
-    const docs = await clients().find().toArray();
+    const docs = await clients().find({ deletedAt: { $exists: false } }).toArray();
     for (const doc of docs) {
         const slug = doc._id;
         if (!Array.isArray(doc.agent_ids)) {
@@ -87,16 +95,25 @@ export async function updateClientField(slug, field, value) {
     console.log(`[client-store] updated "${slug}".${field} = ${JSON.stringify(value)}`);
 }
 const EDITABLE_FIELDS = new Set([
+    "name",
     "agent_ids",
     "dispatch_text_numbers",
     "dispatch_call_number",
     "dispatch_call_overrides",
+    "dispatch_by_type",
+    "path_end_modes",
     "dispatch_email",
     "dispatch_cc",
     "outbound_from_number",
     "summary_agent_id",
+    "active",
+    "deactivated_numbers",
     "shadow_mode",
     "hide_not_mentioned",
+    "notification_greeting",
+    "webhook_url",
+    "weekly_report_enabled",
+    "trial_start_date",
     "message_types",
     "resolve_rules",
 ]);
@@ -127,6 +144,10 @@ export async function updateClientFields(slug, updates) {
                 delete agentIdToSlug[oldId];
             }
         }
+        // Special handling for outbound_from_number: remove old mapping
+        if ("outbound_from_number" in setObj && existing.outbound_from_number) {
+            delete phoneNumberToClient[existing.outbound_from_number];
+        }
         // Apply all field updates to in-memory object
         for (const [key, value] of Object.entries(setObj)) {
             existing[key] = value;
@@ -138,19 +159,107 @@ export async function updateClientFields(slug, updates) {
                 agentIdToSlug[newId] = slug;
             }
         }
+        // Re-register phone number if it changed
+        if ("outbound_from_number" in setObj && existing.outbound_from_number) {
+            phoneNumberToClient[existing.outbound_from_number] = { slug, config: existing };
+        }
     }
     console.log(`[client-store] updated "${slug}" fields: ${Object.keys(setObj).join(", ")}`);
 }
-/** Delete a client from MongoDB and remove from in-memory cache. */
-export async function deleteClient(slug) {
+/** Remove a client from in-memory caches. */
+function unregisterFromMemory(slug) {
     const existing = notificationClients[slug];
     if (existing) {
         for (const agentId of existing.agent_ids) {
             delete agentIdToClient[agentId];
             delete agentIdToSlug[agentId];
         }
+        if (existing.outbound_from_number) {
+            delete phoneNumberToClient[existing.outbound_from_number];
+        }
         delete notificationClients[slug];
     }
+}
+/** Soft-delete: set deletedAt timestamp and remove from caches. */
+export async function softDeleteClient(slug) {
+    unregisterFromMemory(slug);
+    await clients().updateOne({ _id: slug }, { $set: { deletedAt: new Date() } });
+    console.log(`[client-store] soft-deleted client "${slug}"`);
+}
+/** Restore a soft-deleted client: unset deletedAt and reload into caches. */
+export async function restoreClient(slug) {
+    await clients().updateOne({ _id: slug }, { $unset: { deletedAt: "" } });
+    const doc = await clients().findOne({ _id: slug });
+    if (doc && Array.isArray(doc.agent_ids)) {
+        registerInMemory(slug, toClientConfig(doc));
+    }
+    console.log(`[client-store] restored client "${slug}"`);
+}
+/** List soft-deleted clients. */
+export async function listDeletedClients() {
+    return clients()
+        .find({ deletedAt: { $exists: true } }, {
+        projection: { _id: 1, name: 1, deletedAt: 1 },
+    })
+        .toArray();
+}
+/** Permanently delete documents where deletedAt is older than `days` days. Also cleans up Retell. */
+export async function purgeExpiredClients(days = 30) {
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const expired = await clients()
+        .find({ deletedAt: { $lt: cutoff } })
+        .toArray();
+    if (expired.length === 0)
+        return 0;
+    // Lazy-import Retell + config to avoid circular deps at module load
+    const [{ default: Retell }, { config }] = await Promise.all([
+        import("retell-sdk"),
+        import("../config.js"),
+    ]);
+    const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+    for (const doc of expired) {
+        const retellAgents = doc.retell_agents ?? {};
+        for (const [agentId, agentJson] of Object.entries(retellAgents)) {
+            try {
+                await retell.agent.delete(agentId);
+                console.log(`[purge] deleted Retell agent ${agentId}`);
+            }
+            catch (err) {
+                console.warn(`[purge] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+            }
+            const flowId = agentJson?.conversationFlow?.conversation_flow_id ??
+                agentJson?.response_engine?.conversation_flow_id;
+            if (flowId) {
+                try {
+                    await retell.conversationFlow.delete(flowId);
+                    console.log(`[purge] deleted Retell flow ${flowId}`);
+                }
+                catch (err) {
+                    console.warn(`[purge] could not delete Retell flow ${flowId}: ${err instanceof Error ? err.message : err}`);
+                }
+            }
+        }
+        for (const agentId of doc.agent_ids ?? []) {
+            if (retellAgents[agentId])
+                continue;
+            try {
+                await retell.agent.delete(agentId);
+                console.log(`[purge] deleted Retell agent ${agentId} (from agent_ids)`);
+            }
+            catch (err) {
+                console.warn(`[purge] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+            }
+        }
+    }
+    const result = await clients().deleteMany({
+        deletedAt: { $lt: cutoff },
+    });
+    console.log(`[client-store] purged ${result.deletedCount} expired soft-deleted client(s) + their Retell resources`);
+    return result.deletedCount;
+}
+/** Permanently delete a client from MongoDB and remove from in-memory cache. */
+export async function deleteClient(slug) {
+    unregisterFromMemory(slug);
     await clients().deleteOne({ _id: slug });
     console.log(`[client-store] deleted client "${slug}"`);
 }
@@ -158,9 +267,9 @@ export async function deleteClient(slug) {
 export async function getClientDocument(slug) {
     return clients().findOne({ _id: slug });
 }
-/** Get all client documents from MongoDB. */
+/** Get all client documents from MongoDB (excludes soft-deleted). */
 export async function getAllClientDocuments() {
-    return clients().find().toArray();
+    return clients().find({ deletedAt: { $exists: false } }).toArray();
 }
 /** Return lightweight summaries of all clients for the dashboard. */
 export function getAllClientSummaries() {
@@ -180,6 +289,12 @@ export async function generatePortalToken(slug) {
     }
     console.log(`[client-store] generated portal token for "${slug}"`);
     return token;
+}
+/** Find all clients that have a given email in their dispatch_email array. */
+export async function findClientsByEmail(email) {
+    return clients()
+        .find({ dispatch_email: email }, { projection: { _id: 1, name: 1, portal_token: 1 } })
+        .toArray();
 }
 /** Validate a portal token against a client slug. */
 export async function validatePortalToken(slug, token) {

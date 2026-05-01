@@ -8,6 +8,7 @@ export async function portalGetCallsHandler(req, res) {
         // Filter out shadow/test calls and strip internal fields
         const sanitized = calls
             .filter((c) => c.outcome !== "shadow_dry_run")
+            .filter((c) => c.from_number && c.from_number !== "unknown" && c.from_number !== "Web Call")
             .map((c) => ({
             _id: c._id,
             from_number: c.from_number,

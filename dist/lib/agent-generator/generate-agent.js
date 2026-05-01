@@ -1,5 +1,5 @@
 import { NOT_MENTIONED, CALLER_DOESNT_KNOW, defaultExtractEquation, } from "./data-point-registry.js";
-import { makeIdFactory, generateIds, layoutPositions, buildEndNode, buildIntroNode, buildTransitionNode, buildFaqNode, buildHumanRequestNode, buildDataChain, buildCloseNode, buildClosingSequence, buildIrrelevantGuardrailNode, buildEmergencyGuardrailNode, buildPoliteHangupNode, buildGuardrailEndNode, buildAgentRoot, buildTransferCallNode, buildTransferFailedNode, } from "./node-builders.js";
+import { makeIdFactory, generateIds, layoutPositions, buildEndNode, buildIntroNode, buildTransitionNode, buildFaqNode, buildHumanRequestNode, buildDataChain, buildCloseNode, buildClosingSequence, buildIrrelevantGuardrailNode, buildEmergencyGuardrailNode, buildPoliteHangupNode, buildGuardrailEndNode, buildAgentRoot, buildTransferCallNode, buildTransferFailedNode, buildPreTransferNode, buildPerPathTransferCallNode, } from "./node-builders.js";
 // ── Resolve Data Points ──────────────────────────────────────────────────────
 function isBranchNode(dp) {
     return typeof dp === "object" && "_branch" in dp && dp._branch === true;
@@ -103,8 +103,17 @@ export function generateAgent(agentConfig, rawDataPoints, pathConfigs, defaults)
         if (!p.dataPoints || p.dataPoints.length === 0) {
             throw new Error(`Path "${p.name}" has no data points`);
         }
+        const endMode = p.endMode === "transfer" ? "transfer" : "callback";
+        if (endMode === "transfer" && !p.transferDestination) {
+            throw new Error(`Path "${p.name}" end mode is "transfer" but no dispatch call number is set (per-path or client default)`);
+        }
         try {
-            return { name: p.name, resolved: resolveDataPoints(p.dataPoints, defaults) };
+            return {
+                name: p.name,
+                resolved: resolveDataPoints(p.dataPoints, defaults),
+                endMode,
+                transferDestination: p.transferDestination,
+            };
         }
         catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -115,8 +124,10 @@ export function generateAgent(agentConfig, rawDataPoints, pathConfigs, defaults)
     const allResolved = resolvedPaths.flatMap((p) => p.resolved);
     // Generate IDs and positions for all paths
     const pathDataPoints = resolvedPaths.map((p) => p.resolved);
-    const ids = generateIds(f, pathDataPoints);
-    const pos = layoutPositions(pathDataPoints);
+    const pathEndModes = resolvedPaths.map((p) => p.endMode);
+    const anyTransferPath = pathEndModes.some((m) => m === "transfer");
+    const ids = generateIds(f, pathDataPoints, pathEndModes);
+    const pos = layoutPositions(pathDataPoints, pathEndModes);
     const globalPrompt = `You are Anthony, an inbound receptionist for ${businessName}.
 
 Always refer to the business by that name when relevant.
@@ -156,13 +167,26 @@ When listing anything — services, time slots, examples, options — never list
             transitionCondition: p.transitionCondition,
         }))
         : undefined));
-    // Per-path nodes: transition + data chain
+    // Per-path nodes: transition + data chain (+ optional pre-transfer + transfer-call)
     resolvedPaths.forEach((rp, pathIdx) => {
         const pIds = ids.paths[pathIdx];
         const pPos = pos.paths[pathIdx];
         const pathLabel = isMultiPath ? rp.name : undefined;
         allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel));
-        allNodes.push(...buildDataChain(rp.resolved, pIds, pPos, ids.closeId, f, pathLabel));
+        // Variables Router's else_edge points here when all data is collected.
+        // - "callback": shared Close node
+        // - "transfer": this path's Pre-Transfer node
+        const terminalId = rp.endMode === "transfer" && pIds.preTransferId
+            ? pIds.preTransferId
+            : ids.closeId;
+        allNodes.push(...buildDataChain(rp.resolved, pIds, pPos, terminalId, f, pathLabel));
+        if (rp.endMode === "transfer") {
+            if (!rp.transferDestination) {
+                throw new Error(`Path "${rp.name}": missing transferDestination`);
+            }
+            allNodes.push(buildPreTransferNode(pIds, pPos, agentConfig, pathLabel, f));
+            allNodes.push(buildPerPathTransferCallNode(pIds, pPos, ids, rp.transferDestination, pathLabel, f));
+        }
     });
     // Shared global + closing nodes
     const humanMode = agentConfig.humanRequestMode || "callback";
@@ -170,6 +194,9 @@ When listing anything — services, time slots, examples, options — never list
     allNodes.push(buildHumanRequestNode(ids, pos, f, humanMode));
     if (humanMode === "live_transfer") {
         allNodes.push(buildTransferCallNode(ids, pos, f));
+    }
+    // Build the shared Transfer Failed node when any transfer path exists.
+    if (humanMode === "live_transfer" || anyTransferPath) {
         allNodes.push(buildTransferFailedNode(ids, pos, f));
     }
     allNodes.push(buildCloseNode(agentConfig, ids, pos, f));

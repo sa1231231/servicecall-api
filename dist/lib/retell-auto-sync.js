@@ -4,6 +4,7 @@ import { getAllClientDocuments, loadClientsFromDb, } from "../config/client-stor
 import { fetchRetellAgent } from "./retell-sync.js";
 import { deriveNotificationConfig, } from "./notification-config.js";
 import { getDb } from "./db.js";
+import { createVersionSnapshot } from "./agent-versions.js";
 const THREE_MIN_MS = 3 * 60_000;
 const TEN_MIN_MS = 10 * 60_000;
 export function startAutoSync() {
@@ -36,6 +37,18 @@ async function runAutoSync() {
         for (const agentId of agentIds) {
             try {
                 const snapshot = await fetchRetellAgent(retell, agentId);
+                // Drift detection: snapshot if significant changes detected
+                const existingCanonical = doc.retell_agents?.[agentId];
+                if (existingCanonical) {
+                    if (hasSignificantDrift(existingCanonical, snapshot.canonicalJson)) {
+                        try {
+                            await createVersionSnapshot(slug, agentId, existingCanonical, "auto_sync", "Auto-sync drift detected", "system");
+                        }
+                        catch (snapErr) {
+                            console.warn(`[auto-sync] could not snapshot drift for "${slug}" agent ${agentId}:`, snapErr);
+                        }
+                    }
+                }
                 // Preserve existing dispatch info
                 const clientInfo = {
                     slug,
@@ -51,30 +64,60 @@ async function runAutoSync() {
                     shadow_mode: doc.shadow_mode,
                 };
                 const jsonEntry = deriveNotificationConfig(snapshot.variables, clientInfo, agentId);
-                // Preserve field-level customizations (show, label) from existing config
+                // Preserve field-level customizations (show, label, required) from existing config.
+                // Build a global map from ALL existing message types so customizations
+                // survive even when message_type keys change (e.g. multi-path agents).
                 if (doc.message_types) {
-                    for (const [typeKey, newType] of Object.entries(jsonEntry.message_types)) {
-                        const existingType = doc.message_types[typeKey];
+                    const customizations = new Map();
+                    for (const existingType of Object.values(doc.message_types)) {
+                        for (const f of existingType.fields) {
+                            if (!customizations.has(f.key)) {
+                                customizations.set(f.key, { show: f.show, label: f.label, required: f.required });
+                            }
+                        }
+                    }
+                    for (const newType of Object.values(jsonEntry.message_types)) {
+                        for (const field of newType.fields) {
+                            const existing = customizations.get(field.key);
+                            if (!existing)
+                                continue;
+                            if (existing.show === false)
+                                field.show = false;
+                            if (existing.label !== field.label)
+                                field.label = existing.label;
+                            if (existing.required)
+                                field.required = existing.required;
+                        }
+                    }
+                }
+                // Preserve message-type-level customizations (subject_template, additional_text)
+                if (doc.message_types) {
+                    for (const [mtKey, newType] of Object.entries(jsonEntry.message_types)) {
+                        const existingType = doc.message_types[mtKey];
                         if (!existingType)
                             continue;
-                        for (const field of newType.fields) {
-                            const existingField = existingType.fields.find((f) => f.key === field.key);
-                            if (!existingField)
-                                continue;
-                            if (existingField.show === false)
-                                field.show = false;
-                            if (existingField.label !== field.label)
-                                field.label = existingField.label;
+                        if (existingType.subject_template !== newType.subject_template) {
+                            newType.subject_template = existingType.subject_template;
+                        }
+                        if (existingType.additional_text) {
+                            newType.additional_text = existingType.additional_text;
                         }
                     }
                 }
                 // Only update fields that come from Retell — preserve everything
                 // else the user may have customized via the dashboard
                 const update = {
-                    message_types: jsonEntry.message_types,
-                    default_message_type: jsonEntry.default_message_type,
                     [`retell_agents.${agentId}`]: snapshot.canonicalJson,
                 };
+                // Only overwrite message_types if the keys still match the existing
+                // config. Multi-path agents have different keys than the single-path
+                // deriver produces, so skip to avoid destroying their routing structure.
+                const existingKeys = Object.keys(doc.message_types || {}).sort().join(",");
+                const newKeys = Object.keys(jsonEntry.message_types).sort().join(",");
+                if (!doc.message_types || existingKeys === newKeys) {
+                    update.message_types = jsonEntry.message_types;
+                    update.default_message_type = jsonEntry.default_message_type;
+                }
                 // Only update resolve_rule/resolve_rules if the doc doesn't have
                 // manually-configured resolve_rules already
                 if (!doc.resolve_rules || doc.resolve_rules.length === 0) {
@@ -98,4 +141,21 @@ async function runAutoSync() {
         await loadClientsFromDb();
     }
     console.log(`[auto-sync] complete: ${synced} synced, ${skipped} skipped, ${errors} errors`);
+}
+function hasSignificantDrift(existing, incoming) {
+    const existingFlow = existing.conversationFlow;
+    const incomingFlow = incoming.conversationFlow;
+    if (!existingFlow || !incomingFlow)
+        return false;
+    const existingNodes = existingFlow.nodes;
+    const incomingNodes = incomingFlow.nodes;
+    const existingCount = Array.isArray(existingNodes) ? existingNodes.length : 0;
+    const incomingCount = Array.isArray(incomingNodes) ? incomingNodes.length : 0;
+    // Node count changed
+    if (existingCount !== incomingCount)
+        return true;
+    // Global prompt changed
+    if (existingFlow.global_prompt !== incomingFlow.global_prompt)
+        return true;
+    return false;
 }

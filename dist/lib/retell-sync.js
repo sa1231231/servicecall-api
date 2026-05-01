@@ -78,6 +78,14 @@ export function extractVariables(canonicalJson) {
         .filter((v) => !INTERNAL_VARS.has(v.name))
         .map((v) => ({ key: v.name, label: toLabel(v.name) }));
 }
+// ── Push to Retell API ───────────────────────────────────────────────────────
+export async function pushFlowToRetell(retell, flowId, canonicalJson) {
+    const flow = canonicalJson.conversationFlow;
+    if (!flow)
+        throw new Error("Missing conversationFlow in canonical JSON");
+    const params = extractFlowParams(flow);
+    await retell.conversationFlow.update(flowId, params);
+}
 // ── Fetch from Retell API ────────────────────────────────────────────────────
 export async function fetchRetellAgent(retell, agentId) {
     // 1. Fetch agent

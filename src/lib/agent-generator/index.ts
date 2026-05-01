@@ -15,4 +15,4 @@ export type {
   VariableDef,
 } from "./data-point-registry.js";
 export type { AgentConfig } from "./node-builders.js";
-export type { PathConfig, ResolvedPath } from "./generate-agent.js";
+export type { PathConfig, ResolvedPath, PathEndMode } from "./generate-agent.js";

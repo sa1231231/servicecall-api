@@ -3,3 +3,6 @@
 export const notificationClients = {};
 export const agentIdToClient = {};
 export const agentIdToSlug = {};
+/** Maps a Retell phone number → { slug, client config }. Used by the pre-hook
+ *  when inbound agent is unset on the number and agent_id is absent. */
+export const phoneNumberToClient = {};

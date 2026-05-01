@@ -4039,6 +4039,29 @@
         '<input type="text" class="dbt-call" data-mt-key="' + esc(mtKey) + '" value="' + esc(dbt.dispatch_call_number || '') + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
         '</div></details>';
 
+      // End-of-path behavior: callback (default) vs live transfer.
+      const endMode = path.endMode === 'transfer' ? 'transfer' : 'callback';
+      const endModeRadioName = 'pathEndMode_' + esc(path.name);
+      const transferDest = path.transferDestination ? esc(path.transferDestination) : '';
+      html += '<div style="margin-top:0.65rem;font-size:0.8rem;">' +
+        '<div style="font-size:0.78rem;font-weight:600;margin-bottom:0.3rem;color:#555;">End of path</div>' +
+        (canEdit
+          ? '<label style="display:block;margin-bottom:0.15rem;cursor:pointer;">' +
+              '<input type="radio" name="' + endModeRadioName + '" value="callback"' + (endMode === 'callback' ? ' checked' : '') +
+              ' onchange="neEditPathEndMode(\'' + esc(path.name) + '\',\'callback\')"> ' +
+              'Callback <span style="color:#888;">— caller hangs up; we call dispatch back</span>' +
+            '</label>' +
+            '<label style="display:block;cursor:pointer;">' +
+              '<input type="radio" name="' + endModeRadioName + '" value="transfer"' + (endMode === 'transfer' ? ' checked' : '') +
+              ' onchange="neEditPathEndMode(\'' + esc(path.name) + '\',\'transfer\')"> ' +
+              'Live transfer <span style="color:#888;">— caller is transferred to the dispatch number' +
+              (transferDest ? ' (<code>' + transferDest + '</code>)' : '') + '</span>' +
+            '</label>' +
+            '<div class="config-hint" style="margin-top:0.25rem;">Live transfer uses this path\'s Dispatch Call Number override if set, otherwise the client default.</div>'
+          : '<div>' + (endMode === 'transfer' ? 'Live transfer' : 'Callback') +
+            (endMode === 'transfer' && transferDest ? ' to <code>' + transferDest + '</code>' : '') + '</div>') +
+        '</div>';
+
       html += '</div>';
     }
 
@@ -4616,6 +4639,42 @@
     markNeDirty();
     renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
     showToast('Human request mode changed (save to publish)', 'success');
+  }
+
+  // Per-path end-mode toggle. Hits the dedicated server endpoint immediately
+  // (mirrors edit-path-name) — the structural mutation needs server logic to
+  // add/remove Pre-Transfer + Transfer Call nodes. After it succeeds we reload
+  // the editor so the parsed flow reflects the new state.
+  async function neEditPathEndMode(pathName, mode) {
+    if (neDirty && !confirm('You have unsaved changes. Save & Publish them first, or continue and discard them?')) {
+      // Re-sync the radio to the previous value
+      loadNodeEditor(neSlug, neAgentId);
+      return;
+    }
+    try {
+      const res = await fetch(
+        '/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/edit-path-end-mode',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pathName, mode }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.details || 'Failed');
+      showToast(
+        'Path "' + pathName + '" end mode → ' + (mode === 'transfer' ? 'Live transfer' : 'Callback') + ' (save to publish)',
+        'success',
+      );
+      // Mark dirty so the user knows to publish (the canonical changed but
+      // wasn't pushed to Retell yet).
+      markNeDirty();
+      loadNodeEditor(neSlug, neAgentId);
+    } catch (err) {
+      showToast('Error: ' + err.message, 'error');
+      // Reload to re-sync the radio with server state
+      loadNodeEditor(neSlug, neAgentId);
+    }
   }
 
   // ── Add / Remove / Reorder data points (all local) ─────────────

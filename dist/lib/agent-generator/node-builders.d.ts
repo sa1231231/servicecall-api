@@ -2,6 +2,7 @@ import type { DataPoint, FinetuneExample } from "./data-point-registry.js";
 export declare const DEFAULT_CLOSE_PROMPT = "Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.";
 export declare const DEFAULT_CLOSING_REMARKS_PROMPT = "You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ";
 export declare const DEFAULT_CLOSING_STATEMENT_TEXT = "Alright, bye now!";
+export declare const DEFAULT_PRE_TRANSFER_PROMPT = "Thanks for the information. Hold on a moment \u2014 connecting you to our team at {{business_name}} now.";
 export interface IdFactory {
     nextTs(): number;
     nodeId(): string;
@@ -16,6 +17,8 @@ export interface PathIds {
         convId: string;
         confirmId: string;
     }>;
+    preTransferId?: string;
+    transferCallId?: string;
 }
 export type HumanRequestMode = "live_transfer" | "callback";
 interface Ids {
@@ -46,6 +49,8 @@ export interface PathPositions {
         conv: Position;
         confirm: Position;
     }>;
+    preTransfer?: Position;
+    transferCall?: Position;
 }
 interface Positions {
     intro: Position;
@@ -73,8 +78,8 @@ export interface IntroPathConfig {
     transitionCondition: string;
 }
 export declare function makeIdFactory(baseMs?: number): IdFactory;
-export declare function generateIds(f: IdFactory, pathDataPoints: DataPoint[][]): Ids;
-export declare function layoutPositions(pathDataPoints: DataPoint[][]): Positions;
+export declare function generateIds(f: IdFactory, pathDataPoints: DataPoint[][], pathEndModes?: Array<"callback" | "transfer">): Ids;
+export declare function layoutPositions(pathDataPoints: DataPoint[][], pathEndModes?: Array<"callback" | "transfer">): Positions;
 export declare function buildEndNode(ids: Ids, pos: Positions): {
     name: string;
     id: string;
@@ -242,6 +247,53 @@ export declare function buildTransferCallNode(ids: Ids, pos: Positions, f: IdFac
         x: number;
         y: number;
     };
+};
+export declare function buildPreTransferNode(pathIds: PathIds, pathPos: PathPositions, agentConfig: AgentConfig, pathLabel: string | undefined, f: IdFactory): {
+    instruction: {
+        type: string;
+        text: string;
+    };
+    always_edge: {
+        destination_node_id: string;
+        id: string;
+        transition_condition: {
+            type: string;
+            prompt: string;
+        };
+    };
+    name: string;
+    edges: never[];
+    id: string;
+    type: string;
+    display_position: Position;
+};
+export declare function buildPerPathTransferCallNode(pathIds: PathIds, pathPos: PathPositions, ids: Ids, resolvedNumber: string, pathLabel: string | undefined, f: IdFactory): {
+    custom_sip_headers: {};
+    transfer_destination: {
+        type: string;
+        number: string;
+    };
+    edge: {
+        destination_node_id: string;
+        id: string;
+        transition_condition: {
+            type: string;
+            prompt: string;
+        };
+    };
+    name: string;
+    ignore_e164_validation: boolean;
+    id: string;
+    transfer_option: {
+        cold_transfer_mode: string;
+        enable_bridge_audio_cue: boolean;
+        type: string;
+        agent_detection_timeout_ms: number;
+        show_transferee_as_caller: boolean;
+    };
+    type: string;
+    speak_during_execution: boolean;
+    display_position: Position;
 };
 export declare function buildTransferFailedNode(ids: Ids, pos: Positions, f: IdFactory): {
     instruction: {

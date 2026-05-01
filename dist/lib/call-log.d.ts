@@ -18,6 +18,8 @@ export interface CallLogDocument {
     in_voicemail?: boolean;
     recording_url?: string;
     public_log_url?: string;
+    transcript?: string;
+    call_cost_cents?: number;
     created_at: Date;
 }
 /** Save a call log document (fire-and-forget safe). */
@@ -30,6 +32,9 @@ export declare function enrichCallLog(callId: string, data: {
     in_voicemail?: boolean;
     recording_url?: string;
     public_log_url?: string;
+    transcript?: string;
 }): Promise<void>;
+/** Get a single call log by ID. */
+export declare function getCallLogById(callId: string): Promise<CallLogDocument | null>;
 /** Get call logs for a client, sorted newest first. */
 export declare function getCallLogsByClient(clientSlug: string, limit?: number, offset?: number): Promise<CallLogDocument[]>;

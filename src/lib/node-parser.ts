@@ -29,6 +29,11 @@ export interface ParsedPath {
   frontExtractNode: ParsedNode;
   routerNode: ParsedNode;
   dataChain: ParsedDataPoint[];
+  endMode: "callback" | "transfer";
+  preTransferNode?: ParsedNode;
+  transferCallNode?: ParsedNode;
+  /** Resolved E.164 number baked into the path's transfer_call node (when endMode === "transfer"). */
+  transferDestination?: string;
 }
 
 export interface ParsedFlow {
@@ -242,6 +247,39 @@ function buildParsedPath(
   routerNode: ParsedNode,
   nodeMap: Map<string, ParsedNode>,
 ): ParsedPath {
+  // ── End mode detection ──────────────────────────────────────────────────
+  // The Variables Router's else_edge points to the path's terminal node when
+  // all data is collected. If that's a Pre-Transfer or Transfer Call node,
+  // the path is in "transfer" mode; otherwise "callback" (points to Close).
+  let endMode: "callback" | "transfer" = "callback";
+  let preTransferNode: ParsedNode | undefined;
+  let transferCallNode: ParsedNode | undefined;
+  let transferDestination: string | undefined;
+  const routerElseEdge = routerNode.raw.else_edge as Record<string, unknown> | undefined;
+  const terminalId = routerElseEdge?.destination_node_id as string | undefined;
+  const terminalNode = terminalId ? nodeMap.get(terminalId) : undefined;
+  if (terminalNode) {
+    if (terminalNode.type === "transfer_call") {
+      endMode = "transfer";
+      transferCallNode = terminalNode;
+    } else if (terminalNode.name.startsWith("Pre-Transfer")) {
+      endMode = "transfer";
+      preTransferNode = terminalNode;
+      // Follow the always_edge to the transfer_call node
+      const ae = terminalNode.raw.always_edge as Record<string, unknown> | undefined;
+      const tcId = ae?.destination_node_id as string | undefined;
+      if (tcId) {
+        const tcNode = nodeMap.get(tcId);
+        if (tcNode && tcNode.type === "transfer_call") transferCallNode = tcNode;
+      }
+    }
+  }
+  if (transferCallNode) {
+    const dest = transferCallNode.raw.transfer_destination as Record<string, unknown> | undefined;
+    const num = dest?.number as string | undefined;
+    if (num && !num.startsWith("{{")) transferDestination = num;
+  }
+
   // Parse the data chain from the router's edges (ordered)
   const routerEdges = routerNode.raw.edges as Array<Record<string, unknown>> | undefined;
   const dataChain: ParsedDataPoint[] = [];
@@ -306,6 +344,10 @@ function buildParsedPath(
     frontExtractNode,
     routerNode,
     dataChain,
+    endMode,
+    preTransferNode,
+    transferCallNode,
+    transferDestination,
   };
 }
 

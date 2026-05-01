@@ -35,6 +35,7 @@ export interface JsonClientEntry {
     dispatch_cc?: string | null;
     dispatch_call_number?: string | null;
   }>;
+  path_end_modes?: Record<string, "callback" | "transfer">;
   summary_agent_id: string | null;
   outbound_from_number: string | null;
   dispatch_email: string[] | null;
@@ -103,6 +104,7 @@ export function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig
     dispatch_call_number: entry.dispatch_call_number,
     dispatch_call_overrides: entry.dispatch_call_overrides,
     dispatch_by_type: entry.dispatch_by_type,
+    path_end_modes: entry.path_end_modes,
     summary_agent_id: entry.summary_agent_id,
     outbound_from_number: entry.outbound_from_number,
     dispatch_email: entry.dispatch_email,
@@ -205,6 +207,7 @@ const EDITABLE_FIELDS = new Set([
   "dispatch_call_number",
   "dispatch_call_overrides",
   "dispatch_by_type",
+  "path_end_modes",
   "dispatch_email",
   "dispatch_cc",
   "outbound_from_number",

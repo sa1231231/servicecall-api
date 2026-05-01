@@ -262,6 +262,8 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
         frontExtractNodeId: p.frontExtractNode.id,
         routerNodeId: p.routerNode.id,
         transitionCondition: transitionConditions[p.name] ?? "",
+        endMode: p.endMode,
+        transferDestination: p.transferDestination,
         dataPoints: p.dataChain.map((dp) => ({
           variableName: dp.variableName,
           label: dp.label,
@@ -1297,6 +1299,29 @@ nodeEditorRouter.post("/:agentId/edit-path-name", async (req, res) => {
       updates.dispatch_by_type = dbt;
     }
 
+    // Rename path_end_modes key
+    if (doc.path_end_modes) {
+      const pem = { ...doc.path_end_modes };
+      const oldKey = oldName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const newKey = newName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      if (pem[oldName]) {
+        pem[newName] = pem[oldName];
+        delete pem[oldName];
+      } else if (pem[oldKey]) {
+        pem[newKey] = pem[oldKey];
+        delete pem[oldKey];
+      }
+      updates.path_end_modes = pem;
+    }
+
+    // Rename per-path Pre-Transfer / Transfer Call node display names
+    for (const n of nodes) {
+      const nm = n.name as string | undefined;
+      if (!nm) continue;
+      if (nm === `Pre-Transfer (${oldName})`) n.name = `Pre-Transfer (${newName})`;
+      else if (nm === `Transfer Call (${oldName})`) n.name = `Transfer Call (${newName})`;
+    }
+
     await getDb()
       .collection<JsonClientEntry & { _id: string }>("clients")
       .updateOne({ _id: slug } as any, { $set: updates });
@@ -1467,6 +1492,241 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error(`[node-editor] edit-human-request-mode error:`, msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── POST /:agentId/edit-path-end-mode — Per-path Callback vs Live Transfer ───
+//
+// Switches a single routing path's end-of-flow behavior between:
+//   - "callback": Variables Router (else) → shared Close node → hangup.
+//                 Post-hook calls dispatch back later.
+//   - "transfer": Variables Router (else) → per-path Pre-Transfer → per-path
+//                 Transfer Call → SIP-invite caller to dispatch number.
+//                 Post-hook still sends SMS/email but skips the redundant
+//                 outbound dispatch call (TRANSFER_DISCONNECTION_REASONS).
+//
+// Mutates the canonical flow in place; persists path_end_modes on the client
+// doc; takes an agent_versions snapshot. No Retell push — user publishes via
+// save-and-publish.
+nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
+  const p = req.params as Record<string, string>;
+  const slug = p.slug;
+  const agentId = p.agentId;
+  const { pathName, mode } = req.body as { pathName?: string; mode?: string };
+
+  if (!pathName || typeof pathName !== "string") {
+    res.status(400).json({ error: "pathName is required" });
+    return;
+  }
+  if (mode !== "callback" && mode !== "transfer") {
+    res.status(400).json({ error: "mode must be 'callback' or 'transfer'" });
+    return;
+  }
+
+  const resolved = await resolveAgentId(slug, agentId);
+  if (!resolved) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  const doc = resolved.doc;
+
+  // For transfer mode, ensure a dispatch call number is resolvable.
+  let transferDestination: string | null = null;
+  if (mode === "transfer") {
+    const perPath = doc.dispatch_by_type?.[pathName]?.dispatch_call_number;
+    const fallback = doc.dispatch_call_number;
+    transferDestination = perPath || fallback || null;
+    if (!transferDestination) {
+      res.status(400).json({
+        error: `Cannot set "${pathName}" to transfer: no dispatch call number is configured (per-path or client default).`,
+      });
+      return;
+    }
+  }
+
+  try {
+    const snapshot = await pullLatest(agentId);
+    const canonical = snapshot.canonicalJson;
+    const flow = canonical.conversationFlow as Record<string, unknown>;
+    const nodes = flow.nodes as Array<Record<string, unknown>>;
+    const parsed = parseConversationFlow(canonical);
+
+    const targetPath = parsed.paths.find((pa) => pa.name === pathName);
+    if (!targetPath) {
+      res.status(404).json({ error: `Path "${pathName}" not found in flow` });
+      return;
+    }
+
+    const closeNodeId = parsed.closeNode?.id;
+    if (!closeNodeId) {
+      res.status(500).json({ error: "Could not find Close node" });
+      return;
+    }
+
+    await createVersionSnapshot(
+      slug, agentId, canonical, "manual_edit",
+      `Set path "${pathName}" end mode to "${mode}"`,
+      req.user?.username ?? "unknown",
+    );
+
+    const routerNode = nodes.find((n) => n.id === targetPath.routerNode.id);
+    if (!routerNode) {
+      res.status(500).json({ error: `Variables Router for path "${pathName}" not found` });
+      return;
+    }
+
+    if (mode === "callback") {
+      // Rewire the path's Variables Router else_edge → shared Close node.
+      const elseEdge = routerNode.else_edge as Record<string, unknown> | undefined;
+      if (elseEdge) elseEdge.destination_node_id = closeNodeId;
+
+      // Remove this path's Pre-Transfer + Transfer Call nodes, if any.
+      const removeNames = new Set<string>([
+        `Pre-Transfer (${pathName})`,
+        `Transfer Call (${pathName})`,
+      ]);
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        if (removeNames.has(nodes[i].name as string)) nodes.splice(i, 1);
+      }
+
+      // Drop the shared Transfer Failed node if no transfer path or live-transfer
+      // human-request mode remains.
+      const stillHasTransferPath = parsed.paths.some(
+        (pa) => pa.name !== pathName && pa.endMode === "transfer",
+      );
+      const liveTransferHumanReq = nodes.some((n) => n.name === "Transfer Call");
+      if (!stillHasTransferPath && !liveTransferHumanReq) {
+        const tfIdx = nodes.findIndex((n) => n.name === "Transfer Failed");
+        if (tfIdx >= 0) nodes.splice(tfIdx, 1);
+      }
+    } else {
+      // mode === "transfer"
+      // Ensure the shared Transfer Failed node exists.
+      let transferFailedNode = nodes.find((n) => n.name === "Transfer Failed");
+      const closingRemarks = nodes.find((n) => n.name === "Closing Remarks");
+      const closingRemarksId = closingRemarks?.id as string | undefined;
+      if (!transferFailedNode) {
+        const transferFailedId = `node-transfer-failed-${Date.now()}`;
+        transferFailedNode = {
+          instruction: {
+            type: "prompt",
+            text: "Let the caller know you'll have their supervisor call them back as soon as possible. Do not ask them any more questions.",
+          },
+          always_edge: closingRemarksId ? {
+            destination_node_id: closingRemarksId,
+            id: `always-edge-tf-${Date.now()}`,
+            transition_condition: { type: "prompt", prompt: "Always" },
+          } : undefined,
+          name: "Transfer Failed",
+          edges: [],
+          id: transferFailedId,
+          type: "conversation",
+          display_position: { x: -200, y: -1700 },
+        };
+        nodes.push(transferFailedNode);
+      }
+      const transferFailedId = transferFailedNode.id as string;
+
+      // Find / create this path's Pre-Transfer + Transfer Call nodes.
+      let preTransfer = nodes.find((n) => n.name === `Pre-Transfer (${pathName})`);
+      let transferCall = nodes.find((n) => n.name === `Transfer Call (${pathName})`);
+      const businessName = snapshot.agentName;
+      const preTransferText = renderTemplate(
+        "Thanks for the information. Hold on a moment — connecting you to our team at {{business_name}} now.",
+        { business_name: businessName },
+      );
+
+      const routerPos = routerNode.display_position as { x: number; y: number } | undefined;
+      const yBase = routerPos?.y ?? 450;
+
+      if (!preTransfer) {
+        const preTransferId = `node-pretransfer-${Date.now()}`;
+        const transferCallId = `node-transfercall-${Date.now() + 1}`;
+        preTransfer = {
+          instruction: { type: "prompt", text: preTransferText },
+          always_edge: {
+            destination_node_id: transferCallId,
+            id: `always-edge-pt-${Date.now()}`,
+            transition_condition: { type: "prompt", prompt: "Always" },
+          },
+          name: `Pre-Transfer (${pathName})`,
+          edges: [],
+          id: preTransferId,
+          type: "conversation",
+          display_position: { x: -18, y: yBase + 1350 },
+        };
+        nodes.push(preTransfer);
+
+        transferCall = {
+          custom_sip_headers: {},
+          transfer_destination: { type: "predefined", number: transferDestination! },
+          edge: {
+            destination_node_id: transferFailedId,
+            id: `edge-tc-${Date.now()}`,
+            transition_condition: { type: "prompt", prompt: "Transfer failed" },
+          },
+          name: `Transfer Call (${pathName})`,
+          ignore_e164_validation: false,
+          id: transferCallId,
+          transfer_option: {
+            cold_transfer_mode: "sip_invite",
+            enable_bridge_audio_cue: true,
+            type: "cold_transfer",
+            agent_detection_timeout_ms: 30000,
+            show_transferee_as_caller: false,
+          },
+          type: "transfer_call",
+          speak_during_execution: false,
+          display_position: { x: 540, y: yBase + 1350 },
+        };
+        nodes.push(transferCall);
+      } else {
+        // Refresh the destination number + always_edge target on existing nodes.
+        if (transferCall) {
+          (transferCall.transfer_destination as Record<string, unknown>).number = transferDestination!;
+          const edge = transferCall.edge as Record<string, unknown> | undefined;
+          if (edge) edge.destination_node_id = transferFailedId;
+        }
+        const ae = preTransfer.always_edge as Record<string, unknown> | undefined;
+        if (ae && transferCall) ae.destination_node_id = transferCall.id as string;
+      }
+
+      // Rewire Variables Router else_edge → Pre-Transfer.
+      const elseEdge = routerNode.else_edge as Record<string, unknown> | undefined;
+      if (elseEdge) elseEdge.destination_node_id = preTransfer.id as string;
+    }
+
+    const errors = validateConversationFlow(flow);
+    if (errors.length > 0) {
+      res.status(400).json({ error: "Validation failed", errors });
+      return;
+    }
+
+    // Persist path_end_modes on the client doc.
+    const nextEndModes: Record<string, "callback" | "transfer"> = {
+      ...(doc.path_end_modes ?? {}),
+    };
+    if (mode === "transfer") nextEndModes[pathName] = "transfer";
+    else delete nextEndModes[pathName];
+
+    await getDb()
+      .collection<JsonClientEntry & { _id: string }>("clients")
+      .updateOne({ _id: slug } as any, {
+        $set: {
+          [`retell_agents.${agentId}`]: canonical,
+          path_end_modes: nextEndModes,
+          last_deployed_at: new Date().toISOString(),
+        },
+      });
+    await loadClientsFromDb();
+
+    await logAudit(req, "edit_path_end_mode", `${slug}/${agentId}`, { pathName, mode });
+    res.json({ success: true, pathName, mode, transferDestination });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[node-editor] edit-path-end-mode error:`, msg);
     res.status(500).json({ error: msg });
   }
 });

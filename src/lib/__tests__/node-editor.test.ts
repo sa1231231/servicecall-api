@@ -1065,3 +1065,78 @@ describe("round-trip integrity", () => {
     expect((lastConfirm as any).variables.length).toBeLessThan((firstConfirm as any).variables.length);
   });
 });
+
+// ── Per-path end mode round-trip ─────────────────────────────────────────────
+
+describe("parser: per-path end mode", () => {
+  it("parses callback-mode paths as endMode='callback'", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "A", transitionCondition: "A", dataPoints: ["full_name"] },
+        { name: "B", transitionCondition: "B", dataPoints: ["city"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const parsed = parseConversationFlow(agent as any);
+    expect(parsed.paths).toHaveLength(2);
+    for (const p of parsed.paths) {
+      expect(p.endMode).toBe("callback");
+      expect(p.preTransferNode).toBeUndefined();
+      expect(p.transferCallNode).toBeUndefined();
+    }
+  });
+
+  it("parses transfer-mode paths as endMode='transfer' with destination", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "Emergency", transitionCondition: "x", dataPoints: ["full_name"], endMode: "transfer", transferDestination: "+18005550000" },
+        { name: "Quote", transitionCondition: "y", dataPoints: ["city"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const parsed = parseConversationFlow(agent as any);
+    const emergency = parsed.paths.find(p => p.name === "Emergency");
+    const quote = parsed.paths.find(p => p.name === "Quote");
+    expect(emergency?.endMode).toBe("transfer");
+    expect(emergency?.transferDestination).toBe("+18005550000");
+    expect(emergency?.preTransferNode).toBeDefined();
+    expect(emergency?.transferCallNode).toBeDefined();
+    expect(quote?.endMode).toBe("callback");
+  });
+});
+
+describe("regenerator: respects per-path end mode", () => {
+  it("rewires variables router → existing pre-transfer (not close) when path is transfer-mode", () => {
+    // Use multi-path so per-path node-name suffixes are applied (single-path
+    // mode shares unsuffixed nodes; the parser would label that path "Default").
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "Emergency", transitionCondition: "x", dataPoints: ["full_name"], endMode: "transfer", transferDestination: "+18005550000" },
+        { name: "Quote", transitionCondition: "y", dataPoints: ["city"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const parsed = parseConversationFlow(agent as any);
+    const emergency = parsed.paths.find(p => p.name === "Emergency")!;
+    expect(emergency).toBeDefined();
+    expect(emergency.endMode).toBe("transfer");
+
+    // Regenerate the chain with an extra data point.
+    const newChain = [
+      { variableName: "full_name", label: "Full Name", type: "string", description: "", conversationPrompt: "", forwardCondition: "", finetuneExamples: [], extractSuccessEquation: defaultExtractEquation("full_name") },
+      { variableName: "phone_number", label: "Phone Number", type: "string", description: "", conversationPrompt: "", forwardCondition: "", finetuneExamples: [], extractSuccessEquation: defaultExtractEquation("phone_number") },
+    ] as DataPoint[];
+
+    const result = regenerateDataChain(emergency, newChain, parsed.closeNode!.id, "Emergency");
+    const router = result.newNodes.find((n: any) => n.name === "Variables Router (Emergency)") as any;
+    // Else_edge must point to the path's existing Pre-Transfer node, NOT the Close node.
+    expect(router.else_edge.destination_node_id).toBe(emergency.preTransferNode!.id);
+    expect(router.else_edge.destination_node_id).not.toBe(parsed.closeNode!.id);
+  });
+});

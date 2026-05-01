@@ -1,5 +1,6 @@
 import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
+import { agentIdToClient, agentIdToSlug, phoneNumberToClient } from "../../_cache/clients.js";
 export async function preHookHandler(req, res) {
     const sig = req.headers["x-retell-signature"] ?? "";
     const rawBody = req.rawBody;
@@ -25,18 +26,37 @@ export async function preHookHandler(req, res) {
         return;
     }
     console.log("retell-pre-hook: Received inbound event:", { eventType, inbound });
+    const agentId = inbound?.agent_id ?? null;
     const toNumber = inbound?.to_number ?? null;
-    if (!toNumber) {
-        console.log("retell-pre-hook: cannot find number in inbound payload, rejecting");
-        res.status(200).json({});
-        return;
+    const responseKey = eventType === "call_inbound" ? "call_inbound" : "chat_inbound";
+    // 3) Resolve client — try agent_id first, fall back to to_number
+    let client = agentId ? agentIdToClient[agentId] : null;
+    let slug = agentId ? (agentIdToSlug[agentId] ?? null) : null;
+    let resolvedAgentId = agentId;
+    if (!client && toNumber) {
+        const byPhone = phoneNumberToClient[toNumber];
+        if (byPhone) {
+            client = byPhone.config;
+            slug = byPhone.slug;
+            resolvedAgentId = client.agent_ids[0] ?? null;
+            console.log("retell-pre-hook: resolved client by to_number", {
+                to_number: toNumber,
+                client: slug,
+                resolved_agent_id: resolvedAgentId,
+            });
+        }
     }
-    // TODO: Look up agent by inbound number
-    // TODO: Verify business has credit balance > 0
-    // TODO: Return { call_inbound: { override_agent_id } } or {} to reject
+    // 4) Log and pass through
+    // Note: active/inactive rejection is handled at the Retell phone number level
+    // (inbound_agents cleared via toggle-active endpoint), not here.
     console.log("retell-pre-hook: inbound call validated", {
+        agent_id: resolvedAgentId,
+        client: slug ?? "unknown",
         to_number: toNumber,
         event_type: eventType,
+        active: client?.active !== false,
     });
-    res.status(200).json({});
+    // TODO: Verify business has credit balance > 0
+    // Pass through — let Retell handle with the bound inbound agent
+    res.status(200).json({ [responseKey]: {} });
 }

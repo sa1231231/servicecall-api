@@ -10,4 +10,5 @@ export interface RetellAgentSnapshot {
 export declare function extractFlowParams(conversationFlow: Record<string, unknown>): Record<string, unknown>;
 export declare function extractAgentParams(agentJson: Record<string, unknown>, conversationFlowId: string): Record<string, unknown>;
 export declare function extractVariables(canonicalJson: Record<string, unknown>): VariableEntry[];
+export declare function pushFlowToRetell(retell: Retell, flowId: string, canonicalJson: Record<string, unknown>): Promise<void>;
 export declare function fetchRetellAgent(retell: Retell, agentId: string): Promise<RetellAgentSnapshot>;

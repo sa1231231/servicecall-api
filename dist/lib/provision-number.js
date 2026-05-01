@@ -3,6 +3,7 @@ import Retell from "retell-sdk";
 import { config } from "../config.js";
 const twilioClient = Twilio(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN);
 const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+const DEFAULT_AREA_CODE = 815;
 function extractAreaCode(phoneNumber) {
     // E.164 US format: +1AAANNNNNNN
     const digits = phoneNumber.replace(/\D/g, "");
@@ -14,7 +15,8 @@ function extractAreaCode(phoneNumber) {
 }
 export async function provisionPhoneNumber(options) {
     const { agentId, clientName, dispatchCallNumber } = options;
-    const areaCode = extractAreaCode(dispatchCallNumber);
+    const areaCode = options.areaCode
+        ?? (dispatchCallNumber ? extractAreaCode(dispatchCallNumber) : DEFAULT_AREA_CODE);
     console.log(`[provision] starting for "${clientName}" (area code ${areaCode})`);
     // 1. Search for available local number
     const available = await twilioClient.availablePhoneNumbers("US").local.list({
@@ -63,6 +65,7 @@ export async function provisionPhoneNumber(options) {
             termination_uri: terminationUri,
             inbound_agents: [{ agent_id: agentId, weight: 1 }],
             nickname: clientName,
+            inbound_webhook_url: "https://servicecall-api-production.up.railway.app/retell/pre-hook",
         });
         console.log(`[provision] imported into Retell with agent ${agentId}`);
     }

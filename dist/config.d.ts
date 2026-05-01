@@ -17,5 +17,9 @@ export declare const config: {
     TWILIO_MESSAGING_SERVICE_SID: string;
     GOOGLE_REVIEW_URL: string;
     MONGODB_URL: string;
-    ADMIN_PASSWORD: string;
+    R2_ENDPOINT: string;
+    R2_ACCESS_KEY_ID: string;
+    R2_SECRET_ACCESS_KEY: string;
+    R2_BUCKET: string;
+    ROOT_PASSWORD: string;
 };

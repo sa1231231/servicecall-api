@@ -86,6 +86,13 @@ export function regenerateDataChain(
   closeNodeId: string,
   pathName?: string,
 ): RegenerateResult {
+  // For transfer-mode paths, the Variables Router's else_edge points to the
+  // path's Pre-Transfer node (which always-edges into Transfer Call).
+  // For callback-mode paths, it points to the shared Close node.
+  const terminalNodeId =
+    existingPath.endMode === "transfer" && existingPath.preTransferNode
+      ? existingPath.preTransferNode.id
+      : closeNodeId;
   // Derive a safe ID base above any existing node counter to avoid collisions
   const f = makeIdFactory(maxNodeCounter(existingPath) + 1000);
   const suffix = pathName ? ` (${pathName})` : "";
@@ -229,7 +236,7 @@ export function regenerateDataChain(
     edges: routerEdges,
     id: routerId,
     else_edge: {
-      destination_node_id: closeNodeId,
+      destination_node_id: terminalNodeId,
       id: `${routerId}-else-edge`,
       transition_condition: { type: "prompt", prompt: "Else" },
     },

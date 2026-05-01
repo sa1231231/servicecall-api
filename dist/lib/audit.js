@@ -1,0 +1,19 @@
+import { getDb } from "./db.js";
+export async function logAudit(req, action, target, details) {
+    const entry = {
+        timestamp: new Date(),
+        username: req.user?.username ?? "unknown",
+        role: req.user?.role ?? "unknown",
+        action,
+        target,
+        details,
+        ip: req.ip ?? "unknown",
+    };
+    await getDb().collection("audit_log").insertOne(entry);
+    console.log(`[audit] ${entry.username} (${entry.role}) ${action} ${target}`);
+}
+export async function ensureAuditIndex() {
+    await getDb()
+        .collection("audit_log")
+        .createIndex({ timestamp: 1 }, { expireAfterSeconds: 90 * 86400 });
+}

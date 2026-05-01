@@ -29,6 +29,11 @@ export const config = {
     GOOGLE_REVIEW_URL: process.env.GOOGLE_REVIEW_URL ?? "",
     // MongoDB
     MONGODB_URL: requireEnv("MONGODB_URL"),
-    // Admin
-    ADMIN_PASSWORD: requireEnv("ADMIN_PASSWORD"),
+    // R2 Backup (optional)
+    R2_ENDPOINT: process.env.R2_ENDPOINT ?? "",
+    R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID ?? "",
+    R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY ?? "",
+    R2_BUCKET: process.env.R2_BUCKET ?? "scs-mongo-backup",
+    // Root account password (break-glass access)
+    ROOT_PASSWORD: process.env.ROOT_PASSWORD ?? requireEnv("ADMIN_PASSWORD"),
 };

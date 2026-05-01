@@ -63,6 +63,7 @@ export async function sendOwnerCallMonitor(call, clientConfig, notificationOutco
             in_voicemail: inVoicemail,
             recording_url: recordingUrl ?? undefined,
             public_log_url: publicLogUrl ?? undefined,
+            transcript: transcript !== "(no transcript)" ? transcript : undefined,
         }).catch(() => { });
     }
     // Build subject

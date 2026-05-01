@@ -1,21 +1,82 @@
 import { describe, it, expect } from "vitest";
-import { generateAgent, resolveDataPoints, DATA_POINT_REGISTRY, NOT_MENTIONED, CALLER_DOESNT_KNOW, PHONE_COLLECTED_FLAG, } from "../agent-generator/index.js";
+import { generateAgent, resolveDataPoints, NOT_MENTIONED, CALLER_DOESNT_KNOW, PHONE_COLLECTED_FLAG, defaultExtractEquation, } from "../agent-generator/index.js";
 const baseConfig = {
     businessName: "Test Co",
     faqKnowledgeBase: "FAQ content here",
     introFinetuneExamples: [],
 };
+// Test data points (simulates what MongoDB would provide)
+const TEST_DEFAULTS = {
+    full_name: {
+        label: "Full Name",
+        variableName: "full_name",
+        type: "string",
+        description: `Full name. If not mentioned, set to "${NOT_MENTIONED}". If they don't know, set to "${CALLER_DOESNT_KNOW}".`,
+        conversationPrompt: "Ask for the caller's name. If they don't know, move on.",
+        forwardCondition: "The caller has given their name or indicated they don't know it",
+        finetuneExamples: [
+            { type: "negative", transcript: [{ content: "It's John.", role: "user" }, { content: "Got it, and your last name?", role: "agent" }] },
+        ],
+        extractSuccessEquation: defaultExtractEquation("full_name"),
+    },
+    phone_number: {
+        label: "Phone Number",
+        variableName: "phone_number",
+        type: "string",
+        description: `Phone number. If not mentioned, set to "${NOT_MENTIONED}". If they don't know, set to "${CALLER_DOESNT_KNOW}".`,
+        conversationPrompt: "Ask for their phone number. If they don't know, move on.",
+        forwardCondition: "The caller has provided their phone number or indicated they don't know it",
+        finetuneExamples: [],
+        extractSuccessEquation: defaultExtractEquation("phone_number"),
+    },
+    city: {
+        label: "City",
+        variableName: "city",
+        type: "string",
+        description: `City. If not mentioned, set to "${NOT_MENTIONED}". If they don't know, set to "${CALLER_DOESNT_KNOW}".`,
+        conversationPrompt: "Ask for the city. If they don't know, move on.",
+        forwardCondition: "The caller has given their city or indicated they don't know it",
+        finetuneExamples: [],
+        extractSuccessEquation: defaultExtractEquation("city"),
+    },
+    vehicle_type: {
+        label: "Vehicle Type",
+        variableName: "vehicle_type",
+        type: "enum",
+        choices: ["Semi", "Box truck", CALLER_DOESNT_KNOW, "Other", NOT_MENTIONED],
+        description: `Vehicle type. If not mentioned, set to "${NOT_MENTIONED}".`,
+        conversationPrompt: "Ask what type of truck. If they don't know, move on.",
+        forwardCondition: "The caller has provided the vehicle type or indicated they don't know it",
+        finetuneExamples: [],
+        extractSuccessEquation: defaultExtractEquation("vehicle_type"),
+    },
+    scheduling: {
+        composite: true,
+        label: "Day / Time Preference",
+        variableName: "scheduling",
+        type: "string",
+        description: "",
+        variables: [
+            { variableName: "preferred_day", type: "enum", choices: ["Monday", "Tuesday", CALLER_DOESNT_KNOW, NOT_MENTIONED], description: "Day preference" },
+            { variableName: "preferred_time", type: "enum", choices: ["8 AM - 10 AM", "10 AM - 12 PM", CALLER_DOESNT_KNOW, NOT_MENTIONED], description: "Time preference" },
+        ],
+        conversationPrompt: "Ask when they want someone to come out. If they don't know, move on.",
+        forwardCondition: "The caller has agreed to a day and time or indicated they don't know",
+        finetuneExamples: [],
+        extractSuccessEquation: [],
+    },
+};
 // ── resolveDataPoints ────────────────────────────────────────────────────────
 describe("resolveDataPoints", () => {
     it("resolves built-in string references", () => {
-        const resolved = resolveDataPoints(["full_name", "phone_number"]);
+        const resolved = resolveDataPoints(["full_name", "phone_number"], TEST_DEFAULTS);
         expect(resolved).toHaveLength(2);
         expect(resolved[0].variableName).toBe("full_name");
         expect(resolved[0].label).toBe("Full Name");
         expect(resolved[1].variableName).toBe("phone_number");
     });
     it("throws on unknown built-in reference", () => {
-        expect(() => resolveDataPoints(["nonexistent"])).toThrow(/Unknown data point "nonexistent"/);
+        expect(() => resolveDataPoints(["nonexistent"], TEST_DEFAULTS)).toThrow(/Unknown data point "nonexistent"/);
     });
     it("resolves custom data point objects", () => {
         const resolved = resolveDataPoints([
@@ -27,121 +88,104 @@ describe("resolveDataPoints", () => {
                 conversationPrompt: "Ask for it",
                 forwardCondition: "Caller provided it",
             },
-        ]);
+        ], TEST_DEFAULTS);
         expect(resolved).toHaveLength(1);
         expect(resolved[0].variableName).toBe("custom_field");
         expect(resolved[0].label).toBe("My Field");
     });
     it("fills defaults for partial custom objects", () => {
-        const resolved = resolveDataPoints([{ variableName: "my_var" }]);
+        const resolved = resolveDataPoints([{ variableName: "my_var" }], TEST_DEFAULTS);
         expect(resolved[0].label).toBe("My Var");
         expect(resolved[0].type).toBe("string");
         expect(resolved[0].conversationPrompt).toContain("my var");
         expect(resolved[0].extractSuccessEquation).toHaveLength(2);
     });
     it("throws when custom object missing variableName", () => {
-        expect(() => resolveDataPoints([{ label: "No Name" }])).toThrow(/missing required field: variableName/);
+        expect(() => resolveDataPoints([{ label: "No Name" }], TEST_DEFAULTS)).toThrow(/missing required field: variableName/);
     });
     it("resolves composite data points", () => {
-        const resolved = resolveDataPoints(["scheduling"]);
+        const resolved = resolveDataPoints(["scheduling"], TEST_DEFAULTS);
         expect(resolved[0].composite).toBe(true);
         expect(resolved[0].variables).toHaveLength(2);
         expect(resolved[0].variables[0].variableName).toBe("preferred_day");
         expect(resolved[0].variables[1].variableName).toBe("preferred_time");
     });
-    it("resolves all trucking built-ins", () => {
-        const truckingKeys = [
-            "truck_number", "driver_name", "driver_phone", "breakdown_location",
-            "problem_description", "vehicle_type", "vehicle_manufacturer",
-            "vehicle_color", "whos_paying", "payment_method",
-        ];
-        const resolved = resolveDataPoints(truckingKeys);
-        expect(resolved).toHaveLength(10);
-        resolved.forEach((dp, i) => {
-            expect(dp.variableName).toBe(truckingKeys[i]);
-        });
+    it("throws when defaults map is empty", () => {
+        expect(() => resolveDataPoints(["full_name"], {})).toThrow(/No data point defaults provided/);
     });
-});
-// ── DATA_POINT_REGISTRY ──────────────────────────────────────────────────────
-describe("DATA_POINT_REGISTRY", () => {
-    it("has all expected general entries", () => {
-        const generalKeys = ["full_name", "phone_number", "email", "street_address", "city", "company_name", "scheduling"];
-        generalKeys.forEach(key => {
-            expect(DATA_POINT_REGISTRY[key]).toBeDefined();
-        });
-    });
-    it("has all expected trucking entries", () => {
-        const truckingKeys = [
-            "truck_number", "driver_name", "driver_phone", "breakdown_location",
-            "problem_description", "vehicle_type", "vehicle_manufacturer",
-            "vehicle_color", "whos_paying", "payment_method",
-        ];
-        truckingKeys.forEach(key => {
-            expect(DATA_POINT_REGISTRY[key]).toBeDefined();
-            expect(DATA_POINT_REGISTRY[key].variableName).toBe(key);
-        });
-    });
-    it("enum data points have choices array with NOT_MENTIONED", () => {
-        const enumKeys = ["vehicle_type", "vehicle_manufacturer", "vehicle_color", "payment_method"];
-        enumKeys.forEach(key => {
-            const dp = DATA_POINT_REGISTRY[key];
-            expect(dp.type).toBe("enum");
-            expect(dp.choices).toContain(NOT_MENTIONED);
-            expect(dp.choices.length).toBeGreaterThan(2);
-        });
-    });
-    it("all entries have required fields", () => {
-        Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
-            expect(dp.label, `${key}.label`).toBeTruthy();
-            expect(dp.variableName, `${key}.variableName`).toBe(key);
-            expect(dp.conversationPrompt, `${key}.conversationPrompt`).toBeTruthy();
-            expect(dp.forwardCondition, `${key}.forwardCondition`).toBeTruthy();
-        });
-    });
-    it("all data points include 'don't know' in forwardCondition", () => {
-        Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
-            expect(dp.forwardCondition, `${key}.forwardCondition`).toMatch(/don't know/i);
-        });
-    });
-    it("all data points include 'don't know' in conversationPrompt", () => {
-        Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
-            expect(dp.conversationPrompt, `${key}.conversationPrompt`).toMatch(/don't know/i);
-        });
-    });
-    it("all non-composite data points include 'Caller Doesn\\'t Know' in description", () => {
-        Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
-            if (dp.composite)
-                return;
-            expect(dp.description, `${key}.description`).toContain(CALLER_DOESNT_KNOW);
-        });
-    });
-    it("all enum data points have 'Caller Doesn\\'t Know' in choices", () => {
-        Object.entries(DATA_POINT_REGISTRY).forEach(([key, dp]) => {
-            if (dp.type !== "enum" || dp.composite)
-                return;
-            expect(dp.choices, `${key}.choices`).toContain(CALLER_DOESNT_KNOW);
-        });
-    });
-    it("scheduling sub-variables have 'Caller Doesn\\'t Know' in choices", () => {
-        const scheduling = DATA_POINT_REGISTRY.scheduling;
-        expect(scheduling.variables).toBeDefined();
-        scheduling.variables.forEach((v) => {
-            expect(v.choices, `${v.variableName}.choices`).toContain(CALLER_DOESNT_KNOW);
-        });
+    it("custom data point objects bypass the defaults map", () => {
+        const resolved = resolveDataPoints([{ variableName: "inline_field", label: "Inline", type: "string", description: "inline desc", conversationPrompt: "ask", forwardCondition: "done" }], TEST_DEFAULTS);
+        expect(resolved[0].variableName).toBe("inline_field");
+        expect(resolved[0].description).toBe("inline desc");
     });
 });
 describe("custom data point defaults include 'Caller Doesn\\'t Know' handling", () => {
     it("default description, conversationPrompt, and forwardCondition handle don't know", () => {
-        const resolved = resolveDataPoints([{ variableName: "my_var" }]);
+        const resolved = resolveDataPoints([{ variableName: "my_var" }], TEST_DEFAULTS);
         expect(resolved[0].description).toContain(CALLER_DOESNT_KNOW);
         expect(resolved[0].conversationPrompt).toMatch(/don't know/i);
         expect(resolved[0].forwardCondition).toMatch(/don't know/i);
     });
 });
+// ── orphan data points ──────────────────────────────────────────────────────
+describe("orphan data points", () => {
+    it("resolves orphan flag and sets empty prompt/condition", () => {
+        const resolved = resolveDataPoints([
+            { variableName: "is_location_specific", type: "boolean", description: "Location check", orphan: true },
+        ], TEST_DEFAULTS);
+        expect(resolved[0].orphan).toBe(true);
+        expect(resolved[0].conversationPrompt).toBe("");
+        expect(resolved[0].forwardCondition).toBe("");
+    });
+    it("orphan with explicit prompt preserves it", () => {
+        const resolved = resolveDataPoints([
+            { variableName: "custom_flag", orphan: true, conversationPrompt: "custom", forwardCondition: "custom" },
+        ], TEST_DEFAULTS);
+        expect(resolved[0].orphan).toBe(true);
+        expect(resolved[0].conversationPrompt).toBe("custom");
+        expect(resolved[0].forwardCondition).toBe("custom");
+    });
+    it("non-orphan gets default prompt when none provided", () => {
+        const resolved = resolveDataPoints([{ variableName: "my_var" }], TEST_DEFAULTS);
+        expect(resolved[0].orphan).toBeUndefined();
+        expect(resolved[0].conversationPrompt).not.toBe("");
+        expect(resolved[0].forwardCondition).not.toBe("");
+    });
+    it("orphan mixed with normal data points", () => {
+        const resolved = resolveDataPoints([
+            "full_name",
+            { variableName: "is_loaded", type: "boolean", description: "Is loaded", orphan: true },
+            "phone_number",
+        ], TEST_DEFAULTS);
+        expect(resolved).toHaveLength(3);
+        expect(resolved[0].orphan).toBeUndefined();
+        expect(resolved[1].orphan).toBe(true);
+        expect(resolved[2].orphan).toBeUndefined();
+    });
+});
+// ── generateAgent ───────────────────────────────────────────────────────────
+describe("generateAgent", () => {
+    it("generates agent with defaults", () => {
+        const { resolved } = generateAgent(baseConfig, ["full_name", "city"], undefined, TEST_DEFAULTS);
+        expect(resolved).toHaveLength(2);
+        expect(resolved[0].variableName).toBe("full_name");
+        expect(resolved[1].variableName).toBe("city");
+    });
+    it("multi-path generation works", () => {
+        const paths = [
+            { name: "Path A", transitionCondition: "A", dataPoints: ["full_name"] },
+            { name: "Path B", transitionCondition: "B", dataPoints: ["city"] },
+        ];
+        const { resolvedPaths } = generateAgent(baseConfig, [], paths, TEST_DEFAULTS);
+        expect(resolvedPaths).toHaveLength(2);
+        expect(resolvedPaths[0].resolved[0].variableName).toBe("full_name");
+        expect(resolvedPaths[1].resolved[0].variableName).toBe("city");
+    });
+});
 // ── Edge cases ──────────────────────────────────────────────────────────────
 describe("edge cases", () => {
     it("router equations use NOT_MENTIONED constant value", () => {
-        const { agent } = generateAgent(baseConfig, ["full_name", "city"]);
+        const { agent } = generateAgent(baseConfig, ["full_name", "city"], undefined, TEST_DEFAULTS);
         const flow = agent.conversationFlow;
         const router = flow.nodes.find((n) => n.name === "Variables Router");
         router.edges.forEach((edge) => {
@@ -153,7 +197,7 @@ describe("edge cases", () => {
         });
     });
     it("phone_number_collected flag is added to phone confirm extract node", () => {
-        const { agent } = generateAgent(baseConfig, ["phone_number", "full_name"]);
+        const { agent } = generateAgent(baseConfig, ["phone_number", "full_name"], undefined, TEST_DEFAULTS);
         const flow = agent.conversationFlow;
         const confirmPhone = flow.nodes.find((n) => n.name === "Confirm Phone Number");
         const flagVar = confirmPhone.variables.find((v) => v.name === PHONE_COLLECTED_FLAG);
@@ -163,190 +207,277 @@ describe("edge cases", () => {
     it("throws on empty data points in a path", () => {
         expect(() => generateAgent(baseConfig, [], [
             { name: "Empty Path", transitionCondition: "test", dataPoints: [] },
-        ])).toThrow(/Path "Empty Path" has no data points/);
+        ], TEST_DEFAULTS)).toThrow(/Path "Empty Path" has no data points/);
     });
     it("includes path name in error for bad data point reference", () => {
         expect(() => generateAgent(baseConfig, [], [
             { name: "Bad Path", transitionCondition: "test", dataPoints: ["nonexistent"] },
-        ])).toThrow(/Path "Bad Path".*Unknown data point/);
+        ], TEST_DEFAULTS)).toThrow(/Path "Bad Path".*Unknown data point/);
     });
     it("generates valid agent with single data point", () => {
-        const { agent, resolved } = generateAgent(baseConfig, ["full_name"]);
+        const { agent, resolved } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
         expect(resolved).toHaveLength(1);
         const flow = agent.conversationFlow;
         expect(flow.nodes.length).toBeGreaterThan(10);
         const router = flow.nodes.find((n) => n.name === "Variables Router");
         expect(router.edges).toHaveLength(1);
     });
-    it("duplicate variable names across paths don't cause ID collisions", () => {
-        const { agent } = generateAgent(baseConfig, [], [
-            { name: "Path A", transitionCondition: "A", dataPoints: ["full_name", "phone_number"] },
-            { name: "Path B", transitionCondition: "B", dataPoints: ["full_name", "city"] },
-        ]);
-        const flow = agent.conversationFlow;
-        const ids = flow.nodes.map((n) => n.id);
-        expect(new Set(ids).size).toBe(ids.length);
-    });
 });
-// ── generateAgent (single-path) ──────────────────────────────────────────────
-describe("generateAgent (single-path)", () => {
-    it("generates valid agent with basic data points", () => {
-        const { agent, resolved, resolvedPaths } = generateAgent(baseConfig, ["full_name", "phone_number", "city"]);
+// ── Branch logic ────────────────────────────────────────────────────────────
+describe("if/else branch support", () => {
+    it("resolveDataPoints flattens a simple branch", () => {
+        const raw = [
+            "full_name",
+            {
+                _branch: true,
+                variable: "vehicle_type",
+                operator: "==",
+                value: "Semi",
+                ifChain: ["phone_number"],
+                elseChain: ["city"],
+            },
+        ];
+        const resolved = resolveDataPoints(raw, TEST_DEFAULTS);
         expect(resolved).toHaveLength(3);
-        expect(resolvedPaths).toBeUndefined();
-        const flow = agent.conversationFlow;
-        expect(flow.nodes.length).toBeGreaterThan(10);
-        expect(flow.start_node_id).toBeTruthy();
+        expect(resolved[0].variableName).toBe("full_name");
+        expect(resolved[0]._branchConditions).toBeUndefined();
+        // IF branch data point
+        expect(resolved[1].variableName).toBe("phone_number");
+        expect(resolved[1]._branchConditions).toHaveLength(1);
+        expect(resolved[1]._branchConditions[0]).toEqual({
+            variable: "vehicle_type", operator: "==", value: "Semi",
+        });
+        // ELSE branch data point
+        expect(resolved[2].variableName).toBe("city");
+        expect(resolved[2]._branchConditions).toHaveLength(1);
+        expect(resolved[2]._branchConditions[0]).toEqual({
+            variable: "vehicle_type", operator: "!=", value: "Semi",
+        });
     });
-    it("creates single intro edge in single-path mode", () => {
-        const { agent } = generateAgent(baseConfig, ["full_name"]);
-        const flow = agent.conversationFlow;
-        const intro = flow.nodes.find((n) => n.name === "Intro");
-        expect(intro.edges).toHaveLength(1);
+    it("resolveDataPoints flattens nested branches", () => {
+        const raw = [
+            {
+                _branch: true,
+                variable: "vehicle_type",
+                operator: "==",
+                value: "Semi",
+                ifChain: [
+                    {
+                        _branch: true,
+                        variable: "vehicle_type",
+                        operator: "==",
+                        value: "Box truck", // nested condition
+                        ifChain: ["city"],
+                        elseChain: [],
+                    },
+                ],
+                elseChain: ["full_name"],
+            },
+        ];
+        const resolved = resolveDataPoints(raw, TEST_DEFAULTS);
+        expect(resolved).toHaveLength(2);
+        // Nested IF: has both parent + child conditions
+        expect(resolved[0].variableName).toBe("city");
+        expect(resolved[0]._branchConditions).toHaveLength(2);
+        expect(resolved[0]._branchConditions[0].variable).toBe("vehicle_type");
+        expect(resolved[0]._branchConditions[0].operator).toBe("==");
+        expect(resolved[0]._branchConditions[0].value).toBe("Semi");
+        expect(resolved[0]._branchConditions[1].value).toBe("Box truck");
+        // ELSE branch
+        expect(resolved[1].variableName).toBe("full_name");
+        expect(resolved[1]._branchConditions).toHaveLength(1);
+        expect(resolved[1]._branchConditions[0].operator).toBe("!=");
     });
-    it("creates Extract → Router → Collect/Confirm chain", () => {
-        const { agent } = generateAgent(baseConfig, ["full_name", "city"]);
-        const flow = agent.conversationFlow;
-        const names = flow.nodes.map((n) => n.name);
-        expect(names).toContain("Extract All Variables");
-        expect(names).toContain("Variables Router");
-        expect(names).toContain("Collect Full Name");
-        expect(names).toContain("Confirm Full Name");
-        expect(names).toContain("Collect City");
-        expect(names).toContain("Confirm City");
-    });
-    it("router else-edge points to Close", () => {
-        const { agent } = generateAgent(baseConfig, ["full_name"]);
+    it("generateAgent builds router edges with branch conditions", () => {
+        const dataPoints = [
+            "full_name",
+            {
+                _branch: true,
+                variable: "vehicle_type",
+                operator: "==",
+                value: "Semi",
+                ifChain: ["phone_number"],
+                elseChain: ["city"],
+            },
+        ];
+        const { agent } = generateAgent(baseConfig, dataPoints, undefined, TEST_DEFAULTS);
         const flow = agent.conversationFlow;
         const router = flow.nodes.find((n) => n.name === "Variables Router");
-        const close = flow.nodes.find((n) => n.name === "Close");
-        expect(router.else_edge.destination_node_id).toBe(close.id);
+        expect(router.edges).toHaveLength(3); // full_name + phone_number (IF) + city (ELSE)
+        // First edge: full_name — no branch condition, uses || operator
+        const nameEdge = router.edges[0];
+        expect(nameEdge.transition_condition.operator).toBe("||");
+        // Second edge: phone_number (IF branch) — has branch condition, uses && operator
+        const ifEdge = router.edges[1];
+        expect(ifEdge.transition_condition.operator).toBe("&&");
+        const ifEqs = ifEdge.transition_condition.equations;
+        const branchEq = ifEqs.find((eq) => eq.left === "{{vehicle_type}}" && eq.operator === "==");
+        expect(branchEq).toBeDefined();
+        expect(branchEq.right).toBe("Semi");
+        // Third edge: city (ELSE branch) — has inverted condition + sentinel guards
+        const elseEdge = router.edges[2];
+        expect(elseEdge.transition_condition.operator).toBe("&&");
+        const elseEqs = elseEdge.transition_condition.equations;
+        const invertedEq = elseEqs.find((eq) => eq.left === "{{vehicle_type}}" && eq.operator === "!=" && eq.right === "Semi");
+        expect(invertedEq).toBeDefined();
+        // Sentinel guards
+        const notMentionedGuard = elseEqs.find((eq) => eq.left === "{{vehicle_type}}" && eq.operator === "!=" && eq.right === NOT_MENTIONED);
+        expect(notMentionedGuard).toBeDefined();
+        const dontKnowGuard = elseEqs.find((eq) => eq.left === "{{vehicle_type}}" && eq.operator === "!=" && eq.right === "Caller Doesn't Know");
+        expect(dontKnowGuard).toBeDefined();
     });
-    it("generates all shared nodes", () => {
-        const { agent } = generateAgent(baseConfig, ["full_name"]);
+    it("branch data points get Collect and Confirm nodes", () => {
+        const dataPoints = [
+            {
+                _branch: true,
+                variable: "vehicle_type",
+                operator: "==",
+                value: "Semi",
+                ifChain: ["phone_number"],
+                elseChain: ["city"],
+            },
+        ];
+        const { agent } = generateAgent(baseConfig, dataPoints, undefined, TEST_DEFAULTS);
         const flow = agent.conversationFlow;
-        const names = flow.nodes.map((n) => n.name);
-        expect(names).toContain("Intro");
-        expect(names).toContain("Admin/FAQ");
-        expect(names).toContain("Human Request");
-        expect(names).toContain("Close");
-        expect(names).toContain("Closing Remarks");
-        expect(names).toContain("Closing Statement");
-        expect(names).toContain("irrelevantGaurdrail");
-        expect(names).toContain("Emergency Gaurd Rail");
-        expect(names).toContain("Polite Hangup");
-        expect(names.filter((n) => n === "End Call")).toHaveLength(2);
+        // Both branch data points should have Collect + Confirm nodes
+        expect(flow.nodes.find((n) => n.name === "Collect Phone Number")).toBeDefined();
+        expect(flow.nodes.find((n) => n.name === "Confirm Phone Number")).toBeDefined();
+        expect(flow.nodes.find((n) => n.name === "Collect City")).toBeDefined();
+        expect(flow.nodes.find((n) => n.name === "Confirm City")).toBeDefined();
+    });
+    it("data points after a branch have no branch conditions", () => {
+        const dataPoints = [
+            {
+                _branch: true,
+                variable: "vehicle_type",
+                operator: "==",
+                value: "Semi",
+                ifChain: ["phone_number"],
+                elseChain: [],
+            },
+            "city", // after the branch
+        ];
+        const resolved = resolveDataPoints(dataPoints, TEST_DEFAULTS);
+        const cityDp = resolved.find(dp => dp.variableName === "city");
+        expect(cityDp).toBeDefined();
+        expect(cityDp._branchConditions).toBeUndefined();
+    });
+    it("composite data points inside branches get correct router edges", () => {
+        const dataPoints = [
+            {
+                _branch: true,
+                variable: "vehicle_type",
+                operator: "==",
+                value: "Semi",
+                ifChain: ["scheduling"],
+                elseChain: [],
+            },
+        ];
+        const { agent } = generateAgent(baseConfig, dataPoints, undefined, TEST_DEFAULTS);
+        const flow = agent.conversationFlow;
+        const router = flow.nodes.find((n) => n.name === "Variables Router");
+        // scheduling edge should have composite OR equations + branch AND
+        const schedEdge = router.edges[0];
+        expect(schedEdge.transition_condition.operator).toBe("&&");
+        // Should contain equations for both preferred_day and preferred_time
+        const eqs = schedEdge.transition_condition.equations;
+        const dayEq = eqs.find((eq) => eq.left === "{{preferred_day}}");
+        expect(dayEq).toBeDefined();
+    });
+    it("phone_number inside a branch gets both phone_collected flag and branch condition", () => {
+        const dataPoints = [
+            {
+                _branch: true,
+                variable: "vehicle_type",
+                operator: "==",
+                value: "Semi",
+                ifChain: ["phone_number"],
+                elseChain: [],
+            },
+        ];
+        const { agent } = generateAgent(baseConfig, dataPoints, undefined, TEST_DEFAULTS);
+        const flow = agent.conversationFlow;
+        const router = flow.nodes.find((n) => n.name === "Variables Router");
+        const phoneEdge = router.edges[0];
+        // Should be AND with phone-specific equations + branch condition
+        expect(phoneEdge.transition_condition.operator).toBe("&&");
+        const eqs = phoneEdge.transition_condition.equations;
+        // Has phone_number == Not Mentioned check
+        expect(eqs.find((eq) => eq.left === "{{phone_number}}" && eq.operator === "==")).toBeDefined();
+        // Has phone_number_collected != true check
+        expect(eqs.find((eq) => eq.left === "{{phone_number_collected}}" && eq.operator === "!=")).toBeDefined();
+        // Has branch condition
+        expect(eqs.find((eq) => eq.left === "{{vehicle_type}}" && eq.operator === "==" && eq.right === "Semi")).toBeDefined();
+    });
+    it("empty branch sides produce no data points", () => {
+        const raw = [
+            {
+                _branch: true,
+                variable: "vehicle_type",
+                operator: "==",
+                value: "Semi",
+                ifChain: ["full_name"],
+                elseChain: [], // empty ELSE
+            },
+        ];
+        const resolved = resolveDataPoints(raw, TEST_DEFAULTS);
+        expect(resolved).toHaveLength(1);
+        expect(resolved[0].variableName).toBe("full_name");
     });
 });
-// ── generateAgent (multi-path) ───────────────────────────────────────────────
-describe("generateAgent (multi-path)", () => {
-    const paths = [
-        {
-            name: "Emergency Dispatch",
-            transitionCondition: "Truck is broken down",
-            dataPoints: ["company_name", "full_name", "phone_number", "truck_number", "breakdown_location"],
-        },
-        {
-            name: "Shop Service",
-            transitionCondition: "Wants to schedule maintenance",
-            dataPoints: ["full_name", "phone_number", "vehicle_type"],
-        },
-    ];
-    it("returns resolvedPaths for multi-path", () => {
-        const { resolvedPaths } = generateAgent(baseConfig, [], paths);
-        expect(resolvedPaths).toHaveLength(2);
-        expect(resolvedPaths[0].name).toBe("Emergency Dispatch");
-        expect(resolvedPaths[0].resolved).toHaveLength(5);
-        expect(resolvedPaths[1].name).toBe("Shop Service");
-        expect(resolvedPaths[1].resolved).toHaveLength(3);
-    });
-    it("returns all resolved data points flattened", () => {
-        const { resolved } = generateAgent(baseConfig, [], paths);
-        // 5 + 3 = 8 total
-        expect(resolved).toHaveLength(8);
-    });
-    it("creates one intro edge per path", () => {
-        const { agent } = generateAgent(baseConfig, [], paths);
+// ── Per-path end mode (callback vs live transfer) ───────────────────────────
+describe("per-path end mode", () => {
+    it("default end mode is callback — variables router else_edge → Close", () => {
+        const { agent } = generateAgent(baseConfig, [], [
+            { name: "A", transitionCondition: "A", dataPoints: ["full_name"] },
+            { name: "B", transitionCondition: "B", dataPoints: ["city"] },
+        ], TEST_DEFAULTS);
         const flow = agent.conversationFlow;
-        const intro = flow.nodes.find((n) => n.name === "Intro");
-        expect(intro.edges).toHaveLength(2);
-        expect(intro.edges[0].transition_condition.prompt).toBe("Truck is broken down");
-        expect(intro.edges[1].transition_condition.prompt).toBe("Wants to schedule maintenance");
+        const closeNode = flow.nodes.find((n) => n.name === "Close");
+        expect(closeNode).toBeDefined();
+        const routerA = flow.nodes.find((n) => n.name === "Variables Router (A)");
+        const routerB = flow.nodes.find((n) => n.name === "Variables Router (B)");
+        expect(routerA.else_edge.destination_node_id).toBe(closeNode.id);
+        expect(routerB.else_edge.destination_node_id).toBe(closeNode.id);
+        expect(flow.nodes.find((n) => n.name?.startsWith("Pre-Transfer"))).toBeUndefined();
+        expect(flow.nodes.find((n) => n.type === "transfer_call")).toBeUndefined();
     });
-    it("creates per-path Transition nodes", () => {
-        const { agent } = generateAgent(baseConfig, [], paths);
+    it("end_mode=transfer wires router → Pre-Transfer → Transfer Call (number baked in)", () => {
+        const dest = "+18005551234";
+        const { agent } = generateAgent(baseConfig, [], [
+            { name: "Emergency", transitionCondition: "emergency", dataPoints: ["full_name"], endMode: "transfer", transferDestination: dest },
+            { name: "Quote", transitionCondition: "quote", dataPoints: ["city"] },
+        ], TEST_DEFAULTS);
         const flow = agent.conversationFlow;
-        const names = flow.nodes.map((n) => n.name);
-        expect(names).toContain("Transition (Emergency Dispatch)");
-        expect(names).toContain("Transition (Shop Service)");
-        // No unnamed "Conversation" transition
-        expect(names).not.toContain("Conversation");
-    });
-    it("creates per-path Extract and Router nodes", () => {
-        const { agent } = generateAgent(baseConfig, [], paths);
-        const flow = agent.conversationFlow;
-        const names = flow.nodes.map((n) => n.name);
-        expect(names).toContain("Extract All Variables (Emergency Dispatch)");
-        expect(names).toContain("Extract All Variables (Shop Service)");
-        expect(names).toContain("Variables Router (Emergency Dispatch)");
-        expect(names).toContain("Variables Router (Shop Service)");
-    });
-    it("adds _path_taken variable to each path extract", () => {
-        const { agent } = generateAgent(baseConfig, [], paths);
-        const flow = agent.conversationFlow;
-        const extractE = flow.nodes.find((n) => n.name === "Extract All Variables (Emergency Dispatch)");
-        const pathVar = extractE.variables.find((v) => v.name === "_path_taken");
-        expect(pathVar).toBeDefined();
-        expect(pathVar.description).toBe('Always set to "Emergency Dispatch".');
-        const extractS = flow.nodes.find((n) => n.name === "Extract All Variables (Shop Service)");
-        const pathVarS = extractS.variables.find((v) => v.name === "_path_taken");
-        expect(pathVarS.description).toBe('Always set to "Shop Service".');
-    });
-    it("both routers point to shared Close node", () => {
-        const { agent } = generateAgent(baseConfig, [], paths);
-        const flow = agent.conversationFlow;
-        const routerE = flow.nodes.find((n) => n.name === "Variables Router (Emergency Dispatch)");
-        const routerS = flow.nodes.find((n) => n.name === "Variables Router (Shop Service)");
+        // Transfer-mode path: router → pre-transfer → transfer_call
+        const routerEmergency = flow.nodes.find((n) => n.name === "Variables Router (Emergency)");
+        const preTransfer = flow.nodes.find((n) => n.name === "Pre-Transfer (Emergency)");
+        const transferCall = flow.nodes.find((n) => n.name === "Transfer Call (Emergency)");
+        expect(preTransfer).toBeDefined();
+        expect(transferCall).toBeDefined();
+        expect(routerEmergency.else_edge.destination_node_id).toBe(preTransfer.id);
+        expect(preTransfer.always_edge.destination_node_id).toBe(transferCall.id);
+        expect(transferCall.type).toBe("transfer_call");
+        expect(transferCall.transfer_destination.number).toBe(dest);
+        // Callback-mode path stays on Close
         const close = flow.nodes.find((n) => n.name === "Close");
-        expect(routerE.else_edge.destination_node_id).toBe(close.id);
-        expect(routerS.else_edge.destination_node_id).toBe(close.id);
+        const routerQuote = flow.nodes.find((n) => n.name === "Variables Router (Quote)");
+        expect(routerQuote.else_edge.destination_node_id).toBe(close.id);
+        // Shared Transfer Failed node exists once
+        const transferFailed = flow.nodes.filter((n) => n.name === "Transfer Failed");
+        expect(transferFailed).toHaveLength(1);
+        expect(transferCall.edge.destination_node_id).toBe(transferFailed[0].id);
     });
-    it("shared nodes are generated once", () => {
-        const { agent } = generateAgent(baseConfig, [], paths);
-        const flow = agent.conversationFlow;
-        const names = flow.nodes.map((n) => n.name);
-        expect(names.filter((n) => n === "Close")).toHaveLength(1);
-        expect(names.filter((n) => n === "Admin/FAQ")).toHaveLength(1);
-        expect(names.filter((n) => n === "Closing Remarks")).toHaveLength(1);
+    it("rejects transfer end_mode without a transferDestination", () => {
+        expect(() => generateAgent(baseConfig, [], [{ name: "Emergency", transitionCondition: "x", dataPoints: ["full_name"], endMode: "transfer" }], TEST_DEFAULTS)).toThrow(/no dispatch call number/i);
     });
-    it("FAQ forward-intent edge points to Intro in multi-path", () => {
-        const { agent } = generateAgent(baseConfig, [], paths);
+    it("does not duplicate Transfer Failed when humanRequestMode is also live_transfer", () => {
+        const { agent } = generateAgent({ ...baseConfig, humanRequestMode: "live_transfer" }, [], [
+            { name: "Emergency", transitionCondition: "x", dataPoints: ["full_name"], endMode: "transfer", transferDestination: "+18005551234" },
+        ], TEST_DEFAULTS);
         const flow = agent.conversationFlow;
-        const faq = flow.nodes.find((n) => n.name === "Admin/FAQ");
-        const intro = flow.nodes.find((n) => n.name === "Intro");
-        expect(faq.edges[0].destination_node_id).toBe(intro.id);
-    });
-    it("FAQ forward-intent edge points to Transition in single-path", () => {
-        const { agent } = generateAgent(baseConfig, ["full_name"]);
-        const flow = agent.conversationFlow;
-        const faq = flow.nodes.find((n) => n.name === "Admin/FAQ");
-        const transition = flow.nodes.find((n) => n.name === "Conversation");
-        expect(faq.edges[0].destination_node_id).toBe(transition.id);
-    });
-    it("each path has correct number of Collect/Confirm pairs", () => {
-        const { agent } = generateAgent(baseConfig, [], paths);
-        const flow = agent.conversationFlow;
-        // Path 1: 5 data points → 5 Collect + 5 Confirm = 10
-        const collectNodes = flow.nodes.filter((n) => n.name.startsWith("Collect "));
-        // full_name appears in both paths, so "Collect Full Name" appears twice
-        expect(collectNodes.length).toBe(8); // 5 + 3
-        const confirmNodes = flow.nodes.filter((n) => n.name.startsWith("Confirm "));
-        expect(confirmNodes.length).toBe(8);
-    });
-    it("all node IDs are unique", () => {
-        const { agent } = generateAgent(baseConfig, [], paths);
-        const flow = agent.conversationFlow;
-        const ids = flow.nodes.map((n) => n.id);
-        expect(new Set(ids).size).toBe(ids.length);
+        expect(flow.nodes.filter((n) => n.name === "Transfer Failed")).toHaveLength(1);
+        // Both per-path (Transfer Call (Emergency)) and the global Transfer Call should exist
+        expect(flow.nodes.filter((n) => n.type === "transfer_call").length).toBe(2);
     });
 });

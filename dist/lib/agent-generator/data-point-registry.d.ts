@@ -20,6 +20,7 @@ export interface VariableDef {
 }
 export interface DataPoint {
     composite?: boolean;
+    orphan?: boolean;
     label: string;
     variableName: string;
     type: "string" | "enum" | "boolean";
@@ -30,8 +31,22 @@ export interface DataPoint {
     finetuneExamples?: FinetuneExample[];
     extractSuccessEquation: ExtractEquation[];
     variables?: VariableDef[];
+    _branchConditions?: BranchCondition[];
 }
-export type RawDataPoint = string | Partial<DataPoint> & {
+export interface BranchCondition {
+    variable: string;
+    operator: "==" | "!=";
+    value: string;
+}
+export interface BranchNode {
+    _branch: true;
+    variable: string;
+    operator: "==" | "!=";
+    value: string;
+    ifChain: RawDataPoint[];
+    elseChain: RawDataPoint[];
+}
+export type RawDataPoint = string | BranchNode | Partial<DataPoint> & {
     variableName?: string;
     composite?: boolean;
     variables?: VariableDef[];
@@ -42,4 +57,3 @@ export declare const PHONE_COLLECTED_FLAG = "phone_number_collected";
 export declare const PATH_TAKEN_VAR = "_path_taken";
 export declare const INTERNAL_VARS: Set<string>;
 export declare function defaultExtractEquation(varName: string): ExtractEquation[];
-export declare const DATA_POINT_REGISTRY: Record<string, DataPoint>;
