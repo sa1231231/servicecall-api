@@ -2774,7 +2774,7 @@
     const cards = pathsContainer.querySelectorAll('.path-card');
     const last = cards[cards.length - 1];
     if (last) treeSelected = { kind: 'path', pathId: last.dataset.pathId };
-    onTreeFormChange();
+    onTreeFormChange({ refreshDetail: true });
   }
 
   function treeRemovePath(pathId) {
@@ -2783,7 +2783,7 @@
     if (card) card.remove();
     if (treeSelected?.pathId === pathId) treeSelected = null;
     renumberPaths();
-    onTreeFormChange();
+    onTreeFormChange({ refreshDetail: true });
   }
 
   function treeMovePath(pathId, dir) {
@@ -2804,7 +2804,7 @@
     const items = root.querySelectorAll(':scope > .chain-item');
     const last = items[items.length - 1];
     if (last) treeSelected = { kind: 'dp', pathId, itemId: last.dataset.itemId };
-    onTreeFormChange();
+    onTreeFormChange({ refreshDetail: true });
   }
 
   function treeAddBranch(pathId) {
@@ -2814,7 +2814,7 @@
     if (!root) return;
     const branch = addChainBranch(root);
     if (branch) treeSelected = { kind: 'branch', pathId, itemId: branch.dataset.itemId };
-    onTreeFormChange();
+    onTreeFormChange({ refreshDetail: true });
   }
 
   function treeAddDataPointToBranch(pathId, branchId, side) {
@@ -2828,7 +2828,7 @@
     const items = list.querySelectorAll(':scope > .chain-item');
     const last = items[items.length - 1];
     if (last) treeSelected = { kind: 'dp', pathId, itemId: last.dataset.itemId };
-    onTreeFormChange();
+    onTreeFormChange({ refreshDetail: true });
   }
 
   // Find item element (chain-item or chain-branch) anywhere within any path-card.
@@ -2843,7 +2843,7 @@
         !confirm('Remove this branch and everything in it?')) return;
     item.remove();
     if (treeSelected?.itemId === itemId) treeSelected = null;
-    onTreeFormChange();
+    onTreeFormChange({ refreshDetail: true });
   }
 
   function treeMoveItem(itemId, dir) {
@@ -2854,10 +2854,14 @@
     onTreeFormChange();
   }
 
-  // Called after any tree-driven mutation.
-  function onTreeFormChange() {
+  // Called after a tree-driven mutation. By default does NOT re-render the
+  // detail panel — that would destroy the focused input on every keystroke
+  // when the user is typing in a detail field. Pass { refreshDetail: true }
+  // for structural changes (add/remove/select) where the selected node
+  // changed and the panel actually needs new content.
+  function onTreeFormChange(opts) {
     renderPathTree();
-    if (treeSelected) renderDetailPanel(treeSelected);
+    if (opts && opts.refreshDetail) renderDetailPanel(treeSelected);
     scheduleAutoSave();
     scheduleDiagramRender();
   }
