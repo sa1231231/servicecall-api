@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   checkGreetingBusinessName,
   checkDataPointsInFlow,
@@ -6,6 +6,7 @@ import {
   checkMessageTypeResolves,
   checkRequiredFieldsSatisfiable,
   buildSyntheticVariables,
+  runSmokeTest,
 } from "../qa-smoke.js";
 import type { RetellAgentSnapshot } from "../retell-sync.js";
 import type { JsonClientEntry } from "../../config/client-store.js";
@@ -489,5 +490,273 @@ describe("buildSyntheticVariables", () => {
     });
     const vars = buildSyntheticVariables(client);
     expect(vars.vehicle_type).toBe("Semi");
+  });
+});
+
+// ── runSmokeTest ─────────────────────────────────────────────────────────────
+
+function makeRetell(): any {
+  return {
+    agent: { retrieve: vi.fn() },
+    conversationFlow: { retrieve: vi.fn() },
+  };
+}
+
+describe("runSmokeTest", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uses stored canonical JSON when available (no Retell fetch)", async () => {
+    const retell = makeRetell();
+    const client = makeClientDoc({
+      retell_agents: {
+        agent_test: {
+          agent_name: "Stored Agent",
+          conversationFlow: {
+            start_node_id: "node-intro",
+            global_prompt: "for Test Plumbing.",
+            nodes: [
+              {
+                id: "node-intro",
+                type: "conversation",
+                instruction: { type: "prompt", text: "Welcome to Test Plumbing." },
+              },
+              {
+                name: "Extract All Variables",
+                type: "extract_dynamic_variables",
+                variables: [
+                  { name: "full_name" },
+                  { name: "phone_number" },
+                  { name: "problem_description" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    } as any);
+
+    const report = await runSmokeTest(retell, client);
+
+    expect(retell.agent.retrieve).not.toHaveBeenCalled();
+    expect(report.slug).toBe("test-plumbing");
+    expect(report.agent_id).toBe("agent_test");
+    expect(report.checks.find((c) => c.check === "agent_reachable")?.status).toBe("pass");
+    expect(report.checks.find((c) => c.check === "agent_reachable")?.message).toContain("loaded from config");
+    expect(report.summary.total).toBe(6); // 6 default checks
+    expect(report.overall).toBe("pass");
+  });
+
+  it("falls back to live Retell fetch when stored JSON is missing", async () => {
+    const retell = makeRetell();
+    retell.agent.retrieve.mockResolvedValue({
+      agent_id: "agent_test",
+      agent_name: "Live Agent",
+      response_engine: { type: "conversation-flow", conversation_flow_id: "cf_1" },
+    });
+    retell.conversationFlow.retrieve.mockResolvedValue({
+      conversation_flow_id: "cf_1",
+      start_node_id: "intro",
+      global_prompt: "for Test Plumbing",
+      nodes: [
+        { id: "intro", type: "conversation", instruction: { type: "prompt", text: "Hi from Test Plumbing" } },
+        {
+          name: "Extract All Variables",
+          type: "extract_dynamic_variables",
+          variables: [{ name: "full_name" }, { name: "phone_number" }, { name: "problem_description" }],
+        },
+      ],
+    });
+
+    const client = makeClientDoc(); // no retell_agents
+    const report = await runSmokeTest(retell, client);
+
+    expect(retell.agent.retrieve).toHaveBeenCalledWith("agent_test");
+    expect(report.checks.find((c) => c.check === "agent_reachable")?.status).toBe("pass");
+    expect(report.checks.find((c) => c.check === "agent_reachable")?.message).toContain("not yet synced");
+  });
+
+  it("marks agent_reachable as fail and skips downstream checks when Retell errors", async () => {
+    const retell = makeRetell();
+    retell.agent.retrieve.mockRejectedValue(new Error("agent not found"));
+
+    const client = makeClientDoc();
+    const report = await runSmokeTest(retell, client);
+
+    expect(report.checks.find((c) => c.check === "agent_reachable")?.status).toBe("fail");
+    // 5 checks should be skipped
+    const skipped = report.checks.filter((c) => c.status === "skip");
+    expect(skipped).toHaveLength(5);
+    expect(report.overall).toBe("fail");
+  });
+
+  it("computes a summary with pass/fail/warn/skip counts", async () => {
+    const retell = makeRetell();
+    retell.agent.retrieve.mockRejectedValue(new Error("nope"));
+
+    const client = makeClientDoc();
+    const report = await runSmokeTest(retell, client);
+
+    expect(report.summary.total).toBe(report.checks.length);
+    expect(report.summary.fail).toBeGreaterThanOrEqual(1); // at least agent_reachable
+    expect(report.summary.skip).toBe(5);
+  });
+
+  it("includes timestamp and duration_ms", async () => {
+    const retell = makeRetell();
+    retell.agent.retrieve.mockRejectedValue(new Error("x"));
+    const client = makeClientDoc();
+
+    const before = Date.now();
+    const report = await runSmokeTest(retell, client);
+
+    expect(new Date(report.timestamp).getTime()).toBeGreaterThanOrEqual(before);
+    expect(report.duration_ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("notify=true and shadow_mode=false → notification_fires fails fast", async () => {
+    const retell = makeRetell();
+    const client = makeClientDoc({
+      retell_agents: {
+        agent_test: {
+          conversationFlow: {
+            start_node_id: "intro",
+            global_prompt: "Test Plumbing",
+            nodes: [
+              { id: "intro", type: "conversation", instruction: { type: "prompt", text: "Test Plumbing" } },
+              {
+                name: "Extract All Variables",
+                type: "extract_dynamic_variables",
+                variables: [{ name: "full_name" }, { name: "phone_number" }, { name: "problem_description" }],
+              },
+            ],
+          },
+        },
+      },
+      shadow_mode: false,
+    } as any);
+
+    const report = await runSmokeTest(retell, client, { notify: true });
+
+    const fires = report.checks.find((c) => c.check === "notification_fires");
+    expect(fires?.status).toBe("fail");
+    expect(fires?.message).toContain("shadow_mode enabled");
+    // No fetch attempted because shadow_mode guard fired first
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("notify=true and shadow_mode=true → calls post-hook URL", async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ outcome: "shadow_dry_run" }),
+    });
+
+    const retell = makeRetell();
+    const client = makeClientDoc({
+      retell_agents: {
+        agent_test: {
+          conversationFlow: {
+            start_node_id: "intro",
+            global_prompt: "Test Plumbing",
+            nodes: [
+              { id: "intro", type: "conversation", instruction: { type: "prompt", text: "Test Plumbing" } },
+              {
+                name: "Extract All Variables",
+                type: "extract_dynamic_variables",
+                variables: [{ name: "full_name" }, { name: "phone_number" }, { name: "problem_description" }],
+              },
+            ],
+          },
+        },
+      },
+      shadow_mode: true,
+    } as any);
+
+    const report = await runSmokeTest(retell, client, {
+      notify: true,
+      postHookUrl: "http://test/post-hook",
+    });
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect((global.fetch as any).mock.calls[0][0]).toBe("http://test/post-hook");
+    const fires = report.checks.find((c) => c.check === "notification_fires");
+    expect(fires?.status).toBe("pass");
+    expect(fires?.message).toContain("dispatched");
+  });
+
+  it("notify=true and post-hook returns non-shadow outcome → fails", async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ outcome: "dispatched" }),
+    });
+
+    const retell = makeRetell();
+    const client = makeClientDoc({
+      retell_agents: {
+        agent_test: {
+          conversationFlow: {
+            start_node_id: "intro",
+            global_prompt: "Test Plumbing",
+            nodes: [
+              { id: "intro", type: "conversation", instruction: { type: "prompt", text: "Test Plumbing" } },
+              {
+                name: "Extract All Variables",
+                type: "extract_dynamic_variables",
+                variables: [{ name: "full_name" }, { name: "phone_number" }, { name: "problem_description" }],
+              },
+            ],
+          },
+        },
+      },
+      shadow_mode: true,
+    } as any);
+
+    const report = await runSmokeTest(retell, client, {
+      notify: true,
+      postHookUrl: "http://test/post-hook",
+    });
+
+    const fires = report.checks.find((c) => c.check === "notification_fires");
+    expect(fires?.status).toBe("fail");
+    expect(fires?.message).toContain("Post-hook returned");
+  });
+
+  it("notify=true and fetch throws → fails with reach error", async () => {
+    (global.fetch as any).mockRejectedValue(new Error("connection refused"));
+
+    const retell = makeRetell();
+    const client = makeClientDoc({
+      retell_agents: {
+        agent_test: {
+          conversationFlow: {
+            start_node_id: "intro",
+            global_prompt: "Test Plumbing",
+            nodes: [
+              { id: "intro", type: "conversation", instruction: { type: "prompt", text: "Test Plumbing" } },
+              {
+                name: "Extract All Variables",
+                type: "extract_dynamic_variables",
+                variables: [{ name: "full_name" }, { name: "phone_number" }, { name: "problem_description" }],
+              },
+            ],
+          },
+        },
+      },
+      shadow_mode: true,
+    } as any);
+
+    const report = await runSmokeTest(retell, client, {
+      notify: true,
+      postHookUrl: "http://test/post-hook",
+    });
+
+    const fires = report.checks.find((c) => c.check === "notification_fires");
+    expect(fires?.status).toBe("fail");
+    expect(fires?.message).toContain("Failed to reach post-hook");
+    expect(fires?.message).toContain("connection refused");
   });
 });

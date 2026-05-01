@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { extractFlowParams, extractAgentParams, extractVariables, } from "../retell-sync.js";
+import { describe, it, expect, vi } from "vitest";
+import { extractFlowParams, extractAgentParams, extractVariables, pushFlowToRetell, fetchRetellAgent, } from "../retell-sync.js";
 // ── extractFlowParams ────────────────────────────────────────────────────────
 describe("extractFlowParams", () => {
     it("strips flow metadata keys", () => {
@@ -239,5 +239,135 @@ describe("extractVariables", () => {
         const vars = extractVariables(json);
         expect(vars[0]).toEqual({ key: "full_name", label: "Name" });
         expect(vars[1]).toEqual({ key: "truck_number", label: "Truck #" });
+    });
+});
+// ── pushFlowToRetell ─────────────────────────────────────────────────────────
+describe("pushFlowToRetell", () => {
+    it("calls conversationFlow.update with stripped params", async () => {
+        const mockUpdate = vi.fn().mockResolvedValue({});
+        const retell = { conversationFlow: { update: mockUpdate } };
+        await pushFlowToRetell(retell, "cf_123", {
+            conversationFlow: {
+                conversation_flow_id: "cf_123", // should be stripped
+                version: 5, // stripped
+                is_published: true, // stripped
+                global_prompt: "Hi",
+                nodes: [{ id: "n1" }],
+            },
+        });
+        expect(mockUpdate).toHaveBeenCalledTimes(1);
+        expect(mockUpdate).toHaveBeenCalledWith("cf_123", expect.objectContaining({
+            global_prompt: "Hi",
+            nodes: [{ id: "n1" }],
+        }));
+        const args = mockUpdate.mock.calls[0][1];
+        expect(args).not.toHaveProperty("conversation_flow_id");
+        expect(args).not.toHaveProperty("version");
+        expect(args).not.toHaveProperty("is_published");
+    });
+    it("throws when conversationFlow is missing from canonical JSON", async () => {
+        const retell = { conversationFlow: { update: vi.fn() } };
+        await expect(pushFlowToRetell(retell, "cf_x", {})).rejects.toThrow("Missing conversationFlow");
+    });
+    it("propagates errors from the SDK", async () => {
+        const mockUpdate = vi.fn().mockRejectedValue(new Error("rate limited"));
+        const retell = { conversationFlow: { update: mockUpdate } };
+        await expect(pushFlowToRetell(retell, "cf_x", { conversationFlow: { nodes: [] } })).rejects.toThrow("rate limited");
+    });
+});
+// ── fetchRetellAgent ─────────────────────────────────────────────────────────
+describe("fetchRetellAgent", () => {
+    function makeRetell(overrides = {}) {
+        return {
+            agent: {
+                retrieve: overrides.agentError
+                    ? vi.fn().mockRejectedValue(overrides.agentError)
+                    : vi.fn().mockResolvedValue(overrides.agent ?? {
+                        agent_id: "agent_x",
+                        agent_name: "Test",
+                        response_engine: {
+                            type: "conversation-flow",
+                            conversation_flow_id: "cf_1",
+                            version: 2,
+                        },
+                    }),
+            },
+            conversationFlow: {
+                retrieve: overrides.flowError
+                    ? vi.fn().mockRejectedValue(overrides.flowError)
+                    : vi.fn().mockResolvedValue(overrides.flow ?? {
+                        conversation_flow_id: "cf_1",
+                        global_prompt: "Hi",
+                        nodes: [
+                            {
+                                name: "Extract All Variables",
+                                type: "extract_dynamic_variables",
+                                variables: [{ name: "full_name", type: "string" }],
+                            },
+                        ],
+                    }),
+            },
+        };
+    }
+    it("returns a snapshot with merged canonical JSON", async () => {
+        const retell = makeRetell();
+        const snap = await fetchRetellAgent(retell, "agent_x");
+        expect(snap.agentId).toBe("agent_x");
+        expect(snap.agentName).toBe("Test");
+        expect(snap.conversationFlowId).toBe("cf_1");
+        expect(snap.canonicalJson.conversationFlow).toEqual(expect.objectContaining({ global_prompt: "Hi" }));
+        expect(snap.canonicalJson.response_engine).toEqual({
+            type: "conversation-flow",
+            version: 1,
+        });
+        // agent_id preserved on top-level
+        expect(snap.canonicalJson.agent_id).toBe("agent_x");
+    });
+    it("extracts variables from the merged canonical JSON", async () => {
+        const retell = makeRetell();
+        const snap = await fetchRetellAgent(retell, "agent_x");
+        expect(snap.variables).toEqual([{ key: "full_name", label: "Name" }]);
+    });
+    it("throws when agent response_engine is not conversation-flow type", async () => {
+        const retell = makeRetell({
+            agent: {
+                agent_id: "agent_x",
+                response_engine: { type: "retell-llm", llm_id: "llm_1" },
+            },
+        });
+        await expect(fetchRetellAgent(retell, "agent_x")).rejects.toThrow("does not use a conversation-flow response engine");
+    });
+    it("throws when response_engine is missing entirely", async () => {
+        const retell = makeRetell({
+            agent: { agent_id: "agent_x" },
+        });
+        await expect(fetchRetellAgent(retell, "agent_x")).rejects.toThrow("does not use a conversation-flow response engine");
+    });
+    it("throws when conversation_flow_id is missing", async () => {
+        const retell = makeRetell({
+            agent: {
+                agent_id: "agent_x",
+                response_engine: { type: "conversation-flow" }, // no flow id
+            },
+        });
+        await expect(fetchRetellAgent(retell, "agent_x")).rejects.toThrow("no conversation_flow_id");
+    });
+    it("propagates agent.retrieve errors", async () => {
+        const retell = makeRetell({ agentError: new Error("not found") });
+        await expect(fetchRetellAgent(retell, "agent_x")).rejects.toThrow("not found");
+    });
+    it("propagates conversationFlow.retrieve errors", async () => {
+        const retell = makeRetell({ flowError: new Error("flow gone") });
+        await expect(fetchRetellAgent(retell, "agent_x")).rejects.toThrow("flow gone");
+    });
+    it("defaults agentName to empty string when missing", async () => {
+        const retell = makeRetell({
+            agent: {
+                agent_id: "agent_x",
+                response_engine: { type: "conversation-flow", conversation_flow_id: "cf_1" },
+            },
+        });
+        const snap = await fetchRetellAgent(retell, "agent_x");
+        expect(snap.agentName).toBe("");
     });
 });

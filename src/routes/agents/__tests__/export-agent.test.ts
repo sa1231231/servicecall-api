@@ -273,4 +273,302 @@ describe("exportAgentHandler", () => {
     expect(res._status).toBe(500);
     expect(res._json.error).toContain("Parse error");
   });
+
+  it("extracts per-path transitionCondition from intro edges", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      introNode: {
+        raw: {
+          edges: [
+            {
+              destination_node_id: "transition_a",
+              transition_condition: { type: "prompt", prompt: "When the caller says A" },
+            },
+            {
+              destination_node_id: "transition_b",
+              transition_condition: { type: "prompt", prompt: "When the caller says B" },
+            },
+          ],
+        },
+      },
+      paths: [
+        {
+          name: "path_a",
+          transitionNode: { id: "transition_a" },
+          routerNode: { raw: { edges: [] } },
+          dataChain: [],
+        },
+        {
+          name: "path_b",
+          transitionNode: { id: "transition_b" },
+          routerNode: { raw: { edges: [] } },
+          dataChain: [],
+        },
+      ],
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.paths[0].transitionCondition).toBe("When the caller says A");
+    expect(res._json.paths[1].transitionCondition).toBe("When the caller says B");
+  });
+
+  it("leaves transitionCondition empty when intro has no matching edge", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      introNode: { raw: { edges: [{ destination_node_id: "other_node" }] } },
+      paths: [{
+        name: "p",
+        transitionNode: { id: "transition_a" },
+        routerNode: { raw: { edges: [] } },
+        dataChain: [],
+      }],
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.paths[0].transitionCondition).toBe("");
+  });
+
+  it("reconstructs branch conditions from router edges (filtering sentinels)", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      paths: [{
+        name: "path_a",
+        transitionNode: { id: "tn" },
+        routerNode: {
+          raw: {
+            edges: [
+              {
+                destination_node_id: "collect_node_1",
+                transition_condition: {
+                  type: "equation",
+                  equations: [
+                    // Sentinel "is missing" check on this var — filtered
+                    { left: "{{warranty_status}}", operator: "exists" },
+                    // phone_number_collected sentinel — filtered
+                    { left: "{{phone_number_collected}}", operator: "==", right: "true" },
+                    // Self-variable-def reference — filtered
+                    { left: "{{warranty_status}}", operator: "!=", right: "x" },
+                    // Sentinel "Not Mentioned" — filtered
+                    { left: "{{payment_method}}", operator: "!=", right: "Not Mentioned" },
+                    // Sentinel "Caller Doesn't Know" — filtered
+                    { left: "{{payment_method}}", operator: "!=", right: "Caller Doesn't Know" },
+                    // The meaningful branch condition
+                    { left: "{{property_type}}", operator: "==", right: "Residential" },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        dataChain: [{
+          variableName: "warranty_status",
+          label: "Warranty",
+          conversationPrompt: "Ask",
+          forwardCondition: "Got it",
+          collectNode: { id: "collect_node_1" },
+          variableDefs: [{ name: "warranty_status", type: "string", description: "" }],
+        }],
+      }],
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    const dp = res._json.paths[0].dataPoints[0];
+    expect(dp._branchConditions).toBeDefined();
+    expect(dp._branchConditions).toHaveLength(1);
+    expect(dp._branchConditions[0]).toEqual({
+      variable: "property_type",
+      operator: "==",
+      value: "Residential",
+    });
+  });
+
+  it("omits _branchConditions when no meaningful equations remain", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      paths: [{
+        name: "p",
+        transitionNode: { id: "tn" },
+        routerNode: {
+          raw: {
+            edges: [{
+              destination_node_id: "cn",
+              transition_condition: {
+                type: "equation",
+                equations: [
+                  { left: "{{x}}", operator: "exists" }, // self-ref → filtered
+                ],
+              },
+            }],
+          },
+        },
+        dataChain: [{
+          variableName: "x",
+          label: "X",
+          conversationPrompt: "ask",
+          forwardCondition: "ok",
+          collectNode: { id: "cn" },
+          variableDefs: [{ name: "x", type: "string", description: "" }],
+        }],
+      }],
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.paths[0].dataPoints[0]._branchConditions).toBeUndefined();
+  });
+
+  it("handles non-equation transition conditions on router (no branch info added)", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      paths: [{
+        name: "p",
+        transitionNode: { id: "tn" },
+        routerNode: {
+          raw: {
+            edges: [{
+              destination_node_id: "cn",
+              transition_condition: { type: "prompt", prompt: "Always" },
+            }],
+          },
+        },
+        dataChain: [{
+          variableName: "x",
+          label: "X",
+          conversationPrompt: "ask",
+          forwardCondition: "ok",
+          collectNode: { id: "cn" },
+          variableDefs: [{ name: "x", type: "string", description: "" }],
+        }],
+      }],
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.paths[0].dataPoints[0]._branchConditions).toBeUndefined();
+  });
+
+  it("extracts FAQ without prefix when prefix is missing", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      faqNode: { raw: { instruction: { text: "Custom FAQ without standard prefix" } } },
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.business.faqKnowledgeBase).toBe("Custom FAQ without standard prefix");
+  });
+
+  it("falls back to client name when agent_name is missing on canonical", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test Co Inc",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: {} }, // no agent_name
+    });
+    mockParseConversationFlow.mockReturnValue(makeParsed());
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.business.businessName).toBe("Test Co Inc");
+  });
+
+  it("includes dispatch_by_type when present on the doc", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+      dispatch_by_type: {
+        emergency: { dispatch_text_numbers: ["+15558888888"] },
+      },
+    });
+    mockParseConversationFlow.mockReturnValue(makeParsed());
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.client.dispatch_by_type).toEqual({
+      emergency: { dispatch_text_numbers: ["+15558888888"] },
+    });
+  });
+
+  it("defaults phone_fallback_to_caller to true when not set", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+    mockParseConversationFlow.mockReturnValue(makeParsed());
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.client.phone_fallback_to_caller).toBe(true);
+  });
+
+  it("preserves phone_fallback_to_caller=false when explicitly set", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+      phone_fallback_to_caller: false,
+    });
+    mockParseConversationFlow.mockReturnValue(makeParsed());
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.client.phone_fallback_to_caller).toBe(false);
+  });
+
+  it("returns 400 when retell_agents is missing entirely", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      // no retell_agents
+    });
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._status).toBe(400);
+    expect(res._json.error).toContain("No canonical JSON");
+  });
 });
