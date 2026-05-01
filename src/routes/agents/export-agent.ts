@@ -19,13 +19,11 @@ export async function exportAgentHandler(
     return;
   }
 
-  const agentIds = doc.agent_ids ?? [];
-  if (agentIds.length === 0) {
-    res.status(400).json({ error: "No agent IDs found for this client" });
+  const agentId = doc.agent_id;
+  if (!agentId) {
+    res.status(400).json({ error: "No agent_id found for this client" });
     return;
   }
-
-  const agentId = agentIds[0];
   const canonical = doc.retell_agents?.[agentId] as Record<string, unknown> | undefined;
   if (!canonical) {
     res.status(400).json({ error: "No canonical JSON found for this agent" });

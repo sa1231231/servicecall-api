@@ -20,9 +20,9 @@ export async function provisionNumberHandler(
     return;
   }
 
-  const agentId = doc.agent_ids?.[0];
+  const agentId = doc.agent_id;
   if (!agentId) {
-    res.status(400).json({ error: `Client "${slug}" has no agent_ids` });
+    res.status(400).json({ error: `Client "${slug}" has no agent_id` });
     return;
   }
 

@@ -71,7 +71,7 @@ function makeClientDoc(
   return {
     _id: "test-client",
     name: "Test Plumbing",
-    agent_ids: ["agent_1"],
+    agent_id: "agent_1",
     dispatch_text_numbers: ["+15551234567"],
     dispatch_call_number: null,
     summary_agent_id: null,
@@ -263,9 +263,9 @@ describe("runWeeklyReports", () => {
     expect(sendEmail).toHaveBeenCalledTimes(2);
   });
 
-  it("skips docs with non-array agent_ids", async () => {
+  it("skips docs with missing agent_id", async () => {
     vi.mocked(getAllClientDocuments).mockResolvedValue([
-      makeClientDoc({ _id: "broken", agent_ids: undefined as any }),
+      makeClientDoc({ _id: "broken", agent_id: undefined as any }),
       makeClientDoc({ _id: "good" }),
     ] as any);
 
@@ -420,10 +420,10 @@ describe("startWeeklyReportScheduler", () => {
     expect(sendEmail).not.toHaveBeenCalled();
   });
 
-  it("skips clients with non-array agent_ids", async () => {
+  it("skips clients with missing agent_id", async () => {
     vi.setSystemTime(new Date("2026-05-04T16:00:00Z"));
     vi.mocked(getAllClientDocuments).mockResolvedValue([
-      makeClientDoc({ _id: "broken", agent_ids: undefined as any }),
+      makeClientDoc({ _id: "broken", agent_id: undefined as any }),
     ] as any);
 
     const setIntervalSpy = vi.spyOn(global, "setInterval");

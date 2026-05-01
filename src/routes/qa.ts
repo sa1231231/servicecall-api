@@ -17,8 +17,8 @@ qaRouter.post("/smoke/:slug", async (req, res) => {
     return;
   }
 
-  if (clientDoc.agent_ids.length === 0) {
-    res.status(400).json({ error: `Client '${slug}' has no agent_ids` });
+  if (!clientDoc.agent_id) {
+    res.status(400).json({ error: `Client '${slug}' has no agent_id` });
     return;
   }
 
@@ -45,9 +45,9 @@ qaRouter.post("/test-notify/:slug", async (req, res) => {
     return;
   }
 
-  const agentId = clientDoc.agent_ids[0];
+  const agentId = clientDoc.agent_id;
   if (!agentId) {
-    res.status(400).json({ error: `Client '${slug}' has no agent_ids` });
+    res.status(400).json({ error: `Client '${slug}' has no agent_id` });
     return;
   }
 

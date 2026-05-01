@@ -139,7 +139,7 @@ beforeEach(() => {
   });
   mockDeriveNotificationConfig.mockReturnValue({
     name: "Test Co",
-    agent_ids: ["agent_test"],
+    agent_id: "agent_test",
     dispatch_text_numbers: ["+15550001111"],
     dispatch_call_number: null,
     summary_agent_id: null,
@@ -151,7 +151,7 @@ beforeEach(() => {
   });
   mockDeriveMultiPathNotificationConfig.mockReturnValue({
     name: "Test Co",
-    agent_ids: ["agent_test"],
+    agent_id: "agent_test",
     dispatch_text_numbers: ["+15550001111"],
     dispatch_call_number: null,
     summary_agent_id: null,

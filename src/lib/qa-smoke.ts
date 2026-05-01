@@ -295,7 +295,7 @@ export async function runSmokeTest(
 ): Promise<SmokeReport> {
   const start = Date.now();
   const slug = clientDoc._id;
-  const agentId = clientDoc.agent_ids[0] ?? "";
+  const agentId = clientDoc.agent_id ?? "";
   const checks: CheckResult[] = [];
 
   // 1. Agent config present — prefer canonical JSON from MongoDB, fall back to live Retell API

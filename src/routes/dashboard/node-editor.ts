@@ -46,8 +46,7 @@ async function resolveAgentId(
 ): Promise<{ doc: JsonClientEntry & { _id: string }; agentId: string } | null> {
   const doc = await getClientDocument(slug);
   if (!doc) return null;
-  const agentIds = doc.agent_ids ?? [];
-  if (!agentIds.includes(agentIdParam)) return null;
+  if (doc.agent_id !== agentIdParam) return null;
   return { doc, agentId: agentIdParam };
 }
 

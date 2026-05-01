@@ -25,7 +25,7 @@ export interface ResolveRuleEntry {
 
 export interface JsonClientEntry {
   name: string;
-  agent_ids: string[];
+  agent_id: string;
   dispatch_text_numbers: string[];
   dispatch_call_number: string | null;
   dispatch_call_overrides?: Record<string, string>;
@@ -99,7 +99,7 @@ export function ruleToFunction(
 export function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig {
   return {
     name: entry.name,
-    agent_ids: entry.agent_ids,
+    agent_id: entry.agent_id,
     dispatch_text_numbers: entry.dispatch_text_numbers,
     dispatch_call_number: entry.dispatch_call_number,
     dispatch_call_overrides: entry.dispatch_call_overrides,
@@ -123,9 +123,9 @@ export function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig
 
 function registerInMemory(slug: string, config: ClientNotificationConfig): void {
   notificationClients[slug] = config;
-  for (const agentId of config.agent_ids) {
-    agentIdToClient[agentId] = config;
-    agentIdToSlug[agentId] = slug;
+  if (config.agent_id) {
+    agentIdToClient[config.agent_id] = config;
+    agentIdToSlug[config.agent_id] = slug;
   }
   if (config.outbound_from_number) {
     phoneNumberToClient[config.outbound_from_number] = { slug, config };
@@ -146,8 +146,13 @@ export async function loadClientsFromDb(): Promise<void> {
 
   for (const doc of docs) {
     const slug = doc._id;
-    if (!Array.isArray(doc.agent_ids)) {
-      console.log(`[client-store] skipping "${slug}" (missing agent_ids)`);
+    // Transition shim: docs that haven't been migrated yet still carry agent_ids: []
+    // instead of agent_id. Normalize to single before registering.
+    if (!doc.agent_id && Array.isArray((doc as any).agent_ids) && (doc as any).agent_ids.length > 0) {
+      doc.agent_id = (doc as any).agent_ids[0];
+    }
+    if (typeof doc.agent_id !== "string" || !doc.agent_id) {
+      console.log(`[client-store] skipping "${slug}" (missing agent_id)`);
       continue;
     }
     const config = toClientConfig(doc);
@@ -202,7 +207,7 @@ export async function updateClientField(
 
 const EDITABLE_FIELDS = new Set([
   "name",
-  "agent_ids",
+  "agent_id",
   "dispatch_text_numbers",
   "dispatch_call_number",
   "dispatch_call_overrides",
@@ -254,12 +259,10 @@ export async function updateClientFields(
   // Update in-memory config
   const existing = notificationClients[slug];
   if (existing) {
-    // Special handling for agent_ids: remove old mappings first
-    if ("agent_ids" in setObj) {
-      for (const oldId of existing.agent_ids) {
-        delete agentIdToClient[oldId];
-        delete agentIdToSlug[oldId];
-      }
+    // Special handling for agent_id: remove old mapping first
+    if ("agent_id" in setObj && existing.agent_id) {
+      delete agentIdToClient[existing.agent_id];
+      delete agentIdToSlug[existing.agent_id];
     }
     // Special handling for outbound_from_number: remove old mapping
     if ("outbound_from_number" in setObj && existing.outbound_from_number) {
@@ -271,12 +274,10 @@ export async function updateClientFields(
       (existing as any)[key] = value;
     }
 
-    // Re-register agent_ids if they changed
-    if ("agent_ids" in setObj) {
-      for (const newId of existing.agent_ids) {
-        agentIdToClient[newId] = existing;
-        agentIdToSlug[newId] = slug;
-      }
+    // Re-register agent_id if it changed
+    if ("agent_id" in setObj && existing.agent_id) {
+      agentIdToClient[existing.agent_id] = existing;
+      agentIdToSlug[existing.agent_id] = slug;
     }
     // Re-register phone number if it changed
     if ("outbound_from_number" in setObj && existing.outbound_from_number) {
@@ -291,9 +292,9 @@ export async function updateClientFields(
 function unregisterFromMemory(slug: string): void {
   const existing = notificationClients[slug];
   if (existing) {
-    for (const agentId of existing.agent_ids) {
-      delete agentIdToClient[agentId];
-      delete agentIdToSlug[agentId];
+    if (existing.agent_id) {
+      delete agentIdToClient[existing.agent_id];
+      delete agentIdToSlug[existing.agent_id];
     }
     if (existing.outbound_from_number) {
       delete phoneNumberToClient[existing.outbound_from_number];
@@ -319,8 +320,14 @@ export async function restoreClient(slug: string): Promise<void> {
     { $unset: { deletedAt: "" } },
   );
   const doc = await clients().findOne({ _id: slug } as any);
-  if (doc && Array.isArray(doc.agent_ids)) {
-    registerInMemory(slug, toClientConfig(doc));
+  if (doc) {
+    // Apply same transition shim as loadClientsFromDb in case the doc still has agent_ids
+    if (!doc.agent_id && Array.isArray((doc as any).agent_ids) && (doc as any).agent_ids.length > 0) {
+      doc.agent_id = (doc as any).agent_ids[0];
+    }
+    if (typeof doc.agent_id === "string" && doc.agent_id) {
+      registerInMemory(slug, toClientConfig(doc));
+    }
   }
   console.log(`[client-store] restored client "${slug}"`);
 }
@@ -373,13 +380,14 @@ export async function purgeExpiredClients(days = 30): Promise<number> {
         }
       }
     }
-    for (const agentId of (doc as any).agent_ids ?? []) {
-      if (retellAgents[agentId]) continue;
+    // Belt-and-suspenders: also delete the agent_id (or legacy agent_ids[0]) if not in retell_agents map
+    const fallbackAgentId = (doc as any).agent_id || ((doc as any).agent_ids ?? [])[0];
+    if (fallbackAgentId && !retellAgents[fallbackAgentId]) {
       try {
-        await retell.agent.delete(agentId);
-        console.log(`[purge] deleted Retell agent ${agentId} (from agent_ids)`);
+        await retell.agent.delete(fallbackAgentId);
+        console.log(`[purge] deleted Retell agent ${fallbackAgentId} (from agent_id)`);
       } catch (err) {
-        console.warn(`[purge] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+        console.warn(`[purge] could not delete Retell agent ${fallbackAgentId}: ${err instanceof Error ? err.message : err}`);
       }
     }
   }
@@ -417,13 +425,13 @@ export function getAllClientSummaries(): Array<{
   slug: string;
   name: string;
   shadow_mode: boolean;
-  agent_ids: string[];
+  agent_id: string;
 }> {
   return Object.entries(notificationClients).map(([slug, c]) => ({
     slug,
     name: c.name,
     shadow_mode: c.shadow_mode ?? false,
-    agent_ids: c.agent_ids,
+    agent_id: c.agent_id,
   }));
 }
 

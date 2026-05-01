@@ -215,7 +215,7 @@ export async function runWeeklyReports(clientId?: string): Promise<{
 
   for (const doc of docs as Array<JsonClientEntry & { _id: string }>) {
     const slug = doc._id;
-    if (!Array.isArray(doc.agent_ids)) {
+    if (!doc.agent_id) {
       skipped.push(slug);
       continue;
     }
@@ -251,7 +251,7 @@ async function scheduledCheck(): Promise<void> {
 
   for (const doc of docs as Array<JsonClientEntry & { _id: string }>) {
     const slug = doc._id;
-    if (!Array.isArray(doc.agent_ids)) continue;
+    if (!doc.agent_id) continue;
     if (doc.weekly_report_enabled === false) {
       console.log(`[weekly-report] skipping "${slug}" (weekly reports disabled)`);
       continue;

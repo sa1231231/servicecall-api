@@ -1232,10 +1232,11 @@
     for (const e of emails) {
       if (!EMAIL_RE.test(e)) errors.push(`Dispatch email "${e}" invalid.`);
     }
-    // Agent IDs
-    const agentIds = getChipValues('chip-agent-ids');
-    for (const id of agentIds) {
-      if (!id.startsWith('agent_')) errors.push(`Agent ID "${id}" invalid. Must start with "agent_".`);
+    // Agent ID
+    const agentIdInput = document.getElementById('input-agent-id');
+    const agentIdVal = (agentIdInput?.value || '').trim();
+    if (agentIdVal && !agentIdVal.startsWith('agent_')) {
+      errors.push(`Agent ID "${agentIdVal}" invalid. Must start with "agent_".`);
     }
     // Call overrides
     document.querySelectorAll('.override-row').forEach((row, i) => {
@@ -1514,8 +1515,8 @@
     setAgentDetailHash(currentSlug, tabId);
 
     // Lazy-load on first activation.
-    if (tabId === 'nodes' && originalDoc?.agent_ids?.length > 0 && !window.neData) {
-      loadNodeEditor(currentSlug, originalDoc.agent_ids[0]);
+    if (tabId === 'nodes' && originalDoc?.agent_id && !window.neData) {
+      loadNodeEditor(currentSlug, originalDoc.agent_id);
     }
     if (tabId === 'billing' && !billingLoaded && currentSlug) {
       dashUpdateCostSummary();
@@ -2067,8 +2068,9 @@
       <input type="hidden" id="edit-name" value="${esc(doc.name)}">
       <input type="hidden" id="edit-greeting" value="${esc(doc.notification_greeting || '')}">
 
-      <dt title="Retell agent IDs linked to this client — inbound calls from these agents trigger notifications">Agent IDs</dt><dd>${chipInputHtml('chip-agent-ids', doc.agent_ids, 'Add agent ID...')}
-        <div class="config-hint">Retell agent IDs linked to this client. Inbound calls from these agents trigger dispatch notifications.</div></dd>
+      <dt title="Retell agent ID linked to this client — inbound calls from this agent trigger notifications">Agent ID</dt><dd>
+        <input class="edit-input" id="input-agent-id" value="${esc(doc.agent_id || '')}" placeholder="agent_..." style="font-family:monospace;font-size:0.78rem;">
+        <div class="config-hint">Retell agent ID linked to this client. Inbound calls from this agent trigger dispatch notifications.</div></dd>
 
       <dt title="When off, inbound calls to this agent are silently rejected">Agent Active</dt><dd>
         <label class="toggle">
@@ -2259,9 +2261,9 @@
 
     const updates = {};
 
-    const newAgentIds = getChipValues('chip-agent-ids');
-    if (!arraysEqual(newAgentIds, originalDoc.agent_ids || [])) {
-      updates.agent_ids = newAgentIds;
+    const newAgentId = (document.getElementById('input-agent-id')?.value || '').trim();
+    if (newAgentId !== (originalDoc.agent_id || '')) {
+      updates.agent_id = newAgentId;
     }
 
     // Display name (hidden input synced from Node Editor display-name field)

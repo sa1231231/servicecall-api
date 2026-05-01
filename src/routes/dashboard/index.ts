@@ -109,7 +109,7 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("mana
       const deletedPattern = /\s*\[DELETED — expires \d{4}-\d{2}-\d{2}\]$/;
       const allIds = new Set([
         ...Object.keys(doc.retell_agents ?? {}),
-        ...(doc.agent_ids ?? []),
+        ...(doc.agent_id ? [doc.agent_id] : []),
       ]);
       for (const agentId of allIds) {
         try {
@@ -162,13 +162,13 @@ dashboardApiRouter.delete("/deleted-agents/:slug", requirePermission("manage_del
           }
         }
       }
-      for (const agentId of doc.agent_ids ?? []) {
-        if (retellAgents[agentId]) continue;
+      // Belt-and-suspenders: also delete the agent_id if not already in retell_agents map
+      if (doc.agent_id && !retellAgents[doc.agent_id]) {
         try {
-          await retell.agent.delete(agentId);
-          console.log(`[permanent-delete] deleted Retell agent ${agentId} (from agent_ids)`);
+          await retell.agent.delete(doc.agent_id);
+          console.log(`[permanent-delete] deleted Retell agent ${doc.agent_id} (from agent_id)`);
         } catch (err) {
-          console.warn(`[permanent-delete] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+          console.warn(`[permanent-delete] could not delete Retell agent ${doc.agent_id}: ${err instanceof Error ? err.message : err}`);
         }
       }
     }

@@ -45,13 +45,13 @@ async function runAutoSync(): Promise<void> {
       }
     }
 
-    const agentIds = doc.agent_ids ?? [];
-    if (agentIds.length === 0) {
+    const agentId = doc.agent_id;
+    if (!agentId) {
       skipped++;
       continue;
     }
 
-    for (const agentId of agentIds) {
+    {
       try {
         const snapshot = await fetchRetellAgent(retell, agentId);
 

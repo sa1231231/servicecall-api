@@ -50,7 +50,7 @@ export async function preHookHandler(req: Request, res: Response) {
     if (byPhone) {
       client = byPhone.config;
       slug = byPhone.slug;
-      resolvedAgentId = client.agent_ids[0] ?? null;
+      resolvedAgentId = client.agent_id ?? null;
       console.log("retell-pre-hook: resolved client by to_number", {
         to_number: toNumber,
         client: slug,

@@ -97,7 +97,7 @@ function buildClientEntry(
 ): JsonClientEntry {
   return {
     name: clientInfo.name ?? clientInfo.slug,
-    agent_ids: [agentId],
+    agent_id: agentId,
     dispatch_text_numbers: clientInfo.dispatch_text_numbers,
     dispatch_call_number: clientInfo.dispatch_call_number ?? null,
     summary_agent_id: clientInfo.summary_agent_id ?? null,

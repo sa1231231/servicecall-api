@@ -92,9 +92,9 @@ export async function cloneAgentHandler(
     return;
   }
 
-  const sourceAgentId = sourceDoc.agent_ids?.[0];
+  const sourceAgentId = sourceDoc.agent_id;
   if (!sourceAgentId) {
-    res.status(400).json({ error: "Source client has no agent_ids" });
+    res.status(400).json({ error: "Source client has no agent_id" });
     return;
   }
 
@@ -146,7 +146,7 @@ export async function cloneAgentHandler(
     // Build client entry — copy structure from source, use new dispatch config
     const entry: JsonClientEntry = {
       name: newName,
-      agent_ids: [newAgentId],
+      agent_id: newAgentId,
       dispatch_text_numbers: body.dispatch_text_numbers ?? [],
       dispatch_call_number: body.dispatch_call_number ?? null,
       dispatch_email: body.dispatch_email ?? null,

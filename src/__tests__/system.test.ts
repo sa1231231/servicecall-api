@@ -119,7 +119,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       const demo = body.find((a: any) => a.slug === SLUG);
       expect(demo).toBeDefined();
       expect(demo.name).toContain("Demo Team");
-      expect(demo.agent_ids).toContain(AGENT_ID);
+      expect(demo.agent_id).toBe(AGENT_ID);
     });
 
     it("returns full detail for Demo Team", async () => {
@@ -128,7 +128,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       const body = await json(resp);
       expect(body._id).toBe(SLUG);
       expect(body.name).toContain("Demo Team");
-      expect(body.agent_ids).toContain(AGENT_ID);
+      expect(body.agent_id).toBe(AGENT_ID);
       expect(body.message_types).toBeDefined();
       expect(Object.keys(body.message_types).length).toBeGreaterThanOrEqual(1);
       expect(body.retell_agents).toBeDefined();
@@ -489,7 +489,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       const resp = await fetch(url(`/portal/${SLUG}/api/settings?token=${portalToken}`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shadow_mode: false, agent_ids: ["hacked"] }),
+        body: JSON.stringify({ shadow_mode: false, agent_id: "hacked" }),
       });
       // Should return 400 (no valid fields) since non-whitelisted fields are ignored
       expect(resp.status).toBe(400);

@@ -24,7 +24,7 @@ export async function toggleActiveHandler(
 
   const retell = new Retell({ apiKey: config.RETELL_API_KEY });
   const allNumbers = await retell.phoneNumber.list();
-  const clientAgentIds = new Set(client.agent_ids);
+  const clientAgentId = client.agent_id;
 
   let matchingNumbers: typeof allNumbers;
 
@@ -43,8 +43,8 @@ export async function toggleActiveHandler(
   } else {
     // Deactivating: find numbers that currently have this client's agent bound
     matchingNumbers = allNumbers.filter((n) => {
-      if (n.inbound_agents?.some((a) => clientAgentIds.has(a.agent_id))) return true;
-      if (n.inbound_agent_id && clientAgentIds.has(n.inbound_agent_id)) return true;
+      if (clientAgentId && n.inbound_agents?.some((a) => a.agent_id === clientAgentId)) return true;
+      if (clientAgentId && n.inbound_agent_id === clientAgentId) return true;
       if (client.outbound_from_number && n.phone_number === client.outbound_from_number) return true;
       return false;
     });
@@ -61,7 +61,7 @@ export async function toggleActiveHandler(
   for (const num of matchingNumbers) {
     try {
       if (active) {
-        const agentId = client.agent_ids[0];
+        const agentId = client.agent_id;
         if (agentId) {
           await retell.phoneNumber.update(num.phone_number, {
             inbound_agents: [{ agent_id: agentId, weight: 1 }],

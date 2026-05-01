@@ -109,7 +109,7 @@ export async function syncAgentHandler(
   const rawAgentId = req.query.agent_id;
   const agentId =
     (typeof rawAgentId === "string" ? rawAgentId : undefined) ||
-    existingDoc.agent_ids?.[0];
+    existingDoc.agent_id;
   if (!agentId) {
     res.status(400).json({ error: "No agent_id found for this client" });
     return;
@@ -168,7 +168,7 @@ export async function syncAgentHandler(
     const mergedEntry: JsonClientEntry = {
       ...existingDoc,
       ...jsonEntry,
-      agent_ids: existingDoc.agent_ids,
+      agent_id: existingDoc.agent_id,
       dispatch_call_overrides: existingDoc.dispatch_call_overrides,
       portal_token: existingDoc.portal_token,
       retell_agents: {

@@ -83,7 +83,7 @@ function makeRes(): Response & { _status: number; _json: any } {
 function makeClient(overrides: Record<string, any> = {}) {
   return {
     name: "Acme",
-    agent_ids: ["agent_1"],
+    agent_id: "agent_1",
     dispatch_text_numbers: ["+15550001111"],
     dispatch_email: ["acme@x.com"],
     dispatch_cc: null,

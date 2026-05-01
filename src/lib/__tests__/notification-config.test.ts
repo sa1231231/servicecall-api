@@ -73,7 +73,7 @@ describe("deriveNotificationConfig", () => {
     const result = deriveNotificationConfig(vars, baseClient, "agent_123");
 
     expect(result.name).toBe("Test Company");
-    expect(result.agent_ids).toEqual(["agent_123"]);
+    expect(result.agent_id).toBe("agent_123");
     expect(result.dispatch_text_numbers).toEqual(["+15551234567"]);
     expect(result.default_message_type).toBe("service_request");
     expect(result.resolve_rule).toBeUndefined();
@@ -466,7 +466,7 @@ describe("deriveMultiPathNotificationConfig", () => {
 
     const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
     expect(result.name).toBe("Test Company");
-    expect(result.agent_ids).toEqual(["agent_123"]);
+    expect(result.agent_id).toBe("agent_123");
     expect(result.dispatch_text_numbers).toEqual(["+15551234567"]);
     expect(result.shadow_mode).toBe(true);
   });

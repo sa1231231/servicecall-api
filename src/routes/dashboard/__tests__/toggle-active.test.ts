@@ -83,7 +83,7 @@ describe("toggleActiveHandler", () => {
   describe("deactivation (active: false)", () => {
     it("clears inbound agents on matching phone numbers", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: "+15551234567",
       };
       mockPhoneNumberList.mockResolvedValue([
@@ -106,7 +106,7 @@ describe("toggleActiveHandler", () => {
 
     it("stores deactivated_numbers in MongoDB", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: null,
       };
       mockPhoneNumberList.mockResolvedValue([
@@ -126,7 +126,7 @@ describe("toggleActiveHandler", () => {
 
     it("matches by outbound_from_number even when inbound agents already cleared", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: "+15551234567",
       };
       mockPhoneNumberList.mockResolvedValue([
@@ -142,7 +142,7 @@ describe("toggleActiveHandler", () => {
 
     it("handles no matching phone numbers gracefully", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: null,
       };
       mockPhoneNumberList.mockResolvedValue([
@@ -161,7 +161,7 @@ describe("toggleActiveHandler", () => {
   describe("reactivation (active: true)", () => {
     it("re-binds agent using stored deactivated_numbers", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: null,
         deactivated_numbers: ["+15551234567"],
       };
@@ -183,7 +183,7 @@ describe("toggleActiveHandler", () => {
 
     it("clears deactivated_numbers after reactivation", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: null,
         deactivated_numbers: ["+15551234567"],
       };
@@ -203,7 +203,7 @@ describe("toggleActiveHandler", () => {
 
     it("falls back to outbound_from_number when no stored numbers", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: "+15551234567",
       };
       mockPhoneNumberList.mockResolvedValue([
@@ -222,9 +222,9 @@ describe("toggleActiveHandler", () => {
   });
 
   describe("edge cases", () => {
-    it("reactivation with empty agent_ids does not update phone numbers", async () => {
+    it("reactivation with empty agent_id does not update phone numbers", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: [],
+        agent_id: "",
         outbound_from_number: null,
         deactivated_numbers: ["+15551234567"],
       };
@@ -242,28 +242,9 @@ describe("toggleActiveHandler", () => {
       expect(res._json.numbers_updated).toBe(0);
     });
 
-    it("reactivation with multiple agent_ids only binds the first", async () => {
-      mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_first", "agent_second"],
-        outbound_from_number: null,
-        deactivated_numbers: ["+15551234567"],
-      };
-      mockPhoneNumberList.mockResolvedValue([
-        { phone_number: "+15551234567" },
-      ]);
-      mockPhoneNumberUpdate.mockResolvedValue({});
-
-      const res = mockRes();
-      await toggleActiveHandler(mockReq("test-co", { active: true }), res);
-
-      expect(mockPhoneNumberUpdate).toHaveBeenCalledWith("+15551234567", {
-        inbound_agents: [{ agent_id: "agent_first", weight: 1 }],
-      });
-    });
-
     it("partial Retell failure skips MongoDB update", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: null,
       };
       mockPhoneNumberList.mockResolvedValue([
@@ -287,7 +268,7 @@ describe("toggleActiveHandler", () => {
   describe("error handling", () => {
     it("returns 500 when Retell API fails", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: "+15551234567",
       };
       mockPhoneNumberList.mockResolvedValue([
@@ -306,7 +287,7 @@ describe("toggleActiveHandler", () => {
 
     it("returns error when MongoDB update fails", async () => {
       mockNotificationClients["test-co"] = {
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         outbound_from_number: null,
       };
       mockPhoneNumberList.mockResolvedValue([]);

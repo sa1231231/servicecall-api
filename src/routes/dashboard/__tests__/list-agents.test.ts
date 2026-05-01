@@ -27,7 +27,7 @@ function makeDoc(overrides: Record<string, any> = {}) {
     _id: "test-co",
     name: "Test Co",
     shadow_mode: false,
-    agent_ids: ["agent_1"],
+    agent_id: "agent_1",
     ...overrides,
   };
 }

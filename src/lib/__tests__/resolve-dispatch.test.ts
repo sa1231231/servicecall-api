@@ -5,7 +5,7 @@ import type { ClientNotificationConfig } from "../../config/notification-clients
 function makeConfig(overrides: Partial<ClientNotificationConfig> = {}): ClientNotificationConfig {
   return {
     name: "Test Co",
-    agent_ids: ["agent_1"],
+    agent_id: "agent_1",
     dispatch_text_numbers: ["+15551111111"],
     dispatch_call_number: "+15552222222",
     summary_agent_id: null,
