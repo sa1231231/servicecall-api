@@ -1022,11 +1022,22 @@
 <div id="toast" class="toast"></div>
 
 <!-- ── Node Prompt Edit Modal ──────────────────────────────────────── -->
+<!--
+  The modal hosts two input surfaces. Most callers use the plain textarea
+  (`#promptModalText`). Callers that support template variables (closing
+  prompts, etc.) call `useTemplateEditor([...])` before opening, which
+  swaps in the contenteditable + autocomplete and writes back to the
+  hidden `#promptModalTemplateValue` input.
+-->
 <div id="promptModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closePromptModal()">
   <div class="modal" style="width:640px;">
     <h3 id="promptModalTitle">Edit Prompt</h3>
     <p class="modal-desc" id="promptModalDesc"></p>
     <textarea id="promptModalText" style="min-height:200px;"></textarea>
+    <div class="tmpl-editor-wrap" id="promptModalTemplateWrap" style="display:none;">
+      <div class="tmpl-editor" contenteditable="true" id="promptModalTemplate" data-placeholder="Type {{ to insert a variable…" style="min-height:200px;"></div>
+      <input type="hidden" id="promptModalTemplateValue">
+    </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closePromptModal()">Cancel</button>
       <button class="btn-confirm" id="promptModalSave" onclick="savePromptModal()">Save</button>
@@ -2942,6 +2953,7 @@
       section.innerHTML = '<div class="portal-link-box">' +
         '<strong>Portal Link:</strong>' +
         '<input type="text" value="' + esc(url) + '" readonly onclick="this.select()">' +
+        '<button class="btn-portal" onclick="openPortalLink(this)">Open</button>' +
         '<button class="btn-portal" onclick="copyPortalLink(this)">Copy</button>' +
         '<button class="btn-portal" onclick="generatePortalLink(\'' + esc(slug) + '\')">Regenerate</button>' +
         '</div>';
@@ -2974,6 +2986,11 @@
     navigator.clipboard.writeText(input.value).then(() => {
       showToast('Portal link copied!', 'success');
     });
+  }
+
+  function openPortalLink(btn) {
+    const input = btn.parentElement.querySelector('input');
+    if (input?.value) window.open(input.value, '_blank', 'noopener,noreferrer');
   }
 
   // ── DELETE AGENT ─────────────────────────────────────────────────
@@ -4766,8 +4783,30 @@
     };
   }
 
+  // True when the modal is currently in template-editor mode (instead of
+  // the plain textarea). Set by useTemplateEditor() before opening; reset
+  // by closePromptModal().
+  let promptModalUsesTemplate = false;
+  let promptModalTemplateApi = null;
+
+  // Switch the prompt modal to template-editor mode for the next open.
+  // Pass the list of valid variable names (e.g. ['business_name']).
+  // The plain textarea is hidden; the green-pill editor is shown and
+  // pre-filled with `value`. Read back via #promptModalTemplateValue.
+  function useTemplateEditor(validVars, value) {
+    promptModalUsesTemplate = true;
+    document.getElementById('promptModalText').style.display = 'none';
+    document.getElementById('promptModalTemplateWrap').style.display = '';
+    const editor = document.getElementById('promptModalTemplate');
+    const hidden = document.getElementById('promptModalTemplateValue');
+    hidden.value = value || '';
+    promptModalTemplateApi = initTemplateEditor(editor, hidden, validVars);
+  }
+
   function savePromptModal() {
-    const text = document.getElementById('promptModalText').value.trim();
+    const text = promptModalUsesTemplate
+      ? document.getElementById('promptModalTemplateValue').value.trim()
+      : document.getElementById('promptModalText').value.trim();
     if (!text) { showToast('Prompt cannot be empty', 'error'); return; }
     if (promptModalCb) promptModalCb(text);
   }
@@ -4778,6 +4817,16 @@
     const btn = document.getElementById('promptModalSave');
     btn.disabled = false;
     btn.textContent = 'Save';
+    // Reset to textarea mode for the next opener.
+    if (promptModalUsesTemplate) {
+      document.getElementById('promptModalText').style.display = '';
+      document.getElementById('promptModalTemplateWrap').style.display = 'none';
+      // Clear the editor so a stale render doesn't appear next time.
+      document.getElementById('promptModalTemplate').innerHTML = '';
+      document.getElementById('promptModalTemplateValue').value = '';
+      promptModalUsesTemplate = false;
+      promptModalTemplateApi = null;
+    }
   }
 
   // ── Transition prompt edit (local, shared across paths) ─────────
