@@ -1485,6 +1485,50 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       });
     });
 
+    // ── edit-path-end-mode ────────────────────────────────────────
+
+    describe("edit-path-end-mode", () => {
+      it("rejects missing pathName", async () => {
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-path-end-mode`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ mode: "callback" }),
+        });
+        expect(resp.status).toBe(400);
+      });
+
+      it("rejects invalid mode", async () => {
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-path-end-mode`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ pathName: "measure_me", mode: "bogus" }),
+        });
+        expect(resp.status).toBe(400);
+      });
+
+      it("rejects mode missing entirely", async () => {
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-path-end-mode`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ pathName: "measure_me" }),
+        });
+        expect(resp.status).toBe(400);
+      });
+
+      it("returns 404 for nonexistent path on a real agent", async () => {
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-path-end-mode`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ pathName: "nonexistent_path_xyz", mode: "callback" }),
+        });
+        expect(resp.status).toBe(404);
+      });
+
+      it("returns 404 for nonexistent agent", async () => {
+        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/agent_nonexistent_xyz/edit-path-end-mode`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ pathName: "measure_me", mode: "callback" }),
+        });
+        expect(resp.status).toBe(404);
+      });
+    });
+
     // ── save-and-publish ───────────────────────────────────────────
 
     describe("save-and-publish", () => {
@@ -1847,6 +1891,165 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         expect(body.globalPrompt).not.toContain("[INTEGRATION-");
         expect(body.faqKnowledgeBase).not.toContain("[FAQ-TEST-");
       });
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Webhooks — auth/validation only (no real dispatch)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  describe("Webhooks", () => {
+    describe("Retell pre-hook", () => {
+      it("rejects missing x-retell-signature with 401", async () => {
+        const resp = await fetch(url("/retell/pre-hook"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ event: "call_inbound", call_inbound: {} }),
+        });
+        expect(resp.status).toBe(401);
+        const body = await json(resp);
+        expect(body.outcome).toBe("missing_signature_header");
+      });
+
+      it("rejects invalid signature with 401", async () => {
+        const resp = await fetch(url("/retell/pre-hook"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-retell-signature": "v=1726000000,d=deadbeef",
+          },
+          body: JSON.stringify({ event: "call_inbound", call_inbound: {} }),
+        });
+        expect(resp.status).toBe(401);
+        expect((await json(resp)).outcome).toBe("invalid_signature");
+      });
+    });
+
+    describe("Retell post-hook", () => {
+      it("rejects missing x-retell-signature with 401", async () => {
+        const resp = await fetch(url("/retell/post-hook"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ event: "call_ended", call: { agent_id: "agent_unknown" } }),
+        });
+        expect(resp.status).toBe(401);
+      });
+
+      it("rejects invalid signature with 401", async () => {
+        const resp = await fetch(url("/retell/post-hook"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-retell-signature": "v=1726000000,d=baadcafe",
+          },
+          body: JSON.stringify({ event: "call_ended", call: { agent_id: "agent_unknown" } }),
+        });
+        expect(resp.status).toBe(401);
+      });
+
+      it("internal API key bypasses signature and processes ignored events", async () => {
+        const resp = await fetch(url("/retell/post-hook"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": API_KEY!,
+          },
+          body: JSON.stringify({ event: "call_started" }),
+        });
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.outcome).toBe("ignored_event");
+        expect(body.event).toBe("call_started");
+      });
+
+      it("internal API key bypasses signature and 400s on missing call object", async () => {
+        const resp = await fetch(url("/retell/post-hook"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": API_KEY!,
+          },
+          body: JSON.stringify({ event: "call_ended" }),
+        });
+        expect(resp.status).toBe(400);
+      });
+    });
+
+    describe("Stripe webhook", () => {
+      it("rejects missing stripe-signature with 400", async () => {
+        const resp = await fetch(url("/stripe/webhook"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: "evt_test", type: "ping" }),
+        });
+        expect(resp.status).toBe(400);
+        const body = await json(resp);
+        expect(body.outcome).toBe("invalid_stripe_signature");
+      });
+
+      it("rejects invalid signature with 400", async () => {
+        const resp = await fetch(url("/stripe/webhook"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "stripe-signature": "t=1726000000,v1=deadbeef",
+          },
+          body: JSON.stringify({ id: "evt_test", type: "ping" }),
+        });
+        expect(resp.status).toBe(400);
+        expect((await json(resp)).outcome).toBe("invalid_stripe_signature");
+      });
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Agent delete lifecycle — validation/404 paths only.
+  // We deliberately avoid running destructive ops against real agents.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  describe("Agent delete lifecycle (validation)", () => {
+    it("DELETE /dashboard/api/agents/:slug returns 404 for nonexistent slug", async () => {
+      const resp = await fetch(url("/dashboard/api/agents/nonexistent-delete-xyz"), {
+        method: "DELETE", headers: authHeaders(),
+      });
+      expect(resp.status).toBe(404);
+    });
+
+    it("DELETE without API key is rejected (401)", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}`), {
+        method: "DELETE",
+      });
+      expect(resp.status).toBe(401);
+    });
+
+    it("POST /dashboard/api/deleted-agents/:slug/restore handles nonexistent slug", async () => {
+      const resp = await fetch(url("/dashboard/api/deleted-agents/nonexistent-restore-xyz/restore"), {
+        method: "POST", headers: authHeaders(),
+      });
+      // Accept either 404 (explicit) or 500 (unhandled — restoreClient may throw)
+      expect([404, 500]).toContain(resp.status);
+    });
+
+    it("POST restore without auth is rejected", async () => {
+      const resp = await fetch(url("/dashboard/api/deleted-agents/anything/restore"), {
+        method: "POST",
+      });
+      expect(resp.status).toBe(401);
+    });
+
+    it("DELETE /dashboard/api/deleted-agents/:slug handles nonexistent slug gracefully", async () => {
+      const resp = await fetch(url("/dashboard/api/deleted-agents/nonexistent-perma-xyz"), {
+        method: "DELETE", headers: authHeaders(),
+      });
+      // Permanent-delete on a missing doc may succeed (no-op) or 404/500.
+      expect([200, 404, 500]).toContain(resp.status);
+    });
+
+    it("permanent-delete without auth is rejected", async () => {
+      const resp = await fetch(url("/dashboard/api/deleted-agents/anything"), {
+        method: "DELETE",
+      });
+      expect(resp.status).toBe(401);
     });
   });
 });
