@@ -44,15 +44,6 @@
   .clickable-row { cursor: pointer; }
   .clickable-row:hover td { background: #f0f5ff; }
   #callTable .clickable-row:hover td { background: inherit; }
-  .agent-ids {
-    font-family: monospace;
-    font-size: 0.72rem;
-    color: #666;
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .badge {
     display: inline-block;
     padding: 0.15rem 0.5rem;
@@ -523,13 +514,6 @@
     body { margin: 1rem auto; padding: 0 0.5rem; }
     h1 { font-size: 1.15rem; line-height: 1.4; }
     h2 { font-size: 1rem; }
-
-    /* Agent list — hide agent-ids and slug columns */
-    #agentList .agent-ids { display: none; }
-    #agentList table th:nth-child(2),
-    #agentList table td:nth-child(2) { display: none; }
-    #agentList table th:nth-child(3),
-    #agentList table td:nth-child(3) { display: none; }
 
     /* Config grid — single column */
     .config-grid {
@@ -1319,15 +1303,12 @@
       });
 
       let html = `<table><thead><tr>
-        <th>Name</th><th>Slug</th><th>Agent IDs</th><th>Trial</th><th>Status</th><th title="Month-to-date cost of goods sold">MTD COGS</th><th>Active</th><th>Shadow Mode</th>
+        <th>Name</th><th>Trial</th><th>Status</th><th title="Month-to-date cost of goods sold">MTD COGS</th><th>Active</th><th>Shadow Mode</th>
       </tr></thead><tbody>`;
 
       for (const a of agents) {
         const sc = a.shadow_mode ? 'badge-shadow' : 'badge-live';
         const sl = a.shadow_mode ? 'Shadow' : 'Live';
-        const ids = a.agent_ids.length > 0
-          ? a.agent_ids.map(id => id.substring(0, 16) + '...').join(', ')
-          : '<span style="color:#aaa">none</span>';
         const cogsCents = a.mtd_cogs_cents ?? 0;
         const cogsHtml = cogsCents > 0
           ? `$${(cogsCents / 100).toFixed(2)}`
@@ -1350,11 +1331,9 @@
 
         html += `<tr class="clickable-row" onclick="showDetail('${esc(a.slug)}')" data-slug="${esc(a.slug)}">
           <td><strong>${esc(a.name)}</strong></td>
-          <td style="font-family:monospace;font-size:0.78rem;">${esc(a.slug)}</td>
-          <td class="agent-ids" title="${esc(a.agent_ids.join(', '))}">${ids}</td>
           <td>${trialHtml}</td>
           <td><span class="badge ${sc}" data-status>${sl}</span></td>
-          <td style="font-variant-numeric:tabular-nums;text-align:right;">${cogsHtml}</td>
+          <td style="font-variant-numeric:tabular-nums;text-align:right;${cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : ''}">${cogsHtml}</td>
           <td onclick="event.stopPropagation()">
             <label class="toggle">
               <input type="checkbox" ${a.active !== false ? 'checked' : ''}
