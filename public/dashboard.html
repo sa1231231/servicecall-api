@@ -3125,14 +3125,20 @@
       if (smsEl) smsEl.value = rates.twilio_sms_cents ?? '';
       if (emailEl) emailEl.value = rates.resend_email_cents ?? '';
       if (numEl) numEl.value = rates.twilio_number_monthly_cents ?? '';
-      // Populate default summary agent chip
+      // Populate default summary agent chip. Wipe any existing chips first
+      // — loadSettings() runs every time the settings view is opened, and
+      // without the wipe each visit appended another duplicate chip with the
+      // same agent ID.
       const summaryChipContainer = document.getElementById('settings-chip-summary');
-      if (summaryChipContainer && settings.default_summary_agent_id) {
-        const input = summaryChipContainer.querySelector('input');
-        const chip = document.createElement('span');
-        chip.className = 'chip';
-        chip.innerHTML = esc(settings.default_summary_agent_id) + '<span class="remove" onclick="removeChip(this)">&times;</span>';
-        summaryChipContainer.insertBefore(chip, input);
+      if (summaryChipContainer) {
+        summaryChipContainer.querySelectorAll('.chip').forEach((c) => c.remove());
+        if (settings.default_summary_agent_id) {
+          const input = summaryChipContainer.querySelector('input');
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          chip.innerHTML = esc(settings.default_summary_agent_id) + '<span class="remove" onclick="removeChip(this)">&times;</span>';
+          summaryChipContainer.insertBefore(chip, input);
+        }
       }
 
       // Initialize template editors for settings SMS fields
