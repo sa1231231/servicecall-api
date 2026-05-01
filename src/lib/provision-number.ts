@@ -86,16 +86,27 @@ export async function provisionPhoneNumber(
     console.log(`[provision] trunk termination URI: ${terminationUri}`);
   }
 
-  // 6. Import into Retell with agent binding
+  // 6. Import into Retell with agent binding + BYOC outbound auth.
+  // Without auth_username/password, Retell can't route warm transfer outbound
+  // through the Twilio trunk and falls back to its default carrier.
   if (terminationUri) {
+    const authUsername = config.RETELL_SIP_TRUNK_AUTH_USERNAME || undefined;
+    const authPassword = config.RETELL_SIP_TRUNK_AUTH_PASSWORD || undefined;
+    if (!authUsername || !authPassword) {
+      console.warn(
+        `[provision] warning: RETELL_SIP_TRUNK_AUTH_USERNAME/PASSWORD not set — warm transfer through BYOC trunk will not work for ${targetNumber} until credentials are added in Retell's dashboard.`,
+      );
+    }
     await retell.phoneNumber.import({
       phone_number: targetNumber,
       termination_uri: terminationUri,
+      sip_trunk_auth_username: authUsername,
+      sip_trunk_auth_password: authPassword,
       inbound_agents: [{ agent_id: agentId, weight: 1 }],
       nickname: clientName,
       inbound_webhook_url: "https://servicecall-api-production.up.railway.app/retell/pre-hook",
     });
-    console.log(`[provision] imported into Retell with agent ${agentId}`);
+    console.log(`[provision] imported into Retell with agent ${agentId} (BYOC auth=${authUsername ? "set" : "missing"})`);
   }
 
   console.log(`[provision] complete for "${clientName}": ${targetNumber}`);

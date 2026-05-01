@@ -24,6 +24,8 @@ vi.mock("../../config.js", () => ({
     TWILIO_EMERGENCY_ADDRESS_SID: "AD_test_address",
     TWILIO_MESSAGING_SERVICE_SID: "MG_test_service",
     RETELL_API_KEY: "retell_test_key",
+    RETELL_SIP_TRUNK_AUTH_USERNAME: "retell-ai",
+    RETELL_SIP_TRUNK_AUTH_PASSWORD: "test-password",
   },
 }));
 
@@ -144,6 +146,51 @@ describe("provisionPhoneNumber", () => {
         nickname: "Test Company",
       }),
     );
+  });
+
+  it("includes BYOC outbound auth credentials on Retell import", async () => {
+    await provisionPhoneNumber(defaultOptions);
+
+    expect(mockRetellImport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sip_trunk_auth_username: "retell-ai",
+        sip_trunk_auth_password: "test-password",
+      }),
+    );
+  });
+
+  it("warns and omits auth fields when credentials env vars are missing", async () => {
+    // Re-mock config with empty auth credentials for this test only.
+    vi.doMock("../../config.js", () => ({
+      config: {
+        TWILIO_ACCOUNT_SID: "ACtest",
+        TWILIO_AUTH_TOKEN: "test_token",
+        TWILIO_TRUNK_SID: "TK_test_trunk",
+        TWILIO_EMERGENCY_ADDRESS_SID: "AD_test_address",
+        TWILIO_MESSAGING_SERVICE_SID: "MG_test_service",
+        RETELL_API_KEY: "retell_test_key",
+        RETELL_SIP_TRUNK_AUTH_USERNAME: "",
+        RETELL_SIP_TRUNK_AUTH_PASSWORD: "",
+      },
+    }));
+    vi.resetModules();
+    const { provisionPhoneNumber: provisionFresh } = await import("../provision-number.js");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await provisionFresh(defaultOptions);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("RETELL_SIP_TRUNK_AUTH_USERNAME/PASSWORD not set"),
+    );
+    expect(mockRetellImport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sip_trunk_auth_username: undefined,
+        sip_trunk_auth_password: undefined,
+      }),
+    );
+
+    warnSpy.mockRestore();
+    vi.doUnmock("../../config.js");
   });
 
   it("throws when no numbers available", async () => {

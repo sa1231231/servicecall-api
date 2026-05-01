@@ -32,6 +32,12 @@ export const config = {
   TWILIO_EMERGENCY_ADDRESS_SID: process.env.TWILIO_EMERGENCY_ADDRESS_SID ?? "",
   TWILIO_MESSAGING_SERVICE_SID: process.env.TWILIO_MESSAGING_SERVICE_SID ?? "",
 
+  // Retell BYOC outbound trunk auth — applied to every Retell phone number we
+  // provision so warm transfer can route outbound through the Twilio trunk.
+  // Username matches the Twilio credential list user; password is digest auth.
+  RETELL_SIP_TRUNK_AUTH_USERNAME: process.env.RETELL_SIP_TRUNK_AUTH_USERNAME ?? "",
+  RETELL_SIP_TRUNK_AUTH_PASSWORD: process.env.RETELL_SIP_TRUNK_AUTH_PASSWORD ?? "",
+
   // Google Review
   GOOGLE_REVIEW_URL: process.env.GOOGLE_REVIEW_URL ?? "",
 
