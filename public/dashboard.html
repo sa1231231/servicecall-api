@@ -424,30 +424,30 @@
     padding: 0.6rem 0.75rem; font-size: 0.78rem; color: #555;
     white-space: pre-wrap; max-height: 120px; overflow-y: auto; margin-bottom: 0.75rem;
   }
-  /* Top-level node-editor groups (System / Intro / Closing / Identity / Routing Paths) */
-  .ne-group {
-    margin-bottom: 0.75rem; border: 1px solid #e5e7eb; border-radius: 8px;
-    background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  /* Top-level node-editor sub-tabs (System / Intro / Closing / Identity & Routing Paths).
+     Horizontal strip nested INSIDE the agent dashboard's left sidebar tab,
+     so it stays visually distinct from the parent .agent-tab pattern. */
+  .ne-subtabs {
+    display: flex; gap: 0.25rem; flex-wrap: wrap;
+    border-bottom: 1px solid #e5e7eb; margin-bottom: 0.75rem;
   }
-  .ne-group > summary {
-    list-style: none; cursor: pointer; padding: 0.6rem 0.85rem;
-    font-size: 0.92rem; font-weight: 600; color: #1a1a1a;
-    display: flex; align-items: center; gap: 0.45rem;
-    border-radius: 8px;
+  .ne-subtab {
+    padding: 0.45rem 0.85rem; font-size: 0.85rem; font-weight: 500;
+    color: #555; background: transparent; border: 0;
+    border-bottom: 2px solid transparent; border-radius: 0;
+    cursor: pointer; font-family: inherit; margin-bottom: -1px;
   }
-  .ne-group > summary::-webkit-details-marker { display: none; }
-  .ne-group > summary::before {
-    content: '▸'; color: #888; font-size: 0.7rem; transition: transform 0.15s;
-    width: 0.8rem; display: inline-block;
+  .ne-subtab:hover { color: #1e40af; }
+  .ne-subtab.active {
+    color: #1e40af; font-weight: 600; border-bottom-color: #2563eb;
   }
-  .ne-group[open] > summary::before { transform: rotate(90deg); }
-  .ne-group[open] > summary { border-bottom: 1px solid #e5e7eb; }
-  .ne-group-body { padding: 0.65rem 0.85rem 0.85rem; }
-  .ne-group-body > h3 {
+  .ne-subtab-pane { display: none; }
+  .ne-subtab-pane.active { display: block; }
+  .ne-subtab-pane > h3 {
     font-size: 0.78rem; font-weight: 600; color: #555;
-    margin: 0.6rem 0 0.3rem; text-transform: uppercase; letter-spacing: 0.04em;
+    margin: 0.65rem 0 0.4rem; text-transform: uppercase; letter-spacing: 0.04em;
   }
-  .ne-group-body > h3:first-child { margin-top: 0; }
+  .ne-subtab-pane > h3:first-child { margin-top: 0; }
   /* Each routing path inside the Routing Paths group is its own collapsible */
   .ne-path-collapse {
     border: 1px solid #e5e7eb; border-radius: 6px; background: #fafafa;
@@ -1154,6 +1154,12 @@
   // dropdown can be repopulated cheaply after each header re-render (e.g.
   // when shadow_mode/active toggles trigger a header rebuild).
   let currentPortalUrl = null;
+  // Active sub-tab inside the Node Editor (System / Intro / Closing / Paths).
+  // Module-level so it survives renderNodeEditor() re-runs (each modal save
+  // re-renders the whole panel). Reset to "system" when loading a different
+  // agent — see loadNodeEditor.
+  const NE_TABS = ['system', 'intro', 'closing', 'paths'];
+  let activeNeTab = 'system';
   let callOffset = 0;
   const CALL_LIMIT = 50;
   let dashAllCalls = [];
@@ -4259,6 +4265,9 @@
   const neScopeConditions = {};
 
   async function loadNodeEditor(slug, agentId) {
+    // First load (no cached neData yet) → reset sub-tab to System; subsequent
+    // refreshes (modal saves, rollbacks) preserve the user's current tab.
+    if (!neData) activeNeTab = 'system';
     neSlug = slug;
     neAgentId = agentId;
     const container = document.getElementById('nodeEditorContainer');
@@ -4322,8 +4331,19 @@
     let html = '<h2>Node Editor</h2>';
     html += '<button class="btn-save" id="ne-publish-btn" onclick="neSaveAndPublish()" style="' + (neDirty ? '' : 'display:none;') + 'margin-bottom:0.75rem;background:#059669;">Save &amp; Publish to Retell</button>';
 
-    // ── System group: System Prompt + FAQ + Human Request Mode ───────────
-    html += '<details class="ne-group" open><summary>System</summary><div class="ne-group-body">';
+    // Sub-tab strip — clicking flips which pane below is .active.
+    const tab = (id, label) =>
+      '<button type="button" class="ne-subtab' + (activeNeTab === id ? ' active' : '') +
+      '" data-ne-tab="' + id + '" onclick="switchNeTab(\'' + id + '\')">' + label + '</button>';
+    html += '<div class="ne-subtabs">' +
+      tab('system', 'System') +
+      tab('intro', 'Intro') +
+      tab('closing', 'Closing Prompts') +
+      tab('paths', 'Identity &amp; Routing Paths') +
+      '</div>';
+
+    // ── System pane: System Prompt + FAQ + Human Request Mode ────────────
+    html += '<div class="ne-subtab-pane' + (activeNeTab === 'system' ? ' active' : '') + '" data-ne-pane="system">';
     html += fieldBlock('System Prompt', data.globalPrompt, 'openGlobalPromptEdit()', { previewMax: 500 });
     if (data.faqNodeId) {
       html += fieldBlock('FAQ / Knowledge Base', data.faqKnowledgeBase, 'openFaqEdit()');
@@ -4340,47 +4360,50 @@
       }
       html += '</div>';
     }
-    html += '</div></details>';
+    html += '</div>';
 
-    // ── Intro group: Intro Prompt + Transition Prompt ────────────────────
-    if (data.introNodeId || data.transitionPrompt !== undefined) {
-      html += '<details class="ne-group" open><summary>Intro</summary><div class="ne-group-body">';
-      if (data.introNodeId) {
-        html += fieldBlock('Intro Prompt', data.introPrompt, "openPromptEdit('" + esc(data.introNodeId) + "','Intro')");
-      }
-      if (data.transitionPrompt !== undefined) {
-        html += fieldBlock('Transition Prompt', data.transitionPrompt, 'openTransitionPromptEdit()');
-      }
-      html += '</div></details>';
+    // ── Intro pane: Intro Prompt + Transition Prompt ─────────────────────
+    html += '<div class="ne-subtab-pane' + (activeNeTab === 'intro' ? ' active' : '') + '" data-ne-pane="intro">';
+    if (data.introNodeId) {
+      html += fieldBlock('Intro Prompt', data.introPrompt, "openPromptEdit('" + esc(data.introNodeId) + "','Intro')");
     }
-
-    // ── Closing Prompts group ────────────────────────────────────────────
-    const hasClosing = data.closePrompt !== undefined ||
-      data.closingRemarksPrompt !== undefined ||
-      data.closingStatementText !== undefined ||
-      data.liveTransferRecoveryPrompt !== undefined;
-    if (hasClosing) {
-      html += '<details class="ne-group" open><summary>Closing Prompts</summary><div class="ne-group-body">';
-      if (data.closePrompt !== undefined) {
-        html += fieldBlock('Close Prompt', data.closePrompt, 'openClosePromptEdit()');
-      }
-      if (data.closingRemarksPrompt !== undefined) {
-        html += fieldBlock('Closing Remarks Prompt', data.closingRemarksPrompt, 'openClosingRemarksPromptEdit()');
-      }
-      if (data.closingStatementText !== undefined) {
-        html += fieldBlock('Closing Statement', data.closingStatementText, 'openClosingStatementEdit()',
-          { sub: '(spoken verbatim)' });
-      }
-      // Live Transfer Recovery — only present on agents created with the feature.
-      if (data.liveTransferRecoveryPrompt !== undefined) {
-        html += fieldBlock('Live Transfer Recovery', data.liveTransferRecoveryPrompt, 'openLiveTransferRecoveryEdit()',
-          { sub: '(if transfer fails)' });
-      }
-      html += '</div></details>';
+    if (data.transitionPrompt !== undefined) {
+      html += fieldBlock('Transition Prompt', data.transitionPrompt, 'openTransitionPromptEdit()');
     }
+    if (!data.introNodeId && data.transitionPrompt === undefined) {
+      html += '<div class="ne-global-prompt" style="color:#888;">No intro or transition prompts to edit.</div>';
+    }
+    html += '</div>';
 
-    // ── Identity group: Display Name + Notification Greeting ─────────────
-    html += '<details class="ne-group" open><summary>Identity &amp; Notifications</summary><div class="ne-group-body">';
+    // ── Closing Prompts pane ─────────────────────────────────────────────
+    html += '<div class="ne-subtab-pane' + (activeNeTab === 'closing' ? ' active' : '') + '" data-ne-pane="closing">';
+    let renderedAnyClosing = false;
+    if (data.closePrompt !== undefined) {
+      html += fieldBlock('Close Prompt', data.closePrompt, 'openClosePromptEdit()');
+      renderedAnyClosing = true;
+    }
+    if (data.closingRemarksPrompt !== undefined) {
+      html += fieldBlock('Closing Remarks Prompt', data.closingRemarksPrompt, 'openClosingRemarksPromptEdit()');
+      renderedAnyClosing = true;
+    }
+    if (data.closingStatementText !== undefined) {
+      html += fieldBlock('Closing Statement', data.closingStatementText, 'openClosingStatementEdit()', { sub: '(spoken verbatim)' });
+      renderedAnyClosing = true;
+    }
+    if (data.liveTransferRecoveryPrompt !== undefined) {
+      html += fieldBlock('Live Transfer Recovery', data.liveTransferRecoveryPrompt, 'openLiveTransferRecoveryEdit()', { sub: '(if transfer fails)' });
+      renderedAnyClosing = true;
+    }
+    if (!renderedAnyClosing) {
+      html += '<div class="ne-global-prompt" style="color:#888;">No closing prompts to edit.</div>';
+    }
+    html += '</div>';
+
+    // ── Identity & Routing Paths pane ────────────────────────────────────
+    html += '<div class="ne-subtab-pane' + (activeNeTab === 'paths' ? ' active' : '') + '" data-ne-pane="paths">';
+
+    // Identity sub-section (Display Name + Notification Greeting)
+    html += '<h3>Identity &amp; Notifications</h3>';
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
       '<span style="font-size:0.82rem;font-weight:600;color:#555;">Display Name</span></div>' +
       '<div style="margin-bottom:0.75rem;">' +
@@ -4389,16 +4412,15 @@
     const greetingVal = originalDoc?.notification_greeting || '';
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
       '<span style="font-size:0.82rem;font-weight:600;color:#555;">Notification Greeting</span></div>' +
-      '<div>' +
+      '<div style="margin-bottom:1rem;">' +
       '<div class="tmpl-editor-wrap">' +
       '<div class="tmpl-editor" contenteditable="true" id="ne-greeting-editor" data-placeholder="Hi {{business_name}}, you have a new call!"></div>' +
       '<input type="hidden" id="ne-greeting-hidden" value="' + esc(greetingVal) + '">' +
       '</div>' +
       '<div class="config-hint">First line of every SMS/email. Leave blank for default. Type <code>{{</code> for variables.</div></div>';
-    html += '</div></details>';
 
-    // ── Routing Paths group: each path is its own collapsible ────────────
-    html += '<details class="ne-group" open><summary>Routing Paths <span style="color:#888;font-weight:400;font-size:0.78rem;">(' + data.paths.length + ')</span></summary><div class="ne-group-body">';
+    // Routing Paths sub-section
+    html += '<h3>Routing Paths <span style="color:#888;font-weight:400;font-size:0.7rem;text-transform:none;letter-spacing:0;">(' + data.paths.length + ')</span></h3>';
 
     for (const path of data.paths) {
       const isOpen = previouslyOpenPaths.has(path.name);
@@ -4517,13 +4539,13 @@
       html += '</div></details>';
     }
 
-    // "+ Add Path" button lives inside the Routing Paths group.
+    // "+ Add Path" button lives inside the Identity & Routing Paths pane.
     if (canEdit) {
       html += '<button class="ne-btn" onclick="neAddPath()" style="margin:0.5rem 0 0;padding:0.4rem 1rem;font-size:0.82rem;color:#2563eb;border:1px dashed #93b4f5;">+ Add Path</button>';
     }
 
-    // Close Routing Paths group.
-    html += '</div></details>';
+    // Close the Identity & Routing Paths pane.
+    html += '</div>';
 
     // Version history
     if (verData.versions.length > 0) {
@@ -4801,6 +4823,21 @@
     neDirty = true;
     const btn = document.getElementById('ne-publish-btn');
     if (btn) btn.style.display = '';
+  }
+
+  // Switch the Node Editor sub-tab. Lightweight DOM toggle — re-rendering
+  // the whole editor would be wasteful since each pane's contents are
+  // already in the DOM. Module-level activeNeTab persists across the
+  // re-renders triggered by modal saves.
+  function switchNeTab(id) {
+    if (!NE_TABS.includes(id)) id = 'system';
+    activeNeTab = id;
+    document.querySelectorAll('#nodeEditorContainer .ne-subtab').forEach((b) => {
+      b.classList.toggle('active', b.dataset.neTab === id);
+    });
+    document.querySelectorAll('#nodeEditorContainer .ne-subtab-pane').forEach((p) => {
+      p.classList.toggle('active', p.dataset.nePane === id);
+    });
   }
 
   function openPromptEdit(nodeId, label) {
