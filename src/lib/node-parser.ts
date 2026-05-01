@@ -59,23 +59,6 @@ function wrap(raw: Record<string, unknown>): ParsedNode {
   };
 }
 
-function getEdgeDestinations(node: Record<string, unknown>): string[] {
-  const dests: string[] = [];
-  const edges = node.edges as Array<Record<string, unknown>> | undefined;
-  if (Array.isArray(edges)) {
-    for (const e of edges) {
-      if (e.destination_node_id) dests.push(e.destination_node_id as string);
-    }
-  }
-  const skipEdge = node.skip_response_edge as Record<string, unknown> | undefined;
-  if (skipEdge?.destination_node_id) dests.push(skipEdge.destination_node_id as string);
-  const alwaysEdge = node.always_edge as Record<string, unknown> | undefined;
-  if (alwaysEdge?.destination_node_id) dests.push(alwaysEdge.destination_node_id as string);
-  const elseEdge = node.else_edge as Record<string, unknown> | undefined;
-  if (elseEdge?.destination_node_id) dests.push(elseEdge.destination_node_id as string);
-  return dests;
-}
-
 function extractPathSuffix(name: string): string | null {
   const m = name.match(/\(([^)]+)\)\s*$/);
   return m ? m[1] : null;

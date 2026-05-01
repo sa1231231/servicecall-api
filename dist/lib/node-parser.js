@@ -11,26 +11,6 @@ function wrap(raw) {
         type: raw.type ?? "",
     };
 }
-function getEdgeDestinations(node) {
-    const dests = [];
-    const edges = node.edges;
-    if (Array.isArray(edges)) {
-        for (const e of edges) {
-            if (e.destination_node_id)
-                dests.push(e.destination_node_id);
-        }
-    }
-    const skipEdge = node.skip_response_edge;
-    if (skipEdge?.destination_node_id)
-        dests.push(skipEdge.destination_node_id);
-    const alwaysEdge = node.always_edge;
-    if (alwaysEdge?.destination_node_id)
-        dests.push(alwaysEdge.destination_node_id);
-    const elseEdge = node.else_edge;
-    if (elseEdge?.destination_node_id)
-        dests.push(elseEdge.destination_node_id);
-    return dests;
-}
 function extractPathSuffix(name) {
     const m = name.match(/\(([^)]+)\)\s*$/);
     return m ? m[1] : null;
