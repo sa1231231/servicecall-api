@@ -3594,9 +3594,9 @@
           <h3 class="dp-cat-label" onclick="editCategoryLabel(this, '${esc(cat)}')" title="Click to rename" style="cursor:text;">${esc(label)}</h3>
           <span class="dp-cat-count">${groups[cat].length}</span>
           <button class="dp-cat-delete" onclick="event.stopPropagation();deleteCategory('${esc(cat)}')" title="Delete category" style="margin-left:auto;background:none;border:none;color:#dc2626;cursor:pointer;font-size:0.75rem;padding:0.1rem 0.3rem;border-radius:4px;opacity:0.4;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.4'">&#10005;</button>
-          <span class="dp-cat-toggle" onclick="toggleDpCategory(this.closest('.dp-category-header'))" style="cursor:pointer;">&#9660;</span>
+          <span class="dp-cat-toggle" onclick="toggleDpCategory(this.closest('.dp-category-header'))" style="cursor:pointer;">&#9654;</span>
         </div>
-        <div class="dp-category-body">`;
+        <div class="dp-category-body collapsed">`;
       for (const { key, dp } of groups[cat]) {
         html += renderDpCard(key, dp);
       }
