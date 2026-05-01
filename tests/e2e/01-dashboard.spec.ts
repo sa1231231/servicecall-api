@@ -1,0 +1,37 @@
+import { test, expect } from "@playwright/test";
+import { getEnv, httpCredentials, DEMO_METER } from "./_helpers.js";
+
+const env = getEnv();
+
+test.use({
+  httpCredentials: httpCredentials(env),
+});
+
+test.describe("Dashboard — login + agent list", () => {
+  test("admin can load /dashboard and sees Demo Meter in the agents list", async ({ page }) => {
+    // Navigate. extraHTTPHeaders pre-supplies Basic Auth so the browser
+    // dialog never appears.
+    await page.goto("/dashboard");
+
+    // The agents table is fetched async after DOMContentLoaded. Wait for
+    // the loading placeholder to disappear and the demo-meter row to appear.
+    await expect(
+      page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`),
+    ).toBeVisible({ timeout: 15_000 });
+
+    // Sanity: the row contains agent name text
+    const row = page.locator(`[data-slug="${DEMO_METER.slug}"]`);
+    await expect(row).toContainText(/Demo (Meter|Team)/i);
+  });
+
+  test("dashboard config endpoint returns logged-in user via fetch from page", async ({ page }) => {
+    // Hits /dashboard/config with the same Basic Auth — proves auth works
+    // end-to-end through the Express middleware.
+    await page.goto("/dashboard");
+    const resp = await page.request.get("/dashboard/config");
+    expect(resp.status()).toBe(200);
+    const body = await resp.json();
+    expect(typeof body.apiKey).toBe("string");
+    expect(body.user).toBeDefined();
+  });
+});

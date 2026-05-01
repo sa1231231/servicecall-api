@@ -237,6 +237,14 @@ npm run test:watch   # Watch mode
 # Integration tests (requires running server)
 ./tests/health.sh
 ./tests/notify.sh
+
+# System tests (vitest, runs against a live URL)
+npm run test:system  # Requires SYSTEM_TEST_URL, API_KEY, ROOT_PASSWORD env vars
+
+# E2E browser tests (Playwright, runs against a live URL with Demo Meter)
+# One-time setup: npx playwright install chromium
+npm run test:e2e      # Headless
+npm run test:e2e:ui   # Interactive Playwright UI for debugging
 ```
 
 ### Type Check

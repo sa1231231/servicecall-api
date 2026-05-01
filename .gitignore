@@ -5,3 +5,5 @@ src/lib/agent-generator/output/
 .DS_Store
 coverage/
 *.log
+playwright-report/
+test-results/
