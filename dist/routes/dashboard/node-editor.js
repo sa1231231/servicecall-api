@@ -1427,6 +1427,11 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
             res.status(400).json({ error: "Validation failed", errors });
             return;
         }
+        // Push to Retell now. Without this, the next GET pulls the old flow from
+        // Retell and overwrites the canonical we just stored — making the radio
+        // appear to revert. End-mode is a structural toggle with explicit user
+        // intent, so publish it immediately (same pattern as rollback).
+        await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
         // Persist path_end_modes on the client doc.
         const nextEndModes = {
             ...(doc.path_end_modes ?? {}),

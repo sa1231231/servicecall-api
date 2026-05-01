@@ -4641,14 +4641,18 @@
     showToast('Human request mode changed (save to publish)', 'success');
   }
 
-  // Per-path end-mode toggle. Hits the dedicated server endpoint immediately
-  // (mirrors edit-path-name) — the structural mutation needs server logic to
-  // add/remove Pre-Transfer + Transfer Call nodes. After it succeeds we reload
-  // the editor so the parsed flow reflects the new state.
+  // Per-path end-mode toggle. The server pushes to Retell immediately (this is
+  // a structural change: nodes are added/removed). After success, update the
+  // local neData in place — no refetch — so the page doesn't scroll/re-render
+  // unnecessarily and any other in-progress edits in neData survive.
   async function neEditPathEndMode(pathName, mode) {
-    if (neDirty && !confirm('You have unsaved changes. Save & Publish them first, or continue and discard them?')) {
-      // Re-sync the radio to the previous value
-      loadNodeEditor(neSlug, neAgentId);
+    if (neDirty && !confirm('You have unsaved changes that will be discarded if you switch end mode now. Save & Publish first, or click OK to discard.')) {
+      // User cancelled — re-sync the radio back to its prior value.
+      const path = neData?.paths?.find(p => p.name === pathName);
+      const prior = path?.endMode === 'transfer' ? 'transfer' : 'callback';
+      const radioName = 'pathEndMode_' + pathName;
+      const radio = document.querySelector('input[name="' + CSS.escape(radioName) + '"][value="' + prior + '"]');
+      if (radio) radio.checked = true;
       return;
     }
     try {
@@ -4662,18 +4666,32 @@
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || data.details || 'Failed');
+
+      // Update local state in place — don't refetch (avoids scroll jump).
+      const path = neData?.paths?.find(p => p.name === pathName);
+      if (path) {
+        path.endMode = mode;
+        path.transferDestination = data.transferDestination || undefined;
+      }
+      // Editor state matches Retell now (server pushed). Stay clean.
+      neDirty = false;
+
       showToast(
-        'Path "' + pathName + '" end mode → ' + (mode === 'transfer' ? 'Live transfer' : 'Callback') + ' (save to publish)',
+        'Path "' + pathName + '" end mode → ' + (mode === 'transfer' ? 'Live transfer' : 'Callback'),
         'success',
       );
-      // Mark dirty so the user knows to publish (the canonical changed but
-      // wasn't pushed to Retell yet).
-      markNeDirty();
-      loadNodeEditor(neSlug, neAgentId);
+      // Re-render to refresh the displayed transfer-destination label, etc.
+      // renderNodeEditor preserves scroll position internally.
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
-      // Reload to re-sync the radio with server state
-      loadNodeEditor(neSlug, neAgentId);
+      // On failure, snap the radio back to the actual neData state so the UI
+      // doesn't lie about what the server has.
+      const path = neData?.paths?.find(p => p.name === pathName);
+      const prior = path?.endMode === 'transfer' ? 'transfer' : 'callback';
+      const radioName = 'pathEndMode_' + pathName;
+      const radio = document.querySelector('input[name="' + CSS.escape(radioName) + '"][value="' + prior + '"]');
+      if (radio) radio.checked = true;
     }
   }
 
