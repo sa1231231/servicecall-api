@@ -1493,18 +1493,11 @@
   });
 
   function markTabDirty(tab) {
-    if (tabDirty[tab]) return;
     tabDirty[tab] = true;
-    const btnId = tab === 'settings' ? 'btnSaveSettings' : 'btnSaveDispatch';
-    const btn = document.getElementById(btnId);
-    if (btn) btn.style.display = '';
   }
 
   function clearTabDirty(tab) {
     tabDirty[tab] = false;
-    const btnId = tab === 'settings' ? 'btnSaveSettings' : 'btnSaveDispatch';
-    const btn = document.getElementById(btnId);
-    if (btn) btn.style.display = 'none';
   }
 
   async function loadCogs(slug) {
@@ -2042,7 +2035,7 @@
     </dl>`;
 
     if (hasPerm('edit_agents')) {
-      html += `<button class="btn-save" id="btnSaveSettings" onclick="saveAgentSettings()" style="display:none;margin-top:0.75rem;">Save Settings</button>`;
+      html += `<button class="btn-save" id="btnSaveSettings" onclick="saveAgentSettings()" style="margin-top:0.75rem;">Save Settings</button>`;
     }
 
     document.getElementById('tab-settings').innerHTML = html;
@@ -2074,7 +2067,7 @@
     </dl>`;
 
     if (hasPerm('edit_agents')) {
-      html += `<button class="btn-save" id="btnSaveDispatch" onclick="saveDispatch()" style="display:none;margin-top:0.75rem;">Save Dispatch</button>`;
+      html += `<button class="btn-save" id="btnSaveDispatch" onclick="saveDispatch()" style="margin-top:0.75rem;">Save Dispatch</button>`;
     }
 
     document.getElementById('tab-dispatch').innerHTML = html;
