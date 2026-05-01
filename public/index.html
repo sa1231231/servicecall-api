@@ -332,16 +332,30 @@
   }
   .path-builder-tree-header {
     padding: 0.5rem 0.75rem; border-bottom: 1px solid #f3f4f6;
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; flex-direction: column; gap: 0.3rem;
     background: #fafbfc;
   }
-  .path-builder-tree-header span { font-size: 0.78rem; font-weight: 600; color: #374151; }
-  .path-builder-tree-header button {
-    padding: 0.2rem 0.5rem; font-size: 0.72rem;
-    background: #6366f1; color: #fff; border: none; border-radius: 4px;
-    cursor: pointer; font-weight: 500;
+  .path-builder-tree-header .tree-header-title {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.78rem; font-weight: 600; color: #374151;
   }
-  .path-builder-tree-header button:hover { background: #4f46e5; }
+  .path-builder-tree-header .tree-header-title small {
+    font-size: 0.66rem; color: #6b7280; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 60%;
+  }
+  .path-builder-tree-header .tree-header-actions {
+    display: flex; gap: 0.25rem;
+  }
+  .path-builder-tree-header .tree-header-actions button {
+    flex: 1 1 0; padding: 0.3rem 0.3rem; font-size: 0.68rem;
+    background: #6366f1; color: #fff; border: none; border-radius: 4px;
+    cursor: pointer; font-weight: 500; white-space: nowrap;
+  }
+  .path-builder-tree-header .tree-header-actions button:hover { background: #4f46e5; }
+  .path-builder-tree-header .tree-header-actions button[disabled] {
+    background: #d1d5db; cursor: not-allowed;
+  }
   .path-builder-tree-list {
     list-style: none; padding: 0.4rem 0; margin: 0;
     overflow-y: auto; flex: 1 1 auto;
@@ -686,8 +700,15 @@
     <div class="path-builder">
       <aside class="path-builder-tree">
         <div class="path-builder-tree-header">
-          <span>Paths</span>
-          <button type="button" onclick="treeAddPath()">+ Path</button>
+          <div class="tree-header-title">
+            <span>Paths</span>
+            <small id="treeHeaderContext"></small>
+          </div>
+          <div class="tree-header-actions">
+            <button type="button" onclick="treeAddPath()">+ Path</button>
+            <button type="button" id="treeBtnAddDp" onclick="treeAddDataPointInContext()">+ Data Point</button>
+            <button type="button" id="treeBtnAddBranch" onclick="treeAddBranchInContext()">+ Branch</button>
+          </div>
         </div>
         <ul class="path-builder-tree-list" id="pathTreeList"></ul>
       </aside>
@@ -2481,7 +2502,10 @@
   }
 
   // Load lists and check auto-save after data points are ready
-  setTimeout(() => { loadAllLists(); checkAutoSave(); renderFlowDiagram(); renderPathTree(); }, 500);
+  setTimeout(() => {
+    loadAllLists(); checkAutoSave(); renderFlowDiagram(); renderPathTree();
+    if (typeof refreshTreeHeaderContext === 'function') refreshTreeHeaderContext();
+  }, 500);
 
   // ── Tree + detail editor (Tier 2) ─────────────────────────────────────
   // The hidden #routingPaths DOM is the source of truth. The tree is a view
@@ -2610,6 +2634,7 @@
     treeSelected = ref;
     renderPathTree();
     renderDetailPanel(ref);
+    refreshTreeHeaderContext();
   }
 
   function getCardByPathId(pathId) {
@@ -2668,11 +2693,6 @@
           <input type="text" id="detailPathDispatchCall" value="${esc(dispatchCall)}" placeholder="+15551234567">
         </div>
       </details>
-
-      <div class="detail-add-row">
-        <button type="button" class="primary" onclick="treeAddDataPoint('${esc(pathId)}')">+ Data Point</button>
-        <button type="button" onclick="treeAddBranch('${esc(pathId)}')">+ Branch</button>
-      </div>
     `;
     // Wire field syncs
     document.getElementById('detailPathName').addEventListener('input', (e) => {
@@ -2862,8 +2882,79 @@
   function onTreeFormChange(opts) {
     renderPathTree();
     if (opts && opts.refreshDetail) renderDetailPanel(treeSelected);
+    refreshTreeHeaderContext();
     scheduleAutoSave();
     scheduleDiagramRender();
+  }
+
+  // Resolve where to insert a new node based on the current selection.
+  // Returns { listEl, pathId } where listEl is the chain-list to append to.
+  // Falls back to the first path when nothing is selected.
+  function resolveTreeAddTarget() {
+    const cards = pathsContainer.querySelectorAll('.path-card');
+    if (cards.length === 0) return null;
+
+    if (treeSelected?.kind === 'path') {
+      const card = getCardByPathId(treeSelected.pathId);
+      if (!card) return null;
+      const list = card.querySelector('.chain-list[data-chain-root]');
+      return list ? { listEl: list, pathId: treeSelected.pathId } : null;
+    }
+    if (treeSelected?.kind === 'dp' || treeSelected?.kind === 'branch') {
+      const item = findItem(treeSelected.itemId);
+      if (!item) return null;
+      const list = item.parentNode; // the chain-list containing this item
+      return { listEl: list, pathId: treeSelected.pathId };
+    }
+    // Nothing selected → first path's root chain
+    const first = cards[0];
+    const pathId = first.dataset.pathId;
+    const list = first.querySelector('.chain-list[data-chain-root]');
+    return list ? { listEl: list, pathId } : null;
+  }
+
+  function treeAddDataPointInContext() {
+    const target = resolveTreeAddTarget();
+    if (!target) {
+      alert('Add a routing path first, then add data points to it.');
+      return;
+    }
+    addChainItem(target.listEl);
+    const items = target.listEl.querySelectorAll(':scope > .chain-item');
+    const last = items[items.length - 1];
+    if (last) treeSelected = { kind: 'dp', pathId: target.pathId, itemId: last.dataset.itemId };
+    onTreeFormChange({ refreshDetail: true });
+  }
+
+  function treeAddBranchInContext() {
+    const target = resolveTreeAddTarget();
+    if (!target) {
+      alert('Add a routing path first, then add branches to it.');
+      return;
+    }
+    const branch = addChainBranch(target.listEl);
+    if (branch) treeSelected = { kind: 'branch', pathId: target.pathId, itemId: branch.dataset.itemId };
+    onTreeFormChange({ refreshDetail: true });
+  }
+
+  // Update the small context hint in the tree header showing where new
+  // data points / branches will land.
+  function refreshTreeHeaderContext() {
+    const el = document.getElementById('treeHeaderContext');
+    if (!el) return;
+    const cards = pathsContainer.querySelectorAll('.path-card');
+    if (cards.length === 0) {
+      el.textContent = '';
+      return;
+    }
+    let pathId = treeSelected?.pathId;
+    if (!pathId) pathId = cards[0].dataset.pathId;
+    const card = getCardByPathId(pathId);
+    const name = (card?.querySelector('.path-name')?.value || '').trim() || '(unnamed)';
+    let suffix = '';
+    if (treeSelected?.kind === 'branch') suffix = ' › branch';
+    else if (treeSelected?.kind === 'dp') suffix = ' › after this point';
+    el.textContent = `→ ${name}${suffix}`;
   }
 
   // ── Flow diagram (Tier 1) ───────────────────────────────────────────────
