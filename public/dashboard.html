@@ -107,6 +107,46 @@
   }
   .btn-back:hover { background: #f9fafb; }
 
+  /* Agent detail tabs */
+  .agent-tabs-shell {
+    display: grid; grid-template-columns: 180px 1fr; gap: 1rem;
+    margin-top: 0.75rem;
+  }
+  .agent-tabs-nav {
+    display: flex; flex-direction: column; gap: 0.2rem;
+    position: sticky; top: 0.75rem; align-self: start;
+  }
+  .agent-tab {
+    text-align: left; padding: 0.5rem 0.75rem; font-size: 0.85rem;
+    background: transparent; color: #444; border: 0;
+    border-left: 3px solid transparent; border-radius: 4px;
+    cursor: pointer; font-weight: 500;
+  }
+  .agent-tab:hover { background: #f3f4f6; }
+  .agent-tab.active {
+    background: #eef2ff; color: #1e40af; border-left-color: #2563eb;
+    font-weight: 600;
+  }
+  .agent-tab-content { min-width: 0; }
+  .agent-tab-pane { display: none; }
+  .agent-tab-pane.active { display: block; }
+  .agent-tab-pane h2:first-child { margin-top: 0; }
+  @media (max-width: 768px) {
+    .agent-tabs-shell { grid-template-columns: 1fr; gap: 0.5rem; }
+    .agent-tabs-nav {
+      flex-direction: row; overflow-x: auto; position: static;
+      gap: 0.25rem; padding-bottom: 0.25rem;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .agent-tab {
+      flex-shrink: 0; border-left: 0; border-bottom: 3px solid transparent;
+      border-radius: 4px 4px 0 0;
+    }
+    .agent-tab.active {
+      border-left: 0; border-bottom-color: #2563eb;
+    }
+  }
+
   /* Detail config */
   .config-grid {
     display: grid; grid-template-columns: 160px 1fr; gap: 0.35rem 1rem;
@@ -901,32 +941,50 @@
   <div id="detailHeader"></div>
   <div id="smokeResults"></div>
   <div id="portalLinkSection"></div>
-  <h2>Configuration</h2>
-  <div id="detailConfig"></div>
-  <div id="nodeEditorContainer"></div>
-  <div data-perm="view_billing" style="display:flex;align-items:center;gap:0.5rem;margin-top:1rem;flex-wrap:wrap;">
-    <span style="font-size:0.82rem;font-weight:600;color:#555;">Cost Range:</span>
-    <input type="date" id="dashCostStart" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
-    <span style="color:#888;font-size:0.82rem;">to</span>
-    <input type="date" id="dashCostEnd" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
-    <div class="range-toggle" style="margin-left:0.25rem;">
-      <button class="range-btn active" onclick="dashQuickRange(7)">7d</button>
-      <button class="range-btn" onclick="dashQuickRange(30)">30d</button>
-    </div>
+
+  <div class="agent-tabs-shell">
+    <nav class="agent-tabs-nav" role="tablist">
+      <button class="agent-tab active" data-tab="settings" role="tab" onclick="switchAgentTab('settings')">Agent Settings</button>
+      <button class="agent-tab" data-tab="dispatch" role="tab" onclick="switchAgentTab('dispatch')">Dispatch</button>
+      <button class="agent-tab" data-tab="nodes"    role="tab" onclick="switchAgentTab('nodes')">Node Editor</button>
+      <button class="agent-tab" data-tab="billing"  role="tab" data-perm="view_billing" onclick="switchAgentTab('billing')">Billing</button>
+      <button class="agent-tab" data-tab="calls"    role="tab" onclick="switchAgentTab('calls')">Call Log</button>
+    </nav>
+    <section class="agent-tab-content">
+      <div id="tab-settings" class="agent-tab-pane active"></div>
+      <div id="tab-dispatch" class="agent-tab-pane"></div>
+      <div id="tab-nodes"    class="agent-tab-pane">
+        <div id="nodeEditorContainer"></div>
+      </div>
+      <div id="tab-billing" class="agent-tab-pane" data-perm="view_billing">
+        <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
+          <span style="font-size:0.82rem;font-weight:600;color:#555;">Cost Range:</span>
+          <input type="date" id="dashCostStart" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
+          <span style="color:#888;font-size:0.82rem;">to</span>
+          <input type="date" id="dashCostEnd" onchange="dashUpdateCostSummary()" style="padding:0.3rem 0.4rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.78rem;">
+          <div class="range-toggle" style="margin-left:0.25rem;">
+            <button class="range-btn active" onclick="dashQuickRange(7)">7d</button>
+            <button class="range-btn" onclick="dashQuickRange(30)">30d</button>
+          </div>
+        </div>
+        <div id="callCostSummary"></div>
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;margin-bottom:1rem;">
+          <canvas id="costChart" height="200"></canvas>
+        </div>
+        <div id="cogsSection" style="margin-bottom:1rem;">
+          <h3 style="margin-bottom:0.5rem;">Cost of Goods Sold</h3>
+          <div id="cogsContent"><div class="loading">Loading...</div></div>
+        </div>
+      </div>
+      <div id="tab-calls" class="agent-tab-pane">
+        <h3 style="margin-top:0;">Call Log</h3>
+        <div style="margin-bottom:0.75rem;">
+          <input type="text" id="dashCallSearch" placeholder="Search calls..." oninput="dashFilterCalls()" style="width:100%;padding:0.4rem 0.6rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+        </div>
+        <div id="callLogContent"><div class="loading">Loading calls...</div></div>
+      </div>
+    </section>
   </div>
-  <div id="callCostSummary" data-perm="view_billing"></div>
-  <div data-perm="view_billing" style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;margin-bottom:1rem;">
-    <canvas id="costChart" height="200"></canvas>
-  </div>
-  <div data-perm="view_billing" id="cogsSection" style="margin-bottom:1rem;">
-    <h2 style="margin-bottom:0.5rem;">Cost of Goods Sold</h2>
-    <div id="cogsContent"><div class="loading">Loading...</div></div>
-  </div>
-  <h2>Call Log</h2>
-  <div style="margin-bottom:0.75rem;">
-    <input type="text" id="dashCallSearch" placeholder="Search calls..." oninput="dashFilterCalls()" style="width:100%;padding:0.4rem 0.6rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
-  </div>
-  <div id="callLogContent"><div class="loading">Loading calls...</div></div>
 </div>
 
 <div id="toast" class="toast"></div>
@@ -1038,16 +1096,31 @@
   const CALL_LIMIT = 50;
   let dashAllCalls = [];
 
+  // ── Per-tab state ──────────────────────────────────────────────────
+  // The agent detail page is split into 5 tabs: settings, dispatch, nodes,
+  // billing, calls. Per-tab dirty flags and lazy-load flags live here.
+  const VALID_TABS = ['settings', 'dispatch', 'nodes', 'billing', 'calls'];
+  let activeTab = 'settings';
+  const tabDirty = { settings: false, dispatch: false }; // nodes uses neDirty
+  let billingLoaded = false;
+  let callsLoaded = false;
+
   // ── Cmd+S / Ctrl+S to save ──────────────────────────────────────
   document.addEventListener('keydown', (e) => {
     if (!((e.metaKey || e.ctrlKey) && e.key === 's')) return;
     e.preventDefault();
     e.stopPropagation();
-    // Agent detail view
+    // Agent detail view — save the active tab (per-tab Save button)
     const detail = document.getElementById('detailView');
     if (detail && detail.style.display !== 'none') {
-      const btn = document.getElementById('btnSave');
-      if (btn && !btn.disabled) { btn.click(); return; }
+      const tabBtnId = activeTab === 'settings' ? 'btnSaveSettings'
+        : activeTab === 'dispatch' ? 'btnSaveDispatch'
+        : activeTab === 'nodes' ? 'ne-publish-btn'
+        : null;
+      if (tabBtnId) {
+        const btn = document.getElementById(tabBtnId);
+        if (btn && !btn.disabled && btn.style.display !== 'none') { btn.click(); return; }
+      }
     }
     // Global settings view
     const settings = document.getElementById('settingsView');
@@ -1314,9 +1387,12 @@
     document.getElementById('listView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('detailView').style.display = '';
-    history.replaceState(null, '', '#agent=' + encodeURIComponent(slug));
-    document.getElementById('detailConfig').innerHTML = '<div class="loading">Loading...</div>';
-    document.getElementById('callLogContent').innerHTML = '<div class="loading">Loading calls...</div>';
+
+    // Parse desired tab from URL hash (#agent=slug&tab=settings)
+    const desiredTab = parseTabFromHash() || 'settings';
+    setAgentDetailHash(slug, desiredTab);
+
+    document.getElementById('tab-settings').innerHTML = '<div class="loading">Loading...</div>';
 
     try {
       const res = await fetch('/dashboard/api/agents/' + slug);
@@ -1324,17 +1400,111 @@
       const doc = await res.json();
       renderDetail(doc);
     } catch (err) {
-      document.getElementById('detailConfig').innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+      document.getElementById('tab-settings').innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+      return;
     }
 
-    loadCalls(true);
     loadPortalLink(slug);
-    loadCogs(slug);
 
-    // Load node editor if agent has Retell agent IDs
-    if (originalDoc && originalDoc.agent_ids && originalDoc.agent_ids.length > 0) {
-      loadNodeEditor(slug, originalDoc.agent_ids[0]);
+    // Activate the desired tab — lazy-loads its data on first activation.
+    switchAgentTab(desiredTab, { skipDirtyCheck: true });
+  }
+
+  // Read &tab=... from current hash (after #agent=...). Returns null if absent/invalid.
+  function parseTabFromHash() {
+    const h = window.location.hash || '';
+    const m = h.match(/[#&]tab=([^&]+)/);
+    if (!m) return null;
+    const t = decodeURIComponent(m[1]);
+    return VALID_TABS.includes(t) ? t : null;
+  }
+
+  function setAgentDetailHash(slug, tab) {
+    const params = '#agent=' + encodeURIComponent(slug) + (tab ? '&tab=' + encodeURIComponent(tab) : '');
+    history.replaceState(null, '', params);
+  }
+
+  // Switch to a tab. Prompts before discarding unsaved changes in the
+  // currently active tab. Lazy-loads node editor / billing / calls on first
+  // activation so initial agent load only fetches the doc + portal link.
+  function switchAgentTab(tabId, opts = {}) {
+    if (!VALID_TABS.includes(tabId)) tabId = 'settings';
+
+    if (!opts.skipDirtyCheck && currentTabDirty()) {
+      const ok = confirm('Discard unsaved changes in this tab?');
+      if (!ok) {
+        // Re-sync nav button selection back to the active tab.
+        document.querySelectorAll('.agent-tab').forEach(b => {
+          b.classList.toggle('active', b.dataset.tab === activeTab);
+        });
+        return;
+      }
+      // User chose to discard — clear the dirty flags. Node-editor neDirty stays
+      // until they reload the editor; switching away simply abandons the edits.
+      if (activeTab === 'settings') tabDirty.settings = false;
+      if (activeTab === 'dispatch') tabDirty.dispatch = false;
     }
+
+    document.querySelectorAll('.agent-tab').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tabId);
+    });
+    document.querySelectorAll('.agent-tab-pane').forEach(p => {
+      p.classList.toggle('active', p.id === 'tab-' + tabId);
+    });
+    activeTab = tabId;
+    setAgentDetailHash(currentSlug, tabId);
+
+    // Lazy-load on first activation.
+    if (tabId === 'nodes' && originalDoc?.agent_ids?.length > 0 && !window.neData) {
+      loadNodeEditor(currentSlug, originalDoc.agent_ids[0]);
+    }
+    if (tabId === 'billing' && !billingLoaded && currentSlug) {
+      dashUpdateCostSummary();
+      loadCogs(currentSlug);
+      billingLoaded = true;
+    }
+    if (tabId === 'calls' && !callsLoaded && currentSlug) {
+      loadCalls(true);
+      callsLoaded = true;
+    }
+  }
+
+  function currentTabDirty() {
+    if (activeTab === 'settings') return tabDirty.settings;
+    if (activeTab === 'dispatch') return tabDirty.dispatch;
+    if (activeTab === 'nodes') return !!window.neDirty;
+    return false;
+  }
+
+  // Delegated dirty-tracking for Settings + Dispatch tabs. Edits in any
+  // input/select/checkbox inside the pane mark the corresponding tab dirty
+  // and reveal its Save button.
+  document.addEventListener('input', (e) => {
+    const pane = e.target.closest('.agent-tab-pane');
+    if (!pane) return;
+    if (pane.id === 'tab-settings') markTabDirty('settings');
+    else if (pane.id === 'tab-dispatch') markTabDirty('dispatch');
+  });
+  document.addEventListener('change', (e) => {
+    const pane = e.target.closest('.agent-tab-pane');
+    if (!pane) return;
+    if (pane.id === 'tab-settings') markTabDirty('settings');
+    else if (pane.id === 'tab-dispatch') markTabDirty('dispatch');
+  });
+
+  function markTabDirty(tab) {
+    if (tabDirty[tab]) return;
+    tabDirty[tab] = true;
+    const btnId = tab === 'settings' ? 'btnSaveSettings' : 'btnSaveDispatch';
+    const btn = document.getElementById(btnId);
+    if (btn) btn.style.display = '';
+  }
+
+  function clearTabDirty(tab) {
+    tabDirty[tab] = false;
+    const btnId = tab === 'settings' ? 'btnSaveSettings' : 'btnSaveDispatch';
+    const btn = document.getElementById(btnId);
+    if (btn) btn.style.display = 'none';
   }
 
   async function loadCogs(slug) {
@@ -1817,6 +1987,19 @@
       buildHeaderButtons(doc._id) + `</h1>`;
     document.getElementById('smokeResults').innerHTML = '';
 
+    // Render tab content
+    renderTabSettings(doc);
+    renderTabDispatch(doc);
+    // nodes/billing/calls tabs render lazily on activation (see switchAgentTab).
+
+    // Reset per-tab dirty + lazy-load flags for this agent
+    tabDirty.settings = false;
+    tabDirty.dispatch = false;
+    billingLoaded = false;
+    callsLoaded = false;
+  }
+
+  function renderTabSettings(doc) {
     let html = `<h2>Agent Settings</h2>
     <dl class="config-grid">
       <input type="hidden" id="edit-name" value="${esc(doc.name)}">
@@ -1826,7 +2009,7 @@
         <div class="config-hint">Retell agent IDs linked to this client. Inbound calls from these agents trigger dispatch notifications.</div></dd>
 
       <dt title="Retell agent used for outbound dispatch calls — its bound phone number is the caller ID">Summary Agent</dt><dd>${chipInputHtml('chip-summary-agent', doc.summary_agent_id ? [doc.summary_agent_id] : [], 'agent_...')}
-        <div class="config-hint">The Retell agent that makes outbound dispatch calls. Its bound phone number is used as the caller ID. Works with Dispatch Call above.</div></dd>
+        <div class="config-hint">The Retell agent that makes outbound dispatch calls. Its bound phone number is used as the caller ID. Works with Dispatch Call (in Dispatch tab).</div></dd>
 
       <dt title="When the client's free trial started">Trial Start Date</dt><dd>
         <input type="date" class="edit-input" id="edit-trial-start" value="${doc.trial_start_date ? doc.trial_start_date.slice(0, 10) : ''}" style="width:auto;">
@@ -1856,12 +2039,20 @@
         </label>
         <div class="config-hint">Sends an automated weekly call summary email to the client's dispatch email addresses.</div>
       </dd>
-    </dl>
+    </dl>`;
 
-    <h2>Default Dispatch</h2>
+    if (hasPerm('edit_agents')) {
+      html += `<button class="btn-save" id="btnSaveSettings" onclick="saveAgentSettings()" style="display:none;margin-top:0.75rem;">Save Settings</button>`;
+    }
+
+    document.getElementById('tab-settings').innerHTML = html;
+  }
+
+  function renderTabDispatch(doc) {
+    let html = `<h2>Default Dispatch</h2>
     <dl class="config-grid">
       <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}
-        <div class="config-hint">These numbers receive an SMS with the call summary after every call. Routing path overrides (below) take priority when configured.</div></dd>
+        <div class="config-hint">These numbers receive an SMS with the call summary after every call. Routing path overrides (in Node Editor) take priority when configured.</div></dd>
 
       <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}
         <div class="config-hint">These addresses receive an email with the full call summary after every call.</div></dd>
@@ -1883,11 +2074,10 @@
     </dl>`;
 
     if (hasPerm('edit_agents')) {
-      html += `<button class="btn-save" id="btnSave" onclick="saveChanges()">Save Changes</button>`;
+      html += `<button class="btn-save" id="btnSaveDispatch" onclick="saveDispatch()" style="display:none;margin-top:0.75rem;">Save Dispatch</button>`;
     }
 
-    document.getElementById('detailConfig').innerHTML = html;
-
+    document.getElementById('tab-dispatch').innerHTML = html;
   }
 
   function buildOverrideRows(overrides) {
@@ -1938,52 +2128,50 @@
     return a.every((v, i) => v === b[i]);
   }
 
-  async function saveChanges() {
-    // Validate all fields before saving
-    const validationErrors = validateDashboardFields();
-    if (validationErrors.length > 0) {
-      alert('Please fix the following:\n\n' + validationErrors.join('\n'));
+  // ── Per-tab Save handlers ──────────────────────────────────────────
+  //
+  // Settings tab persists agent-identity + lifecycle flags. Dispatch tab
+  // persists client-default dispatch routing. Both PATCH the same generic
+  // /agents/:slug endpoint with disjoint field subsets — `updateClientFields`
+  // on the server whitelists each field independently.
+  //
+  // The Node Editor's path UI also renders fields that map onto MongoDB
+  // (per-path `message_types` overrides + `dispatch_by_type` per-path
+  // dispatch overrides). Those are collected by `collectNodeEditorClientUpdates()`
+  // and PATCHed alongside the flow push from `neSaveAndPublish`.
+  //
+  // The "active" flag has a dedicated endpoint (updates Retell phone-number
+  // bindings) — handled inline in `saveAgentSettings`.
+
+  async function saveAgentSettings() {
+    const errors = validateDashboardFields().filter(e => !/Dispatch/i.test(e));
+    if (errors.length > 0) {
+      alert('Please fix the following:\n\n' + errors.join('\n'));
       return;
     }
 
-    const btn = document.getElementById('btnSave');
+    const btn = document.getElementById('btnSaveSettings');
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
     const updates = {};
 
-    // Chip fields
     const newAgentIds = getChipValues('chip-agent-ids');
     if (!arraysEqual(newAgentIds, originalDoc.agent_ids || [])) {
       updates.agent_ids = newAgentIds;
     }
 
-    const newTextNums = getChipValues('chip-dispatch-text');
-    if (!arraysEqual(newTextNums, originalDoc.dispatch_text_numbers || [])) {
-      updates.dispatch_text_numbers = newTextNums;
-    }
-
-    const newEmails = getChipValues('chip-dispatch-email');
-    const origEmails = originalDoc.dispatch_email || [];
-    if (!arraysEqual(newEmails, origEmails)) {
-      updates.dispatch_email = newEmails.length > 0 ? newEmails : null;
-    }
-
-    const newOverrides = getOverrides();
-    if (!overridesEqual(newOverrides, originalDoc.dispatch_call_overrides)) {
-      updates.dispatch_call_overrides = newOverrides;
-    }
-
-    // Display name
+    // Display name (hidden input synced from Node Editor display-name field)
     const newName = document.getElementById('edit-name').value.trim();
     if (newName && newName !== originalDoc.name) {
       updates.name = newName;
     }
 
-    // Text fields — send null for empty strings
-    const callNum = document.getElementById('edit-dispatch-call').value.trim() || null;
-    if (callNum !== (originalDoc.dispatch_call_number || null)) {
-      updates.dispatch_call_number = callNum;
+    // Notification greeting (hidden input synced from Node Editor)
+    const newGreeting = document.getElementById('edit-greeting').value.trim() || null;
+    const origGreeting = originalDoc.notification_greeting || null;
+    if (newGreeting !== origGreeting) {
+      updates.notification_greeting = newGreeting;
     }
 
     const summaryAgentChips = getChipValues('chip-summary-agent');
@@ -1992,14 +2180,13 @@
       updates.summary_agent_id = summaryAgent;
     }
 
-    // Trial start date
     const newTrialStart = document.getElementById('edit-trial-start').value || null;
     const origTrialStart = originalDoc.trial_start_date ? originalDoc.trial_start_date.slice(0, 10) : null;
     if (newTrialStart !== origTrialStart) {
       updates.trial_start_date = newTrialStart;
     }
 
-    // Active toggle is handled via dedicated endpoint (updates Retell phone numbers)
+    // Active flag — dedicated endpoint (updates Retell phone bindings)
     const active = document.getElementById('edit-active').checked;
     const activeChanged = active !== (originalDoc.active !== false);
 
@@ -2013,21 +2200,146 @@
       updates.weekly_report_enabled = weeklyReport;
     }
 
-    // Webhook URL
+    if (Object.keys(updates).length === 0 && !activeChanged) {
+      showToast('No changes to save', 'success');
+      btn.disabled = false;
+      btn.textContent = 'Save Settings';
+      return;
+    }
+
+    try {
+      if (activeChanged) {
+        const activeRes = await fetch('/dashboard/api/agents/' + currentSlug + '/active', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active }),
+        });
+        if (!activeRes.ok) {
+          const d = await activeRes.json();
+          throw new Error(d.error || 'Failed to toggle active: ' + activeRes.status);
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        const res = await fetch('/dashboard/api/agents/' + currentSlug, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed: ' + res.status);
+        }
+      }
+
+      const freshRes = await fetch('/dashboard/api/agents/' + currentSlug);
+      const freshDoc = await freshRes.json();
+      originalDoc = JSON.parse(JSON.stringify(freshDoc));
+
+      const total = Object.keys(updates).length + (activeChanged ? 1 : 0);
+      showToast('Saved ' + total + ' field(s)', 'success');
+
+      // Refresh header badges if shadow_mode or active changed.
+      if ('shadow_mode' in updates || activeChanged) {
+        const sc = originalDoc.shadow_mode ? 'badge-shadow' : 'badge-live';
+        const sl = originalDoc.shadow_mode ? 'Shadow' : 'Live';
+        const inactiveBadge = originalDoc.active === false
+          ? ' <span class="badge" style="font-size:0.7rem;vertical-align:middle;background:#fee2e2;color:#991b1b;">Inactive</span>'
+          : '';
+        document.getElementById('detailHeader').innerHTML =
+          `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
+          buildHeaderButtons(currentSlug) + `</h1>`;
+      }
+      clearTabDirty('settings');
+    } catch (err) {
+      showToast('Save failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save Settings';
+    }
+  }
+
+  async function saveDispatch() {
+    const errors = validateDashboardFields().filter(e => /Dispatch/i.test(e) || /webhook/i.test(e));
+    if (errors.length > 0) {
+      alert('Please fix the following:\n\n' + errors.join('\n'));
+      return;
+    }
+
+    const btn = document.getElementById('btnSaveDispatch');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const updates = {};
+
+    const newTextNums = getChipValues('chip-dispatch-text');
+    if (!arraysEqual(newTextNums, originalDoc.dispatch_text_numbers || [])) {
+      updates.dispatch_text_numbers = newTextNums;
+    }
+
+    const newEmails = getChipValues('chip-dispatch-email');
+    const origEmails = originalDoc.dispatch_email || [];
+    if (!arraysEqual(newEmails, origEmails)) {
+      updates.dispatch_email = newEmails.length > 0 ? newEmails : null;
+    }
+
+    const callNum = document.getElementById('edit-dispatch-call').value.trim() || null;
+    if (callNum !== (originalDoc.dispatch_call_number || null)) {
+      updates.dispatch_call_number = callNum;
+    }
+
+    const newOverrides = getOverrides();
+    if (!overridesEqual(newOverrides, originalDoc.dispatch_call_overrides)) {
+      updates.dispatch_call_overrides = newOverrides;
+    }
+
     const newWebhook = document.getElementById('edit-webhook-url').value.trim() || null;
     const origWebhook = originalDoc.webhook_url || null;
     if (newWebhook !== origWebhook) {
       updates.webhook_url = newWebhook;
     }
 
-    // Notification greeting
-    const newGreeting = document.getElementById('edit-greeting').value.trim() || null;
-    const origGreeting = originalDoc.notification_greeting || null;
-    if (newGreeting !== origGreeting) {
-      updates.notification_greeting = newGreeting;
+    if (Object.keys(updates).length === 0) {
+      showToast('No changes to save', 'success');
+      btn.disabled = false;
+      btn.textContent = 'Save Dispatch';
+      return;
     }
 
-    // Field visibility toggles + label edits
+    try {
+      const res = await fetch('/dashboard/api/agents/' + currentSlug, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed: ' + res.status);
+      }
+
+      const freshRes = await fetch('/dashboard/api/agents/' + currentSlug);
+      const freshDoc = await freshRes.json();
+      originalDoc = JSON.parse(JSON.stringify(freshDoc));
+
+      showToast('Saved ' + Object.keys(updates).length + ' field(s)', 'success');
+      clearTabDirty('dispatch');
+    } catch (err) {
+      showToast('Save failed: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save Dispatch';
+    }
+  }
+
+  // Collect MongoDB-side updates that originate from the Node Editor's path
+  // UI: `message_types` (field labels, show flags, required flags, subject
+  // templates, ordering) and `dispatch_by_type` (per-path dispatch overrides).
+  // These persist to the client doc but their UI lives inside the Node
+  // Editor — so `neSaveAndPublish` calls this alongside the flow push.
+  function collectNodeEditorClientUpdates() {
+    if (!originalDoc) return {};
+    const updates = {};
+
     const fieldToggles = document.querySelectorAll('.field-toggle');
     if (fieldToggles.length > 0) {
       const updatedMt = JSON.parse(JSON.stringify(originalDoc.message_types || {}));
@@ -2043,12 +2355,10 @@
         const wasVisible = field.show !== false;
         if (isVisible !== wasVisible) {
           field.show = isVisible ? undefined : false;
-          // Clean up: remove show property entirely when true (default)
           if (isVisible) delete field.show;
           mtChanged = true;
         }
       }
-      // Field label edits
       const labelInputs = document.querySelectorAll('.field-label-input');
       for (const input of labelInputs) {
         const mtKey = input.dataset.mtKey;
@@ -2062,7 +2372,6 @@
           mtChanged = true;
         }
       }
-      // Subject template edits
       const subjectInputs = document.querySelectorAll('.subject-template-input');
       for (const input of subjectInputs) {
         const mtKey = input.dataset.mtKey;
@@ -2073,7 +2382,6 @@
           mtChanged = true;
         }
       }
-      // Required field toggles
       const reqToggles = document.querySelectorAll('.field-required-toggle');
       for (const toggle of reqToggles) {
         const mtKey = toggle.dataset.mtKey;
@@ -2089,7 +2397,6 @@
           mtChanged = true;
         }
       }
-      // Field reordering — rebuild fields array from data point row order
       document.querySelectorAll('.ne-dp-list[data-ne-path]').forEach(list => {
         const pathName = list.dataset.nePath;
         const mtKey = findMtKey(pathName);
@@ -2103,20 +2410,15 @@
           mtChanged = true;
         }
       });
-
       if (mtChanged) updates.message_types = updatedMt;
     }
 
-    // dispatch_by_type overrides (read from chip inputs)
-    const dbtCallInputs = document.querySelectorAll('.dbt-call');
+    // Per-path dispatch overrides (chip inputs inside path cards)
     const dbtChipContainers = document.querySelectorAll('[id^="dbt-sms-"]');
-    if (dbtCallInputs.length > 0 || dbtChipContainers.length > 0) {
+    if (dbtChipContainers.length > 0) {
       const newDbt = {};
-      const seenKeys = new Set();
-      // Collect from chip SMS inputs
       dbtChipContainers.forEach(container => {
         const mtKey = container.id.replace('dbt-sms-', '');
-        seenKeys.add(mtKey);
         const sms = getChipValues(container.id);
         const emails = getChipValues('dbt-email-' + mtKey);
         const callInput = document.querySelector(`.dbt-call[data-mt-key="${mtKey}"]`);
@@ -2135,65 +2437,7 @@
       }
     }
 
-    if (Object.keys(updates).length === 0 && !activeChanged) {
-      showToast('No changes to save', 'success');
-      btn.disabled = false;
-      btn.textContent = 'Save Changes';
-      return;
-    }
-
-    try {
-      // Handle active toggle via dedicated endpoint (updates Retell phone numbers)
-      if (activeChanged) {
-        const activeRes = await fetch('/dashboard/api/agents/' + currentSlug + '/active', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ active }),
-        });
-        if (!activeRes.ok) {
-          const d = await activeRes.json();
-          throw new Error(d.error || 'Failed to toggle active: ' + activeRes.status);
-        }
-      }
-
-      // Handle other field updates via generic PATCH
-      if (Object.keys(updates).length > 0) {
-        const res = await fetch('/dashboard/api/agents/' + currentSlug, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updates),
-        });
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || 'Failed: ' + res.status);
-        }
-      }
-
-      // Refresh the full doc from server
-      const freshRes = await fetch('/dashboard/api/agents/' + currentSlug);
-      const freshDoc = await freshRes.json();
-      originalDoc = JSON.parse(JSON.stringify(freshDoc));
-
-      const totalChanges = Object.keys(updates).length + (activeChanged ? 1 : 0);
-      showToast('Saved ' + totalChanges + ' field(s)', 'success');
-
-      // Update header badges if shadow mode or active changed
-      if ('shadow_mode' in updates || activeChanged) {
-        const sc = originalDoc.shadow_mode ? 'badge-shadow' : 'badge-live';
-        const sl = originalDoc.shadow_mode ? 'Shadow' : 'Live';
-        const inactiveBadge = originalDoc.active === false
-          ? ' <span class="badge" style="font-size:0.7rem;vertical-align:middle;background:#fee2e2;color:#991b1b;">Inactive</span>'
-          : '';
-        document.getElementById('detailHeader').innerHTML =
-          `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
-          buildHeaderButtons(currentSlug) + `</h1>`;
-      }
-    } catch (err) {
-      showToast('Save failed: ' + err.message, 'error');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'Save Changes';
-    }
+    return updates;
   }
 
   // ── CALL LOG ───────────────────────────────────────────────────────
@@ -4196,7 +4440,7 @@
     const neGreetHidden = document.getElementById('ne-greeting-hidden');
     if (neGreetEditor && neGreetHidden) {
       initTemplateEditor(neGreetEditor, neGreetHidden, ['business_name'], () => {
-        // Sync to main edit-greeting hidden input for saveChanges()
+        // Sync to main edit-greeting hidden input for saveAgentSettings()
         const mainHidden = document.getElementById('edit-greeting');
         if (mainHidden) mainHidden.value = neGreetHidden.value;
       });
@@ -4956,6 +5200,7 @@
     }
 
     try {
+      // 1. Push the flow + per-node changes to Retell (and refresh canonical).
       const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/save-and-publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4963,6 +5208,26 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.details || data.error || 'Failed');
+
+      // 2. Persist Node-Editor-resident MongoDB fields (message_types,
+      //    dispatch_by_type) — their inputs live in the path cards, but
+      //    they're client-doc fields, not flow nodes.
+      const clientUpdates = collectNodeEditorClientUpdates();
+      if (Object.keys(clientUpdates).length > 0) {
+        const r2 = await fetch('/dashboard/api/agents/' + neSlug, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(clientUpdates),
+        });
+        if (!r2.ok) {
+          const d2 = await r2.json();
+          throw new Error(d2.error || 'Notification config save failed: ' + r2.status);
+        }
+        // Refresh originalDoc so subsequent diffs see the new state.
+        const fresh = await fetch('/dashboard/api/agents/' + neSlug);
+        if (fresh.ok) originalDoc = JSON.parse(JSON.stringify(await fresh.json()));
+      }
+
       neDirty = false;
       showToast('Published to Retell', 'success');
       loadNodeEditor(neSlug, neAgentId);
@@ -5001,9 +5266,10 @@
     if (hash === '#settings') {
       showSettings();
     } else {
-      const m = hash.match(/^#agent=(.+)/);
+      const m = hash.match(/^#agent=([^&]+)/);
       if (m) {
         const slug = decodeURIComponent(m[1]);
+        // showDetail reads &tab= from the hash itself for deep linking.
         showDetail(slug);
       }
     }
