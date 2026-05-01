@@ -1713,30 +1713,6 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
                 expect(resp.status).toBe(400);
             });
         });
-        describe("Stripe webhook", () => {
-            it("rejects missing stripe-signature with 400", async () => {
-                const resp = await fetch(url("/stripe/webhook"), {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ id: "evt_test", type: "ping" }),
-                });
-                expect(resp.status).toBe(400);
-                const body = await json(resp);
-                expect(body.outcome).toBe("invalid_stripe_signature");
-            });
-            it("rejects invalid signature with 400", async () => {
-                const resp = await fetch(url("/stripe/webhook"), {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "stripe-signature": "t=1726000000,v1=deadbeef",
-                    },
-                    body: JSON.stringify({ id: "evt_test", type: "ping" }),
-                });
-                expect(resp.status).toBe(400);
-                expect((await json(resp)).outcome).toBe("invalid_stripe_signature");
-            });
-        });
     });
     // ══════════════════════════════════════════════════════════════════════════
     // Agent delete lifecycle — validation/404 paths only.

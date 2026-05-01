@@ -328,7 +328,6 @@ app.use((req, res, next) => {
     next();
 });
 // ── External/machine routes (API key protected) ──────────────────────────────
-// app.use("/stripe", stripeRouter);
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
 // ── Start ────────────────────────────────────────────────────────────────────

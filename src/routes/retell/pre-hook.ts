@@ -70,8 +70,6 @@ export async function preHookHandler(req: Request, res: Response) {
     active: client?.active !== false,
   });
 
-  // TODO: Verify business has credit balance > 0
-
   // Pass through — let Retell handle with the bound inbound agent
   res.status(200).json({ [responseKey]: {} });
 }

@@ -1,7 +1,5 @@
 import "dotenv/config";
 export declare const config: {
-    STRIPE_SIGNING_SECRET: string;
-    STRIPE_API_KEY: string;
     RETELL_SIGNATURE_KEY: string;
     RETELL_API_KEY: string;
     GHL_API_KEY: string;
@@ -15,6 +13,8 @@ export declare const config: {
     TWILIO_TRUNK_SID: string;
     TWILIO_EMERGENCY_ADDRESS_SID: string;
     TWILIO_MESSAGING_SERVICE_SID: string;
+    RETELL_SIP_TRUNK_AUTH_USERNAME: string;
+    RETELL_SIP_TRUNK_AUTH_PASSWORD: string;
     GOOGLE_REVIEW_URL: string;
     MONGODB_URL: string;
     R2_ENDPOINT: string;

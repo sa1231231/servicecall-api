@@ -7,8 +7,6 @@ function requireEnv(key) {
     return val;
 }
 export const config = {
-    STRIPE_SIGNING_SECRET: process.env.STRIPE_SIGNING_SECRET ?? "",
-    STRIPE_API_KEY: process.env.STRIPE_API_KEY ?? "",
     RETELL_SIGNATURE_KEY: requireEnv("RETELL_SIGNATURE_KEY"),
     RETELL_API_KEY: requireEnv("RETELL_API_KEY"),
     GHL_API_KEY: requireEnv("GHL_API_KEY"),
@@ -25,6 +23,11 @@ export const config = {
     TWILIO_TRUNK_SID: process.env.TWILIO_TRUNK_SID ?? "",
     TWILIO_EMERGENCY_ADDRESS_SID: process.env.TWILIO_EMERGENCY_ADDRESS_SID ?? "",
     TWILIO_MESSAGING_SERVICE_SID: process.env.TWILIO_MESSAGING_SERVICE_SID ?? "",
+    // Retell BYOC outbound trunk auth — applied to every Retell phone number we
+    // provision so warm transfer can route outbound through the Twilio trunk.
+    // Username matches the Twilio credential list user; password is digest auth.
+    RETELL_SIP_TRUNK_AUTH_USERNAME: process.env.RETELL_SIP_TRUNK_AUTH_USERNAME ?? "",
+    RETELL_SIP_TRUNK_AUTH_PASSWORD: process.env.RETELL_SIP_TRUNK_AUTH_PASSWORD ?? "",
     // Google Review
     GOOGLE_REVIEW_URL: process.env.GOOGLE_REVIEW_URL ?? "",
     // MongoDB

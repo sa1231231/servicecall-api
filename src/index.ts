@@ -7,7 +7,6 @@ import { config } from "./config.js";
 import { initDb } from "./lib/db.js";
 import { loadClientsFromDb, purgeExpiredClients } from "./config/client-store.js";
 import { healthRouter } from "./routes/health.js";
-import { stripeRouter } from "./routes/stripe/index.js";
 import { retellRouter } from "./routes/retell/index.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
@@ -346,7 +345,6 @@ app.use((req, res, next) => {
 });
 
 // ── External/machine routes (API key protected) ──────────────────────────────
-// app.use("/stripe", stripeRouter);
 app.use("/deckscience", deckscienceRouter);
 app.use("/agents", agentsRouter);
 

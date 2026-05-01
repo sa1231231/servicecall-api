@@ -20,7 +20,6 @@
     "nodemailer": "^8.0.3",
     "resend": "^6.9.4",
     "retell-sdk": "^5.9.0",
-    "stripe": "^20.4.1",
     "twilio": "^5.13.1"
   },
   "devDependencies": {

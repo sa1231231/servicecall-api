@@ -43,9 +43,7 @@ src/
 │   ├── notify-email.ts             # Resend email dispatch
 │   ├── retry.ts                    # Exponential backoff retry
 │   ├── escape-html.ts              # HTML escaping for emails
-│   ├── verify-retell.ts            # Retell webhook signature verification
-│   ├── verify-stripe.ts            # Stripe webhook signature verification
-│   └── utils.ts                    # Utility functions
+│   └── verify-retell.ts            # Retell webhook signature verification
 └── routes/
     ├── health.ts                   # GET /health
     ├── retell/
