@@ -105,6 +105,9 @@ test.describe("Form builder — validation", () => {
 test.describe("Form builder — chip inputs", () => {
   test("dispatch text chip input adds + removes values", async ({ page }) => {
     await gotoFormReady(page);
+    // The dispatch chips live inside the "Default Dispatch" sub-tab. Form
+    // defaults to the "Business" tab — switch first or chip inputs are hidden.
+    await page.locator('button.form-subtab[data-form-tab="dispatch"]').click();
 
     await addChip(page, "chip-dispatch-text", "+15551112222");
     await addChip(page, "chip-dispatch-text", "+15553334444");
@@ -123,6 +126,7 @@ test.describe("Form builder — chip inputs", () => {
 
   test("dispatch email chip input accepts and renders multiple values", async ({ page }) => {
     await gotoFormReady(page);
+    await page.locator('button.form-subtab[data-form-tab="dispatch"]').click();
 
     await addChip(page, "chip-dispatch-email", "alpha@test.com");
     await addChip(page, "chip-dispatch-email", "beta@test.com");

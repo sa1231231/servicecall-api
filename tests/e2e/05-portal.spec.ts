@@ -43,15 +43,17 @@ test.describe("Portal — token auth + dispatch view", () => {
     await expect(page.locator("#portal-tab-dispatch")).toBeVisible();
   });
 
-  test("clicking the Analytics tab lazy-loads call stats", async ({ page }) => {
+  test("clicking the Activity tab lazy-loads call stats and call log", async ({ page }) => {
     await page.goto(portalUrl);
     await expect(page.locator("#content")).toBeVisible({ timeout: 15_000 });
 
-    // Click the analytics tab button.
-    await page.locator('.portal-tab[data-tab="analytics"]').click();
+    // The portal merged Analytics + Call Log into a single "Activity" tab.
+    await page.locator('.portal-tab[data-tab="activity"]').click();
 
-    // Stats row should populate. (Even if zero calls, the row renders empty
-    // counts — we just check it's visible.)
+    // Stats row should populate. (Even if zero calls, the row renders with
+    // a "Calculating..." placeholder, then resolves — we just check it's visible.)
     await expect(page.locator("#statsRow")).toBeVisible({ timeout: 15_000 });
+    // The activity tab also includes a call log section.
+    await expect(page.locator("#callSearch")).toBeVisible();
   });
 });

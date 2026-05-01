@@ -14,8 +14,8 @@ test.describe("Node Editor — read-only smoke", () => {
     // Click Demo Meter row to open detail view. The click triggers showDetail()
     // which fetches /dashboard/api/agents/demo-meter — we need that fetch to
     // resolve BEFORE clicking the Node Editor tab, otherwise switchAgentTab's
-    // lazy-load gate (`originalDoc?.agent_ids?.length > 0`) is false and
-    // loadNodeEditor never fires.
+    // lazy-load gate (`originalDoc?.agent_id`) is false and loadNodeEditor
+    // never fires.
     const row = page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`);
     await expect(row).toBeVisible({ timeout: 15_000 });
 
