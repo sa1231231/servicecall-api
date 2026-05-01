@@ -291,6 +291,30 @@
   }
   .path-dp-order li .dp-remove:hover { color: #991b1b; }
 
+  /* ── Form sub-tabs ────────────────────────────────────────────────
+     Mirrors the .ne-subtabs pattern in dashboard.html (Node Editor) so
+     operators see the same horizontal tab strip + same groupings on
+     create as they do when later editing the agent. */
+  .form-subtabs {
+    display: flex; gap: 0.25rem; flex-wrap: wrap;
+    border-bottom: 1px solid #e5e7eb; margin: 0 0 1rem;
+  }
+  .form-subtab {
+    padding: 0.55rem 1rem; font-size: 0.92rem; font-weight: 500;
+    color: #555; background: transparent; border: 0;
+    border-bottom: 2px solid transparent; border-radius: 0;
+    cursor: pointer; font-family: inherit; margin-bottom: -1px;
+  }
+  .form-subtab:hover { color: #1e40af; }
+  .form-subtab.active {
+    color: #1e40af; font-weight: 600; border-bottom-color: #2563eb;
+  }
+  .form-subtab-pane { display: none; }
+  .form-subtab-pane.active { display: block; }
+  /* Drop the first <h2> in each pane — the tab label already names the
+     section, so the redundant heading is just noise. */
+  .form-subtab-pane > h2:first-of-type { display: none; }
+
   /* ── Template editor (variable autocomplete + green pills) ────── */
   .tmpl-editor-wrap { position: relative; }
   .tmpl-editor {
@@ -369,20 +393,61 @@
   <!-- API key is loaded automatically from the server -->
   <input type="hidden" id="apiKey" value="">
 
-  <!-- ── Business ────────────────────────────────────────────── -->
-  <h2>Business</h2>
+  <!-- ── Sub-tab strip ───────────────────────────────────────────
+       Mirrors the Node Editor's sub-tab grouping in the agent
+       dashboard so operators see the same structure when creating
+       and editing.
+       Tabs: Business / Closing Prompts / Default Dispatch /
+             Identity & Routing Paths
+  -->
+  <div class="form-subtabs" role="tablist">
+    <button type="button" class="form-subtab active" data-form-tab="business" onclick="switchFormTab('business')">Business</button>
+    <button type="button" class="form-subtab" data-form-tab="closing" onclick="switchFormTab('closing')">Closing Prompts</button>
+    <button type="button" class="form-subtab" data-form-tab="dispatch" onclick="switchFormTab('dispatch')">Default Dispatch</button>
+    <button type="button" class="form-subtab" data-form-tab="paths" onclick="switchFormTab('paths')">Identity &amp; Routing Paths</button>
+  </div>
 
-  <label for="businessName">Business Name <span style="color:#dc2626">*</span></label>
-  <input type="text" id="businessName" required placeholder="e.g. Acme Plumbing">
-  <div class="field-hint">The agent will greet callers as a receptionist for this business. Also used as the phone number label in Retell.</div>
+  <!-- ── Business pane ──────────────────────────────────────────
+       Includes the agent's behavioral defaults: name, FAQ, what
+       happens when a caller asks for a human (and the recovery
+       prompt that fires if a live transfer fails). -->
+  <div class="form-subtab-pane active" data-form-pane="business">
+    <h2>Business</h2>
 
-  <label for="faqKnowledgeBase">FAQ / Knowledge Base <span style="color:#dc2626">*</span></label>
-  <textarea id="faqKnowledgeBase" required placeholder="Paste the business FAQ or knowledge base content here..."></textarea>
-  <div class="field-hint">The agent uses this to answer caller questions (hours, pricing, service areas, etc.). Pasted into a dedicated FAQ node in the conversation flow — if a caller asks something off-topic from data collection, the agent checks here first.</div>
+    <label for="businessName">Business Name <span style="color:#dc2626">*</span></label>
+    <input type="text" id="businessName" required placeholder="e.g. Acme Plumbing">
+    <div class="field-hint">The agent will greet callers as a receptionist for this business. Also used as the phone number label in Retell.</div>
 
-  <details style="margin-top:1rem;">
-    <summary style="cursor:pointer;font-weight:600;">Closing Prompts (optional)</summary>
-    <div class="field-hint" style="margin-top:0.5rem;">These three prompts run at the end of every call. Sensible defaults are pre-filled. Type <code>{{</code> to insert <code>business_name</code> as a green pill — it will be replaced with the business name on save.</div>
+    <label for="faqKnowledgeBase">FAQ / Knowledge Base <span style="color:#dc2626">*</span></label>
+    <textarea id="faqKnowledgeBase" required placeholder="Paste the business FAQ or knowledge base content here..."></textarea>
+    <div class="field-hint">The agent uses this to answer caller questions (hours, pricing, service areas, etc.). Pasted into a dedicated FAQ node in the conversation flow — if a caller asks something off-topic from data collection, the agent checks here first.</div>
+
+    <label>When caller requests a human:</label>
+    <div class="toggle-row">
+      <input type="radio" name="humanRequestMode" id="humanRequestCallback" value="callback" checked onchange="toggleLiveTransferRecovery()">
+      <label for="humanRequestCallback">Ask caller for a callback</label>
+    </div>
+    <div class="toggle-row">
+      <input type="radio" name="humanRequestMode" id="humanRequestTransfer" value="live_transfer" onchange="toggleLiveTransferRecovery()">
+      <label for="humanRequestTransfer">Live transfer to dispatch number</label>
+    </div>
+    <div class="field-hint">"Callback" — agent tells the caller no one is available and offers a callback. "Live transfer" — agent attempts to transfer the call directly to the dispatch call number.</div>
+
+    <div id="liveTransferRecoveryWrap" style="display:none;margin-top:0.75rem;">
+      <label for="liveTransferRecoveryPrompt">Live Transfer Recovery Prompt</label>
+      <textarea id="liveTransferRecoveryPrompt" rows="3"></textarea>
+      <div class="field-hint">Spoken if the live transfer fails to connect, before the call wraps up. You can use <code>{{business_name}}</code> — it will be replaced with the business name on save.</div>
+    </div>
+  </div>
+
+  <!-- ── Closing Prompts pane ───────────────────────────────────
+       Lifted out of the previous <details> wrapper — now a
+       first-class tab so the prompts are easy to find when
+       customizing them. Defaults still pre-fill so users who
+       don't care can ignore the tab entirely. -->
+  <div class="form-subtab-pane" data-form-pane="closing">
+    <h2>Closing Prompts</h2>
+    <div class="field-hint" style="margin-top:0;">These three prompts run at the end of every call. Sensible defaults are pre-filled. Type <code>{{</code> to insert <code>business_name</code> as a green pill — it will be replaced with the business name on save.</div>
 
     <label for="closePrompt">Close Prompt</label>
     <div class="tmpl-editor-wrap">
@@ -404,72 +469,59 @@
       <input type="hidden" id="closingStatementText">
     </div>
     <div class="field-hint">Spoken word-for-word as the call ends. Static text, not paraphrased.</div>
-  </details>
-
-  <!-- ── Routing Paths ─────────────────────────────────────────── -->
-  <h2>Routing Paths</h2>
-  <p style="font-size:0.8rem;color:#666;margin-top:-0.5rem;">
-    Each path represents a caller intent branch. Build the data collection chain by adding data points in order.
-    Use branches for conditional logic. A single "Default" path works for simple agents.
-  </p>
-  <div id="routingPaths"></div>
-  <button type="button" class="btn-add-path" onclick="addPathCard()">+ Add Routing Path</button>
-
-  <!-- ── Client ──────────────────────────────────────────────── -->
-  <h2>Client</h2>
-
-  <label for="clientName">Display Name (used in outgoing SMS &amp; emails)</label>
-  <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
-  <div class="field-hint">Used in outgoing SMS and email notifications as the business identity — e.g. "Hi Acme Plumbing Co., you have a new call!" If blank, falls back to Business Name.</div>
-
-  <!-- ── Default Dispatch ────────────────────────────────────── -->
-  <!-- Field labels and order match the agent dashboard ("Default Dispatch"
-       in dashboard.html) and the client portal ("Default Dispatch" in
-       portal.html). Operators see the same vocabulary across all three. -->
-  <h2>Default Dispatch</h2>
-
-  <label>Dispatch Call</label>
-  <input type="text" id="dispatchCallNumber" placeholder="+15551234567">
-  <div class="field-hint">If set (along with Summary Agent ID), an AI-powered outbound call is placed to this number after each caller interaction to deliver the summary by voice.</div>
-
-  <label>Dispatch Text <span style="font-weight:400;color:#999;">(defaults to owner phone if empty)</span></label>
-  <div class="chip-input" id="chip-dispatch-text" onclick="this.querySelector('input').focus()">
-    <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
-  </div>
-  <div class="field-hint">These numbers receive an SMS with the call summary after every call.</div>
-
-  <label>Dispatch Email</label>
-  <div class="chip-input" id="chip-dispatch-email" onclick="this.querySelector('input').focus()">
-    <input type="text" placeholder="dispatch@acme.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
-  </div>
-  <div class="field-hint">These addresses receive an email with the full call summary after every call.</div>
-
-  <label>Summary Agent ID (outbound dispatch agent)</label>
-  <div class="chip-input" id="chip-summary-agent" onclick="this.querySelector('input').focus()">
-    <input type="text" placeholder="agent_..." onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
-  </div>
-  <div class="field-hint">The Retell agent used for outbound dispatch calls. Works with Dispatch Call. Leave blank if you only need SMS/email.</div>
-
-  <h2>Options</h2>
-
-  <label>When caller requests a human:</label>
-  <div class="toggle-row">
-    <input type="radio" name="humanRequestMode" id="humanRequestCallback" value="callback" checked onchange="toggleLiveTransferRecovery()">
-    <label for="humanRequestCallback">Ask caller for a callback</label>
-  </div>
-  <div class="toggle-row">
-    <input type="radio" name="humanRequestMode" id="humanRequestTransfer" value="live_transfer" onchange="toggleLiveTransferRecovery()">
-    <label for="humanRequestTransfer">Live transfer to dispatch number</label>
-  </div>
-  <div class="field-hint">"Callback" — agent tells the caller no one is available and offers a callback. "Live transfer" — agent attempts to transfer the call directly to the dispatch call number.</div>
-
-  <div id="liveTransferRecoveryWrap" style="display:none;margin-top:0.75rem;">
-    <label for="liveTransferRecoveryPrompt">Live Transfer Recovery Prompt</label>
-    <textarea id="liveTransferRecoveryPrompt" rows="3"></textarea>
-    <div class="field-hint">Spoken if the live transfer fails to connect, before the call wraps up. You can use <code>{{business_name}}</code> — it will be replaced with the business name on save.</div>
   </div>
 
-  <button type="submit" id="submitBtn">Create Agent</button>
+  <!-- ── Default Dispatch pane ──────────────────────────────────
+       Field labels and order match the agent dashboard's "Default
+       Dispatch" section (in dashboard.html) and the client portal,
+       so operators see the same vocabulary across all three
+       surfaces. -->
+  <div class="form-subtab-pane" data-form-pane="dispatch">
+    <h2>Default Dispatch</h2>
+
+    <label>Dispatch Call</label>
+    <input type="text" id="dispatchCallNumber" placeholder="+15551234567">
+    <div class="field-hint">If set (along with Summary Agent ID), an AI-powered outbound call is placed to this number after each caller interaction to deliver the summary by voice.</div>
+
+    <label>Dispatch Text <span style="font-weight:400;color:#999;">(defaults to owner phone if empty)</span></label>
+    <div class="chip-input" id="chip-dispatch-text" onclick="this.querySelector('input').focus()">
+      <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+    </div>
+    <div class="field-hint">These numbers receive an SMS with the call summary after every call.</div>
+
+    <label>Dispatch Email</label>
+    <div class="chip-input" id="chip-dispatch-email" onclick="this.querySelector('input').focus()">
+      <input type="text" placeholder="dispatch@acme.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+    </div>
+    <div class="field-hint">These addresses receive an email with the full call summary after every call.</div>
+
+    <label>Summary Agent ID (outbound dispatch agent)</label>
+    <div class="chip-input" id="chip-summary-agent" onclick="this.querySelector('input').focus()">
+      <input type="text" placeholder="agent_..." onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+    </div>
+    <div class="field-hint">The Retell agent used for outbound dispatch calls. Works with Dispatch Call. Leave blank if you only need SMS/email.</div>
+  </div>
+
+  <!-- ── Identity & Routing Paths pane ──────────────────────────
+       Mirrors the Node Editor's "Identity & Routing Paths" tab
+       (Display Name first, then the path list). -->
+  <div class="form-subtab-pane" data-form-pane="paths">
+    <h2>Identity &amp; Routing Paths</h2>
+
+    <label for="clientName">Display Name (used in outgoing SMS &amp; emails)</label>
+    <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
+    <div class="field-hint">Used in outgoing SMS and email notifications as the business identity — e.g. "Hi Acme Plumbing Co., you have a new call!" If blank, falls back to Business Name.</div>
+
+    <h3 style="font-size:0.95rem;margin:1.25rem 0 0.25rem;">Routing Paths</h3>
+    <p style="font-size:0.8rem;color:#666;margin-top:0;">
+      Each path represents a caller intent branch. Build the data collection chain by adding data points in order.
+      Use branches for conditional logic. A single "Default" path works for simple agents.
+    </p>
+    <div id="routingPaths"></div>
+    <button type="button" class="btn-add-path" onclick="addPathCard()">+ Add Routing Path</button>
+  </div>
+
+  <button type="submit" id="submitBtn" style="margin-top:1.25rem;">Create Agent</button>
 </form>
 
 <script>
@@ -477,6 +529,31 @@
   const resultDiv = document.getElementById('result');
   const submitBtn = document.getElementById('submitBtn');
   const pathsContainer = document.getElementById('routingPaths');
+
+  // ── Form sub-tab switcher ──────────────────────────────────────────
+  // Toggles which .form-subtab-pane is visible. Auto-switches to the
+  // tab containing the first invalid required field on submit so the
+  // browser's HTML5 validation popover can target a visible element.
+  const FORM_TABS = ['business', 'closing', 'dispatch', 'paths'];
+  function switchFormTab(id) {
+    if (!FORM_TABS.includes(id)) id = 'business';
+    document.querySelectorAll('.form-subtab').forEach((b) => {
+      b.classList.toggle('active', b.dataset.formTab === id);
+    });
+    document.querySelectorAll('.form-subtab-pane').forEach((p) => {
+      p.classList.toggle('active', p.dataset.formPane === id);
+    });
+  }
+  // When a hidden required field fails validation, browser tries to
+  // focus it but the popover lands on an invisible element. Catch the
+  // first invalid event in the bubbling phase and switch to the
+  // correct tab — the popover then shows on a visible field.
+  form.addEventListener('invalid', (e) => {
+    const pane = e.target.closest('.form-subtab-pane');
+    if (pane && !pane.classList.contains('active')) {
+      switchFormTab(pane.dataset.formPane);
+    }
+  }, true);
 
   // Default templates for the closing prompts (must match DEFAULT_* in src/lib/agent-generator/node-builders.ts).
   const DEFAULT_CLOSE_PROMPT = 'Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.';
