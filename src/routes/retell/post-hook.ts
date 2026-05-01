@@ -13,6 +13,10 @@ import { saveCallLog, type CallLogDocument } from "../../lib/call-log.js";
 import { resolveDispatch } from "../../lib/resolve-dispatch.js";
 import { checkAgentAlerts } from "../../lib/agent-alerts.js";
 
+// Retell disconnection_reason values that mean the caller was live-transferred
+// to the dispatch human. When set, suppress the redundant dispatch outbound call.
+const TRANSFER_DISCONNECTION_REASONS = new Set(["call_transfer", "transfer_bridged"]);
+
 export async function postHookHandler(req: Request, res: Response) {
   console.log("retell-post-hook: received request");
 
@@ -299,12 +303,17 @@ export async function postHookHandler(req: Request, res: Response) {
     );
   }
 
-  // Fire-and-forget: voice call to dispatch
+  // Fire-and-forget: voice call to dispatch (skip if caller was already live-transferred)
   const effectiveCallNumber =
     dispatch.call_number ??
     clientConfig.dispatch_call_overrides?.[call.to_number] ??
     null;
-  if (effectiveCallNumber) {
+  const wasLiveTransferred = TRANSFER_DISCONNECTION_REASONS.has(call.disconnection_reason);
+  if (effectiveCallNumber && wasLiveTransferred) {
+    console.log(
+      `retell-post-hook: skipping dispatch call — caller was live-transferred (reason=${call.disconnection_reason}) | client="${clientConfig.name}"`,
+    );
+  } else if (effectiveCallNumber) {
     triggerDispatchCall(
       { ...clientConfig, dispatch_call_number: effectiveCallNumber },
       { client_name: effectiveName, call_summary: smsMessage },

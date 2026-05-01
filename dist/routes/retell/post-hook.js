@@ -1,6 +1,6 @@
 import { config } from "../../config.js";
 import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
-import { sendSmsToAll } from "../../lib/notify-sms.js";
+import { sendSms, sendSmsToAll } from "../../lib/notify-sms.js";
 import { sendEmail, getEmailStatus } from "../../lib/notify-email.js";
 import { ownerConfig } from "../../config/notification-clients.js";
 import { agentIdToClient, agentIdToSlug } from "../../_cache/clients.js";
@@ -9,6 +9,11 @@ import { buildNotificationMessages } from "../../lib/build-notification.js";
 import { sendOwnerCallMonitor } from "../../lib/owner-monitor.js";
 import { triggerDispatchCall } from "../../lib/dispatch-call.js";
 import { saveCallLog } from "../../lib/call-log.js";
+import { resolveDispatch } from "../../lib/resolve-dispatch.js";
+import { checkAgentAlerts } from "../../lib/agent-alerts.js";
+// Retell disconnection_reason values that mean the caller was live-transferred
+// to the dispatch human. When set, suppress the redundant dispatch outbound call.
+const TRANSFER_DISCONNECTION_REASONS = new Set(["call_transfer", "transfer_bridged"]);
 export async function postHookHandler(req, res) {
     console.log("retell-post-hook: received request");
     // Skip signature verification for test clients or internal API-key-authenticated calls
@@ -41,6 +46,11 @@ export async function postHookHandler(req, res) {
         res.status(400).json({ success: false, message: "Missing call object." });
         return;
     }
+    // ── Skip web calls (no real phone number) ──────────────────────────
+    const isWebCall = !call.from_number || call.from_number === "unknown";
+    if (isWebCall) {
+        call.from_number = "Web Call";
+    }
     // ── Notification Logic ──────────────────────────────────────────────
     const dynamicVars = call?.retell_llm_dynamic_variables ?? {};
     const collectedVars = call?.collected_dynamic_variables ?? {};
@@ -70,8 +80,42 @@ export async function postHookHandler(req, res) {
             message_type_label: typeLabel,
             outcome,
             shadow_mode: client.shadow_mode ?? false,
+            call_cost_cents: call.call_cost?.combined_cost ?? undefined,
             created_at: new Date(),
         };
+    }
+    // Per-agent call surge & cost surge alerts (runs for ALL calls — web, shadow, dispatched)
+    const alerts = checkAgentAlerts(agentId, call.call_cost?.combined_cost);
+    if (alerts.callSurge.fired) {
+        const surgeSubject = `[CALL SURGE] ${clientConfig.name} — ${alerts.callSurge.count} calls in the last hour`;
+        const surgeBody = `Call surge detected for "${clientConfig.name}" (${clientSlug}).\n\n${alerts.callSurge.count} calls received in the last hour.\n\nThis alert will not repeat for 1 hour.\n\n— Service Call Saver Monitor`;
+        sendSms(ownerConfig.phone, surgeSubject).catch(() => { });
+        sendEmail({ to: ownerConfig.email, subject: surgeSubject, body: surgeBody }).catch(() => { });
+    }
+    if (alerts.costSurge.fired) {
+        const dollars = (alerts.costSurge.totalCents / 100).toFixed(2);
+        const costSubject = `[COST SURGE] ${clientConfig.name} — $${dollars} in calls today`;
+        const costBody = `Daily cost surge for "${clientConfig.name}" (${clientSlug}).\n\nTotal call cost today: $${dollars} (threshold: $10.00).\n\nThis alert fires once per day per agent.\n\n— Service Call Saver Monitor`;
+        sendSms(ownerConfig.phone, costSubject).catch(() => { });
+        sendEmail({ to: ownerConfig.email, subject: costSubject, body: costBody }).catch(() => { });
+    }
+    // Skip dispatch for web calls — log only
+    if (isWebCall) {
+        console.log("retell-post-hook: web call — logging but skipping dispatch");
+        const typeKey = clientConfig.resolve_type(allVars);
+        const messageType = clientConfig.message_types[typeKey] ?? clientConfig.message_types[clientConfig.default_message_type];
+        const typeLabel = messageType?.label ?? "";
+        const fields = {};
+        if (messageType) {
+            for (const f of messageType.fields) {
+                const val = allVars[f.key];
+                if (val !== undefined && val !== "Not Mentioned")
+                    fields[f.key] = String(val);
+            }
+        }
+        saveCallLog(buildCallLog("web_call", typeKey, typeLabel, fields)).catch(() => { });
+        res.status(200).json({ success: true, outcome: "web_call" });
+        return;
     }
     // Build notification messages
     const buildResult = buildNotificationMessages({
@@ -104,6 +148,10 @@ export async function postHookHandler(req, res) {
         return;
     }
     const { typeKey, messageType, fieldValues, smsMessage, emailBody, emailHtml, emailSubject } = buildResult.payload;
+    // Resolve effective business name (per-number override from Retell Code node)
+    const effectiveName = allVars.business_name || clientConfig.name;
+    // Resolve per-type dispatch targets (falls back to client-level defaults)
+    const dispatch = resolveDispatch(clientConfig, typeKey);
     console.log("retell-post-hook: extracted notification data", {
         agent_id: agentId,
         message_type: typeKey,
@@ -111,22 +159,22 @@ export async function postHookHandler(req, res) {
     });
     // ── Shadow Dry-Run ─────────────────────────────────────────────────
     if (clientConfig.shadow_mode) {
-        const dryRunSummary = `[SHADOW DRY-RUN] client="${clientConfig.name}"\n\n` +
-            `Original dispatch numbers: ${JSON.stringify(clientConfig.dispatch_text_numbers)}\n` +
-            `Original dispatch emails:  ${JSON.stringify(clientConfig.dispatch_email)}\n\n` +
+        const dryRunSummary = `[SHADOW DRY-RUN] client="${effectiveName}"\n\n` +
+            `Dispatch numbers: ${JSON.stringify(dispatch.text_numbers)}\n` +
+            `Dispatch emails:  ${JSON.stringify(dispatch.email)}\n\n` +
             `--- SMS PREVIEW ---\n${smsMessage}\n\n` +
             `--- EMAIL PREVIEW ---\nSubject: ${emailSubject}\n\n${emailBody}`;
         console.log(`retell-post-hook: ${dryRunSummary}`);
         // Send the dry-run preview to owner so they can see exact formatting
         const shadowTasks = [
-            sendSmsToAll([ownerConfig.phone], `[SHADOW DRY-RUN] ${clientConfig.name}\n\n--- SMS that would be sent ---\n\n${smsMessage}`),
+            sendSmsToAll([ownerConfig.phone], `[SHADOW DRY-RUN] ${effectiveName}\n\n--- SMS that would be sent ---\n\n${smsMessage}`),
             sendEmail({
                 to: ownerConfig.email,
                 subject: `[SHADOW DRY-RUN] ${emailSubject}`,
                 body: dryRunSummary,
-                html: `<p><strong>[SHADOW DRY-RUN]</strong> for client "${escapeHtml(clientConfig.name)}"</p>` +
-                    `<p>Original dispatch numbers: ${escapeHtml(JSON.stringify(clientConfig.dispatch_text_numbers))}<br>` +
-                    `Original dispatch emails: ${escapeHtml(JSON.stringify(clientConfig.dispatch_email))}</p>` +
+                html: `<p><strong>[SHADOW DRY-RUN]</strong> for client "${escapeHtml(effectiveName)}"</p>` +
+                    `<p>Dispatch numbers: ${escapeHtml(JSON.stringify(dispatch.text_numbers))}<br>` +
+                    `Dispatch emails: ${escapeHtml(JSON.stringify(dispatch.email))}</p>` +
                     `<hr><p><strong>SMS Preview:</strong></p><pre>${escapeHtml(smsMessage)}</pre>` +
                     `<hr><p><strong>Email Preview (as client would see it):</strong></p>` +
                     `<p>Subject: ${escapeHtml(emailSubject)}</p>${emailHtml}`,
@@ -134,8 +182,8 @@ export async function postHookHandler(req, res) {
         ];
         await Promise.allSettled(shadowTasks);
         // Shadow mode: dispatch call goes to owner instead of client
-        if (clientConfig.summary_agent_id && clientConfig.outbound_from_number) {
-            triggerDispatchCall({ ...clientConfig, dispatch_call_number: ownerConfig.phone }, { client_name: clientConfig.name, call_summary: smsMessage }).catch(() => { });
+        if (clientConfig.summary_agent_id) {
+            triggerDispatchCall({ ...clientConfig, dispatch_call_number: ownerConfig.phone }, { client_name: effectiveName, call_summary: smsMessage }).catch(() => { });
         }
         saveCallLog(buildCallLog("shadow_dry_run", typeKey, messageType.label, fieldValues)).catch(() => { });
         sendOwnerCallMonitor(call, clientConfig, "shadow_dry_run").catch(() => { });
@@ -145,17 +193,17 @@ export async function postHookHandler(req, res) {
     console.log(`retell-post-hook: sending notifications for client "${clientConfig.name}"`);
     const tasks = [];
     const emailResendIds = [];
-    if (clientConfig.dispatch_text_numbers.length > 0) {
-        tasks.push(sendSmsToAll(clientConfig.dispatch_text_numbers, smsMessage));
+    if (dispatch.text_numbers.length > 0) {
+        tasks.push(sendSmsToAll(dispatch.text_numbers, smsMessage));
     }
     else {
         console.log("retell-post-hook: no dispatch numbers configured, skipping SMS");
     }
-    if (clientConfig.dispatch_email && clientConfig.dispatch_email.length > 0) {
-        for (const email of clientConfig.dispatch_email) {
+    if (dispatch.email && dispatch.email.length > 0) {
+        for (const email of dispatch.email) {
             const emailTask = sendEmail({
                 to: email,
-                cc: clientConfig.dispatch_cc,
+                cc: dispatch.cc,
                 subject: emailSubject,
                 body: emailBody,
                 html: emailHtml,
@@ -183,8 +231,8 @@ export async function postHookHandler(req, res) {
             return;
         }
         // Summary log
-        const smsCount = clientConfig.dispatch_text_numbers.length;
-        const emailCount = clientConfig.dispatch_email?.length ?? 0;
+        const smsCount = dispatch.text_numbers.length;
+        const emailCount = dispatch.email?.length ?? 0;
         const callId = call?.call_id ?? "unknown";
         console.log(`retell-post-hook: notification summary | client="${clientConfig.name}" | call_id=${callId} | sms=${smsCount}/${smsCount} sent | email=${emailCount}/${emailCount} sent`);
         // Fire-and-forget: check email delivery status after a delay
@@ -195,14 +243,39 @@ export async function postHookHandler(req, res) {
     else {
         console.warn("retell-post-hook: no notification channels configured for this client");
     }
-    // Fire-and-forget: voice call to dispatch
-    const effectiveCallNumber = clientConfig.dispatch_call_overrides?.[call.to_number] ??
-        clientConfig.dispatch_call_number;
-    if (effectiveCallNumber) {
-        triggerDispatchCall({ ...clientConfig, dispatch_call_number: effectiveCallNumber }, { client_name: clientConfig.name, call_summary: smsMessage }).catch(() => { });
+    // Fire-and-forget: voice call to dispatch (skip if caller was already live-transferred)
+    const effectiveCallNumber = dispatch.call_number ??
+        clientConfig.dispatch_call_overrides?.[call.to_number] ??
+        null;
+    const wasLiveTransferred = TRANSFER_DISCONNECTION_REASONS.has(call.disconnection_reason);
+    if (effectiveCallNumber && wasLiveTransferred) {
+        console.log(`retell-post-hook: skipping dispatch call — caller was live-transferred (reason=${call.disconnection_reason}) | client="${clientConfig.name}"`);
+    }
+    else if (effectiveCallNumber) {
+        triggerDispatchCall({ ...clientConfig, dispatch_call_number: effectiveCallNumber }, { client_name: effectiveName, call_summary: smsMessage }).catch(() => { });
     }
     saveCallLog(buildCallLog("dispatched", typeKey, messageType.label, fieldValues)).catch(() => { });
     sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => { });
+    // Fire-and-forget: webhook
+    if (clientConfig.webhook_url) {
+        fetch(clientConfig.webhook_url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                event: "call_dispatched",
+                client_slug: clientSlug,
+                client_name: effectiveName,
+                call_id: call.call_id,
+                from_number: call.from_number,
+                routing_path: typeKey,
+                routing_path_label: messageType.label,
+                fields: fieldValues,
+                timestamp: new Date().toISOString(),
+            }),
+        }).catch((err) => {
+            console.error(`retell-post-hook: webhook failed for "${clientConfig.name}": ${err.message}`);
+        });
+    }
     res.status(200).json({ success: true });
 }
 const EMAIL_CHECK_DELAY_MS = 5_000;
