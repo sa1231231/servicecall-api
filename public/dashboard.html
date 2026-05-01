@@ -3170,6 +3170,9 @@
   function hideSettings() {
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('listView').style.display = '';
+    // Clear the #settings hash so a refresh stays on the agent list instead
+    // of bouncing back into settings.
+    history.replaceState(null, '', '/dashboard/');
   }
 
   // Tabs on the global settings page (mirrors the agent dashboard tab pattern).
