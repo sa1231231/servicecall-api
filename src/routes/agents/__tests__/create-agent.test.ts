@@ -552,6 +552,82 @@ describe("createAgentHandler — success path", () => {
   });
 });
 
+// ── Closing prompt + Live Transfer Recovery passthrough ───────────────────
+// These cover lines 165-169 of create-agent.ts (the agentConfig builder).
+// Without explicit closing prompts, the .trim() chains short-circuit and v8
+// records them as uncovered.
+
+describe("createAgentHandler — agentConfig closing prompts", () => {
+  it("forwards closePrompt, closingRemarksPrompt, closingStatementText to generateAgent", async () => {
+    await createAgentHandler(
+      mockReq(makeBody({
+        business: {
+          businessName: "Test Co",
+          faqKnowledgeBase: "FAQ",
+          closePrompt: "  Close prompt with whitespace  ",
+          closingRemarksPrompt: "Remarks prompt",
+          closingStatementText: "Statement text",
+        },
+      })),
+      mockRes(),
+    );
+
+    const agentConfig = mockGenerateAgent.mock.calls[0][0];
+    // Trim-then-fallback should strip the whitespace
+    expect(agentConfig.closePrompt).toBe("Close prompt with whitespace");
+    expect(agentConfig.closingRemarksPrompt).toBe("Remarks prompt");
+    expect(agentConfig.closingStatementText).toBe("Statement text");
+  });
+
+  it("forwards liveTransferRecoveryPrompt to generateAgent (new in 5c59d31)", async () => {
+    await createAgentHandler(
+      mockReq(makeBody({
+        business: {
+          businessName: "Test Co",
+          faqKnowledgeBase: "FAQ",
+          liveTransferRecoveryPrompt: "Custom recovery for {{business_name}}",
+        },
+      })),
+      mockRes(),
+    );
+
+    const agentConfig = mockGenerateAgent.mock.calls[0][0];
+    expect(agentConfig.liveTransferRecoveryPrompt).toBe("Custom recovery for {{business_name}}");
+  });
+
+  it("normalizes empty/whitespace-only closing prompts to undefined", async () => {
+    await createAgentHandler(
+      mockReq(makeBody({
+        business: {
+          businessName: "Test Co",
+          faqKnowledgeBase: "FAQ",
+          closePrompt: "",
+          closingRemarksPrompt: "   ",
+          closingStatementText: "\n\t",
+          liveTransferRecoveryPrompt: "",
+        },
+      })),
+      mockRes(),
+    );
+
+    const agentConfig = mockGenerateAgent.mock.calls[0][0];
+    expect(agentConfig.closePrompt).toBeUndefined();
+    expect(agentConfig.closingRemarksPrompt).toBeUndefined();
+    expect(agentConfig.closingStatementText).toBeUndefined();
+    expect(agentConfig.liveTransferRecoveryPrompt).toBeUndefined();
+  });
+
+  it("leaves closing prompts undefined when not provided in body.business", async () => {
+    await createAgentHandler(mockReq(makeBody()), mockRes());
+
+    const agentConfig = mockGenerateAgent.mock.calls[0][0];
+    expect(agentConfig.closePrompt).toBeUndefined();
+    expect(agentConfig.closingRemarksPrompt).toBeUndefined();
+    expect(agentConfig.closingStatementText).toBeUndefined();
+    expect(agentConfig.liveTransferRecoveryPrompt).toBeUndefined();
+  });
+});
+
 // ── Error handling ─────────────────────────────────────────────────────────
 
 describe("createAgentHandler — error handling", () => {
@@ -591,5 +667,81 @@ describe("createAgentHandler — error handling", () => {
     await createAgentHandler(mockReq(makeBody()), mockRes());
 
     expect(mockFlowDelete).not.toHaveBeenCalled();
+  });
+
+  it("swallows cleanup errors when flow.delete throws after agent.create fails", async () => {
+    mockAgentCreate.mockRejectedValue(new Error("agent fail"));
+    mockFlowDelete.mockRejectedValue(new Error("flow delete fail"));
+
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = mockRes();
+
+    await createAgentHandler(mockReq(makeBody()), res);
+
+    // Original 502 still returned despite cleanup error
+    expect(res._status).toBe(502);
+    expect(errSpy).toHaveBeenCalledWith(
+      "[create-agent] cleanup failed:",
+      expect.any(Error),
+    );
+    errSpy.mockRestore();
+  });
+
+  it("appends HTTP status from Retell SDK error to details", async () => {
+    const retellErr: any = new Error("rate limited");
+    retellErr.status = 429;
+    mockAgentCreate.mockRejectedValue(retellErr);
+
+    const res = mockRes();
+    await createAgentHandler(mockReq(makeBody()), res);
+
+    expect(res._status).toBe(502);
+    expect(res._json.details).toContain("(HTTP 429)");
+  });
+
+  it("uses Retell SDK error.error.message when present (overrides plain message)", async () => {
+    const retellErr: any = new Error("outer message");
+    retellErr.error = { message: "specific Retell error" };
+    mockAgentCreate.mockRejectedValue(retellErr);
+
+    const res = mockRes();
+    await createAgentHandler(mockReq(makeBody()), res);
+
+    expect(res._status).toBe(502);
+    expect(res._json.details).toBe("specific Retell error");
+  });
+});
+
+// ── Composite data point flattening ───────────────────────────────────────
+
+describe("createAgentHandler — flattenDataPoints (composite)", () => {
+  it("expands composite data points to their child variables in jsonEntry retell_agents map", async () => {
+    // Set up a resolved data point that's marked composite with sub-variables
+    mockGenerateAgent.mockReturnValue({
+      agent: { conversationFlow: {}, agent_name: "Test Co" },
+      resolved: [
+        {
+          variableName: "address",
+          label: "Address",
+          composite: true,
+          variables: [
+            { variableName: "street_address", label: "Street" },
+            { variableName: "city", label: "City" },
+          ],
+        },
+      ],
+      resolvedPaths: undefined,
+    });
+
+    await createAgentHandler(mockReq(makeBody()), mockRes());
+
+    // The composite data point's child variables are passed to deriveNotificationConfig
+    // (single-path mode in this test). Verify flattenDataPoints expanded them.
+    const variables = mockDeriveNotificationConfig.mock.calls[0][0];
+    const keys = variables.map((v: any) => v.key);
+    expect(keys).toContain("street_address");
+    expect(keys).toContain("city");
+    // The composite parent itself should NOT be in the flat list
+    expect(keys).not.toContain("address");
   });
 });

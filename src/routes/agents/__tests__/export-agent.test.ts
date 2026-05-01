@@ -611,6 +611,25 @@ describe("exportAgentHandler", () => {
     expect(res._json.business.closePrompt).toBeUndefined();
     expect(res._json.business.closingRemarksPrompt).toBeUndefined();
     expect(res._json.business.closingStatementText).toBeUndefined();
+    expect(res._json.business.liveTransferRecoveryPrompt).toBeUndefined();
+  });
+
+  it("exports liveTransferRecoveryPrompt from the Live Transfer Recovery node", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_ids: ["agent_1"],
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      allNodes: [
+        { name: "Live Transfer Recovery", raw: { instruction: { text: "Sorry — staff are busy. We'll call you back." } } },
+      ],
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.business.liveTransferRecoveryPrompt).toBe("Sorry — staff are busy. We'll call you back.");
   });
 
   it("exports per-path end_mode from parsed.paths[i].endMode", async () => {

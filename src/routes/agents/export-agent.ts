@@ -66,6 +66,10 @@ export async function exportAgentHandler(
     const closePrompt = findInstructionText("Close");
     const closingRemarksPrompt = findInstructionText("Closing Remarks");
     const closingStatementText = findInstructionText("Closing Statement");
+    // Live Transfer Recovery — only present on agents that have at least one
+    // transfer-mode path (or live-transfer human-request mode). Spoken when
+    // a transfer fails to bridge.
+    const liveTransferRecoveryPrompt = findInstructionText("Live Transfer Recovery");
 
     // Extract transition conditions from intro edges
     const introEdges = parsed.introNode.raw.edges as Array<Record<string, unknown>> | undefined;
@@ -160,6 +164,7 @@ export async function exportAgentHandler(
         ...(closePrompt !== undefined ? { closePrompt } : {}),
         ...(closingRemarksPrompt !== undefined ? { closingRemarksPrompt } : {}),
         ...(closingStatementText !== undefined ? { closingStatementText } : {}),
+        ...(liveTransferRecoveryPrompt !== undefined ? { liveTransferRecoveryPrompt } : {}),
       },
       paths,
       client: {

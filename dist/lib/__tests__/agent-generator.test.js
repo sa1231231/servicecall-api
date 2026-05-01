@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateAgent, resolveDataPoints, NOT_MENTIONED, CALLER_DOESNT_KNOW, PHONE_COLLECTED_FLAG, defaultExtractEquation, } from "../agent-generator/index.js";
+import { buildPreTransferNode, buildPerPathTransferCallNode, buildDataChain, makeIdFactory, } from "../agent-generator/node-builders.js";
 const baseConfig = {
     businessName: "Test Co",
     faqKnowledgeBase: "FAQ content here",
@@ -479,5 +480,34 @@ describe("per-path end mode", () => {
         expect(flow.nodes.filter((n) => n.name === "Live Transfer Recovery")).toHaveLength(1);
         // Both per-path (Transfer Call (Emergency)) and the global Transfer Call should exist
         expect(flow.nodes.filter((n) => n.type === "transfer_call").length).toBe(2);
+    });
+});
+// ── node-builders defensive guards ──────────────────────────────────────────
+// These throws fire when the IDs / positions allocator drifts out of sync with
+// the path config. They're internal-invariant guards; if they ever fire in
+// production we have a bigger bug. Cover them so the assertion stays honest.
+describe("node-builders defensive guards", () => {
+    const f = makeIdFactory(1);
+    it("buildPreTransferNode throws when preTransferId is missing", () => {
+        expect(() => buildPreTransferNode({ transferCallId: "tc1", chain: [] }, { preTransfer: { x: 0, y: 0 } }, baseConfig, "Path", f)).toThrow(/missing transfer slots/);
+    });
+    it("buildPreTransferNode throws when transferCallId is missing", () => {
+        expect(() => buildPreTransferNode({ preTransferId: "pt1", chain: [] }, { preTransfer: { x: 0, y: 0 } }, baseConfig, "Path", f)).toThrow(/missing transfer slots/);
+    });
+    it("buildPreTransferNode throws when preTransfer position is missing", () => {
+        expect(() => buildPreTransferNode({ preTransferId: "pt1", transferCallId: "tc1", chain: [] }, {}, baseConfig, "Path", f)).toThrow(/missing transfer slots/);
+    });
+    it("buildPerPathTransferCallNode throws when transferCallId is missing", () => {
+        expect(() => buildPerPathTransferCallNode({ chain: [] }, { transferCall: { x: 0, y: 0 } }, { transferFailedId: "tf1" }, "+15551234567", "Path", f)).toThrow(/missing transfer slots/);
+    });
+    it("buildPerPathTransferCallNode throws when transferCall position is missing", () => {
+        expect(() => buildPerPathTransferCallNode({ transferCallId: "tc1", chain: [] }, {}, { transferFailedId: "tf1" }, "+15551234567", "Path", f)).toThrow(/missing transfer slots/);
+    });
+    it("buildDataChain throws when resolvedDataPoints count diverges from chain IDs", () => {
+        expect(() => buildDataChain([{ variableName: "x" }, { variableName: "y" }], // 2 data points
+        { chain: [{ collectId: "c1", confirmId: "cf1" }] }, // only 1 chain slot
+        {}, // pathPos
+        "close_id", // closeId
+        f)).toThrow(/does not match allocated chain IDs/);
     });
 });
