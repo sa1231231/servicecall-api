@@ -267,6 +267,85 @@
   .path-card .card-actions button:hover { background: #fef2f2; }
   .path-dp-group h3 { margin-top: 0.5rem; }
 
+  /* Path-card collapsed summary (Tier 1 redesign) */
+  .path-card > details > summary { list-style: none; cursor: pointer; padding: 0.5rem 0.25rem; }
+  .path-card > details > summary::-webkit-details-marker { display: none; }
+  .path-card > details > summary::marker { content: ''; }
+  .path-card-summary {
+    display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+    font-size: 0.85rem;
+  }
+  .path-card-summary .chevron {
+    transition: transform 0.15s ease; color: #6366f1; font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+  .path-card > details[open] > summary > .path-card-summary > .chevron { transform: rotate(90deg); }
+  .path-card-summary .path-summary-name {
+    font-weight: 700; color: #3730a3; font-size: 0.9rem;
+    flex-shrink: 0;
+  }
+  .path-card-summary .path-summary-name:empty::after {
+    content: '(unnamed path)'; color: #9ca3af; font-weight: 500;
+  }
+  .path-card-summary .path-summary-condition {
+    color: #6b7280; font-size: 0.78rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 28ch; flex: 1 1 auto; min-width: 0;
+  }
+  .path-card-summary .path-summary-meta {
+    display: flex; align-items: center; gap: 0.4rem;
+    margin-left: auto; flex-shrink: 0;
+  }
+  .path-card-summary .path-q-count {
+    font-size: 0.72rem; color: #6b7280; padding: 0.1rem 0.4rem;
+    background: #f3f4f6; border-radius: 10px;
+  }
+  .path-card-summary .end-badge {
+    font-size: 0.7rem; padding: 0.1rem 0.45rem; border-radius: 10px;
+    font-weight: 600;
+  }
+  .path-card-summary .end-badge.callback { background: #dcfce7; color: #166534; }
+  .path-card-summary .end-badge.transfer { background: #dbeafe; color: #1e40af; }
+  .path-card-summary .card-actions { display: flex; gap: 0.3rem; }
+  .path-card-summary .card-actions button { padding: 0.2rem 0.5rem; font-size: 0.7rem; }
+
+  /* Flow diagram preview */
+  .flow-diagram-wrap {
+    position: sticky; bottom: 0;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+    margin-top: 1.5rem; box-shadow: 0 -2px 8px rgba(0,0,0,0.04);
+    overflow: hidden;
+  }
+  .flow-diagram-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.5rem 0.75rem; border-bottom: 1px solid #f3f4f6;
+    background: #fafbfc; font-size: 0.78rem; color: #6b7280; font-weight: 600;
+    cursor: pointer; user-select: none;
+  }
+  .flow-diagram-header .chevron { transition: transform 0.15s ease; }
+  .flow-diagram-wrap.collapsed .flow-diagram-header .chevron { transform: rotate(-90deg); }
+  .flow-diagram-wrap.collapsed .flow-diagram-body { display: none; }
+  .flow-diagram-body {
+    max-height: 380px; overflow: auto; padding: 0.5rem;
+    background: linear-gradient(180deg, #fafbfc 0%, #ffffff 100%);
+  }
+  .flow-diagram-body svg { display: block; }
+  .flow-node { cursor: pointer; }
+  .flow-node:hover .flow-node-bg { filter: brightness(0.96); }
+  .flow-node-bg.node-intro { fill: #eef2ff; stroke: #6366f1; stroke-width: 2; }
+  .flow-node-bg.node-data { fill: #ffffff; stroke: #d1d5db; stroke-width: 1.5; }
+  .flow-node-bg.node-branch { fill: #fef3c7; stroke: #f59e0b; stroke-width: 1.5; }
+  .flow-node-bg.node-end-callback { fill: #dcfce7; stroke: #16a34a; stroke-width: 1.5; }
+  .flow-node-bg.node-end-transfer { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.5; }
+  .flow-node-label { font-size: 11px; fill: #1f2937; pointer-events: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  .flow-node-sublabel { font-size: 9px; fill: #6b7280; pointer-events: none; }
+  .flow-edge { fill: none; stroke: #9ca3af; stroke-width: 1.5; }
+  .flow-edge-label { font-size: 10px; fill: #6b7280; }
+  .flow-diagram-empty {
+    padding: 2rem; text-align: center; color: #9ca3af; font-size: 0.85rem;
+  }
+
   /* Path data point picker + ordered list */
   .path-dp-available { margin-bottom: 0.5rem; }
   .path-dp-order {
@@ -527,6 +606,17 @@
   </div>
 
   <button type="submit" id="submitBtn" style="margin-top:1.25rem;">Create Agent</button>
+
+  <!-- Tier-1 read-only flow diagram preview. Updates live as the form changes. -->
+  <div id="flowDiagram" class="flow-diagram-wrap">
+    <div class="flow-diagram-header" onclick="toggleFlowDiagram()">
+      <span>Flow Preview</span>
+      <span class="chevron">&#9662;</span>
+    </div>
+    <div class="flow-diagram-body">
+      <div id="flowDiagramSvgHost"></div>
+    </div>
+  </div>
 </form>
 
 <script>
@@ -1333,54 +1423,71 @@
 
   function addPathCard(defaultName) {
     const id = 'path_' + (++pathCounter);
+    // Default condition for the first ("Default") path so users see a working example.
+    const defaultCond = defaultName === 'Default'
+      ? 'The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.'
+      : '';
     const html = `
       <div class="path-card" data-path-id="${id}">
-        <div class="card-header">
-          <span>Path #<span class="path-num"></span></span>
-          <div class="card-actions">
-            <button type="button" onclick="duplicatePathCard('${id}')" style="color:#2563eb;border-color:#93b4f5;">Duplicate</button>
-            <button type="button" onclick="removePathCard('${id}')">Remove</button>
-          </div>
-        </div>
-        <label>Path Name <span style="color:#dc2626">*</span></label>
-        <input type="text" class="path-name" placeholder="e.g. Emergency Dispatch" value="${defaultName || ''}">
-        <div class="field-hint">Shown as the message type header in dispatch notifications.</div>
-        <label>Transition Condition <span style="color:#dc2626">*</span></label>
-        <input type="text" class="path-condition" placeholder="e.g. The caller confirms forward intent with service" value="${defaultName === 'Default' ? 'The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.' : ''}">
-        <div class="field-hint">The condition the AI evaluates after the intro to route into this path.</div>
-        <label style="margin-top:0.5rem;">Data Collection Chain</label>
-        <div class="field-hint" style="margin-top:-0.25rem;">Add data points in the order the agent should ask them. Use branches for conditional logic.</div>
-        <div class="chain-list" data-chain-root="${id}"></div>
-        <div class="chain-add-btns">
-          <button type="button" class="btn-chain-add" onclick="addChainItem(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Data Point</button>
-          <button type="button" class="btn-chain-branch" onclick="addChainBranch(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Branch</button>
-        </div>
-        <div style="margin-top:0.75rem;">
-          <label style="font-size:0.85rem;font-weight:600;color:#555;">End of path</label>
-          <div class="toggle-row">
-            <input type="radio" name="endMode_${id}" id="endModeCallback_${id}" class="path-end-mode" value="callback" checked>
-            <label for="endModeCallback_${id}">Callback — caller hangs up; we call the dispatch number back</label>
-          </div>
-          <div class="toggle-row">
-            <input type="radio" name="endMode_${id}" id="endModeTransfer_${id}" class="path-end-mode" value="transfer">
-            <label for="endModeTransfer_${id}">Live transfer — caller is transferred straight to the dispatch number</label>
-          </div>
-          <div class="field-hint">Live transfer uses this path's Dispatch Call override if set, otherwise the client default.</div>
-        </div>
-        <details style="margin-top:0.75rem;">
-          <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">(optional)</span></summary>
-          <div style="margin-top:0.5rem;">
-            <div class="field-hint" style="margin-bottom:0.5rem;">Override who gets notified for this specific path.</div>
-            <label>Dispatch Call</label>
-            <input type="text" class="path-dispatch-call" placeholder="+15551234567">
-            <label>Dispatch Text</label>
-            <div class="chip-input path-dispatch-sms" onclick="this.querySelector('input').focus()">
-              <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+        <details open>
+          <summary>
+            <div class="path-card-summary">
+              <span class="chevron">&#9656;</span>
+              <span class="path-summary-name">${defaultName ? defaultName : ''}</span>
+              <span class="path-summary-condition">${defaultCond ? defaultCond.length > 60 ? defaultCond.slice(0, 60) + '…' : defaultCond : ''}</span>
+              <span class="path-summary-meta">
+                <span class="path-q-count">0 questions</span>
+                <span class="end-badge callback">Callback</span>
+              </span>
+              <div class="card-actions" onclick="event.stopPropagation()">
+                <button type="button" onclick="duplicatePathCard('${id}')" style="color:#2563eb;border-color:#93b4f5;">Duplicate</button>
+                <button type="button" onclick="removePathCard('${id}')">Remove</button>
+              </div>
             </div>
-            <label>Dispatch Email</label>
-            <div class="chip-input path-dispatch-email" onclick="this.querySelector('input').focus()">
-              <input type="text" placeholder="auto-team@shop.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+          </summary>
+          <div class="path-card-body">
+            <span style="font-weight:600;font-size:0.78rem;color:#3730a3;">Path #<span class="path-num"></span></span>
+            <label style="margin-top:0.4rem;">Path Name <span style="color:#dc2626">*</span></label>
+            <input type="text" class="path-name" placeholder="e.g. Emergency Dispatch" value="${defaultName || ''}">
+            <div class="field-hint">Shown as the message type header in dispatch notifications.</div>
+            <label>Transition Condition <span style="color:#dc2626">*</span></label>
+            <input type="text" class="path-condition" placeholder="e.g. The caller confirms forward intent with service" value="${defaultCond}">
+            <div class="field-hint">The condition the AI evaluates after the intro to route into this path.</div>
+            <label style="margin-top:0.5rem;">Data Collection Chain</label>
+            <div class="field-hint" style="margin-top:-0.25rem;">Add data points in the order the agent should ask them. Use branches for conditional logic.</div>
+            <div class="chain-list" data-chain-root="${id}"></div>
+            <div class="chain-add-btns">
+              <button type="button" class="btn-chain-add" onclick="addChainItem(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Data Point</button>
+              <button type="button" class="btn-chain-branch" onclick="addChainBranch(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Branch</button>
             </div>
+            <div style="margin-top:0.75rem;">
+              <label style="font-size:0.85rem;font-weight:600;color:#555;">End of path</label>
+              <div class="toggle-row">
+                <input type="radio" name="endMode_${id}" id="endModeCallback_${id}" class="path-end-mode" value="callback" checked>
+                <label for="endModeCallback_${id}">Callback — caller hangs up; we call the dispatch number back</label>
+              </div>
+              <div class="toggle-row">
+                <input type="radio" name="endMode_${id}" id="endModeTransfer_${id}" class="path-end-mode" value="transfer">
+                <label for="endModeTransfer_${id}">Live transfer — caller is transferred straight to the dispatch number</label>
+              </div>
+              <div class="field-hint">Live transfer uses this path's Dispatch Call override if set, otherwise the client default.</div>
+            </div>
+            <details style="margin-top:0.75rem;">
+              <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">(optional)</span></summary>
+              <div style="margin-top:0.5rem;">
+                <div class="field-hint" style="margin-bottom:0.5rem;">Override who gets notified for this specific path.</div>
+                <label>Dispatch Call</label>
+                <input type="text" class="path-dispatch-call" placeholder="+15551234567">
+                <label>Dispatch Text</label>
+                <div class="chip-input path-dispatch-sms" onclick="this.querySelector('input').focus()">
+                  <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+                </div>
+                <label>Dispatch Email</label>
+                <div class="chip-input path-dispatch-email" onclick="this.querySelector('input').focus()">
+                  <input type="text" placeholder="auto-team@shop.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
+                </div>
+              </div>
+            </details>
           </div>
         </details>
       </div>
@@ -1431,7 +1538,51 @@
   function renumberPaths() {
     pathsContainer.querySelectorAll('.path-card').forEach((card, i) => {
       card.querySelector('.path-num').textContent = i + 1;
+      updatePathSummary(card);
     });
+  }
+
+  // Re-renders the collapsed-card summary (name, condition preview, question
+  // count, end-mode badge) from the current state of the card's inputs.
+  // Called whenever something inside the card changes.
+  function updatePathSummary(card) {
+    if (!card) return;
+    const nameInput = card.querySelector('.path-name');
+    const condInput = card.querySelector('.path-condition');
+    const summaryName = card.querySelector('.path-summary-name');
+    const summaryCond = card.querySelector('.path-summary-condition');
+    const summaryCount = card.querySelector('.path-q-count');
+    const summaryBadge = card.querySelector('.path-summary-meta .end-badge');
+    if (summaryName) summaryName.textContent = (nameInput?.value || '').trim();
+    if (summaryCond) {
+      const c = (condInput?.value || '').trim();
+      summaryCond.textContent = c.length > 60 ? c.slice(0, 60) + '…' : c;
+    }
+    if (summaryCount) {
+      const root = card.querySelector('.chain-list[data-chain-root]');
+      const count = root ? countChainDataPoints(root) : 0;
+      summaryCount.textContent = `${count} question${count === 1 ? '' : 's'}`;
+    }
+    if (summaryBadge) {
+      const mode = card.querySelector('.path-end-mode:checked')?.value || 'callback';
+      summaryBadge.classList.remove('callback', 'transfer');
+      summaryBadge.classList.add(mode);
+      summaryBadge.textContent = mode === 'transfer' ? 'Transfer' : 'Callback';
+    }
+  }
+
+  // Recursively count data-point items in a chain (skipping branch nodes themselves).
+  function countChainDataPoints(chainList) {
+    if (!chainList) return 0;
+    let count = 0;
+    for (const child of chainList.children) {
+      if (child.dataset.type === 'datapoint') count++;
+      else if (child.dataset.type === 'branch') {
+        const sides = child.querySelectorAll(':scope > .branch-side > .chain-list');
+        for (const sub of sides) count += countChainDataPoints(sub);
+      }
+    }
+    return count;
   }
 
   // ── Collect Chain (recursive) ─────────────────────────────
@@ -2036,12 +2187,20 @@
     }, 2000);
   }
 
-  // Attach auto-save to form interactions
+  // Attach auto-save + diagram re-render + summary refresh to form interactions
   document.addEventListener('input', (e) => {
-    if (e.target.closest('#agentForm')) scheduleAutoSave();
+    if (!e.target.closest('#agentForm')) return;
+    scheduleAutoSave();
+    scheduleDiagramRender();
+    const card = e.target.closest('.path-card');
+    if (card) updatePathSummary(card);
   });
   document.addEventListener('change', (e) => {
-    if (e.target.closest('#agentForm')) scheduleAutoSave();
+    if (!e.target.closest('#agentForm')) return;
+    scheduleAutoSave();
+    scheduleDiagramRender();
+    const card = e.target.closest('.path-card');
+    if (card) updatePathSummary(card);
   });
 
   function restoreAutoSave() {
@@ -2167,7 +2326,349 @@
   }
 
   // Load lists and check auto-save after data points are ready
-  setTimeout(() => { loadAllLists(); checkAutoSave(); }, 500);
+  setTimeout(() => { loadAllLists(); checkAutoSave(); renderFlowDiagram(); }, 500);
+
+  // ── Flow diagram (Tier 1) ───────────────────────────────────────────────
+  // Read-only SVG preview of the agent's call flow. Renders the intro, each
+  // routing path as a column of data-point boxes, branches as inline forks,
+  // and end-mode terminals (callback / transfer). Click a node to scroll +
+  // open the matching path card.
+
+  function toggleFlowDiagram() {
+    document.getElementById('flowDiagram').classList.toggle('collapsed');
+  }
+
+  let flowDiagramTimer = null;
+  function scheduleDiagramRender() {
+    if (flowDiagramTimer) clearTimeout(flowDiagramTimer);
+    flowDiagramTimer = setTimeout(() => { renderFlowDiagram(); }, 300);
+  }
+
+  // Read the form into a graph descriptor. Each path becomes a chain of
+  // node descriptors; branches recurse to produce sub-chains.
+  // Output: { paths: [{ id, name, condition, chain: [...], endMode }] }
+  function buildFlowGraph() {
+    const out = { paths: [] };
+    pathsContainer.querySelectorAll('.path-card').forEach((card) => {
+      const pathId = card.dataset.pathId;
+      const name = (card.querySelector('.path-name')?.value || '').trim() || '(unnamed)';
+      const condition = (card.querySelector('.path-condition')?.value || '').trim();
+      const root = card.querySelector('.chain-list[data-chain-root]');
+      const chain = root ? readChainNodes(root, pathId, []) : [];
+      const endMode = card.querySelector('.path-end-mode:checked')?.value || 'callback';
+      out.paths.push({ id: pathId, name, condition, chain, endMode });
+    });
+    return out;
+  }
+
+  // Recursively walk a chain-list, producing { type, label, children?, ref }.
+  function readChainNodes(chainList, pathId, branchTrail) {
+    const nodes = [];
+    for (const child of chainList.children) {
+      if (child.dataset.type === 'datapoint') {
+        const sel = child.querySelector('.chain-dp-select');
+        const variable = sel?.value || '(unset)';
+        const label = variable === '__custom__'
+          ? ((child.querySelector('input[type="text"]')?.value || 'custom').trim() || 'custom')
+          : variable;
+        nodes.push({
+          type: 'data',
+          id: child.dataset.itemId,
+          label,
+          ref: { kind: 'dp', pathId, itemId: child.dataset.itemId },
+        });
+      } else if (child.dataset.type === 'branch') {
+        const variable = child.querySelector('.branch-variable')?.value || '?';
+        const op = child.querySelector('.branch-operator')?.value || '==';
+        const value = child.querySelector('.branch-value-select')?.value || '?';
+        const sides = child.querySelectorAll(':scope > .branch-side');
+        const ifList = sides[0]?.querySelector(':scope > .chain-list');
+        const elseList = sides[1]?.querySelector(':scope > .chain-list');
+        const opLabel = op === '!=' ? '≠' : '=';
+        nodes.push({
+          type: 'branch',
+          id: child.dataset.itemId,
+          label: `${variable} ${opLabel} ${value}`,
+          ifChain: ifList ? readChainNodes(ifList, pathId, [...branchTrail, 'if']) : [],
+          elseChain: elseList ? readChainNodes(elseList, pathId, [...branchTrail, 'else']) : [],
+          ref: { kind: 'branch', pathId, itemId: child.dataset.itemId },
+        });
+      }
+    }
+    return nodes;
+  }
+
+  // Layout constants
+  const FD_NODE_W = 130;
+  const FD_NODE_H = 36;
+  const FD_V_GAP = 22;
+  const FD_PATH_GAP = 40;
+  const FD_INTRO_Y = 12;
+  const FD_INTRO_H = 40;
+  const FD_PATHS_TOP = FD_INTRO_Y + FD_INTRO_H + 36;
+
+  // Recursively compute width/positions of a chain (data points + branches).
+  // Returns { width, positions: [{ id, x, y, w, h, type, label, ref }],
+  //           edges: [{ from, to }], lastId } where positions are relative
+  // to the chain's startX (centerline) and y begins at startY.
+  function layoutChain(chain, startX, startY) {
+    const positions = [];
+    const edges = [];
+    let y = startY;
+    let prevId = null;
+    let widthLeft = FD_NODE_W / 2;
+    let widthRight = FD_NODE_W / 2;
+
+    for (const node of chain) {
+      if (node.type === 'data') {
+        positions.push({
+          id: node.id, x: startX, y, w: FD_NODE_W, h: FD_NODE_H,
+          type: 'data', label: node.label, ref: node.ref,
+        });
+        if (prevId) edges.push({ from: prevId, to: node.id });
+        prevId = node.id;
+        y += FD_NODE_H + FD_V_GAP;
+      } else if (node.type === 'branch') {
+        // Diamond / branch node
+        positions.push({
+          id: node.id, x: startX, y, w: FD_NODE_W, h: FD_NODE_H,
+          type: 'branch', label: node.label, ref: node.ref,
+        });
+        if (prevId) edges.push({ from: prevId, to: node.id });
+        const branchHeadId = node.id;
+        y += FD_NODE_H + FD_V_GAP;
+
+        // Sub-chains side by side
+        const ifLayout = layoutChain(node.ifChain, 0, y);
+        const elseLayout = layoutChain(node.elseChain, 0, y);
+        const ifW = ifLayout.width || FD_NODE_W;
+        const elseW = elseLayout.width || FD_NODE_W;
+        const ifCenterX = startX - (elseW / 2 + FD_PATH_GAP / 2);
+        const elseCenterX = startX + (ifW / 2 + FD_PATH_GAP / 2);
+
+        // Translate sub-chains to their absolute centers
+        for (const p of ifLayout.positions) {
+          p.x += ifCenterX;
+          positions.push(p);
+        }
+        for (const p of elseLayout.positions) {
+          p.x += elseCenterX;
+          positions.push(p);
+        }
+        for (const e of ifLayout.edges) edges.push(e);
+        for (const e of elseLayout.edges) edges.push(e);
+
+        // Connect branch head to first nodes of each side
+        if (ifLayout.positions[0]) edges.push({ from: branchHeadId, to: ifLayout.positions[0].id, label: 'IF' });
+        if (elseLayout.positions[0]) edges.push({ from: branchHeadId, to: elseLayout.positions[0].id, label: 'ELSE' });
+
+        // After a branch, downstream nodes attach to BOTH last-children. We
+        // pick the last "leaf" as the merge point (rendered virtually).
+        const ifLast = ifLayout.lastId || branchHeadId;
+        const elseLast = elseLayout.lastId || branchHeadId;
+        prevId = null; // signal: next node should connect from both leaves
+        const mergeFrom = [ifLast, elseLast];
+        y += Math.max(ifLayout.height || 0, elseLayout.height || 0);
+
+        // Track the branch's footprint widths
+        widthLeft = Math.max(widthLeft, (elseW / 2 + FD_PATH_GAP / 2) + (ifW / 2));
+        widthRight = Math.max(widthRight, (ifW / 2 + FD_PATH_GAP / 2) + (elseW / 2));
+
+        // The next loop iteration uses prevId/mergeFrom to attach edges.
+        // Stash mergeFrom on a local var consumed by the next iteration:
+        edges.__pendingMerge = mergeFrom;
+      } else {
+        continue;
+      }
+
+      // Drain pending merge if previous node was a branch
+      if (edges.__pendingMerge && prevId && positions.length) {
+        for (const fromId of edges.__pendingMerge) {
+          edges.push({ from: fromId, to: positions[positions.length - 1].id });
+        }
+        delete edges.__pendingMerge;
+      }
+    }
+
+    return {
+      width: widthLeft + widthRight,
+      height: y - startY,
+      positions,
+      edges: edges.filter(Boolean),
+      lastId: prevId,
+    };
+  }
+
+  function renderFlowDiagram() {
+    const host = document.getElementById('flowDiagramSvgHost');
+    if (!host) return;
+    const graph = buildFlowGraph();
+
+    if (graph.paths.length === 0) {
+      host.innerHTML = '<div class="flow-diagram-empty">Add a routing path to see the call flow.</div>';
+      return;
+    }
+
+    // Layout: intro at top, each path in its own column.
+    const pathLayouts = [];
+    let totalWidth = 0;
+    for (const path of graph.paths) {
+      const layout = layoutChain(path.chain, 0, FD_PATHS_TOP + 20);
+      // Append end-mode terminal
+      const endY = FD_PATHS_TOP + 20 + layout.height;
+      const endId = `${path.id}-end`;
+      layout.positions.push({
+        id: endId, x: 0, y: endY, w: FD_NODE_W, h: FD_NODE_H,
+        type: `end-${path.endMode}`,
+        label: path.endMode === 'transfer' ? 'Live Transfer' : 'Callback',
+        ref: { kind: 'end', pathId: path.id },
+      });
+      // Connect last node (or branch leaves) to the end terminal
+      if (layout.lastId) {
+        layout.edges.push({ from: layout.lastId, to: endId });
+      } else if (layout.edges.__pendingMerge) {
+        for (const fromId of layout.edges.__pendingMerge) {
+          layout.edges.push({ from: fromId, to: endId });
+        }
+        delete layout.edges.__pendingMerge;
+      } else if (layout.positions.length === 1) {
+        // Empty chain — connect intro to terminal directly via path
+        layout.edges = [];
+      }
+      layout.height = endY + FD_NODE_H - FD_PATHS_TOP;
+      pathLayouts.push({ path, layout });
+      totalWidth += Math.max(layout.width, FD_NODE_W) + FD_PATH_GAP;
+    }
+    totalWidth = Math.max(totalWidth - FD_PATH_GAP, FD_NODE_W);
+
+    // Translate each path layout to its column center
+    let cursorX = 0;
+    const allNodes = [];
+    const allEdges = [];
+    const introId = '__intro__';
+    allNodes.push({
+      id: introId, x: totalWidth / 2 - FD_NODE_W / 2, y: FD_INTRO_Y,
+      w: FD_NODE_W, h: FD_INTRO_H, type: 'intro', label: 'Intro / Greeting',
+      ref: null,
+    });
+    for (const { path, layout } of pathLayouts) {
+      const colWidth = Math.max(layout.width, FD_NODE_W);
+      const centerX = cursorX + colWidth / 2;
+      cursorX += colWidth + FD_PATH_GAP;
+      for (const p of layout.positions) {
+        allNodes.push({ ...p, x: centerX + p.x - p.w / 2 });
+      }
+      for (const e of layout.edges) allEdges.push(e);
+      // Edge from intro to first node of this path
+      const firstNode = layout.positions[0];
+      if (firstNode) {
+        allEdges.push({
+          from: introId, to: firstNode.id,
+          label: (path.condition || path.name).slice(0, 20) + ((path.condition || path.name).length > 20 ? '…' : ''),
+        });
+      }
+    }
+
+    // Compute total height
+    let totalHeight = FD_INTRO_Y + FD_INTRO_H + 20;
+    for (const n of allNodes) totalHeight = Math.max(totalHeight, n.y + n.h + 20);
+
+    // Build SVG
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', String(Math.max(totalWidth, 600)));
+    svg.setAttribute('height', String(totalHeight));
+    svg.setAttribute('viewBox', `0 0 ${Math.max(totalWidth, 600)} ${totalHeight}`);
+
+    // Edges first (so nodes draw on top)
+    const nodeById = new Map(allNodes.map((n) => [n.id, n]));
+    for (const e of allEdges) {
+      const a = nodeById.get(e.from);
+      const b = nodeById.get(e.to);
+      if (!a || !b) continue;
+      const x1 = a.x + a.w / 2;
+      const y1 = a.y + a.h;
+      const x2 = b.x + b.w / 2;
+      const y2 = b.y;
+      const midY = (y1 + y2) / 2;
+      const path = document.createElementNS(svgNS, 'path');
+      path.setAttribute('d', `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`);
+      path.setAttribute('class', 'flow-edge');
+      svg.appendChild(path);
+      if (e.label) {
+        const text = document.createElementNS(svgNS, 'text');
+        text.setAttribute('x', String((x1 + x2) / 2));
+        text.setAttribute('y', String(midY - 4));
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('class', 'flow-edge-label');
+        text.textContent = e.label;
+        svg.appendChild(text);
+      }
+    }
+
+    // Nodes
+    for (const n of allNodes) {
+      const g = document.createElementNS(svgNS, 'g');
+      g.setAttribute('class', 'flow-node');
+      g.setAttribute('transform', `translate(${n.x}, ${n.y})`);
+      if (n.ref) {
+        g.style.cursor = 'pointer';
+        g.addEventListener('click', () => focusFormByRef(n.ref));
+      }
+
+      let shape;
+      if (n.type === 'branch') {
+        // Diamond
+        shape = document.createElementNS(svgNS, 'polygon');
+        shape.setAttribute('points',
+          `${n.w / 2},0 ${n.w},${n.h / 2} ${n.w / 2},${n.h} 0,${n.h / 2}`);
+      } else if (n.type === 'end-callback' || n.type === 'end-transfer') {
+        // Pill (rounded rect with full radius)
+        shape = document.createElementNS(svgNS, 'rect');
+        shape.setAttribute('width', String(n.w));
+        shape.setAttribute('height', String(n.h));
+        shape.setAttribute('rx', String(n.h / 2));
+        shape.setAttribute('ry', String(n.h / 2));
+      } else {
+        // Rounded rect
+        shape = document.createElementNS(svgNS, 'rect');
+        shape.setAttribute('width', String(n.w));
+        shape.setAttribute('height', String(n.h));
+        shape.setAttribute('rx', '6');
+        shape.setAttribute('ry', '6');
+      }
+      shape.setAttribute('class', `flow-node-bg node-${n.type}`);
+      g.appendChild(shape);
+
+      const text = document.createElementNS(svgNS, 'text');
+      text.setAttribute('x', String(n.w / 2));
+      text.setAttribute('y', String(n.h / 2 + 4));
+      text.setAttribute('text-anchor', 'middle');
+      text.setAttribute('class', 'flow-node-label');
+      const label = n.label.length > 18 ? n.label.slice(0, 18) + '…' : n.label;
+      text.textContent = label;
+      g.appendChild(text);
+
+      svg.appendChild(g);
+    }
+
+    host.innerHTML = '';
+    host.appendChild(svg);
+  }
+
+  // Click on a diagram node → open + scroll its source card.
+  function focusFormByRef(ref) {
+    if (!ref || !ref.pathId) return;
+    const card = pathsContainer.querySelector(`[data-path-id="${ref.pathId}"]`);
+    if (!card) return;
+    const details = card.querySelector(':scope > details');
+    if (details) details.open = true;
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Highlight briefly
+    card.style.transition = 'box-shadow 0.3s';
+    card.style.boxShadow = '0 0 0 3px #fde68a';
+    setTimeout(() => { card.style.boxShadow = ''; }, 1200);
+  }
 </script>
 </body>
 </html>
