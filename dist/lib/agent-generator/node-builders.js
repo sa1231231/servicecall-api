@@ -6,6 +6,8 @@ export const DEFAULT_CLOSING_REMARKS_PROMPT = `You are about to end the call. Do
 export const DEFAULT_CLOSING_STATEMENT_TEXT = `Alright, bye now!`;
 // Spoken right before a per-path live transfer kicks off.
 export const DEFAULT_PRE_TRANSFER_PROMPT = `Thanks for the information. Hold on a moment — connecting you to our team at {{business_name}} now.`;
+// Spoken when a live transfer fails to connect (Live Transfer Recovery node).
+export const DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT = `Sorry about that. It looks like our staff members are on the floor helping customers. Let us give you a call back. We'll call you back as soon as possible.`;
 // ── ID Factory ───────────────────────────────────────────────────────────────
 function randomSuffix(len) {
     return Math.random()
@@ -409,11 +411,12 @@ export function buildPerPathTransferCallNode(pathIds, pathPos, ids, resolvedNumb
         display_position: pathPos.transferCall,
     };
 }
-export function buildTransferFailedNode(ids, pos, f) {
+export function buildLiveTransferRecoveryNode(agentConfig, ids, pos, f) {
+    const template = agentConfig.liveTransferRecoveryPrompt ?? DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
     return {
         instruction: {
             type: "prompt",
-            text: "Let the caller know you'll have their supervisor call them back as soon as possible. Do not ask them any more questions.",
+            text: renderTemplate(template, { business_name: agentConfig.businessName }),
         },
         always_edge: {
             destination_node_id: ids.closingRemarksId,
@@ -425,7 +428,7 @@ export function buildTransferFailedNode(ids, pos, f) {
             model: "gpt-4.1",
             high_priority: true,
         },
-        name: "Transfer Failed",
+        name: "Live Transfer Recovery",
         edges: [],
         id: ids.transferFailedId,
         type: "conversation",

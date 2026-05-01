@@ -25,7 +25,7 @@ import {
   buildGuardrailEndNode,
   buildAgentRoot,
   buildTransferCallNode,
-  buildTransferFailedNode,
+  buildLiveTransferRecoveryNode,
   buildPreTransferNode,
   buildPerPathTransferCallNode,
   type AgentConfig,
@@ -327,9 +327,9 @@ When listing anything — services, time slots, examples, options — never list
   if (humanMode === "live_transfer") {
     allNodes.push(buildTransferCallNode(ids, pos, f));
   }
-  // Build the shared Transfer Failed node when any transfer path exists.
+  // Build the shared Live Transfer Recovery node when any transfer path exists.
   if (humanMode === "live_transfer" || anyTransferPath) {
-    allNodes.push(buildTransferFailedNode(ids, pos, f));
+    allNodes.push(buildLiveTransferRecoveryNode(agentConfig, ids, pos, f));
   }
   allNodes.push(buildCloseNode(agentConfig, ids, pos, f));
   allNodes.push(...buildClosingSequence(agentConfig, ids, pos, f));

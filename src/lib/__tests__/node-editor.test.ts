@@ -263,7 +263,7 @@ describe("parseConversationFlow", () => {
 
     const nodeNames = parsed.allNodes.map(n => n.name);
     expect(nodeNames).toContain("Transfer Call");
-    expect(nodeNames).toContain("Transfer Failed");
+    expect(nodeNames).toContain("Live Transfer Recovery");
   });
 });
 

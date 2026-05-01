@@ -235,6 +235,16 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
     const closingRemarksPrompt = findInstructionText("Closing Remarks");
     const closingStatementText = findInstructionText("Closing Statement");
 
+    // Live Transfer Recovery — only present on agents created after the feature
+    // shipped. Strict name match; do not fall back to the legacy "Transfer Failed".
+    // Field omitted from the response when the node is absent so the dashboard
+    // can hide the editor section for older agents.
+    const liveTransferRecoveryNode = parsed.allNodes.find((n) => n.name === "Live Transfer Recovery");
+    const liveTransferRecoveryInstr = liveTransferRecoveryNode?.raw.instruction as Record<string, unknown> | undefined;
+    const liveTransferRecoveryPrompt = liveTransferRecoveryNode
+      ? ((liveTransferRecoveryInstr?.text as string) ?? "")
+      : undefined;
+
     res.json({
       agentId,
       agentName: snapshot.agentName,
@@ -253,6 +263,7 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       closePrompt,
       closingRemarksPrompt,
       closingStatementText,
+      ...(liveTransferRecoveryPrompt !== undefined && { liveTransferRecoveryPrompt }),
       humanRequestMode,
       humanRequestNodeId: humanReqNode?.id,
       transitionConditions,
@@ -1845,6 +1856,11 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
     }
     if (typeof changes.closingStatementText === "string") {
       applyClosingPrompt("Closing Statement", changes.closingStatementText);
+    }
+    // Live Transfer Recovery — strict name match. Older agents with "Transfer Failed"
+    // are intentionally not touched; this only updates agents that have the new node.
+    if (typeof changes.liveTransferRecoveryPrompt === "string") {
+      applyClosingPrompt("Live Transfer Recovery", changes.liveTransferRecoveryPrompt);
     }
 
     // Apply individual node prompt changes

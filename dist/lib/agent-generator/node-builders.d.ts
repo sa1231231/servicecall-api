@@ -3,6 +3,7 @@ export declare const DEFAULT_CLOSE_PROMPT = "Thank the caller for all the inform
 export declare const DEFAULT_CLOSING_REMARKS_PROMPT = "You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ";
 export declare const DEFAULT_CLOSING_STATEMENT_TEXT = "Alright, bye now!";
 export declare const DEFAULT_PRE_TRANSFER_PROMPT = "Thanks for the information. Hold on a moment \u2014 connecting you to our team at {{business_name}} now.";
+export declare const DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT = "Sorry about that. It looks like our staff members are on the floor helping customers. Let us give you a call back. We'll call you back as soon as possible.";
 export interface IdFactory {
     nextTs(): number;
     nodeId(): string;
@@ -72,6 +73,7 @@ export interface AgentConfig {
     closePrompt?: string;
     closingRemarksPrompt?: string;
     closingStatementText?: string;
+    liveTransferRecoveryPrompt?: string;
 }
 export interface IntroPathConfig {
     name: string;
@@ -295,7 +297,7 @@ export declare function buildPerPathTransferCallNode(pathIds: PathIds, pathPos: 
     speak_during_execution: boolean;
     display_position: Position;
 };
-export declare function buildTransferFailedNode(ids: Ids, pos: Positions, f: IdFactory): {
+export declare function buildLiveTransferRecoveryNode(agentConfig: AgentConfig, ids: Ids, pos: Positions, f: IdFactory): {
     instruction: {
         type: string;
         text: string;

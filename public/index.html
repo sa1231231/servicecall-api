@@ -448,14 +448,20 @@
 
   <label>When caller requests a human:</label>
   <div class="toggle-row">
-    <input type="radio" name="humanRequestMode" id="humanRequestCallback" value="callback" checked>
+    <input type="radio" name="humanRequestMode" id="humanRequestCallback" value="callback" checked onchange="toggleLiveTransferRecovery()">
     <label for="humanRequestCallback">Ask caller for a callback</label>
   </div>
   <div class="toggle-row">
-    <input type="radio" name="humanRequestMode" id="humanRequestTransfer" value="live_transfer">
+    <input type="radio" name="humanRequestMode" id="humanRequestTransfer" value="live_transfer" onchange="toggleLiveTransferRecovery()">
     <label for="humanRequestTransfer">Live transfer to dispatch number</label>
   </div>
   <div class="field-hint">"Callback" — agent tells the caller no one is available and offers a callback. "Live transfer" — agent attempts to transfer the call directly to the dispatch call number.</div>
+
+  <div id="liveTransferRecoveryWrap" style="display:none;margin-top:0.75rem;">
+    <label for="liveTransferRecoveryPrompt">Live Transfer Recovery Prompt</label>
+    <textarea id="liveTransferRecoveryPrompt" rows="3"></textarea>
+    <div class="field-hint">Spoken if the live transfer fails to connect, before the call wraps up. You can use <code>{{business_name}}</code> — it will be replaced with the business name on save.</div>
+  </div>
 
   <button type="submit" id="submitBtn">Create Agent</button>
 </form>
@@ -470,12 +476,23 @@
   const DEFAULT_CLOSE_PROMPT = 'Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.';
   const DEFAULT_CLOSING_REMARKS_PROMPT = 'You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ';
   const DEFAULT_CLOSING_STATEMENT_TEXT = 'Alright, bye now!';
+  const DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT = "Sorry about that. It looks like our staff members are on the floor helping customers. Let us give you a call back. We'll call you back as soon as possible.";
 
   // Pre-fill closing prompts on initial load (will be overwritten by
   // auto-save / draft / template restoration if present).
   document.getElementById('closePrompt').value = DEFAULT_CLOSE_PROMPT;
   document.getElementById('closingRemarksPrompt').value = DEFAULT_CLOSING_REMARKS_PROMPT;
   document.getElementById('closingStatementText').value = DEFAULT_CLOSING_STATEMENT_TEXT;
+  document.getElementById('liveTransferRecoveryPrompt').value = DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
+
+  // Show/hide the Live Transfer Recovery textarea based on humanRequestMode radio.
+  function toggleLiveTransferRecovery() {
+    const wrap = document.getElementById('liveTransferRecoveryWrap');
+    const isLiveTransfer = document.querySelector('input[name="humanRequestMode"]:checked')?.value === 'live_transfer';
+    if (wrap) wrap.style.display = isLiveTransfer ? '' : 'none';
+  }
+  // Run once on initial load to apply the default-state hide.
+  toggleLiveTransferRecovery();
 
   // Closing-prompt template editors. Returned API includes renderToEditor
   // so we can update the visual editor whenever the hidden value changes
@@ -1467,6 +1484,7 @@
         closePrompt: val('closePrompt'),
         closingRemarksPrompt: val('closingRemarksPrompt'),
         closingStatementText: val('closingStatementText'),
+        liveTransferRecoveryPrompt: val('liveTransferRecoveryPrompt'),
       },
       client: {
         slug: val('businessName').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
@@ -1684,6 +1702,7 @@
       closePrompt: val('closePrompt'),
       closingRemarksPrompt: val('closingRemarksPrompt'),
       closingStatementText: val('closingStatementText'),
+      liveTransferRecoveryPrompt: val('liveTransferRecoveryPrompt'),
     };
 
     pathsContainer.querySelectorAll('.path-card').forEach(card => {
@@ -1724,6 +1743,7 @@
         closePrompt: val('closePrompt'),
         closingRemarksPrompt: val('closingRemarksPrompt'),
         closingStatementText: val('closingStatementText'),
+        liveTransferRecoveryPrompt: val('liveTransferRecoveryPrompt'),
       },
       paths,
       client: {
@@ -1785,6 +1805,7 @@
           closePrompt: config.business?.closePrompt || '',
           closingRemarksPrompt: config.business?.closingRemarksPrompt || '',
           closingStatementText: config.business?.closingStatementText || '',
+          liveTransferRecoveryPrompt: config.business?.liveTransferRecoveryPrompt || '',
           clientName: config.client?.name || '',
           dispatchTextNumbers: (config.client?.dispatch_text_numbers || []).join(', '),
           dispatchCallNumber: config.client?.dispatch_call_number || '',
@@ -1868,6 +1889,7 @@
     setClosingPrompt('closePrompt', state.closePrompt || DEFAULT_CLOSE_PROMPT);
     setClosingPrompt('closingRemarksPrompt', state.closingRemarksPrompt || DEFAULT_CLOSING_REMARKS_PROMPT);
     setClosingPrompt('closingStatementText', state.closingStatementText || DEFAULT_CLOSING_STATEMENT_TEXT);
+    document.getElementById('liveTransferRecoveryPrompt').value = state.liveTransferRecoveryPrompt || DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
     setFormChipValues('chip-dispatch-text', csvToArray(state.dispatchTextNumbers || ''));
     document.getElementById('dispatchCallNumber').value = state.dispatchCallNumber || '';
     setFormChipValues('chip-dispatch-email', csvToArray(state.dispatchEmail || ''));
@@ -1875,6 +1897,7 @@
 
     const modeRadio = document.querySelector(`input[name="humanRequestMode"][value="${state.humanRequestMode || 'callback'}"]`);
     if (modeRadio) modeRadio.checked = true;
+    toggleLiveTransferRecovery();
 
     pathsContainer.innerHTML = '';
     pathCounter = 0;

@@ -4323,6 +4323,19 @@
       html += '<div class="ne-global-prompt">' + esc((data.closingStatementText || '').slice(0, 300)) +
         ((data.closingStatementText || '').length > 300 ? '...' : '') + '</div>';
     }
+    // Live Transfer Recovery — only present on agents created with the feature.
+    // Older agents return no `liveTransferRecoveryPrompt` field, so this section
+    // is hidden for them by design.
+    if (data.liveTransferRecoveryPrompt !== undefined) {
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Live Transfer Recovery <span style="font-weight:400;color:#888;">(if transfer fails)</span></span>';
+      if (canEdit) {
+        html += '<button class="ne-btn" onclick="openLiveTransferRecoveryEdit()" style="font-size:0.7rem;">Edit</button>';
+      }
+      html += '</div>';
+      html += '<div class="ne-global-prompt">' + esc((data.liveTransferRecoveryPrompt || '').slice(0, 300)) +
+        ((data.liveTransferRecoveryPrompt || '').length > 300 ? '...' : '') + '</div>';
+    }
 
     // Display name
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
@@ -4914,6 +4927,21 @@
     };
   }
 
+  function openLiveTransferRecoveryEdit() {
+    if (!neData) return;
+    document.getElementById('promptModalTitle').textContent = 'Edit Live Transfer Recovery';
+    document.getElementById('promptModalDesc').textContent = 'Spoken if the live transfer fails to connect, before the call wraps up. Type {{ to insert business_name as a green pill.';
+    useTemplateEditor(['business_name'], neData.liveTransferRecoveryPrompt || '');
+    document.getElementById('promptModal').style.display = '';
+    promptModalCb = (text) => {
+      neData.liveTransferRecoveryPrompt = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('Live transfer recovery updated (save to publish)', 'success');
+    };
+  }
+
   // ── Transition condition edit (local) ──────────────────────────
 
   function openTransitionEdit(pathName) {
@@ -5251,6 +5279,9 @@
     changes.closePrompt = neData.closePrompt;
     changes.closingRemarksPrompt = neData.closingRemarksPrompt;
     changes.closingStatementText = neData.closingStatementText;
+    if (neData.liveTransferRecoveryPrompt !== undefined) {
+      changes.liveTransferRecoveryPrompt = neData.liveTransferRecoveryPrompt;
+    }
     changes.transitionConditions = neData.transitionConditions;
     changes.description = 'Save & Publish from dashboard';
 

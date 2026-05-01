@@ -165,6 +165,7 @@ export async function createAgentHandler(
       closePrompt: body.business.closePrompt?.trim() || undefined,
       closingRemarksPrompt: body.business.closingRemarksPrompt?.trim() || undefined,
       closingStatementText: body.business.closingStatementText?.trim() || undefined,
+      liveTransferRecoveryPrompt: body.business.liveTransferRecoveryPrompt?.trim() || undefined,
     };
     const dpDefaults = await getDataPointDefaults();
     // Resolve per-path transfer destination from dispatch_by_type → client default.

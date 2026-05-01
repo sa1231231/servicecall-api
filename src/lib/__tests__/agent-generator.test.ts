@@ -544,10 +544,10 @@ describe("per-path end mode", () => {
     const routerQuote = flow.nodes.find((n: any) => n.name === "Variables Router (Quote)");
     expect(routerQuote.else_edge.destination_node_id).toBe(close.id);
 
-    // Shared Transfer Failed node exists once
-    const transferFailed = flow.nodes.filter((n: any) => n.name === "Transfer Failed");
-    expect(transferFailed).toHaveLength(1);
-    expect(transferCall.edge.destination_node_id).toBe(transferFailed[0].id);
+    // Shared Live Transfer Recovery node exists once
+    const recovery = flow.nodes.filter((n: any) => n.name === "Live Transfer Recovery");
+    expect(recovery).toHaveLength(1);
+    expect(transferCall.edge.destination_node_id).toBe(recovery[0].id);
   });
 
   it("rejects transfer end_mode without a transferDestination", () => {
@@ -561,7 +561,7 @@ describe("per-path end mode", () => {
     ).toThrow(/no dispatch call number/i);
   });
 
-  it("does not duplicate Transfer Failed when humanRequestMode is also live_transfer", () => {
+  it("does not duplicate Live Transfer Recovery when humanRequestMode is also live_transfer", () => {
     const { agent } = generateAgent(
       { ...baseConfig, humanRequestMode: "live_transfer" } as any,
       [],
@@ -571,7 +571,7 @@ describe("per-path end mode", () => {
       TEST_DEFAULTS,
     );
     const flow = agent.conversationFlow as any;
-    expect(flow.nodes.filter((n: any) => n.name === "Transfer Failed")).toHaveLength(1);
+    expect(flow.nodes.filter((n: any) => n.name === "Live Transfer Recovery")).toHaveLength(1);
     // Both per-path (Transfer Call (Emergency)) and the global Transfer Call should exist
     expect(flow.nodes.filter((n: any) => n.type === "transfer_call").length).toBe(2);
   });
