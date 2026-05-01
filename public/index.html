@@ -416,23 +416,29 @@
   <button type="button" class="btn-add-path" onclick="addPathCard()">+ Add Routing Path</button>
 
   <!-- ── Client ──────────────────────────────────────────────── -->
-  <h2>Client Configuration</h2>
+  <h2>Client</h2>
 
   <label for="clientName">Display Name (used in outgoing SMS &amp; emails)</label>
   <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
   <div class="field-hint">Used in outgoing SMS and email notifications as the business identity — e.g. "Hi Acme Plumbing Co., you have a new call!" If blank, falls back to Business Name.</div>
 
-  <label>Dispatch Text Numbers <span style="font-weight:400;color:#999;">(defaults to owner phone if empty)</span></label>
+  <!-- ── Default Dispatch ────────────────────────────────────── -->
+  <!-- Field labels and order match the agent dashboard ("Default Dispatch"
+       in dashboard.html) and the client portal ("Default Dispatch" in
+       portal.html). Operators see the same vocabulary across all three. -->
+  <h2>Default Dispatch</h2>
+
+  <label>Dispatch Call</label>
+  <input type="text" id="dispatchCallNumber" placeholder="+15551234567">
+  <div class="field-hint">If set (along with Summary Agent ID), an AI-powered outbound call is placed to this number after each caller interaction to deliver the summary by voice.</div>
+
+  <label>Dispatch Text <span style="font-weight:400;color:#999;">(defaults to owner phone if empty)</span></label>
   <div class="chip-input" id="chip-dispatch-text" onclick="this.querySelector('input').focus()">
     <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
   </div>
   <div class="field-hint">These numbers receive an SMS with the call summary after every call.</div>
 
-  <label>Dispatch Call Number</label>
-  <input type="text" id="dispatchCallNumber" placeholder="+15551234567">
-  <div class="field-hint">If set (along with Summary Agent ID), an AI-powered outbound call is placed to this number after each caller interaction to deliver the summary by voice.</div>
-
-  <label>Dispatch Email(s)</label>
+  <label>Dispatch Email</label>
   <div class="chip-input" id="chip-dispatch-email" onclick="this.querySelector('input').focus()">
     <input type="text" placeholder="dispatch@acme.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
   </div>
@@ -442,7 +448,7 @@
   <div class="chip-input" id="chip-summary-agent" onclick="this.querySelector('input').focus()">
     <input type="text" placeholder="agent_..." onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
   </div>
-  <div class="field-hint">The Retell agent used for outbound dispatch calls. Works with Dispatch Call Number. Leave blank if you only need SMS/email.</div>
+  <div class="field-hint">The Retell agent used for outbound dispatch calls. Works with Dispatch Call. Leave blank if you only need SMS/email.</div>
 
   <h2>Options</h2>
 
@@ -1276,22 +1282,22 @@
             <input type="radio" name="endMode_${id}" id="endModeTransfer_${id}" class="path-end-mode" value="transfer">
             <label for="endModeTransfer_${id}">Live transfer — caller is transferred straight to the dispatch number</label>
           </div>
-          <div class="field-hint">Live transfer uses this path's Dispatch Call Number override if set, otherwise the client default.</div>
+          <div class="field-hint">Live transfer uses this path's Dispatch Call override if set, otherwise the client default.</div>
         </div>
         <details style="margin-top:0.75rem;">
           <summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Dispatch Override <span style="font-weight:400;color:#999;">(optional)</span></summary>
           <div style="margin-top:0.5rem;">
             <div class="field-hint" style="margin-bottom:0.5rem;">Override who gets notified for this specific path.</div>
-            <label>SMS Numbers</label>
+            <label>Dispatch Call</label>
+            <input type="text" class="path-dispatch-call" placeholder="+15551234567">
+            <label>Dispatch Text</label>
             <div class="chip-input path-dispatch-sms" onclick="this.querySelector('input').focus()">
               <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
             </div>
-            <label>Email(s)</label>
+            <label>Dispatch Email</label>
             <div class="chip-input path-dispatch-email" onclick="this.querySelector('input').focus()">
               <input type="text" placeholder="auto-team@shop.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
             </div>
-            <label>Dispatch Call Number</label>
-            <input type="text" class="path-dispatch-call" placeholder="+15551234567">
           </div>
         </details>
       </div>
