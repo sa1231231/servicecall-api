@@ -9,8 +9,8 @@ export interface ResolvedPath {
     name: string;
     resolved: DataPoint[];
 }
-export declare function resolveDataPoints(rawDataPoints: RawDataPoint[]): DataPoint[];
-export declare function generateAgent(agentConfig: AgentConfig, rawDataPoints: RawDataPoint[], pathConfigs?: PathConfig[]): {
+export declare function resolveDataPoints(rawDataPoints: RawDataPoint[], defaults: Record<string, DataPoint>): DataPoint[];
+export declare function generateAgent(agentConfig: AgentConfig, rawDataPoints: RawDataPoint[], pathConfigs: PathConfig[] | undefined, defaults: Record<string, DataPoint>): {
     agent: Record<string, unknown>;
     resolved: DataPoint[];
     resolvedPaths?: ResolvedPath[];

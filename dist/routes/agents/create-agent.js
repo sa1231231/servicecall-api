@@ -1,16 +1,12 @@
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import { notificationClients } from "../../_cache/clients.js";
-import { persistClient, updateClientField } from "../../config/client-store.js";
+import { persistClient } from "../../config/client-store.js";
 import { provisionPhoneNumber } from "../../lib/provision-number.js";
+import { getDataPointDefaults } from "../../lib/data-point-defaults.js";
 import { generateAgent, } from "../../lib/agent-generator/index.js";
 import { toLabel, deriveNotificationConfig, deriveMultiPathNotificationConfig, } from "../../lib/notification-config.js";
 import { extractFlowParams, extractAgentParams, } from "../../lib/retell-sync.js";
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OUTPUT_DIR = path.join(__dirname, "../../lib/agent-generator/output");
 // ── DataPoint → VariableEntry flattening ─────────────────────────────────────
 function flattenDataPoints(resolved) {
     const variables = [];
@@ -60,9 +56,17 @@ export async function createAgentHandler(req, res) {
         res.status(400).json({ error: "Missing required field: client.slug" });
         return;
     }
+    // Fall back to owner phone if dispatch_text_numbers is empty
     if (!Array.isArray(body.client.dispatch_text_numbers) || body.client.dispatch_text_numbers.length === 0) {
-        res.status(400).json({ error: "Missing required field: client.dispatch_text_numbers (non-empty array)" });
-        return;
+        const { getSettings } = await import("../../lib/settings.js");
+        const settings = await getSettings();
+        if (settings.owner_phone) {
+            body.client.dispatch_text_numbers = [settings.owner_phone];
+        }
+        else {
+            res.status(400).json({ error: "Missing dispatch_text_numbers and no owner phone configured in settings" });
+            return;
+        }
     }
     if (notificationClients[body.client.slug]) {
         res.status(409).json({ error: `Client slug "${body.client.slug}" already exists` });
@@ -72,17 +76,21 @@ export async function createAgentHandler(req, res) {
     let conversationFlowId;
     try {
         // ── 1. Generate agent JSON ─────────────────────────────────────────────
-        console.log(`[create-agent] generating agent for "${body.business.businessName}"`);
-        const { agent: agentJson, resolved, resolvedPaths } = generateAgent(body.business, body.dataPoints ?? [], body.paths);
-        // ── 2. Save generated JSON to output ───────────────────────────────────
-        if (!fs.existsSync(OUTPUT_DIR)) {
-            fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-        }
+        const pathSummary = hasPaths
+            ? `${body.paths.length} path(s): ${body.paths.map(p => `"${p.name}" (${p.dataPoints.length} dps)`).join(", ")}`
+            : `${body.dataPoints.length} data points (flat)`;
+        console.log(`[create-agent] generating agent for "${body.business.businessName}" — ${pathSummary}`);
+        const agentConfig = {
+            ...body.business,
+            humanRequestMode: body.business.human_request_mode || "callback",
+            closePrompt: body.business.closePrompt?.trim() || undefined,
+            closingRemarksPrompt: body.business.closingRemarksPrompt?.trim() || undefined,
+            closingStatementText: body.business.closingStatementText?.trim() || undefined,
+        };
+        const dpDefaults = await getDataPointDefaults();
+        const { agent: agentJson, resolved, resolvedPaths } = generateAgent(agentConfig, body.dataPoints ?? [], body.paths, dpDefaults);
         const slug = body.client.slug;
-        const outputPath = path.join(OUTPUT_DIR, `${slug}.json`);
-        fs.writeFileSync(outputPath, JSON.stringify(agentJson, null, 2), "utf8");
-        console.log(`[create-agent] saved agent JSON to ${outputPath}`);
-        // ── 3. Create conversation flow in Retell ──────────────────────────────
+        // ── 2. Create conversation flow in Retell ──────────────────────────────
         const conversationFlow = agentJson.conversationFlow;
         const flowParams = extractFlowParams(conversationFlow);
         console.log(`[create-agent] creating conversation flow in Retell...`);
@@ -113,28 +121,34 @@ export async function createAgentHandler(req, res) {
         // Store canonical agent JSON on the client document
         const canonicalJson = { ...agentJson, agent_id: agentId };
         jsonEntry.retell_agents = { [agentId]: canonicalJson };
+        // Apply per-path dispatch overrides if provided
+        if (body.client.dispatch_by_type) {
+            jsonEntry.dispatch_by_type = body.client.dispatch_by_type;
+        }
         await persistClient(slug, jsonEntry);
         console.log(`[create-agent] client "${slug}" registered with agent ${agentId}`);
         // ── 6. Provision phone number ──────────────────────────────────────────
         let provisionedNumber = null;
         let provisionError = null;
-        const dispatchCall = body.client.dispatch_call_number;
-        if (dispatchCall) {
-            try {
-                const result = await provisionPhoneNumber({
-                    agentId,
-                    clientName: body.business.businessName,
-                    dispatchCallNumber: dispatchCall,
-                });
-                provisionedNumber = result.phoneNumber;
-                await updateClientField(slug, "outbound_from_number", provisionedNumber);
-                console.log(`[create-agent] provisioned number ${provisionedNumber} for "${slug}"`);
-            }
-            catch (provErr) {
-                const msg = provErr instanceof Error ? provErr.message : String(provErr);
-                provisionError = msg;
-                console.error(`[create-agent] provisioning failed for "${slug}":`, msg);
-            }
+        // Derive area code: client-level dispatch call > per-path override > default (815)
+        const dispatchCall = body.client.dispatch_call_number
+            || (body.client.dispatch_by_type
+                ? Object.values(body.client.dispatch_by_type).find(o => o.dispatch_call_number)?.dispatch_call_number
+                : null)
+            || undefined;
+        try {
+            const result = await provisionPhoneNumber({
+                agentId,
+                clientName: body.business.businessName,
+                dispatchCallNumber: dispatchCall || undefined,
+            });
+            provisionedNumber = result.phoneNumber;
+            console.log(`[create-agent] provisioned number ${provisionedNumber} for "${slug}"`);
+        }
+        catch (provErr) {
+            const msg = provErr instanceof Error ? provErr.message : String(provErr);
+            provisionError = msg;
+            console.error(`[create-agent] provisioning failed for "${slug}":`, msg);
         }
         // ── 7. Return response ─────────────────────────────────────────────────
         res.status(201).json({
@@ -159,6 +173,20 @@ export async function createAgentHandler(req, res) {
             }
         }
         const message = err instanceof Error ? err.message : "Unknown error";
-        res.status(502).json({ error: "Failed to create agent in Retell", details: message });
+        // Differentiate between validation/generation errors and Retell API errors
+        const isValidation = message.includes("data point") || message.includes("Path ") ||
+            message.includes("variableName") || message.includes("Unknown") ||
+            message.includes("No data point defaults");
+        const status = isValidation ? 400 : 502;
+        const errorLabel = isValidation
+            ? "Agent generation failed"
+            : "Failed to create agent in Retell";
+        // Extract Retell API error details if available
+        let details = message;
+        if (err?.status)
+            details += ` (HTTP ${err.status})`;
+        if (err?.error?.message)
+            details = err.error.message;
+        res.status(status).json({ error: errorLabel, details });
     }
 }

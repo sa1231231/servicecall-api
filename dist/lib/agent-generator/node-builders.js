@@ -1,4 +1,9 @@
 import { NOT_MENTIONED, PHONE_COLLECTED_FLAG, PATH_TAKEN_VAR } from "./data-point-registry.js";
+import { renderTemplate } from "../build-notification.js";
+// Default templates for the three closing nodes. Use {{business_name}} — substituted on the way to Retell.
+export const DEFAULT_CLOSE_PROMPT = `Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.`;
+export const DEFAULT_CLOSING_REMARKS_PROMPT = `You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. `;
+export const DEFAULT_CLOSING_STATEMENT_TEXT = `Alright, bye now!`;
 // ── ID Factory ───────────────────────────────────────────────────────────────
 function randomSuffix(len) {
     return Math.random()
@@ -55,6 +60,8 @@ export function generateIds(f, pathDataPoints) {
         endId: f.nodeId(),
         faqId: f.nodeId(),
         humanReqId: f.nodeId(),
+        transferCallId: f.nodeId(),
+        transferFailedId: f.nodeId(),
         irrelevantGuardrailId: f.nodeId(),
         emergencyGuardrailId: f.nodeId(),
         politeHangupId: f.nodeId(),
@@ -210,7 +217,7 @@ ${faqKnowledgeBase}`,
                 id: f.edgeId(),
                 transition_condition: {
                     type: "prompt",
-                    prompt: "The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.",
+                    prompt: "You answered the caller's question.",
                 },
             },
         ],
@@ -233,7 +240,42 @@ ${faqKnowledgeBase}`,
         display_position: pos.faq,
     };
 }
-export function buildHumanRequestNode(ids, pos, f) {
+export function buildHumanRequestNode(ids, pos, f, mode = "callback") {
+    if (mode === "live_transfer") {
+        // Agent acknowledges and immediately transfers
+        return {
+            instruction: {
+                type: "prompt",
+                text: `The caller is requesting a human or live person.\n\nAcknowledge and tell them you will transfer the call.`,
+            },
+            name: "Human Request",
+            edges: [],
+            global_node_setting: {
+                condition: "Jump to this node if the caller requests a live agent or a human.",
+                negative_finetune_examples: [],
+                positive_finetune_examples: [
+                    {
+                        transcript: [
+                            { content: "can I talk to the supervisor?", role: "user" },
+                            { content: "", role: "agent" },
+                        ],
+                    },
+                ],
+            },
+            id: ids.humanReqId,
+            type: "conversation",
+            display_position: pos.humanReq,
+            skip_response_edge: {
+                destination_node_id: ids.transferCallId,
+                id: `skip-response-edge-${f.nextTs()}-${randomSuffix(9)}`,
+                transition_condition: {
+                    type: "prompt",
+                    prompt: "Skip response",
+                },
+            },
+        };
+    }
+    // Default: callback mode
     return {
         instruction: {
             type: "prompt",
@@ -271,6 +313,59 @@ If the caller refuses and repeats the request for a human, repeat that you canno
         id: ids.humanReqId,
         type: "conversation",
         display_position: pos.humanReq,
+    };
+}
+export function buildTransferCallNode(ids, pos, f) {
+    return {
+        custom_sip_headers: {},
+        transfer_destination: {
+            type: "predefined",
+            number: "{{dispatch_number}}",
+        },
+        edge: {
+            destination_node_id: ids.transferFailedId,
+            id: f.edgeId(),
+            transition_condition: {
+                type: "prompt",
+                prompt: "Transfer failed",
+            },
+        },
+        name: "Transfer Call",
+        ignore_e164_validation: false,
+        id: ids.transferCallId,
+        transfer_option: {
+            cold_transfer_mode: "sip_invite",
+            enable_bridge_audio_cue: true,
+            type: "cold_transfer",
+            agent_detection_timeout_ms: 30000,
+            show_transferee_as_caller: false,
+        },
+        type: "transfer_call",
+        speak_during_execution: false,
+        display_position: { x: pos.humanReq.x + 360, y: pos.humanReq.y + 96 },
+    };
+}
+export function buildTransferFailedNode(ids, pos, f) {
+    return {
+        instruction: {
+            type: "prompt",
+            text: "Let the caller know you'll have their supervisor call them back as soon as possible. Do not ask them any more questions.",
+        },
+        always_edge: {
+            destination_node_id: ids.closingRemarksId,
+            id: `always-edge-${f.nextTs()}-${randomSuffix(9)}`,
+            transition_condition: { type: "prompt", prompt: "Always" },
+        },
+        model_choice: {
+            type: "cascading",
+            model: "gpt-4.1",
+            high_priority: true,
+        },
+        name: "Transfer Failed",
+        edges: [],
+        id: ids.transferFailedId,
+        type: "conversation",
+        display_position: { x: pos.humanReq.x + 720, y: pos.humanReq.y - 96 },
     };
 }
 export function buildIrrelevantGuardrailNode(ids, pos, f) {
@@ -446,42 +541,72 @@ export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f,
         type: "extract_dynamic_variables",
         display_position: pathPos.frontExtract,
     });
-    // Variables Router: check each variable, route to first missing one
-    const routerEdges = resolvedDataPoints.map((dp, i) => {
+    // Variables Router: check each variable, route to first missing one.
+    // If a data point has _branchCondition, AND the condition into the edge.
+    // Orphan data points are extract-only — skip them in the router.
+    const nonOrphanDps = resolvedDataPoints.filter((dp) => !dp.orphan);
+    const routerEdges = nonOrphanDps.map((dp) => {
+        const i = resolvedDataPoints.indexOf(dp);
+        let missingEquations;
+        let missingOperator;
         if (dp.variableName === "phone_number") {
+            missingEquations = [
+                {
+                    left: `{{phone_number}}`,
+                    operator: "==",
+                    right: NOT_MENTIONED,
+                },
+                {
+                    left: `{{${PHONE_COLLECTED_FLAG}}}`,
+                    operator: "!=",
+                    right: "true",
+                },
+            ];
+            missingOperator = "&&";
+        }
+        else if (dp.composite && dp.variables) {
+            missingEquations = dp.variables.flatMap((v) => [
+                { left: `{{${v.variableName}}}`, operator: "not_exist" },
+                { left: `{{${v.variableName}}}`, operator: "==", right: NOT_MENTIONED },
+            ]);
+            missingOperator = "||";
+        }
+        else {
+            missingEquations = [
+                { left: `{{${dp.variableName}}}`, operator: "not_exist" },
+                {
+                    left: `{{${dp.variableName}}}`,
+                    operator: "==",
+                    right: NOT_MENTIONED,
+                },
+            ];
+            missingOperator = "||";
+        }
+        // If this data point is inside a branch, AND all branch conditions
+        if (dp._branchConditions && dp._branchConditions.length > 0) {
+            const branchEqs = [];
+            for (const bc of dp._branchConditions) {
+                branchEqs.push({
+                    left: `{{${bc.variable}}}`,
+                    operator: bc.operator,
+                    right: bc.value,
+                });
+                // Guard ELSE conditions (!=) against sentinel values so they
+                // don't fire when the variable is "Not Mentioned" or "Caller Doesn't Know"
+                if (bc.operator === "!=") {
+                    branchEqs.push({ left: `{{${bc.variable}}}`, operator: "!=", right: NOT_MENTIONED }, { left: `{{${bc.variable}}}`, operator: "!=", right: "Caller Doesn't Know" });
+                }
+            }
             return {
                 destination_node_id: pathIds.chain[i].convId,
                 id: f.edgeId(),
                 transition_condition: {
                     type: "equation",
                     equations: [
-                        {
-                            left: `{{phone_number}}`,
-                            operator: "==",
-                            right: NOT_MENTIONED,
-                        },
-                        {
-                            left: `{{${PHONE_COLLECTED_FLAG}}}`,
-                            operator: "!=",
-                            right: "true",
-                        },
+                        ...missingEquations,
+                        ...branchEqs,
                     ],
                     operator: "&&",
-                },
-            };
-        }
-        if (dp.composite && dp.variables) {
-            const equations = dp.variables.flatMap((v) => [
-                { left: `{{${v.variableName}}}`, operator: "not_exist" },
-                { left: `{{${v.variableName}}}`, operator: "==", right: NOT_MENTIONED },
-            ]);
-            return {
-                destination_node_id: pathIds.chain[i].convId,
-                id: f.edgeId(),
-                transition_condition: {
-                    type: "equation",
-                    equations,
-                    operator: "||",
                 },
             };
         }
@@ -490,15 +615,8 @@ export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f,
             id: f.edgeId(),
             transition_condition: {
                 type: "equation",
-                equations: [
-                    { left: `{{${dp.variableName}}}`, operator: "not_exist" },
-                    {
-                        left: `{{${dp.variableName}}}`,
-                        operator: "==",
-                        right: NOT_MENTIONED,
-                    },
-                ],
-                operator: "||",
+                equations: missingEquations,
+                operator: missingOperator,
             },
         };
     });
@@ -515,7 +633,10 @@ export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f,
         display_position: pathPos.router,
     });
     // Per-variable: Collect (conversation) + Confirm (extract) → back to router
+    // Orphan data points are extract-only — no Collect+Confirm nodes needed.
     resolvedDataPoints.forEach((dp, i) => {
+        if (dp.orphan)
+            return;
         const chainIds = pathIds.chain[i];
         const chainPos = pathPos.chain[i];
         // Tapered variable list: this variable + all remaining after it
@@ -565,11 +686,12 @@ export function buildDataChain(resolvedDataPoints, pathIds, pathPos, closeId, f,
     });
     return nodes;
 }
-export function buildCloseNode(businessName, ids, pos, f) {
+export function buildCloseNode(agentConfig, ids, pos, f) {
+    const template = agentConfig.closePrompt ?? DEFAULT_CLOSE_PROMPT;
     return {
         instruction: {
             type: "prompt",
-            text: `Thank the caller for all the information, and let them know our team at ${businessName} will reach out to get them set up as soon as possible.`,
+            text: renderTemplate(template, { business_name: agentConfig.businessName }),
         },
         always_edge: {
             destination_node_id: ids.closingRemarksId,
@@ -583,13 +705,16 @@ export function buildCloseNode(businessName, ids, pos, f) {
         display_position: pos.close,
     };
 }
-export function buildClosingSequence(ids, pos, f) {
+export function buildClosingSequence(agentConfig, ids, pos, f) {
     const lastX = pos.close.x;
+    const remarksTemplate = agentConfig.closingRemarksPrompt ?? DEFAULT_CLOSING_REMARKS_PROMPT;
+    const statementTemplate = agentConfig.closingStatementText ?? DEFAULT_CLOSING_STATEMENT_TEXT;
+    const vars = { business_name: agentConfig.businessName };
     return [
         {
             instruction: {
                 type: "prompt",
-                text: "You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ",
+                text: renderTemplate(remarksTemplate, vars),
             },
             always_edge: {
                 destination_node_id: ids.closingStatementId,
@@ -605,7 +730,7 @@ export function buildClosingSequence(ids, pos, f) {
         {
             instruction: {
                 type: "static_text",
-                text: "Alright, bye now!",
+                text: renderTemplate(statementTemplate, vars),
             },
             name: "Closing Statement",
             edges: [],
@@ -660,15 +785,24 @@ export function buildAgentRoot(businessName, conversationFlow) {
         analysis_summary_prompt: "Write a 1-3 sentence summary of the call based on the call transcript. Should capture the important information and actions taken during the call.",
         analysis_user_sentiment_prompt: "Evaluate user's sentiment, mood and satisfaction level.",
         handbook_config: {
-            natural_filler_words: true,
-            speech_normalization: false,
+            echo_verification: true,
+            speech_normalization: true,
+            default_personality: false,
+            scope_boundaries: true,
+            natural_filler_words: false,
+            nato_phonetic_alphabet: false,
+            high_empathy: false,
+            ai_disclosure: true,
+            smart_matching: true,
         },
-        voice_id: "11labs-Ethan",
-        voice_model: "eleven_turbo_v2",
+        voice_id: "cartesia-James",
+        voice_model: "sonic-3",
         fallback_voice_ids: [],
-        voice_temperature: 0.36,
-        voice_speed: 1.12,
-        volume: 1,
+        voice_temperature: 0,
+        voice_speed: 1.08,
+        enable_dynamic_voice_speed: false,
+        volume: 2,
+        voice_emotion: "calm",
         enable_backchannel: false,
         backchannel_frequency: 0.2,
         backchannel_words: ["got it"],
@@ -677,9 +811,9 @@ export function buildAgentRoot(businessName, conversationFlow) {
         max_call_duration_ms: 655000,
         interruption_sensitivity: 0.89,
         ambient_sound: "coffee-shop",
-        ambient_sound_volume: 0.95,
+        ambient_sound_volume: 1.31,
         responsiveness: 1,
-        normalize_for_speech: false,
+        normalize_for_speech: true,
         begin_message_delay_ms: 2000,
         voicemail_option: { action: { type: "hangup" } },
         allow_user_dtmf: false,

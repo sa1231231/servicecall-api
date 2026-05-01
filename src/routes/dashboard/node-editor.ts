@@ -30,6 +30,7 @@ import {
   type PathIds,
   type PathPositions,
 } from "../../lib/agent-generator/node-builders.js";
+import { renderTemplate } from "../../lib/build-notification.js";
 
 export const nodeEditorRouter = Router({ mergeParams: true });
 
@@ -224,6 +225,16 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
     const introInstruction = parsed.introNode.raw.instruction as Record<string, unknown> | undefined;
     const introPrompt = (introInstruction?.text as string) ?? "";
 
+    // Closing node prompts (find by name)
+    const findInstructionText = (nodeName: string): string => {
+      const node = parsed.allNodes.find((n) => n.name === nodeName);
+      const instr = node?.raw.instruction as Record<string, unknown> | undefined;
+      return (instr?.text as string) ?? "";
+    };
+    const closePrompt = findInstructionText("Close");
+    const closingRemarksPrompt = findInstructionText("Closing Remarks");
+    const closingStatementText = findInstructionText("Closing Statement");
+
     res.json({
       agentId,
       agentName: snapshot.agentName,
@@ -239,6 +250,9 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       transitionNodeIds: parsed.paths.map((p) => p.transitionNode.id),
       faqNodeId,
       faqKnowledgeBase,
+      closePrompt,
+      closingRemarksPrompt,
+      closingStatementText,
       humanRequestMode,
       humanRequestNodeId: humanReqNode?.id,
       transitionConditions,
@@ -1521,6 +1535,27 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
         (faqNode.instruction as Record<string, unknown>).text =
           "Your goal is to answer administrative and general questions briefly and accurately.\n\n" + changes.faqKnowledgeBase;
       }
+    }
+
+    // Apply closing-prompt changes (Close, Closing Remarks, Closing Statement).
+    // Substitute {{business_name}} → actual business name on the way to Retell.
+    // Preserve existing instruction.type (Closing Statement is "static_text", others are "prompt").
+    const businessName = snapshot.agentName;
+    const tplVars = { business_name: businessName };
+    const applyClosingPrompt = (nodeName: string, text: string) => {
+      const node = nodes.find((n) => n.name === nodeName);
+      if (node?.instruction) {
+        (node.instruction as Record<string, unknown>).text = renderTemplate(text, tplVars);
+      }
+    };
+    if (typeof changes.closePrompt === "string") {
+      applyClosingPrompt("Close", changes.closePrompt);
+    }
+    if (typeof changes.closingRemarksPrompt === "string") {
+      applyClosingPrompt("Closing Remarks", changes.closingRemarksPrompt);
+    }
+    if (typeof changes.closingStatementText === "string") {
+      applyClosingPrompt("Closing Statement", changes.closingStatementText);
     }
 
     // Apply individual node prompt changes

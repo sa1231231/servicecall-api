@@ -1,43 +1,89 @@
-import { DATA_POINT_REGISTRY, NOT_MENTIONED, CALLER_DOESNT_KNOW, defaultExtractEquation, } from "./data-point-registry.js";
-import { makeIdFactory, generateIds, layoutPositions, buildEndNode, buildIntroNode, buildTransitionNode, buildFaqNode, buildHumanRequestNode, buildDataChain, buildCloseNode, buildClosingSequence, buildIrrelevantGuardrailNode, buildEmergencyGuardrailNode, buildPoliteHangupNode, buildGuardrailEndNode, buildAgentRoot, } from "./node-builders.js";
+import { NOT_MENTIONED, CALLER_DOESNT_KNOW, defaultExtractEquation, } from "./data-point-registry.js";
+import { makeIdFactory, generateIds, layoutPositions, buildEndNode, buildIntroNode, buildTransitionNode, buildFaqNode, buildHumanRequestNode, buildDataChain, buildCloseNode, buildClosingSequence, buildIrrelevantGuardrailNode, buildEmergencyGuardrailNode, buildPoliteHangupNode, buildGuardrailEndNode, buildAgentRoot, buildTransferCallNode, buildTransferFailedNode, } from "./node-builders.js";
 // ── Resolve Data Points ──────────────────────────────────────────────────────
-export function resolveDataPoints(rawDataPoints) {
-    return rawDataPoints.map((dp, i) => {
-        if (typeof dp === "string") {
-            const entry = DATA_POINT_REGISTRY[dp];
-            if (!entry) {
-                throw new Error(`Unknown data point "${dp}". Available: ${Object.keys(DATA_POINT_REGISTRY).join(", ")}`);
+function isBranchNode(dp) {
+    return typeof dp === "object" && "_branch" in dp && dp._branch === true;
+}
+function resolveSingleDataPoint(dp, index, registry) {
+    if (typeof dp === "string") {
+        const entry = registry[dp];
+        if (!entry) {
+            throw new Error(`Unknown data point "${dp}". Available: ${Object.keys(registry).join(", ")}`);
+        }
+        return { ...entry };
+    }
+    if (dp.composite) {
+        return dp;
+    }
+    const obj = dp;
+    if (!obj.variableName)
+        throw new Error(`dataPoints[${index}] missing required field: variableName`);
+    const resolved = {
+        label: obj.label ||
+            obj.variableName
+                .replace(/_/g, " ")
+                .replace(/\b\w/g, (c) => c.toUpperCase()),
+        variableName: obj.variableName,
+        type: obj.type || "string",
+        choices: obj.choices || [],
+        description: obj.description ||
+            `${obj.variableName}. If not mentioned, set to "${NOT_MENTIONED}". If the caller explicitly says they don't know, set to "${CALLER_DOESNT_KNOW}".`,
+        conversationPrompt: obj.conversationPrompt ||
+            (obj.orphan ? "" :
+                `Ask the caller for their ${obj.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know, acknowledge it and move on.`),
+        forwardCondition: obj.forwardCondition ||
+            (obj.orphan ? "" :
+                `The caller has provided their ${obj.variableName.replace(/_/g, " ")} or has indicated they don't know it`),
+        finetuneExamples: obj.finetuneExamples || [],
+        extractSuccessEquation: obj.extractSuccessEquation ||
+            defaultExtractEquation(obj.variableName),
+    };
+    if (obj.orphan)
+        resolved.orphan = true;
+    return resolved;
+}
+export function resolveDataPoints(rawDataPoints, defaults) {
+    if (!defaults || Object.keys(defaults).length === 0) {
+        throw new Error("No data point defaults provided. Ensure MongoDB data_point_defaults collection is populated.");
+    }
+    const registry = defaults;
+    function flatten(items, parentConditions) {
+        const result = [];
+        for (let i = 0; i < items.length; i++) {
+            const dp = items[i];
+            if (isBranchNode(dp)) {
+                const ifCondition = {
+                    variable: dp.variable,
+                    operator: dp.operator,
+                    value: dp.value,
+                };
+                const elseOperator = dp.operator === "==" ? "!=" : "==";
+                const elseCondition = {
+                    variable: dp.variable,
+                    operator: elseOperator,
+                    value: dp.value,
+                };
+                // Recursively resolve IF chain with accumulated conditions
+                const ifItems = flatten(dp.ifChain || dp.ifDataPoints || [], [...parentConditions, ifCondition]);
+                result.push(...ifItems);
+                // Recursively resolve ELSE chain with inverted condition
+                const elseItems = flatten(dp.elseChain || dp.elseDataPoints || [], [...parentConditions, elseCondition]);
+                result.push(...elseItems);
             }
-            return { ...entry };
+            else {
+                const resolved = resolveSingleDataPoint(dp, i, registry);
+                if (parentConditions.length > 0) {
+                    resolved._branchConditions = [...parentConditions];
+                }
+                result.push(resolved);
+            }
         }
-        // Composite data points have a variables array instead of variableName
-        if (dp.composite) {
-            return dp;
-        }
-        if (!dp.variableName)
-            throw new Error(`dataPoints[${i}] missing required field: variableName`);
-        return {
-            label: dp.label ||
-                dp.variableName
-                    .replace(/_/g, " ")
-                    .replace(/\b\w/g, (c) => c.toUpperCase()),
-            variableName: dp.variableName,
-            type: dp.type || "string",
-            choices: dp.choices || [],
-            description: dp.description ||
-                `${dp.variableName}. If not mentioned, set to "${NOT_MENTIONED}". If the caller explicitly says they don't know, set to "${CALLER_DOESNT_KNOW}".`,
-            conversationPrompt: dp.conversationPrompt ||
-                `Ask the caller for their ${dp.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know, acknowledge it and move on.`,
-            forwardCondition: dp.forwardCondition ||
-                `The caller has provided their ${dp.variableName.replace(/_/g, " ")} or has indicated they don't know it`,
-            finetuneExamples: dp.finetuneExamples || [],
-            extractSuccessEquation: dp.extractSuccessEquation ||
-                defaultExtractEquation(dp.variableName),
-        };
-    });
+        return result;
+    }
+    return flatten(rawDataPoints, []);
 }
 // ── Main Generator ───────────────────────────────────────────────────────────
-export function generateAgent(agentConfig, rawDataPoints, pathConfigs) {
+export function generateAgent(agentConfig, rawDataPoints, pathConfigs, defaults) {
     const { businessName, faqKnowledgeBase } = agentConfig;
     const f = makeIdFactory();
     // Normalize: if pathConfigs provided, use them; otherwise wrap rawDataPoints as single path
@@ -58,7 +104,7 @@ export function generateAgent(agentConfig, rawDataPoints, pathConfigs) {
             throw new Error(`Path "${p.name}" has no data points`);
         }
         try {
-            return { name: p.name, resolved: resolveDataPoints(p.dataPoints) };
+            return { name: p.name, resolved: resolveDataPoints(p.dataPoints, defaults) };
         }
         catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
@@ -119,10 +165,15 @@ When listing anything — services, time slots, examples, options — never list
         allNodes.push(...buildDataChain(rp.resolved, pIds, pPos, ids.closeId, f, pathLabel));
     });
     // Shared global + closing nodes
+    const humanMode = agentConfig.humanRequestMode || "callback";
     allNodes.push(buildFaqNode(faqKnowledgeBase, ids, pos, f, isMultiPath));
-    allNodes.push(buildHumanRequestNode(ids, pos, f));
-    allNodes.push(buildCloseNode(businessName, ids, pos, f));
-    allNodes.push(...buildClosingSequence(ids, pos, f));
+    allNodes.push(buildHumanRequestNode(ids, pos, f, humanMode));
+    if (humanMode === "live_transfer") {
+        allNodes.push(buildTransferCallNode(ids, pos, f));
+        allNodes.push(buildTransferFailedNode(ids, pos, f));
+    }
+    allNodes.push(buildCloseNode(agentConfig, ids, pos, f));
+    allNodes.push(...buildClosingSequence(agentConfig, ids, pos, f));
     allNodes.push(buildIrrelevantGuardrailNode(ids, pos, f));
     allNodes.push(buildEmergencyGuardrailNode(ids, pos, f));
     allNodes.push(buildPoliteHangupNode(ids, pos, f));

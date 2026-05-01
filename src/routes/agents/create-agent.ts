@@ -142,6 +142,9 @@ export async function createAgentHandler(
     const agentConfig: AgentConfig = {
       ...body.business,
       humanRequestMode: body.business.human_request_mode || "callback",
+      closePrompt: body.business.closePrompt?.trim() || undefined,
+      closingRemarksPrompt: body.business.closingRemarksPrompt?.trim() || undefined,
+      closingStatementText: body.business.closingStatementText?.trim() || undefined,
     };
     const dpDefaults = await getDataPointDefaults();
     const { agent: agentJson, resolved, resolvedPaths } = generateAgent(

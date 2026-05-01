@@ -1,4 +1,7 @@
 import type { DataPoint, FinetuneExample } from "./data-point-registry.js";
+export declare const DEFAULT_CLOSE_PROMPT = "Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.";
+export declare const DEFAULT_CLOSING_REMARKS_PROMPT = "You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ";
+export declare const DEFAULT_CLOSING_STATEMENT_TEXT = "Alright, bye now!";
 export interface IdFactory {
     nextTs(): number;
     nodeId(): string;
@@ -14,11 +17,14 @@ export interface PathIds {
         confirmId: string;
     }>;
 }
+export type HumanRequestMode = "live_transfer" | "callback";
 interface Ids {
     introId: string;
     endId: string;
     faqId: string;
     humanReqId: string;
+    transferCallId: string;
+    transferFailedId: string;
     irrelevantGuardrailId: string;
     emergencyGuardrailId: string;
     politeHangupId: string;
@@ -57,6 +63,10 @@ export interface AgentConfig {
     businessName: string;
     faqKnowledgeBase: string;
     introFinetuneExamples: FinetuneExample[];
+    humanRequestMode?: HumanRequestMode;
+    closePrompt?: string;
+    closingRemarksPrompt?: string;
+    closingStatementText?: string;
 }
 export interface IntroPathConfig {
     name: string;
@@ -142,7 +152,36 @@ export declare function buildFaqNode(faqKnowledgeBase: string, ids: Ids, pos: Po
     type: string;
     display_position: Position;
 };
-export declare function buildHumanRequestNode(ids: Ids, pos: Positions, f: IdFactory): {
+export declare function buildHumanRequestNode(ids: Ids, pos: Positions, f: IdFactory, mode?: HumanRequestMode): {
+    instruction: {
+        type: string;
+        text: string;
+    };
+    name: string;
+    edges: never[];
+    global_node_setting: {
+        condition: string;
+        negative_finetune_examples: never[];
+        positive_finetune_examples: {
+            transcript: {
+                content: string;
+                role: string;
+            }[];
+        }[];
+        go_back_conditions?: undefined;
+    };
+    id: string;
+    type: string;
+    display_position: Position;
+    skip_response_edge: {
+        destination_node_id: string;
+        id: string;
+        transition_condition: {
+            type: string;
+            prompt: string;
+        };
+    };
+} | {
     instruction: {
         type: string;
         text: string;
@@ -165,10 +204,71 @@ export declare function buildHumanRequestNode(ids: Ids, pos: Positions, f: IdFac
             };
         }[];
         condition: string;
+        negative_finetune_examples?: undefined;
+        positive_finetune_examples?: undefined;
     };
     id: string;
     type: string;
     display_position: Position;
+    skip_response_edge?: undefined;
+};
+export declare function buildTransferCallNode(ids: Ids, pos: Positions, f: IdFactory): {
+    custom_sip_headers: {};
+    transfer_destination: {
+        type: string;
+        number: string;
+    };
+    edge: {
+        destination_node_id: string;
+        id: string;
+        transition_condition: {
+            type: string;
+            prompt: string;
+        };
+    };
+    name: string;
+    ignore_e164_validation: boolean;
+    id: string;
+    transfer_option: {
+        cold_transfer_mode: string;
+        enable_bridge_audio_cue: boolean;
+        type: string;
+        agent_detection_timeout_ms: number;
+        show_transferee_as_caller: boolean;
+    };
+    type: string;
+    speak_during_execution: boolean;
+    display_position: {
+        x: number;
+        y: number;
+    };
+};
+export declare function buildTransferFailedNode(ids: Ids, pos: Positions, f: IdFactory): {
+    instruction: {
+        type: string;
+        text: string;
+    };
+    always_edge: {
+        destination_node_id: string;
+        id: string;
+        transition_condition: {
+            type: string;
+            prompt: string;
+        };
+    };
+    model_choice: {
+        type: string;
+        model: string;
+        high_priority: boolean;
+    };
+    name: string;
+    edges: never[];
+    id: string;
+    type: string;
+    display_position: {
+        x: number;
+        y: number;
+    };
 };
 export declare function buildIrrelevantGuardrailNode(ids: Ids, pos: Positions, f: IdFactory): {
     instruction: {
@@ -254,7 +354,7 @@ export declare function buildGuardrailEndNode(ids: Ids, pos: Positions): {
     display_position: Position;
 };
 export declare function buildDataChain(resolvedDataPoints: DataPoint[], pathIds: PathIds, pathPos: PathPositions, closeId: string, f: IdFactory, pathName?: string): Record<string, unknown>[];
-export declare function buildCloseNode(businessName: string, ids: Ids, pos: Positions, f: IdFactory): {
+export declare function buildCloseNode(agentConfig: AgentConfig, ids: Ids, pos: Positions, f: IdFactory): {
     instruction: {
         type: string;
         text: string;
@@ -273,7 +373,7 @@ export declare function buildCloseNode(businessName: string, ids: Ids, pos: Posi
     type: string;
     display_position: Position;
 };
-export declare function buildClosingSequence(ids: Ids, pos: Positions, f: IdFactory): ({
+export declare function buildClosingSequence(agentConfig: AgentConfig, ids: Ids, pos: Positions, f: IdFactory): ({
     instruction: {
         type: string;
         text: string;
@@ -349,15 +449,24 @@ export declare function buildAgentRoot(businessName: string, conversationFlow: R
     analysis_summary_prompt: string;
     analysis_user_sentiment_prompt: string;
     handbook_config: {
-        natural_filler_words: boolean;
+        echo_verification: boolean;
         speech_normalization: boolean;
+        default_personality: boolean;
+        scope_boundaries: boolean;
+        natural_filler_words: boolean;
+        nato_phonetic_alphabet: boolean;
+        high_empathy: boolean;
+        ai_disclosure: boolean;
+        smart_matching: boolean;
     };
     voice_id: string;
     voice_model: string;
     fallback_voice_ids: never[];
     voice_temperature: number;
     voice_speed: number;
+    enable_dynamic_voice_speed: boolean;
     volume: number;
+    voice_emotion: string;
     enable_backchannel: boolean;
     backchannel_frequency: number;
     backchannel_words: string[];

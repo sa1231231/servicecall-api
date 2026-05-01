@@ -280,8 +280,8 @@ When listing anything — services, time slots, examples, options — never list
     allNodes.push(buildTransferCallNode(ids, pos, f));
     allNodes.push(buildTransferFailedNode(ids, pos, f));
   }
-  allNodes.push(buildCloseNode(businessName, ids, pos, f));
-  allNodes.push(...buildClosingSequence(ids, pos, f));
+  allNodes.push(buildCloseNode(agentConfig, ids, pos, f));
+  allNodes.push(...buildClosingSequence(agentConfig, ids, pos, f));
   allNodes.push(buildIrrelevantGuardrailNode(ids, pos, f));
   allNodes.push(buildEmergencyGuardrailNode(ids, pos, f));
   allNodes.push(buildPoliteHangupNode(ids, pos, f));

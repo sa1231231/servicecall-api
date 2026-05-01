@@ -344,6 +344,23 @@
   <textarea id="faqKnowledgeBase" required placeholder="Paste the business FAQ or knowledge base content here..."></textarea>
   <div class="field-hint">The agent uses this to answer caller questions (hours, pricing, service areas, etc.). Pasted into a dedicated FAQ node in the conversation flow — if a caller asks something off-topic from data collection, the agent checks here first.</div>
 
+  <details style="margin-top:1rem;">
+    <summary style="cursor:pointer;font-weight:600;">Closing Prompts (optional)</summary>
+    <div class="field-hint" style="margin-top:0.5rem;">These three prompts run at the end of every call. Sensible defaults are pre-filled. You can use <code>{{business_name}}</code> — it will be replaced with the business name on save.</div>
+
+    <label for="closePrompt">Close Prompt</label>
+    <textarea id="closePrompt" rows="3"></textarea>
+    <div class="field-hint">Spoken right after data collection wraps up. AI instruction (the agent paraphrases).</div>
+
+    <label for="closingRemarksPrompt">Closing Remarks Prompt</label>
+    <textarea id="closingRemarksPrompt" rows="3"></textarea>
+    <div class="field-hint">Final farewell instruction. AI instruction (the agent paraphrases).</div>
+
+    <label for="closingStatementText">Closing Statement (spoken verbatim)</label>
+    <textarea id="closingStatementText" rows="2"></textarea>
+    <div class="field-hint">Spoken word-for-word as the call ends. Static text, not paraphrased.</div>
+  </details>
+
   <!-- ── Routing Paths ─────────────────────────────────────────── -->
   <h2>Routing Paths</h2>
   <p style="font-size:0.8rem;color:#666;margin-top:-0.5rem;">
@@ -403,6 +420,16 @@
   const resultDiv = document.getElementById('result');
   const submitBtn = document.getElementById('submitBtn');
   const pathsContainer = document.getElementById('routingPaths');
+
+  // Default templates for the closing prompts (must match DEFAULT_* in src/lib/agent-generator/node-builders.ts).
+  const DEFAULT_CLOSE_PROMPT = 'Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.';
+  const DEFAULT_CLOSING_REMARKS_PROMPT = 'You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ';
+  const DEFAULT_CLOSING_STATEMENT_TEXT = 'Alright, bye now!';
+
+  // Pre-fill closing prompts on initial load (will be overwritten by auto-save / draft / template restoration if present).
+  document.getElementById('closePrompt').value = DEFAULT_CLOSE_PROMPT;
+  document.getElementById('closingRemarksPrompt').value = DEFAULT_CLOSING_REMARKS_PROMPT;
+  document.getElementById('closingStatementText').value = DEFAULT_CLOSING_STATEMENT_TEXT;
 
   function showResult(message, type) {
     resultDiv.innerHTML = '<span class="result-dismiss">click to dismiss</span>' + escapeHtml(message);
@@ -1162,6 +1189,9 @@
         faqKnowledgeBase: val('faqKnowledgeBase'),
         introFinetuneExamples: [],
         human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked').value,
+        closePrompt: val('closePrompt'),
+        closingRemarksPrompt: val('closingRemarksPrompt'),
+        closingStatementText: val('closingStatementText'),
       },
       client: {
         slug: val('businessName').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
@@ -1364,6 +1394,9 @@
       dispatchEmail: getFormChipValues('chip-dispatch-email').join(', '),
       summaryAgentId: getFormChipValues('chip-summary-agent').join(', '),
       humanRequestMode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
+      closePrompt: val('closePrompt'),
+      closingRemarksPrompt: val('closingRemarksPrompt'),
+      closingStatementText: val('closingStatementText'),
     };
 
     pathsContainer.querySelectorAll('.path-card').forEach(card => {
@@ -1398,6 +1431,9 @@
         faqKnowledgeBase: val('faqKnowledgeBase'),
         introFinetuneExamples: [],
         human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
+        closePrompt: val('closePrompt'),
+        closingRemarksPrompt: val('closingRemarksPrompt'),
+        closingStatementText: val('closingStatementText'),
       },
       paths,
       client: {
@@ -1433,6 +1469,9 @@
           businessName: config.business?.businessName || '',
           faqKnowledgeBase: config.business?.faqKnowledgeBase || '',
           humanRequestMode: config.business?.human_request_mode || 'callback',
+          closePrompt: config.business?.closePrompt || '',
+          closingRemarksPrompt: config.business?.closingRemarksPrompt || '',
+          closingStatementText: config.business?.closingStatementText || '',
           clientName: config.client?.name || '',
           dispatchTextNumbers: (config.client?.dispatch_text_numbers || []).join(', '),
           dispatchCallNumber: config.client?.dispatch_call_number || '',
@@ -1512,6 +1551,9 @@
     document.getElementById('businessName').value = state.businessName || '';
     document.getElementById('faqKnowledgeBase').value = state.faqKnowledgeBase || '';
     document.getElementById('clientName').value = state.clientName || '';
+    document.getElementById('closePrompt').value = state.closePrompt || DEFAULT_CLOSE_PROMPT;
+    document.getElementById('closingRemarksPrompt').value = state.closingRemarksPrompt || DEFAULT_CLOSING_REMARKS_PROMPT;
+    document.getElementById('closingStatementText').value = state.closingStatementText || DEFAULT_CLOSING_STATEMENT_TEXT;
     setFormChipValues('chip-dispatch-text', csvToArray(state.dispatchTextNumbers || ''));
     document.getElementById('dispatchCallNumber').value = state.dispatchCallNumber || '';
     setFormChipValues('chip-dispatch-email', csvToArray(state.dispatchEmail || ''));

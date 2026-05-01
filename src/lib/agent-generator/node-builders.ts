@@ -1,5 +1,11 @@
 import type { DataPoint, FinetuneExample } from "./data-point-registry.js";
 import { NOT_MENTIONED, PHONE_COLLECTED_FLAG, PATH_TAKEN_VAR } from "./data-point-registry.js";
+import { renderTemplate } from "../build-notification.js";
+
+// Default templates for the three closing nodes. Use {{business_name}} — substituted on the way to Retell.
+export const DEFAULT_CLOSE_PROMPT = `Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.`;
+export const DEFAULT_CLOSING_REMARKS_PROMPT = `You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. `;
+export const DEFAULT_CLOSING_STATEMENT_TEXT = `Alright, bye now!`;
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -66,6 +72,9 @@ export interface AgentConfig {
   faqKnowledgeBase: string;
   introFinetuneExamples: FinetuneExample[];
   humanRequestMode?: HumanRequestMode;
+  closePrompt?: string;
+  closingRemarksPrompt?: string;
+  closingStatementText?: string;
 }
 
 export interface IntroPathConfig {
@@ -856,15 +865,16 @@ export function buildDataChain(
 }
 
 export function buildCloseNode(
-  businessName: string,
+  agentConfig: AgentConfig,
   ids: Ids,
   pos: Positions,
   f: IdFactory,
 ) {
+  const template = agentConfig.closePrompt ?? DEFAULT_CLOSE_PROMPT;
   return {
     instruction: {
       type: "prompt",
-      text: `Thank the caller for all the information, and let them know our team at ${businessName} will reach out to get them set up as soon as possible.`,
+      text: renderTemplate(template, { business_name: agentConfig.businessName }),
     },
     always_edge: {
       destination_node_id: ids.closingRemarksId,
@@ -880,16 +890,20 @@ export function buildCloseNode(
 }
 
 export function buildClosingSequence(
+  agentConfig: AgentConfig,
   ids: Ids,
   pos: Positions,
   f: IdFactory,
 ) {
   const lastX = pos.close.x;
+  const remarksTemplate = agentConfig.closingRemarksPrompt ?? DEFAULT_CLOSING_REMARKS_PROMPT;
+  const statementTemplate = agentConfig.closingStatementText ?? DEFAULT_CLOSING_STATEMENT_TEXT;
+  const vars = { business_name: agentConfig.businessName };
   return [
     {
       instruction: {
         type: "prompt",
-        text: "You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ",
+        text: renderTemplate(remarksTemplate, vars),
       },
       always_edge: {
         destination_node_id: ids.closingStatementId,
@@ -905,7 +919,7 @@ export function buildClosingSequence(
     {
       instruction: {
         type: "static_text",
-        text: "Alright, bye now!",
+        text: renderTemplate(statementTemplate, vars),
       },
       name: "Closing Statement",
       edges: [],

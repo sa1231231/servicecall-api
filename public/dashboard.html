@@ -3905,6 +3905,38 @@
         ((data.transitionPrompt || '').length > 300 ? '...' : '') + '</div>';
     }
 
+    // Closing prompts (Close, Closing Remarks, Closing Statement)
+    if (data.closePrompt !== undefined) {
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Close Prompt</span>';
+      if (canEdit) {
+        html += '<button class="ne-btn" onclick="openClosePromptEdit()" style="font-size:0.7rem;">Edit</button>';
+      }
+      html += '</div>';
+      html += '<div class="ne-global-prompt">' + esc((data.closePrompt || '').slice(0, 300)) +
+        ((data.closePrompt || '').length > 300 ? '...' : '') + '</div>';
+    }
+    if (data.closingRemarksPrompt !== undefined) {
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Closing Remarks Prompt</span>';
+      if (canEdit) {
+        html += '<button class="ne-btn" onclick="openClosingRemarksPromptEdit()" style="font-size:0.7rem;">Edit</button>';
+      }
+      html += '</div>';
+      html += '<div class="ne-global-prompt">' + esc((data.closingRemarksPrompt || '').slice(0, 300)) +
+        ((data.closingRemarksPrompt || '').length > 300 ? '...' : '') + '</div>';
+    }
+    if (data.closingStatementText !== undefined) {
+      html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+        '<span style="font-size:0.82rem;font-weight:600;color:#555;">Closing Statement <span style="font-weight:400;color:#888;">(spoken verbatim)</span></span>';
+      if (canEdit) {
+        html += '<button class="ne-btn" onclick="openClosingStatementEdit()" style="font-size:0.7rem;">Edit</button>';
+      }
+      html += '</div>';
+      html += '<div class="ne-global-prompt">' + esc((data.closingStatementText || '').slice(0, 300)) +
+        ((data.closingStatementText || '').length > 300 ? '...' : '') + '</div>';
+    }
+
     // Display name
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
       '<span style="font-size:0.82rem;font-weight:600;color:#555;">Display Name</span></div>' +
@@ -4393,6 +4425,53 @@
     };
   }
 
+  // ── Closing prompts edit (Close, Closing Remarks, Closing Statement) ─────
+
+  function openClosePromptEdit() {
+    if (!neData) return;
+    document.getElementById('promptModalTitle').textContent = 'Edit Close Prompt';
+    document.getElementById('promptModalDesc').textContent = 'Spoken right after data collection wraps up. AI instruction (the agent paraphrases). You can use {{business_name}}.';
+    document.getElementById('promptModalText').value = neData.closePrompt || '';
+    document.getElementById('promptModal').style.display = '';
+    promptModalCb = (text) => {
+      neData.closePrompt = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('Close prompt updated (save to publish)', 'success');
+    };
+  }
+
+  function openClosingRemarksPromptEdit() {
+    if (!neData) return;
+    document.getElementById('promptModalTitle').textContent = 'Edit Closing Remarks Prompt';
+    document.getElementById('promptModalDesc').textContent = 'Final farewell instruction. AI instruction (the agent paraphrases). You can use {{business_name}}.';
+    document.getElementById('promptModalText').value = neData.closingRemarksPrompt || '';
+    document.getElementById('promptModal').style.display = '';
+    promptModalCb = (text) => {
+      neData.closingRemarksPrompt = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('Closing remarks updated (save to publish)', 'success');
+    };
+  }
+
+  function openClosingStatementEdit() {
+    if (!neData) return;
+    document.getElementById('promptModalTitle').textContent = 'Edit Closing Statement';
+    document.getElementById('promptModalDesc').textContent = 'Spoken word-for-word as the call ends. Static text — not paraphrased. You can use {{business_name}}.';
+    document.getElementById('promptModalText').value = neData.closingStatementText || '';
+    document.getElementById('promptModal').style.display = '';
+    promptModalCb = (text) => {
+      neData.closingStatementText = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('Closing statement updated (save to publish)', 'success');
+    };
+  }
+
   // ── Transition condition edit (local) ──────────────────────────
 
   function openTransitionEdit(pathName) {
@@ -4673,6 +4752,9 @@
     changes.introPrompt = neData.introPrompt;
     changes.transitionPrompt = neData.transitionPrompt;
     changes.faqKnowledgeBase = neData.faqKnowledgeBase;
+    changes.closePrompt = neData.closePrompt;
+    changes.closingRemarksPrompt = neData.closingRemarksPrompt;
+    changes.closingStatementText = neData.closingStatementText;
     changes.transitionConditions = neData.transitionConditions;
     changes.description = 'Save & Publish from dashboard';
 
