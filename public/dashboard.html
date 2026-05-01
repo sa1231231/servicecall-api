@@ -748,191 +748,223 @@
 <!-- ── Settings View ──────────────────────────────────────────────── -->
 <div id="settingsView" style="display:none;">
   <button class="btn-back" onclick="hideSettings()">&larr; Back to all agents</button>
-  <h1>Settings</h1>
-  <div class="settings-form admin-only">
+  <div id="settingsHeader" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0 0.25rem;">
+    <h1 style="margin:0;display:flex;align-items:center;gap:0.5rem;">Global Settings <span class="badge badge-shadow" style="font-size:0.7rem;">Admin</span></h1>
+  </div>
+  <p class="settings-hint" style="margin:0 0 0.75rem;">Workspace-wide configuration. Per-client settings live on each agent's page.</p>
 
-    <div class="settings-section">
-      <div class="settings-section-title">Owner Contact</div>
-      <label for="settings-owner-email">Email</label>
-      <input type="email" id="settings-owner-email" placeholder="owner@example.com">
-      <p class="settings-hint">Receives shadow mode notifications, call monitoring alerts, and weekly reports.</p>
-      <label for="settings-owner-phone">Phone</label>
-      <input type="tel" id="settings-owner-phone" placeholder="+15551234567">
-      <p class="settings-hint">Receives shadow mode SMS and problem call alerts.</p>
-    </div>
+  <div class="agent-tabs-shell admin-only">
+    <nav class="agent-tabs-nav" role="tablist">
+      <button class="agent-tab active" data-settings-tab="general"    role="tab" onclick="switchSettingsTab('general')">General</button>
+      <button class="agent-tab"        data-settings-tab="templates"  role="tab" onclick="switchSettingsTab('templates')">Templates</button>
+      <button class="agent-tab"        data-settings-tab="costs"      role="tab" onclick="switchSettingsTab('costs')">Costs</button>
+      <button class="agent-tab"        data-settings-tab="categories" role="tab" onclick="switchSettingsTab('categories')">Categories</button>
+      <button class="agent-tab"        data-settings-tab="admin"      role="tab" onclick="switchSettingsTab('admin')">Admin</button>
+    </nav>
 
-    <div class="settings-section">
-      <div class="settings-section-title">Agent Defaults</div>
-      <label>Default Summary Agent ID</label>
-      <div class="chip-input" id="settings-chip-summary" onclick="this.querySelector('input').focus()">
-        <input type="text" placeholder="agent_..." onkeydown="chipKeydown(event, this)" onblur="chipBlur(this)">
+    <section class="agent-tab-content">
+      <!-- ── General ──────────────────────────────────────────────────── -->
+      <div id="settings-tab-general" class="agent-tab-pane active">
+        <div class="settings-form">
+          <div class="settings-section">
+            <div class="settings-section-title">Owner Contact</div>
+            <label for="settings-owner-email">Email</label>
+            <input type="email" id="settings-owner-email" placeholder="owner@example.com">
+            <p class="settings-hint">Receives shadow mode notifications, call monitoring alerts, and weekly reports.</p>
+            <label for="settings-owner-phone">Phone</label>
+            <input type="tel" id="settings-owner-phone" placeholder="+15551234567">
+            <p class="settings-hint">Receives shadow mode SMS and problem call alerts.</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Agent Defaults</div>
+            <label>Default Summary Agent ID</label>
+            <div class="chip-input" id="settings-chip-summary" onclick="this.querySelector('input').focus()">
+              <input type="text" placeholder="agent_..." onkeydown="chipKeydown(event, this)" onblur="chipBlur(this)">
+            </div>
+            <p class="settings-hint">Pre-filled as the Summary Agent when creating new agents. Leave blank for none.</p>
+          </div>
+        </div>
       </div>
-      <p class="settings-hint">Pre-filled as the Summary Agent when creating new agents. Leave blank for none.</p>
-    </div>
 
-    <div class="settings-section">
-      <div class="settings-section-title">Billing &amp; Trials</div>
-      <label for="settings-trial-days">Free Trial Length (days)</label>
-      <input type="number" id="settings-trial-days" min="1" max="90" placeholder="14" style="width:80px;">
-      <p class="settings-hint">Global trial duration. Each client's trial starts from their individual Trial Start Date.</p>
-      <label for="settings-payment-url">Stripe Payment URL</label>
-      <input type="text" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
-      <p class="settings-hint">Checkout link sent when a client's trial expires.</p>
-      <label>Payment SMS Template</label>
-      <div class="tmpl-editor-wrap">
-        <div class="tmpl-editor" contenteditable="true" id="settings-payment-msg-editor" data-placeholder="Hi! Subscribe here: {{stripe_payment_url}}"></div>
-        <input type="hidden" id="settings-payment-msg">
+      <!-- ── Templates ────────────────────────────────────────────────── -->
+      <div id="settings-tab-templates" class="agent-tab-pane">
+        <div class="settings-form">
+          <div class="settings-section">
+            <div class="settings-section-title">Google Reviews</div>
+            <label for="settings-review-url">Review URL</label>
+            <input type="text" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
+            <p class="settings-hint">Your Google Business review link.</p>
+            <label>Review SMS Template</label>
+            <div class="tmpl-editor-wrap">
+              <div class="tmpl-editor" contenteditable="true" id="settings-review-msg-editor" data-placeholder="Hi! Please leave us a review: {{google_review_url}}"></div>
+              <input type="hidden" id="settings-review-msg">
+            </div>
+            <p class="settings-hint">Type {{ to insert {{google_review_url}}.</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Payment</div>
+            <label for="settings-payment-url">Stripe Payment URL</label>
+            <input type="text" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
+            <p class="settings-hint">Checkout link sent when a client's trial expires.</p>
+            <label>Payment SMS Template</label>
+            <div class="tmpl-editor-wrap">
+              <div class="tmpl-editor" contenteditable="true" id="settings-payment-msg-editor" data-placeholder="Hi! Subscribe here: {{stripe_payment_url}}"></div>
+              <input type="hidden" id="settings-payment-msg">
+            </div>
+            <p class="settings-hint">Type {{ to insert {{stripe_payment_url}}.</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Client Portal</div>
+            <label>Portal Link SMS Template</label>
+            <div class="tmpl-editor-wrap">
+              <div class="tmpl-editor" contenteditable="true" id="settings-portal-msg-editor" data-placeholder="Hi! Here's your portal: {{portal_url}}"></div>
+              <input type="hidden" id="settings-portal-msg">
+            </div>
+            <p class="settings-hint">Type {{ to insert {{portal_url}}.</p>
+          </div>
+        </div>
       </div>
-      <p class="settings-hint">Type {{ to insert {{stripe_payment_url}}.</p>
-    </div>
 
-    <div class="settings-section">
-      <div class="settings-section-title">Google Reviews</div>
-      <label for="settings-review-url">Review URL</label>
-      <input type="text" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
-      <p class="settings-hint">Your Google Business review link.</p>
-      <label>Review SMS Template</label>
-      <div class="tmpl-editor-wrap">
-        <div class="tmpl-editor" contenteditable="true" id="settings-review-msg-editor" data-placeholder="Hi! Please leave us a review: {{google_review_url}}"></div>
-        <input type="hidden" id="settings-review-msg">
+      <!-- ── Costs ────────────────────────────────────────────────────── -->
+      <div id="settings-tab-costs" class="agent-tab-pane">
+        <div class="settings-form">
+          <div class="settings-section">
+            <div class="settings-section-title">Trials</div>
+            <label for="settings-trial-days">Free Trial Length (days)</label>
+            <input type="number" id="settings-trial-days" min="1" max="90" placeholder="14" style="width:80px;">
+            <p class="settings-hint">Global trial duration. Each client's trial starts from their individual Trial Start Date.</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Cost Rates (used for COGS estimates)</div>
+            <label>Twilio SMS — cents per outbound message</label>
+            <input type="number" id="settings-rate-sms-cents" step="0.01" min="0" placeholder="0.79">
+            <p class="settings-hint">US Twilio is ~$0.0079/SMS = 0.79¢. Adjust if your bill differs.</p>
+            <label>Resend — cents per email (marginal)</label>
+            <input type="number" id="settings-rate-email-cents" step="0.01" min="0" placeholder="0.04">
+            <p class="settings-hint">$20/50,000 ≈ $0.0004 = 0.04¢. Resend's $20 base is treated as a fixed cost, not COGS.</p>
+            <label>Twilio phone number — cents per number per month</label>
+            <input type="number" id="settings-rate-number-monthly-cents" step="1" min="0" placeholder="115">
+            <p class="settings-hint">~$1.15/month per US number = 115¢.</p>
+          </div>
+        </div>
       </div>
-      <p class="settings-hint">Type {{ to insert {{google_review_url}}.</p>
-    </div>
 
-    <div class="settings-section">
-      <div class="settings-section-title">Client Portal</div>
-      <label>Portal Link SMS Template</label>
-      <div class="tmpl-editor-wrap">
-        <div class="tmpl-editor" contenteditable="true" id="settings-portal-msg-editor" data-placeholder="Hi! Here's your portal: {{portal_url}}"></div>
-        <input type="hidden" id="settings-portal-msg">
+      <!-- ── Categories (Data Point Defaults) ─────────────────────────── -->
+      <div id="settings-tab-categories" class="agent-tab-pane">
+        <h2 style="margin-top:0;">Data Point Defaults</h2>
+        <p class="settings-hint" style="margin-bottom:0.75rem;">Edit the default configuration for built-in and custom data points. Changes apply to all future agent creations.</p>
+        <div id="dpDefaultsContainer"><div class="loading">Loading data point defaults...</div></div>
+
+        <details class="dp-card" style="margin-top:1rem;border-color:#10b981;">
+          <summary><strong style="color:#059669;">+ Create New Category</strong></summary>
+          <div class="dp-card-body">
+            <label>Category Key <span style="color:#dc2626">*</span></label>
+            <input type="text" id="newCatKey" placeholder="hvac" onblur="this.value=this.value.toLowerCase().replace(/[\s\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
+            <p class="settings-hint">Lowercase, underscores only. Internal key for this category.</p>
+            <label>Display Label <span style="color:#dc2626">*</span></label>
+            <input type="text" id="newCatLabel" placeholder="HVAC">
+            <div class="dp-card-actions">
+              <button type="button" class="dp-btn-save" style="background:#059669;" onclick="createNewCategory()">Create Category</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="dp-card" style="margin-top:1rem;border-color:#93b4f5;">
+          <summary><strong style="color:#2563eb;">+ Create New Data Point</strong></summary>
+          <div class="dp-card-body">
+            <label>Variable Name <span style="color:#dc2626">*</span></label>
+            <input type="text" id="newDpKey" placeholder="lot_number" onblur="this.value=this.value.toLowerCase().replace(/[\s\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
+            <p class="settings-hint">Lowercase, underscores only. This is the internal key used in templates.</p>
+            <label>Label <span style="color:#dc2626">*</span></label>
+            <input type="text" id="newDpLabel" placeholder="Lot Number">
+            <label>Category</label>
+            <select id="newDpCategory" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
+            </select>
+            <p class="settings-hint">Which category section this data point will appear in.</p>
+            <label>Type</label>
+            <select id="newDpType" onchange="document.getElementById('newDpChoicesWrap').style.display = this.value === 'enum' ? 'block' : 'none'" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
+              <option value="string">string</option>
+              <option value="enum">enum</option>
+              <option value="boolean">boolean</option>
+            </select>
+            <div id="newDpChoicesWrap" style="display:none;">
+              <label>Choices <span style="color:#6b7280;font-weight:normal;">(comma-separated)</span></label>
+              <input type="text" id="newDpChoices" placeholder="residential, commercial, other">
+            </div>
+            <label>Description</label>
+            <textarea id="newDpDescription" placeholder="Optional — what this field means and how to handle missing values."></textarea>
+            <label>Conversation Prompt</label>
+            <textarea id="newDpConvPrompt" placeholder="Optional — how the agent should ask for this field."></textarea>
+            <label>Forward Condition</label>
+            <input type="text" id="newDpFwdCondition" placeholder="Optional — when to move to the next question.">
+            <div class="dp-card-actions">
+              <button type="button" class="dp-btn-save" onclick="createNewDpDefault()">Create Data Point</button>
+            </div>
+          </div>
+        </details>
       </div>
-      <p class="settings-hint">Type {{ to insert {{portal_url}}.</p>
-    </div>
 
-    <div class="settings-section">
-      <div class="settings-section-title">Cost Rates (used for COGS estimates)</div>
-      <label>Twilio SMS — cents per outbound message</label>
-      <input type="number" id="settings-rate-sms-cents" step="0.01" min="0" placeholder="0.79">
-      <p class="settings-hint">US Twilio is ~$0.0079/SMS = 0.79¢. Adjust if your bill differs.</p>
-      <label>Resend — cents per email (marginal)</label>
-      <input type="number" id="settings-rate-email-cents" step="0.01" min="0" placeholder="0.04">
-      <p class="settings-hint">$20/50,000 ≈ $0.0004 = 0.04¢. Resend's $20 base is treated as a fixed cost, not COGS.</p>
-      <label>Twilio phone number — cents per number per month</label>
-      <input type="number" id="settings-rate-number-monthly-cents" step="1" min="0" placeholder="115">
-      <p class="settings-hint">~$1.15/month per US number = 115¢.</p>
-    </div>
+      <!-- ── Admin ────────────────────────────────────────────────────── -->
+      <div id="settings-tab-admin" class="agent-tab-pane">
+        <h2 style="margin-top:0;">SMS Blast</h2>
+        <p class="settings-hint" style="margin-bottom:0.75rem;">Send a one-time SMS to all active clients. Messages are sent one per second to avoid spam filters. Use <code>{{client_name}}</code> to personalize.</p>
+        <div style="background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1.5rem;">
+          <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.3rem;">Message</label>
+          <textarea id="blast-message" rows="4" style="width:100%;padding:0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px;resize:vertical;font-family:inherit;" placeholder="Happy Mother's Day from ServiceCall Saver! We hope {{client_name}} has a wonderful weekend."></textarea>
+          <p class="settings-hint" style="margin-top:0.3rem;">Supports: <code>{{client_name}}</code></p>
+          <div id="blast-preview-info" style="display:none;margin-top:0.5rem;padding:0.5rem;background:#f9fafb;border-radius:6px;font-size:0.82rem;">
+            <strong>Preview:</strong> <span id="blast-preview-count"></span><br>
+            <strong>Sample:</strong> <span id="blast-preview-sample" style="color:#374151;"></span>
+          </div>
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+            <button class="btn-save" style="background:#6b7280;" onclick="previewBlast()">Preview</button>
+            <button class="btn-save" id="btnBlastSend" onclick="confirmBlast()">Send Blast</button>
+          </div>
+          <div id="blast-result" style="display:none;margin-top:0.5rem;padding:0.5rem;border-radius:6px;font-size:0.82rem;"></div>
+        </div>
 
-    <button class="btn-save" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:0.5rem;">Save Settings</button>
+        <h2>User Management</h2>
+        <p class="settings-hint" style="margin-bottom:0.75rem;">Create accounts for team members and control what each user can do with the permissions matrix.</p>
+        <div id="userManagementContainer"><div class="loading">Loading...</div></div>
+        <div style="margin-top:1rem;background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1.5rem;">
+          <h3 style="margin:0 0 0.5rem;font-size:0.85rem;color:#555;">Add User</h3>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end;">
+            <div>
+              <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Username</label>
+              <input type="text" id="newUserName" placeholder="sam" style="width:120px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+            </div>
+            <div>
+              <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Password</label>
+              <input type="password" id="newUserPass" placeholder="min 6 chars" style="width:140px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+            </div>
+            <div>
+              <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Role</label>
+              <select id="newUserRole" onchange="updateNewUserPermDefaults()" style="padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+                <option value="operator">Operator</option>
+                <option value="viewer">Viewer (read-only)</option>
+                <option value="admin">Admin</option>
+                <option value="super_admin" id="optSuperAdmin" style="display:none;">Super Admin</option>
+              </select>
+            </div>
+            <button onclick="createNewUser()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:0.4rem 0.8rem;font-size:0.82rem;cursor:pointer;font-weight:500;">Add</button>
+          </div>
+          <div id="newUserPermsContainer" style="margin-top:0.75rem;"></div>
+        </div>
+
+        <div id="deletedAgentsSection" style="display:none;">
+          <h2>Recently Deleted Agents</h2>
+          <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them.</p>
+          <div id="deletedAgentsContainer"><div class="loading">Loading...</div></div>
+        </div>
+      </div>
+    </section>
   </div>
 
-  <div class="admin-only">
-    <h2>SMS Blast</h2>
-    <p class="settings-hint" style="margin-bottom:0.75rem;">Send a one-time SMS to all active clients. Messages are sent one per second to avoid spam filters. Use <code>{{client_name}}</code> to personalize.</p>
-    <div style="background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1rem;">
-      <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.3rem;">Message</label>
-      <textarea id="blast-message" rows="4" style="width:100%;padding:0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:6px;resize:vertical;font-family:inherit;" placeholder="Happy Mother's Day from ServiceCall Saver! We hope {{client_name}} has a wonderful weekend."></textarea>
-      <p class="settings-hint" style="margin-top:0.3rem;">Supports: <code>{{client_name}}</code></p>
-      <div id="blast-preview-info" style="display:none;margin-top:0.5rem;padding:0.5rem;background:#f9fafb;border-radius:6px;font-size:0.82rem;">
-        <strong>Preview:</strong> <span id="blast-preview-count"></span><br>
-        <strong>Sample:</strong> <span id="blast-preview-sample" style="color:#374151;"></span>
-      </div>
-      <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
-        <button class="btn-save" style="background:#6b7280;" onclick="previewBlast()">Preview</button>
-        <button class="btn-save" id="btnBlastSend" onclick="confirmBlast()">Send Blast</button>
-      </div>
-      <div id="blast-result" style="display:none;margin-top:0.5rem;padding:0.5rem;border-radius:6px;font-size:0.82rem;"></div>
-    </div>
-  </div>
-
-  <div class="admin-only">
-    <h2>Data Point Defaults</h2>
-    <p class="settings-hint" style="margin-bottom:0.75rem;">Edit the default configuration for built-in and custom data points. Changes apply to all future agent creations.</p>
-    <div id="dpDefaultsContainer"><div class="loading">Loading data point defaults...</div></div>
-
-    <details class="dp-card" style="margin-top:1rem;border-color:#10b981;">
-      <summary><strong style="color:#059669;">+ Create New Category</strong></summary>
-      <div class="dp-card-body">
-        <label>Category Key <span style="color:#dc2626">*</span></label>
-        <input type="text" id="newCatKey" placeholder="hvac" onblur="this.value=this.value.toLowerCase().replace(/[\s\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
-        <p class="settings-hint">Lowercase, underscores only. Internal key for this category.</p>
-        <label>Display Label <span style="color:#dc2626">*</span></label>
-        <input type="text" id="newCatLabel" placeholder="HVAC">
-        <div class="dp-card-actions">
-          <button type="button" class="dp-btn-save" style="background:#059669;" onclick="createNewCategory()">Create Category</button>
-        </div>
-      </div>
-    </details>
-
-    <details class="dp-card" style="margin-top:1rem;border-color:#93b4f5;">
-      <summary><strong style="color:#2563eb;">+ Create New Data Point</strong></summary>
-      <div class="dp-card-body">
-        <label>Variable Name <span style="color:#dc2626">*</span></label>
-        <input type="text" id="newDpKey" placeholder="lot_number" onblur="this.value=this.value.toLowerCase().replace(/[\s\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
-        <p class="settings-hint">Lowercase, underscores only. This is the internal key used in templates.</p>
-        <label>Label <span style="color:#dc2626">*</span></label>
-        <input type="text" id="newDpLabel" placeholder="Lot Number">
-        <label>Category</label>
-        <select id="newDpCategory" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
-        </select>
-        <p class="settings-hint">Which category section this data point will appear in.</p>
-        <label>Type</label>
-        <select id="newDpType" onchange="document.getElementById('newDpChoicesWrap').style.display = this.value === 'enum' ? 'block' : 'none'" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
-          <option value="string">string</option>
-          <option value="enum">enum</option>
-          <option value="boolean">boolean</option>
-        </select>
-        <div id="newDpChoicesWrap" style="display:none;">
-          <label>Choices <span style="color:#6b7280;font-weight:normal;">(comma-separated)</span></label>
-          <input type="text" id="newDpChoices" placeholder="residential, commercial, other">
-        </div>
-        <label>Description</label>
-        <textarea id="newDpDescription" placeholder="Optional — what this field means and how to handle missing values."></textarea>
-        <label>Conversation Prompt</label>
-        <textarea id="newDpConvPrompt" placeholder="Optional — how the agent should ask for this field."></textarea>
-        <label>Forward Condition</label>
-        <input type="text" id="newDpFwdCondition" placeholder="Optional — when to move to the next question.">
-        <div class="dp-card-actions">
-          <button type="button" class="dp-btn-save" onclick="createNewDpDefault()">Create Data Point</button>
-        </div>
-      </div>
-    </details>
-  </div>
-
-  <div id="deletedAgentsSection" style="display:none;">
-    <h2>Recently Deleted Agents</h2>
-    <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them.</p>
-    <div id="deletedAgentsContainer"><div class="loading">Loading...</div></div>
-  </div>
-
-  <div class="admin-only">
-    <h2>User Management</h2>
-    <p class="settings-hint" style="margin-bottom:0.75rem;">Create accounts for team members and control what each user can do with the permissions matrix.</p>
-    <div id="userManagementContainer"><div class="loading">Loading...</div></div>
-    <div style="margin-top:1rem;background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-      <h3 style="margin:0 0 0.5rem;font-size:0.85rem;color:#555;">Add User</h3>
-      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end;">
-        <div>
-          <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Username</label>
-          <input type="text" id="newUserName" placeholder="sam" style="width:120px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
-        </div>
-        <div>
-          <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Password</label>
-          <input type="password" id="newUserPass" placeholder="min 6 chars" style="width:140px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
-        </div>
-        <div>
-          <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Role</label>
-          <select id="newUserRole" onchange="updateNewUserPermDefaults()" style="padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
-            <option value="operator">Operator</option>
-            <option value="viewer">Viewer (read-only)</option>
-            <option value="admin">Admin</option>
-            <option value="super_admin" id="optSuperAdmin" style="display:none;">Super Admin</option>
-          </select>
-        </div>
-        <button onclick="createNewUser()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:0.4rem 0.8rem;font-size:0.82rem;cursor:pointer;font-weight:500;">Add</button>
-      </div>
-      <div id="newUserPermsContainer" style="margin-top:0.75rem;"></div>
-    </div>
-  </div>
+  <button class="btn-save admin-only" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
 </div>
 
 <!-- ── Detail View ──────────────────────────────────────────────────── -->
@@ -3073,6 +3105,7 @@
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('settingsView').style.display = '';
     history.replaceState(null, '', '#settings');
+    switchSettingsTab('general');
 
     try {
       const res = await fetch('/dashboard/api/settings');
@@ -3137,6 +3170,19 @@
   function hideSettings() {
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('listView').style.display = '';
+  }
+
+  // Tabs on the global settings page (mirrors the agent dashboard tab pattern).
+  // Tabs that hold GlobalSettings form fields show the "Save Settings" button;
+  // Categories and Admin have their own per-section saves and don't need it.
+  const SETTINGS_TABS_WITH_SAVE = new Set(['general', 'templates', 'costs']);
+  function switchSettingsTab(tabId) {
+    const tabs = document.querySelectorAll('#settingsView .agent-tab[data-settings-tab]');
+    tabs.forEach(b => b.classList.toggle('active', b.dataset.settingsTab === tabId));
+    const panes = document.querySelectorAll('#settingsView .agent-tab-pane');
+    panes.forEach(p => p.classList.toggle('active', p.id === 'settings-tab-' + tabId));
+    const saveBtn = document.getElementById('btnSaveSettings');
+    if (saveBtn) saveBtn.style.display = SETTINGS_TABS_WITH_SAVE.has(tabId) ? '' : 'none';
   }
 
   async function saveSettings() {
