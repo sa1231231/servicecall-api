@@ -37,14 +37,16 @@ test.describe("Shadow mode toggle — UI flips state and persists", () => {
 
     // Find the shadow checkbox inside the row. The row has TWO toggles
     // (active + shadow); we identify the shadow one by its onchange handler.
+    // Note: the input itself is visually hidden by the toggle CSS — the
+    // <span class="slider"> is what's painted. We don't assert visibility
+    // on the input; we just attach to its state and click the wrapping label.
     const shadowCheckbox = row.locator('input[onchange*="toggleShadow"]');
-    await expect(shadowCheckbox).toBeVisible();
+    await expect(shadowCheckbox).toBeAttached();
 
     const before = await shadowCheckbox.isChecked();
 
-    // Click the surrounding label rather than the checkbox itself — the
-    // toggle UI is a slider where the input is `display:none`-ish but
-    // still bound to the click via the wrapping <label>.
+    // Click the surrounding label — the input is hidden but the label is
+    // the visible/clickable target.
     const toggleLabel = shadowCheckbox.locator("xpath=ancestor::label[1]");
     await toggleLabel.click();
 

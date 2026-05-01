@@ -11,29 +11,48 @@ test.describe("Node Editor — read-only smoke", () => {
   test("opening the Node Editor for Demo Meter renders the parsed flow", async ({ page }) => {
     await page.goto("/dashboard");
 
-    // Click Demo Meter row to open detail view.
+    // Click Demo Meter row to open detail view. The click triggers showDetail()
+    // which fetches /dashboard/api/agents/demo-meter — we need that fetch to
+    // resolve BEFORE clicking the Node Editor tab, otherwise switchAgentTab's
+    // lazy-load gate (`originalDoc?.agent_ids?.length > 0`) is false and
+    // loadNodeEditor never fires.
     const row = page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`);
     await expect(row).toBeVisible({ timeout: 15_000 });
-    await row.click();
 
-    // Detail view should switch in.
-    await expect(page.locator("#detailView")).toBeVisible({ timeout: 10_000 });
+    await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().endsWith(`/dashboard/api/agents/${DEMO_METER.slug}`) &&
+          r.request().method() === "GET",
+        { timeout: 15_000 },
+      ),
+      row.click(),
+    ]);
 
-    // Click the Node Editor tab — switchAgentTab('nodes') triggers a
-    // lazy load of the node editor data.
-    await page.locator('[data-tab="nodes"]').click();
+    // Now originalDoc is populated. Click the Node Editor tab and wait for
+    // its lazy-loaded nodes endpoint to come back.
+    const [nodesResp] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes(`/nodes/${DEMO_METER.agentId}`) &&
+          !r.url().includes("/versions") &&
+          r.request().method() === "GET",
+        { timeout: 25_000 },
+      ),
+      page.locator('button.agent-tab[data-tab="nodes"]').click(),
+    ]);
+    expect(nodesResp.ok()).toBe(true);
 
-    // The editor renders an <h2>Node Editor</h2> heading once data is ready.
+    // After the response, renderNodeEditor populates #nodeEditorContainer.
     const editor = page.locator("#nodeEditorContainer");
-    await expect(editor.getByRole("heading", { name: "Node Editor" })).toBeVisible({
-      timeout: 20_000, // Retell fetch can be slow on cold start
-    });
 
-    // Verify the Global Prompt section rendered with non-empty text.
-    await expect(editor).toContainText("Global Prompt");
+    // Sanity checks: render is alive and a couple of canonical sections show.
+    await expect(editor).toContainText("Node Editor", { timeout: 10_000 });
+    await expect(editor).toContainText("System Prompt");
+    await expect(editor).toContainText("Identity & Routing Paths");
 
-    // Verify at least one of Demo Meter's known paths shows up.
-    // Demo Meter is a multi-path agent: measure_me + dont_measure_me.
+    // Demo Meter is multi-path — at least one path name shows up in the
+    // rendered editor.
     await expect(editor).toContainText(/measure_me|dont_measure_me/);
   });
 });
