@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "coverage": "vitest run --coverage",
     "test:system": "SYSTEM_TEST_URL=$BASE_URL vitest run src/__tests__/system.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
