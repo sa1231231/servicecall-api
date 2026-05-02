@@ -28,11 +28,12 @@ function url(path: string): string {
   return `${BASE_URL}${path}`;
 }
 
-function authHeaders(): Record<string, string> {
+function authHeaders(extras: Record<string, string> = {}): Record<string, string> {
   return {
     "x-api-key": API_KEY!,
     Authorization: "Basic " + Buffer.from(`sam_admin:${ADMIN_PASSWORD}`).toString("base64"),
     "Content-Type": "application/json",
+    ...extras,
   };
 }
 
@@ -142,7 +143,7 @@ async function runScenario(
 
   const resp = await fetch(url("/retell/post-hook"), {
     method: "POST",
-    headers: authHeaders(),
+    headers: authHeaders({ "x-test-mode": "true" }),
     body: JSON.stringify(callEndedPayload),
   });
   expect(resp.status).toBe(200);
@@ -159,7 +160,7 @@ async function runScenario(
 async function fetchCallLog(callId: string, attempts = 8): Promise<any> {
   for (let i = 0; i < attempts; i++) {
     const resp = await fetch(
-      url(`/dashboard/api/agents/${DEMO_METER_SLUG}/calls?limit=20`),
+      url(`/dashboard/api/agents/${DEMO_METER_SLUG}/calls?limit=20&include_tests=1`),
       { headers: authHeaders() },
     );
     if (resp.ok) {
@@ -272,7 +273,8 @@ describe.skipIf(!hasConfig)(
         it("call log records the routing decision", () => {
           try {
             expect(callLog.agent_id).toBe(DEMO_METER_AGENT_ID);
-            expect(callLog.outcome).toBe("web_call");
+            expect(callLog.outcome).toBe("test_call");
+            expect(callLog.test_mode).toBe(true);
             if (scenario.expectMessageTypeKey) {
               expect(callLog.message_type_key).toBe(scenario.expectMessageTypeKey);
             }

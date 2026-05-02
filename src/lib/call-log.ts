@@ -14,6 +14,7 @@ export interface CallLogDocument {
   message_type_label: string;
   outcome: string;
   shadow_mode: boolean;
+  test_mode?: boolean;
   call_summary?: string;
   user_sentiment?: string;
   call_successful?: boolean;
@@ -89,9 +90,12 @@ export async function getCallLogsByClient(
   clientSlug: string,
   limit = 50,
   offset = 0,
+  options: { includeTests?: boolean } = {},
 ): Promise<CallLogDocument[]> {
+  const filter: Record<string, unknown> = { client_slug: clientSlug };
+  if (!options.includeTests) filter.test_mode = { $ne: true };
   return callLogs()
-    .find({ client_slug: clientSlug })
+    .find(filter)
     .sort({ created_at: -1 })
     .skip(offset)
     .limit(limit)

@@ -233,6 +233,62 @@ describe("postHookHandler — web calls", () => {
   });
 });
 
+describe("postHookHandler — test mode", () => {
+  it("logs test_call and skips dispatch when x-test-mode + x-api-key are set", async () => {
+    mockAgentIdToClient["agent_1"] = makeClient();
+    mockAgentIdToSlug["agent_1"] = "acme";
+    const res = makeRes();
+
+    await postHookHandler(
+      makeReq(makeBody(), { "x-api-key": "internal-api-key", "x-test-mode": "true" }),
+      res,
+    );
+
+    expect(res._json.outcome).toBe("test_call");
+    expect(mockSendSmsToAll).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockTriggerDispatchCall).not.toHaveBeenCalled();
+    expect(mockSaveCallLog).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "test_call", test_mode: true }),
+    );
+  });
+
+  it("ignores x-test-mode when x-api-key is not set (untrusted caller)", async () => {
+    mockAgentIdToClient["agent_1"] = makeClient();
+    mockAgentIdToSlug["agent_1"] = "acme";
+    const res = makeRes();
+
+    await postHookHandler(makeReq(makeBody(), { "x-test-mode": "true" }), res);
+
+    // Falls through to normal dispatch path because test-mode is gated on internal auth
+    expect(mockSendSmsToAll).toHaveBeenCalled();
+    expect(mockSaveCallLog).toHaveBeenCalledWith(
+      expect.not.objectContaining({ test_mode: true }),
+    );
+  });
+
+  it("skips surge alerts under test mode", async () => {
+    mockAgentIdToClient["agent_1"] = makeClient();
+    mockAgentIdToSlug["agent_1"] = "acme";
+    mockCheckAgentAlerts.mockReturnValue({
+      callSurge: { fired: true, count: 99 },
+      costSurge: { fired: true, totalCents: 9999 },
+    });
+    const res = makeRes();
+
+    await postHookHandler(
+      makeReq(makeBody(), { "x-api-key": "internal-api-key", "x-test-mode": "true" }),
+      res,
+    );
+
+    // checkAgentAlerts should not have been invoked at all under test mode
+    expect(mockCheckAgentAlerts).not.toHaveBeenCalled();
+    // Owner SMS/email should NOT have fired even though the mock would have said "fired"
+    expect(mockSendSms).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+});
+
 describe("postHookHandler — dispatch happy path", () => {
   it("sends SMS + email and logs dispatched outcome", async () => {
     mockAgentIdToClient["agent_1"] = makeClient();

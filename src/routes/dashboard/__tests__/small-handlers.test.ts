@@ -70,14 +70,21 @@ describe("getCallsHandler", () => {
     const res = makeRes();
     await getCallsHandler(makeReq({ params: { slug: "acme" } }), res);
     expect(res._json).toEqual([{ _id: "1" }]);
-    expect(mockGetCallLogsByClient).toHaveBeenCalledWith("acme", 50, 0);
+    expect(mockGetCallLogsByClient).toHaveBeenCalledWith("acme", 50, 0, { includeTests: false });
   });
 
   it("clamps limit to 100 and parses offset", async () => {
     mockGetCallLogsByClient.mockResolvedValue([]);
     const res = makeRes();
     await getCallsHandler(makeReq({ params: { slug: "acme" }, query: { limit: "999", offset: "20" } }), res);
-    expect(mockGetCallLogsByClient).toHaveBeenCalledWith("acme", 100, 20);
+    expect(mockGetCallLogsByClient).toHaveBeenCalledWith("acme", 100, 20, { includeTests: false });
+  });
+
+  it("passes includeTests=true when ?include_tests=1", async () => {
+    mockGetCallLogsByClient.mockResolvedValue([]);
+    const res = makeRes();
+    await getCallsHandler(makeReq({ params: { slug: "acme" }, query: { include_tests: "1" } }), res);
+    expect(mockGetCallLogsByClient).toHaveBeenCalledWith("acme", 50, 0, { includeTests: true });
   });
 
   it("returns 500 on db failure", async () => {
