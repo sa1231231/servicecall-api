@@ -93,6 +93,7 @@ vi.mock("../../../middleware/require-role.js", () => ({
   // No-op middleware for tests; permission gating is tested separately.
   requirePermission: () => (_req: Request, _res: Response, next: NextFunction) => next(),
   requireRoot: (_req: Request, _res: Response, next: NextFunction) => next(),
+  requireRootForProtectedSlug: (_req: Request, _res: Response, next: NextFunction) => next(),
 }));
 vi.mock("../../../lib/audit.js", () => ({
   logAudit: (...a: any[]) => mockLogAudit(...a),

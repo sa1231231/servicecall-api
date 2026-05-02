@@ -33,7 +33,7 @@ import {
   CATEGORY_ORDER,
   CATEGORY_LABELS,
 } from "../../lib/data-point-defaults.js";
-import { requirePermission, requireRoot } from "../../middleware/require-role.js";
+import { requirePermission, requireRoot, requireRootForProtectedSlug } from "../../middleware/require-role.js";
 import { logAudit } from "../../lib/audit.js";
 import { nodeEditorRouter } from "./node-editor.js";
 import { alertRootIfNeeded } from "../../lib/root-alerts.js";
@@ -83,7 +83,7 @@ dashboardApiRouter.patch("/agents/:slug/shadow", requirePermission("edit_agents"
 dashboardApiRouter.patch("/agents/:slug/active", requirePermission("edit_agents"), toggleActiveHandler);
 dashboardApiRouter.patch("/agents/:slug", requirePermission("edit_agents"), updateAgentHandler);
 dashboardApiRouter.post("/agents/:slug/clone", requirePermission("clone_agents"), cloneAgentHandler);
-dashboardApiRouter.delete("/agents/:slug", requirePermission("delete_agents"), deleteAgentHandler);
+dashboardApiRouter.delete("/agents/:slug", requireRootForProtectedSlug, requirePermission("delete_agents"), deleteAgentHandler);
 
 // ── Export ───────────────────────────────────────────────────────────────────
 import { exportAgentHandler } from "../agents/export-agent.js";
@@ -135,7 +135,7 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("mana
   }
 });
 
-dashboardApiRouter.delete("/deleted-agents/:slug", requirePermission("manage_deleted"), async (req, res) => {
+dashboardApiRouter.delete("/deleted-agents/:slug", requireRootForProtectedSlug, requirePermission("manage_deleted"), async (req, res) => {
   const slug = String(req.params.slug);
   try {
     // Actually delete from Retell now (permanent delete)
