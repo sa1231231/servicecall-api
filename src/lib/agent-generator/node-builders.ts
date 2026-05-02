@@ -1142,6 +1142,11 @@ export function buildAgentRoot(
     normalize_for_speech: true,
     begin_message_delay_ms: 2000,
     voicemail_option: { action: { type: "hangup" } },
+    stt_mode: "custom",
+    custom_stt_config: {
+      provider: "soniox",
+      endpointing_ms: 700,
+    },
     allow_user_dtmf: false,
     user_dtmf_options: {},
     post_call_analysis_data: [
