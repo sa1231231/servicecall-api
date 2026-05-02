@@ -1544,13 +1544,25 @@
     if (!pane) return;
     if (pane.id === 'tab-settings') markTabDirty('settings');
     else if (pane.id === 'tab-dispatch') markTabDirty('dispatch');
+    else if (pane.id === 'tab-nodes' && shouldMarkNodeEditorDirty(e.target)) markNeDirty();
   });
   document.addEventListener('change', (e) => {
     const pane = e.target.closest('.agent-tab-pane');
     if (!pane) return;
     if (pane.id === 'tab-settings') markTabDirty('settings');
     else if (pane.id === 'tab-dispatch') markTabDirty('dispatch');
+    else if (pane.id === 'tab-nodes' && shouldMarkNodeEditorDirty(e.target)) markNeDirty();
   });
+
+  // Inputs inside the node editor that should flip neDirty on edit.
+  // Buttons/links are excluded — those handlers call markNeDirty() themselves.
+  function shouldMarkNodeEditorDirty(el) {
+    if (!el || !el.tagName) return false;
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (el.isContentEditable) return true;
+    return false;
+  }
 
   function markTabDirty(tab) {
     tabDirty[tab] = true;
@@ -1626,7 +1638,13 @@
   }
 
   function removeChip(el) {
+    const container = el.closest('.chip-input');
     el.closest('.chip').remove();
+    // Bubble a synthetic input event so dirty-tracking listeners (e.g. node editor) react.
+    if (container) {
+      const inp = container.querySelector('input');
+      if (inp) inp.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   }
 
   function chipKeydown(e, input) {
@@ -1653,6 +1671,8 @@
     chip.innerHTML = esc(val) + '<span class="remove" onclick="removeChip(this)">&times;</span>';
     input.parentElement.insertBefore(chip, input);
     input.value = '';
+    // Bubble a synthetic input event so dirty-tracking listeners (e.g. node editor) react.
+    input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   function getChipValues(id) {
@@ -2448,14 +2468,29 @@
     if (fieldToggles.length > 0) {
       const updatedMt = JSON.parse(JSON.stringify(originalDoc.message_types || {}));
       let mtChanged = false;
+      // Helper: when the dashboard renders a sub-variable that doesn't exist in
+      // the agent's stored mt.fields yet (e.g., the data point was upgraded to
+      // a composite after agent creation), insert a sensible default field
+      // entry so the toggle can persist.
+      const ensureField = (mt, fieldKey) => {
+        let f = mt.fields.find(f => f.key === fieldKey);
+        if (!f) {
+          const label = fieldKey
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, c => c.toUpperCase());
+          f = { key: fieldKey, label };
+          mt.fields.push(f);
+          mtChanged = true;
+        }
+        return f;
+      };
       for (const toggle of fieldToggles) {
         const mtKey = toggle.dataset.mtKey;
         const fieldKey = toggle.dataset.fieldKey;
         const isVisible = toggle.checked;
         const mt = updatedMt[mtKey];
         if (!mt) continue;
-        const field = mt.fields.find(f => f.key === fieldKey);
-        if (!field) continue;
+        const field = ensureField(mt, fieldKey);
         const wasVisible = field.show !== false;
         if (isVisible !== wasVisible) {
           field.show = isVisible ? undefined : false;
@@ -2493,8 +2528,7 @@
         const isRequired = toggle.checked;
         const mt = updatedMt[mtKey];
         if (!mt) continue;
-        const field = mt.fields.find(f => f.key === fieldKey);
-        if (!field) continue;
+        const field = ensureField(mt, fieldKey);
         const wasRequired = !!field.required;
         if (isRequired !== wasRequired) {
           if (isRequired) { field.required = true; } else { delete field.required; }
@@ -2506,7 +2540,12 @@
         const mtKey = findMtKey(pathName);
         const mt = updatedMt[mtKey];
         if (!mt) return;
-        const domOrder = [...list.querySelectorAll('.ne-dp-row[data-field-key]')].map(r => r.dataset.fieldKey);
+        // For composite rows, expand data-field-keys (comma-separated sub-vars)
+        // so the persisted order matches the actual stored field keys.
+        const domOrder = [...list.querySelectorAll('.ne-dp-row[data-field-key]')].flatMap(r => {
+          if (r.dataset.fieldKeys) return r.dataset.fieldKeys.split(',').map(s => s.trim()).filter(Boolean);
+          return [r.dataset.fieldKey];
+        });
         const origOrder = mt.fields.map(f => f.key);
         if (domOrder.join(',') !== origOrder.join(',')) {
           const fieldMap = new Map(mt.fields.map(f => [f.key, f]));
@@ -4803,20 +4842,36 @@
   }
 
   function renderDpRow(dp, num, pathName, mtKey, fieldMap, canEdit) {
-    const fieldCfg = fieldMap[dp.variableName] || {};
-    const showChecked = fieldCfg.show !== false ? 'checked' : '';
-    const reqChecked = fieldCfg.required ? 'checked' : '';
+    // Composite data points (multiple variableDefs) emit one show/required
+    // toggle pair per sub-variable, since each sub-var is a separate field in
+    // the agent's stored mt.fields and a separate row in outbound dispatch.
+    const subVars = Array.isArray(dp.variableDefs) && dp.variableDefs.length > 1
+      ? dp.variableDefs.map(v => v.name)
+      : [dp.variableName];
+    const isComposite = subVars.length > 1;
 
-    // For composite data points (multiple variableDefs), show all sub-variable
-    // names comma-separated so the user can see exactly which vars get captured.
-    const varDisplay = Array.isArray(dp.variableDefs) && dp.variableDefs.length > 1
-      ? dp.variableDefs.map(v => v.name).join(', ')
-      : dp.variableName;
-    let html = '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '" data-field-key="' + esc(dp.variableName) + '">' +
+    // First sub-var drives the row's stored field-key (legacy single-key path
+    // still works); composites expose all keys via data-field-keys.
+    const primaryKey = subVars[0];
+    const fieldKeysAttr = isComposite ? ' data-field-keys="' + esc(subVars.join(',')) + '"' : '';
+
+    const varDisplay = isComposite ? subVars.join(', ') : dp.variableName;
+
+    let togglesHtml = '';
+    for (const sv of subVars) {
+      const cfg = fieldMap[sv] || {};
+      const showChecked = cfg.show !== false ? 'checked' : '';
+      const reqChecked = cfg.required ? 'checked' : '';
+      const labelTitle = isComposite ? sv + ' — show in dispatch' : 'Show in dispatch';
+      const reqTitle = isComposite ? sv + ' — required' : 'Required';
+      togglesHtml += '<input type="checkbox" ' + showChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(sv) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKey) + '\')" title="' + esc(labelTitle) + '" style="margin:0;">' +
+        '<input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(sv) + '" class="field-required-toggle" title="' + esc(reqTitle) + '" style="margin:0;">';
+    }
+
+    let html = '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '" data-field-key="' + esc(primaryKey) + '"' + fieldKeysAttr + '>' +
       '<span class="ne-handle">&#9776;</span>' +
       '<span class="ne-num">' + num + '</span>' +
-      '<input type="checkbox" ' + showChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(dp.variableName) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKey) + '\')" title="Show in dispatch" style="margin:0;">' +
-      '<input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(dp.variableName) + '" class="field-required-toggle" title="Required" style="margin:0;">' +
+      togglesHtml +
       '<span class="ne-label">' + esc(dp.label) + '</span>' +
       (dp.orphan ? '<span style="font-size:0.6rem;color:#6b7280;background:#f3f4f6;padding:0.1rem 0.3rem;border-radius:3px;margin-left:0.25rem;">extract only</span>' : '') +
       '<span class="ne-var">' + esc(varDisplay) + '</span>' +
