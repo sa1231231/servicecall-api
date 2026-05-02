@@ -1116,7 +1116,10 @@ export function buildAgentRoot(
     ambient_sound: "coffee-shop",
     ambient_sound_volume: 0.95,
     responsiveness: 1,
-    normalize_for_speech: false,
+    // Effectively gated by handbook_config.speech_normalization — Retell
+    // coerces this to true when speech_normalization is on, which it is by
+    // default. Set to true to match what actually lands on the agent.
+    normalize_for_speech: true,
     begin_message_delay_ms: 2000,
     voicemail_option: { action: { type: "hangup" } },
     allow_user_dtmf: false,
