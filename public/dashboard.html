@@ -2503,10 +2503,11 @@
         const mtKey = input.dataset.mtKey;
         const fieldKey = input.dataset.fieldKey;
         const newLabel = input.value.trim();
+        if (!newLabel) continue;
         const mt = updatedMt[mtKey];
         if (!mt) continue;
-        const field = mt.fields.find(f => f.key === fieldKey);
-        if (field && newLabel && newLabel !== field.label) {
+        const field = ensureField(mt, fieldKey);
+        if (newLabel !== field.label) {
           field.label = newLabel;
           mtChanged = true;
         }
@@ -3848,8 +3849,9 @@
   function renderSubVarRow(dpKey, idx, v) {
     const choices = (v && v.choices) ? v.choices.join(', ') : '';
     const type = (v && v.type) || 'string';
-    return `<div class="dp-subvar-row" style="display:grid;grid-template-columns:1fr 100px 2fr 24px;gap:0.4rem;align-items:center;margin-bottom:0.3rem;">
+    return `<div class="dp-subvar-row" style="display:grid;grid-template-columns:1fr 1fr 100px 2fr 24px;gap:0.4rem;align-items:center;margin-bottom:0.3rem;">
       <input type="text" class="sv-name" placeholder="variable_name" value="${esc(v.variableName || '')}" onblur="this.value=this.value.toLowerCase().replace(/[\\s\\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
+      <input type="text" class="sv-label" placeholder="Display label (SMS / email)" value="${esc(v.label || '')}">
       <select class="sv-type" onchange="toggleSubVarChoices(this)" style="padding:0.3rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
         <option value="string"${type === 'string' ? ' selected' : ''}>string</option>
         <option value="enum"${type === 'enum' ? ' selected' : ''}>enum</option>
@@ -3894,6 +3896,7 @@
       if (!name) return;
       const type = row.querySelector('.sv-type').value;
       const extra = row.querySelector('.sv-choices');
+      const labelInput = row.querySelector('.sv-label');
       const v = { variableName: name, type, description: '' };
       if (type === 'enum') {
         v.choices = extra.value.split(',').map(s => s.trim()).filter(Boolean);
@@ -3901,6 +3904,8 @@
       } else {
         v.description = extra.value || name.replace(/_/g, ' ');
       }
+      const label = labelInput ? labelInput.value.trim() : '';
+      if (label) v.label = label;
       out.push(v);
     });
     return out;
@@ -4857,15 +4862,24 @@
 
     const varDisplay = isComposite ? subVars.join(', ') : dp.variableName;
 
+    // Helper: derive a sensible default display label when mt.fields has no
+    // entry yet for this sub-var (e.g., a composite added after agent creation).
+    const defaultLabelFor = (sv) => sv.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
     let togglesHtml = '';
     for (const sv of subVars) {
       const cfg = fieldMap[sv] || {};
       const showChecked = cfg.show !== false ? 'checked' : '';
       const reqChecked = cfg.required ? 'checked' : '';
-      const labelTitle = isComposite ? sv + ' — show in dispatch' : 'Show in dispatch';
+      const showTitle = isComposite ? sv + ' — show in dispatch' : 'Show in dispatch';
       const reqTitle = isComposite ? sv + ' — required' : 'Required';
-      togglesHtml += '<input type="checkbox" ' + showChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(sv) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKey) + '\')" title="' + esc(labelTitle) + '" style="margin:0;">' +
-        '<input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(sv) + '" class="field-required-toggle" title="' + esc(reqTitle) + '" style="margin:0;">';
+      const labelValue = (cfg.label != null && cfg.label !== '') ? cfg.label : defaultLabelFor(sv);
+      const labelTitle = 'Display label for "' + sv + '" in SMS / email';
+      togglesHtml += '<span class="ne-field-cell" style="display:inline-flex;align-items:center;gap:0.2rem;">' +
+        '<input type="checkbox" ' + showChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(sv) + '" class="field-toggle" onchange="updatePreview(\'' + esc(mtKey) + '\')" title="' + esc(showTitle) + '" style="margin:0;">' +
+        '<input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(sv) + '" class="field-required-toggle" title="' + esc(reqTitle) + '" style="margin:0;">' +
+        '<input type="text" class="field-label-input" data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(sv) + '" value="' + esc(labelValue) + '" placeholder="' + esc(defaultLabelFor(sv)) + '" oninput="updatePreview(\'' + esc(mtKey) + '\')" title="' + esc(labelTitle) + '" style="width:110px;font-size:0.7rem;padding:0.15rem 0.3rem;border:1px solid #d1d5db;border-radius:4px;">' +
+        '</span>';
     }
 
     let html = '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '" data-field-key="' + esc(primaryKey) + '"' + fieldKeysAttr + '>' +

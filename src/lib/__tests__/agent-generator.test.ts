@@ -138,6 +138,22 @@ describe("resolveDataPoints", () => {
     expect(resolved[0].variables![1].variableName).toBe("preferred_time");
   });
 
+  it("preserves optional label on composite sub-variables", () => {
+    const customDefaults = {
+      ...TEST_DEFAULTS,
+      scheduling: {
+        ...TEST_DEFAULTS.scheduling,
+        variables: [
+          { variableName: "preferred_day", type: "string" as const, description: "Day", label: "Day" },
+          { variableName: "preferred_time", type: "string" as const, description: "Time", label: "Time Window" },
+        ],
+      },
+    } as any;
+    const resolved = resolveDataPoints(["scheduling"], customDefaults);
+    expect(resolved[0].variables![0].label).toBe("Day");
+    expect(resolved[0].variables![1].label).toBe("Time Window");
+  });
+
   it("throws when defaults map is empty", () => {
     expect(() => resolveDataPoints(["full_name"], {})).toThrow(
       /No data point defaults provided/,

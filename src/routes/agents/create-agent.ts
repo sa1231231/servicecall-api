@@ -32,7 +32,7 @@ function flattenDataPoints(resolved: DataPoint[]): VariableEntry[] {
   for (const dp of resolved) {
     if (dp.composite && dp.variables) {
       for (const v of dp.variables) {
-        variables.push({ key: v.variableName, label: toLabel(v.variableName) });
+        variables.push({ key: v.variableName, label: toLabel(v.variableName, v.label) });
       }
     } else {
       variables.push({ key: dp.variableName, label: toLabel(dp.variableName, dp.label) });
