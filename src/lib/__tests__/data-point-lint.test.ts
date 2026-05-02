@@ -1,5 +1,7 @@
-import { describe, it, expect } from "vitest";
-import { lintDataPoint, lintBranchVariableReferences } from "../data-point-lint.js";
+import "dotenv/config";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { MongoClient, type Db } from "mongodb";
+import { lintDataPoint, lintBranchVariableReferences, type LintError } from "../data-point-lint.js";
 import {
   CALLER_DOESNT_KNOW,
   defaultExtractEquation,
@@ -242,5 +244,84 @@ describe("lintBranchVariableReferences", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0].code).toBe("BRANCH_REFERENCES_UNKNOWN_VARIABLE");
     expect(errors[0].variableName).toBe("ghost_var");
+  });
+});
+
+// ── Deployed defaults (env-gated on MONGODB_URL) ─────────────────────────────
+
+const MONGODB_URL = process.env.MONGODB_URL;
+
+describe.skipIf(!MONGODB_URL)("Deployed data point defaults (live MongoDB)", () => {
+  let client: MongoClient;
+  let db: Db;
+
+  beforeAll(async () => {
+    client = new MongoClient(MONGODB_URL!);
+    await client.connect();
+    db = client.db();
+  });
+
+  afterAll(async () => {
+    await client?.close();
+  });
+
+  it("every deployed data point default lints clean", async () => {
+    const docs = await db
+      .collection<DataPoint & { _id: string }>("data_point_defaults")
+      .find({})
+      .toArray();
+    expect(docs.length, "expected at least one data point default in MongoDB").toBeGreaterThan(0);
+
+    const errorsByVar: Record<string, LintError[]> = {};
+    for (const doc of docs) {
+      const { _id, ...dp } = doc as any;
+      // Some legacy docs may lack variableName — fall back to _id
+      if (!dp.variableName) dp.variableName = _id;
+      const errors = lintDataPoint(dp as DataPoint);
+      if (errors.length > 0) errorsByVar[dp.variableName] = errors;
+    }
+
+    if (Object.keys(errorsByVar).length > 0) {
+      const lines: string[] = ["Deployed data point lint errors:"];
+      for (const [varName, errs] of Object.entries(errorsByVar)) {
+        lines.push(`  ${varName}:`);
+        for (const e of errs) lines.push(`    [${e.code}] ${e.message}`);
+      }
+      throw new Error(lines.join("\n"));
+    }
+  });
+
+  it("every deployed agent's canonical flow has no dangling branch variable references", async () => {
+    const versions = db.collection<{ slug: string; agentId: string; version: number; canonicalJson: any }>("agent_versions");
+    // Get the latest version per (slug, agentId) pair
+    const latest = await versions
+      .aggregate([
+        { $sort: { version: -1 } },
+        { $group: { _id: { slug: "$slug", agentId: "$agentId" }, doc: { $first: "$$ROOT" } } },
+        { $replaceRoot: { newRoot: "$doc" } },
+      ])
+      .toArray();
+
+    if (latest.length === 0) {
+      console.warn("[lint] No agent_versions found — skipping flow lint");
+      return;
+    }
+
+    const errorsByAgent: Record<string, LintError[]> = {};
+    for (const v of latest) {
+      const flow = v.canonicalJson?.conversationFlow ?? v.canonicalJson;
+      if (!flow || !Array.isArray(flow.nodes)) continue;
+      const errors = lintBranchVariableReferences(flow);
+      if (errors.length > 0) errorsByAgent[`${v.slug}/${v.agentId}`] = errors;
+    }
+
+    if (Object.keys(errorsByAgent).length > 0) {
+      const lines: string[] = ["Branch variable lint errors per agent:"];
+      for (const [key, errs] of Object.entries(errorsByAgent)) {
+        lines.push(`  ${key}:`);
+        for (const e of errs) lines.push(`    [${e.code}] ${e.message}`);
+      }
+      throw new Error(lines.join("\n"));
+    }
   });
 });

@@ -41,6 +41,8 @@ export const DEMO_METER_SCENARIOS: PathScenario[] = [
       email: /test\+measure@example\.com/i,
       full_name: /john\s*smith/i,
       property_type: /residential/i,
+      preferred_day: /tuesday/i,
+      preferred_time: /afternoon|pm|noon/i,
     },
     expectMessageTypeKey: "measure_me",
   },
