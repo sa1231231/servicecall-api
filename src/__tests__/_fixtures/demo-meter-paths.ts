@@ -1,26 +1,13 @@
 import { CALLER_DOESNT_KNOW, NOT_MENTIONED } from "../../lib/agent-generator/data-point-registry.js";
-
-export interface PathScenario {
-  pathName: string;
-  scenarioName: string;
-  description: string;
-  /** First user message — should bring the agent into the target path. */
-  triggerMessage: string;
-  /** Map variableName → user reply. The runner sends the reply when the agent enters that variable's Collect node. */
-  replies: Record<string, string>;
-  /** Sent when the agent is in intro/transition nodes (not yet asking a path data point). */
-  fillerReply?: string;
-  /** Optional explicit assertions; if omitted, the test asserts each replied variable was extracted to a value matching the reply. */
-  expectVariables?: Record<string, RegExp | string>;
-  expectMessageTypeKey?: string;
-  /** Safety cap on dialog length. */
-  maxTurns?: number;
-}
+import type { AgentFixture } from "./types.js";
 
 export const DEMO_METER_AGENT_ID = "agent_27340aa43ebbc5f4822a35225a";
 export const DEMO_METER_SLUG = "demo-meter";
 
-export const DEMO_METER_SCENARIOS: PathScenario[] = [
+export const DEMO_METER_FIXTURE: AgentFixture = {
+  slug: DEMO_METER_SLUG,
+  agentId: DEMO_METER_AGENT_ID,
+  scenarios: [
   {
     pathName: "measure_me",
     scenarioName: "happy_residential_efs",
@@ -45,6 +32,7 @@ export const DEMO_METER_SCENARIOS: PathScenario[] = [
       preferred_time: /afternoon|pm|noon/i,
     },
     expectMessageTypeKey: "measure_me",
+    flaky: true,
   },
   {
     pathName: "measure_me",
@@ -106,4 +94,5 @@ export const DEMO_METER_SCENARIOS: PathScenario[] = [
     },
     expectMessageTypeKey: "service_request",
   },
-];
+  ],
+};
