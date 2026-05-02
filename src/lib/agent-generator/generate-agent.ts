@@ -321,6 +321,7 @@ When listing anything — services, time slots, examples, options — never list
           rp.transferDestination,
           pathLabel,
           f,
+          agentConfig.warmTransferAgentVersion,
         ),
       );
     }
@@ -331,7 +332,7 @@ When listing anything — services, time slots, examples, options — never list
   allNodes.push(buildFaqNode(faqKnowledgeBase, ids, pos, f, isMultiPath));
   allNodes.push(buildHumanRequestNode(ids, pos, f, humanMode));
   if (humanMode === "live_transfer") {
-    allNodes.push(buildTransferCallNode(ids, pos, f));
+    allNodes.push(buildTransferCallNode(ids, pos, f, agentConfig.warmTransferAgentVersion));
   }
   // Build the shared Live Transfer Recovery node when any transfer path exists.
   if (humanMode === "live_transfer" || anyTransferPath) {

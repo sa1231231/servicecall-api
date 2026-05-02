@@ -4,6 +4,7 @@ import {
   NOT_MENTIONED,
   CALLER_DOESNT_KNOW,
   type DataPoint,
+  type VariableDef,
 } from "./agent-generator/data-point-registry.js";
 
 // Display order for category sections
@@ -82,9 +83,30 @@ export async function updateDataPointDefault(
   key: string,
   updates: Partial<StoredDataPoint>,
 ): Promise<StoredDataPoint | null> {
+  // When composite is explicitly toggled off, wipe the nested variables and
+  // restore a default extract equation on the parent so the dp goes back to
+  // behaving as a single-variable extract.
+  const $set: Partial<StoredDataPoint> = { ...updates };
+  const $unset: Record<string, ""> = {};
+  if (updates.composite === false) {
+    delete ($set as any).composite;
+    delete ($set as any).variables;
+    $unset.composite = "";
+    $unset.variables = "";
+    if (!updates.extractSuccessEquation) {
+      $set.extractSuccessEquation = defaultExtractEquation(key);
+    }
+  } else if (updates.composite === true && Array.isArray(updates.variables) && updates.variables.length > 0) {
+    // Composite parents don't extract themselves.
+    $set.extractSuccessEquation = [];
+  }
+
+  const update: Record<string, unknown> = { $set };
+  if (Object.keys($unset).length > 0) update.$unset = $unset;
+
   const result = await collection().findOneAndUpdate(
     { _id: key } as any,
-    { $set: updates },
+    update,
     { returnDocument: "after" },
   );
   if (result) {
@@ -104,6 +126,8 @@ export async function createDataPointDefault(
     description?: string;
     conversationPrompt?: string;
     forwardCondition?: string;
+    composite?: boolean;
+    variables?: VariableDef[];
   },
 ): Promise<StoredDataPoint> {
   const existing = await collection().findOne({ _id: key } as any);
@@ -117,6 +141,8 @@ export async function createDataPointDefault(
   const maxOrder = allDocs.reduce((max, d) => Math.max(max, (d as any).sortOrder ?? 0), -1);
 
   const varName = key;
+  const isComposite = data.composite === true && Array.isArray(data.variables) && data.variables.length > 0;
+
   const dp: StoredDataPoint & { _id: string } = {
     _id: key,
     label: data.label,
@@ -133,13 +159,15 @@ export async function createDataPointDefault(
       data.forwardCondition ||
       `The caller has provided their ${varName.replace(/_/g, " ")} or has indicated they don't know it`,
     finetuneExamples: [],
-    extractSuccessEquation: defaultExtractEquation(varName),
+    // Composite parents don't extract themselves — their nested variables do.
+    extractSuccessEquation: isComposite ? [] : defaultExtractEquation(varName),
     category,
     sortOrder: maxOrder + 1,
+    ...(isComposite && { composite: true, variables: data.variables }),
   };
 
   await collection().insertOne(dp as any);
-  console.log(`[data-point-defaults] created custom data point "${key}"`);
+  console.log(`[data-point-defaults] created custom data point "${key}"${isComposite ? ` (composite: ${data.variables!.length} vars)` : ""}`);
   const { _id, ...rest } = dp;
   return rest as StoredDataPoint;
 }

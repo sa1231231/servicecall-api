@@ -17,6 +17,7 @@ const {
   mockUpdateClientField,
   mockLogPhoneEvent,
   mockGetSettings,
+  mockGetWarmTransferAgentVersion,
   mockNotificationClients,
 } = vi.hoisted(() => ({
   mockFlowCreate: vi.fn(),
@@ -34,6 +35,7 @@ const {
   mockUpdateClientField: vi.fn(),
   mockLogPhoneEvent: vi.fn(),
   mockGetSettings: vi.fn(),
+  mockGetWarmTransferAgentVersion: vi.fn(),
   mockNotificationClients: {} as Record<string, any>,
 }));
 
@@ -67,6 +69,10 @@ vi.mock("../../../lib/data-point-defaults.js", () => ({
 
 vi.mock("../../../lib/agent-generator/index.js", () => ({
   generateAgent: (...a: any[]) => mockGenerateAgent(...a),
+}));
+
+vi.mock("../../../lib/agent-generator/warm-transfer-agent-version.js", () => ({
+  getWarmTransferAgentVersion: (...a: any[]) => mockGetWarmTransferAgentVersion(...a),
 }));
 
 vi.mock("../../../lib/notification-config.js", () => ({
@@ -168,6 +174,7 @@ beforeEach(() => {
   });
   mockGetSettings.mockResolvedValue({ owner_phone: "+13017872841" });
   mockLogPhoneEvent.mockResolvedValue(undefined);
+  mockGetWarmTransferAgentVersion.mockResolvedValue(7);
 
   for (const k of Object.keys(mockNotificationClients)) delete mockNotificationClients[k];
 });
@@ -637,6 +644,26 @@ describe("createAgentHandler — agentConfig closing prompts", () => {
     expect(agentConfig.closingRemarksPrompt).toBeUndefined();
     expect(agentConfig.closingStatementText).toBeUndefined();
     expect(agentConfig.liveTransferRecoveryPrompt).toBeUndefined();
+  });
+
+  it("fetches and forwards warmTransferAgentVersion when human_request_mode is live_transfer", async () => {
+    mockGetWarmTransferAgentVersion.mockResolvedValue(11);
+    await createAgentHandler(
+      mockReq(makeBody({
+        business: { businessName: "Test Co", faqKnowledgeBase: "FAQ", human_request_mode: "live_transfer" },
+      })),
+      mockRes(),
+    );
+    expect(mockGetWarmTransferAgentVersion).toHaveBeenCalled();
+    const agentConfig = mockGenerateAgent.mock.calls[0][0];
+    expect(agentConfig.warmTransferAgentVersion).toBe(11);
+  });
+
+  it("skips warm-transfer fetch when no live transfer is configured", async () => {
+    await createAgentHandler(mockReq(makeBody()), mockRes());
+    expect(mockGetWarmTransferAgentVersion).not.toHaveBeenCalled();
+    const agentConfig = mockGenerateAgent.mock.calls[0][0];
+    expect(agentConfig.warmTransferAgentVersion).toBeUndefined();
   });
 });
 

@@ -583,6 +583,52 @@ describe("per-path end mode", () => {
     const recovery = flow.nodes.filter((n: any) => n.name === "Live Transfer Recovery");
     expect(recovery).toHaveLength(1);
     expect(transferCall.edge.destination_node_id).toBe(recovery[0].id);
+
+    // transfer_option must use the agentic_warm_transfer shape with the shared
+    // warm-transfer screener agent (not the legacy cold_transfer defaults).
+    expect(transferCall.transfer_option.type).toBe("agentic_warm_transfer");
+    expect(transferCall.transfer_option.agentic_transfer_config.transfer_agent.agent_id).toBe(
+      "agent_1d0e26bb0cbe39bc9ea3214984",
+    );
+    expect(transferCall.transfer_option.agentic_transfer_config.transfer_agent.agent_version).toBe(5);
+    expect(transferCall.transfer_option.agentic_transfer_config.transfer_timeout_ms).toBe(30000);
+    expect(transferCall.transfer_option.agentic_transfer_config.action_on_timeout).toBe("cancel_transfer");
+    expect(transferCall.transfer_option.enable_bridge_audio_cue).toBe(false);
+    expect(transferCall.transfer_option.agent_detection_timeout_ms).toBe(10000);
+    expect(transferCall.transfer_option.on_hold_music).toBe("relaxing_sound");
+    expect(transferCall.transfer_option.show_transferee_as_caller).toBe(false);
+  });
+
+  it("uses warmTransferAgentVersion from agent config when provided", () => {
+    const { agent } = generateAgent(
+      { ...baseConfig, warmTransferAgentVersion: 17 } as any,
+      [],
+      [
+        { name: "Emergency", transitionCondition: "x", dataPoints: ["full_name"], endMode: "transfer", transferDestination: "+18005551234" },
+        { name: "Quote", transitionCondition: "y", dataPoints: ["city"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const transferCall = flow.nodes.find((n: any) => n.type === "transfer_call");
+    expect(transferCall.transfer_option.agentic_transfer_config.transfer_agent.agent_version).toBe(17);
+  });
+
+  it("global Transfer Call (live_transfer human-request mode) also uses agentic_warm_transfer", () => {
+    const { agent } = generateAgent(
+      { ...baseConfig, humanRequestMode: "live_transfer" } as any,
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const transferCall = flow.nodes.find((n: any) => n.name === "Transfer Call");
+    expect(transferCall.type).toBe("transfer_call");
+    expect(transferCall.transfer_destination.number).toBe("{{dispatch_number}}");
+    expect(transferCall.transfer_option.type).toBe("agentic_warm_transfer");
+    expect(transferCall.transfer_option.agentic_transfer_config.transfer_agent.agent_id).toBe(
+      "agent_1d0e26bb0cbe39bc9ea3214984",
+    );
   });
 
   it("rejects transfer end_mode without a transferDestination", () => {

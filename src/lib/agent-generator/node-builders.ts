@@ -13,6 +13,31 @@ export const DEFAULT_PRE_TRANSFER_PROMPT = `Thanks for the information. Hold on 
 // Spoken when a live transfer fails to connect (Live Transfer Recovery node).
 export const DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT = `Sorry about that. It looks like our staff members are on the floor helping customers. Let us give you a call back. We'll call you back as soon as possible.`;
 
+// Shared warm-transfer screener agent. Used as transfer_agent for every live
+// transfer node we emit (global Human Request transfer + per-path outcomes).
+// Bump the fallback when a new published version exists; production should pull
+// the latest from Retell via getWarmTransferAgentVersion().
+export const WARM_TRANSFER_AGENT_ID = "agent_1d0e26bb0cbe39bc9ea3214984";
+export const WARM_TRANSFER_AGENT_VERSION_FALLBACK = 5;
+
+export function buildWarmTransferOption(agentVersion?: number) {
+  return {
+    agentic_transfer_config: {
+      transfer_agent: {
+        agent_id: WARM_TRANSFER_AGENT_ID,
+        agent_version: agentVersion ?? WARM_TRANSFER_AGENT_VERSION_FALLBACK,
+      },
+      transfer_timeout_ms: 30000,
+      action_on_timeout: "cancel_transfer",
+    },
+    enable_bridge_audio_cue: false,
+    type: "agentic_warm_transfer",
+    agent_detection_timeout_ms: 10000,
+    on_hold_music: "relaxing_sound",
+    show_transferee_as_caller: false,
+  };
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface IdFactory {
@@ -86,6 +111,7 @@ export interface AgentConfig {
   closingRemarksPrompt?: string;
   closingStatementText?: string;
   liveTransferRecoveryPrompt?: string;
+  warmTransferAgentVersion?: number;
 }
 
 export interface IntroPathConfig {
@@ -261,7 +287,7 @@ export function buildTransitionNode(
       type: "prompt",
       text: `The caller stated their situation, and you're about to note down the details. You can say something like
 
-"alright let me grab the information to get you help"
+"alright let me grab the information"
 
 Do not ask any questions here.`,
     },
@@ -490,7 +516,12 @@ If the caller refuses and repeats the request for a human, repeat that you canno
   };
 }
 
-export function buildTransferCallNode(ids: Ids, pos: Positions, f: IdFactory) {
+export function buildTransferCallNode(
+  ids: Ids,
+  pos: Positions,
+  f: IdFactory,
+  warmTransferAgentVersion?: number,
+) {
   return {
     custom_sip_headers: {},
     transfer_destination: {
@@ -508,13 +539,7 @@ export function buildTransferCallNode(ids: Ids, pos: Positions, f: IdFactory) {
     name: "Transfer Call",
     ignore_e164_validation: false,
     id: ids.transferCallId,
-    transfer_option: {
-      cold_transfer_mode: "sip_invite",
-      enable_bridge_audio_cue: true,
-      type: "cold_transfer",
-      agent_detection_timeout_ms: 30000,
-      show_transferee_as_caller: false,
-    },
+    transfer_option: buildWarmTransferOption(warmTransferAgentVersion),
     type: "transfer_call",
     speak_during_execution: false,
     display_position: { x: pos.humanReq.x + 360, y: pos.humanReq.y + 96 },
@@ -558,6 +583,7 @@ export function buildPerPathTransferCallNode(
   resolvedNumber: string,
   pathLabel: string | undefined,
   f: IdFactory,
+  warmTransferAgentVersion?: number,
 ) {
   if (!pathIds.transferCallId || !pathPos.transferCall) {
     throw new Error("buildPerPathTransferCallNode: pathIds/pos missing transfer slots");
@@ -573,13 +599,7 @@ export function buildPerPathTransferCallNode(
     name: pathLabel ? `Transfer Call (${pathLabel})` : "Transfer Call",
     ignore_e164_validation: false,
     id: pathIds.transferCallId,
-    transfer_option: {
-      cold_transfer_mode: "sip_invite",
-      enable_bridge_audio_cue: true,
-      type: "cold_transfer",
-      agent_detection_timeout_ms: 30000,
-      show_transferee_as_caller: false,
-    },
+    transfer_option: buildWarmTransferOption(warmTransferAgentVersion),
     type: "transfer_call",
     speak_during_execution: false,
     display_position: pathPos.transferCall,

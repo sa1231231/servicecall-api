@@ -27,9 +27,12 @@ import {
   makeIdFactory,
   buildTransitionNode,
   buildDataChain,
+  buildWarmTransferOption,
+  DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT,
   type PathIds,
   type PathPositions,
 } from "../../lib/agent-generator/node-builders.js";
+import { getWarmTransferAgentVersion } from "../../lib/agent-generator/warm-transfer-agent-version.js";
 import { renderTemplate } from "../../lib/build-notification.js";
 
 export const nodeEditorRouter = Router({ mergeParams: true });
@@ -234,11 +237,13 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
     const closingRemarksPrompt = findInstructionText("Closing Remarks");
     const closingStatementText = findInstructionText("Closing Statement");
 
-    // Live Transfer Recovery — only present on agents created after the feature
-    // shipped. Strict name match; do not fall back to the legacy "Transfer Failed".
-    // Field omitted from the response when the node is absent so the dashboard
-    // can hide the editor section for older agents.
-    const liveTransferRecoveryNode = parsed.allNodes.find((n) => n.name === "Live Transfer Recovery");
+    // Live Transfer Recovery — match either the current name or the legacy
+    // "Transfer Failed" name so older agents also expose the configurable
+    // prompt in the dashboard. Field omitted entirely when no fallback node
+    // exists so the dashboard can hide the editor section.
+    const liveTransferRecoveryNode = parsed.allNodes.find(
+      (n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed",
+    );
     const liveTransferRecoveryInstr = liveTransferRecoveryNode?.raw.instruction as Record<string, unknown> | undefined;
     const liveTransferRecoveryPrompt = liveTransferRecoveryNode
       ? ((liveTransferRecoveryInstr?.text as string) ?? "")
@@ -1414,15 +1419,18 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
     const closingRemarksId = closingRemarksNode?.id as string;
     const politeHangupId = politeHangupNode?.id as string;
 
-    // Remove existing transfer nodes if switching to callback
+    // Remove existing transfer nodes if switching to callback. Check both the
+    // current name ("Live Transfer Recovery") and the legacy name
+    // ("Transfer Failed") so older agents still get cleaned up correctly.
     const transferCallIdx = nodes.findIndex((n) => n.name === "Transfer Call");
-    const transferFailedIdx = nodes.findIndex((n) => n.name === "Transfer Failed");
+    const findRecoveryIdx = () =>
+      nodes.findIndex((n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed");
 
     if (mode === "callback") {
       // Remove transfer nodes if they exist
       if (transferCallIdx >= 0) nodes.splice(transferCallIdx, 1);
-      const newTfIdx = nodes.findIndex((n) => n.name === "Transfer Failed");
-      if (newTfIdx >= 0) nodes.splice(newTfIdx, 1);
+      const recoveryIdx = findRecoveryIdx();
+      if (recoveryIdx >= 0) nodes.splice(recoveryIdx, 1);
 
       // Update Human Request node to callback mode
       humanReqNode.instruction = {
@@ -1444,52 +1452,58 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
       };
     } else {
       // Switch to live_transfer
-      // Add Transfer Call and Transfer Failed nodes if missing
+      // Add Transfer Call and Live Transfer Recovery nodes if missing
       const humanPos = humanReqNode.display_position as { x: number; y: number } ?? { x: -954, y: -1770 };
+      const warmTransferAgentVersion = await getWarmTransferAgentVersion(retell());
 
       if (transferCallIdx < 0) {
         const transferCallId = `node-transfer-${Date.now()}`;
-        const transferFailedId = `node-transfer-failed-${Date.now() + 1}`;
+        // Reuse an existing recovery node if one is already present (legacy
+        // "Transfer Failed" or current name); otherwise create a fresh one.
+        const existingRecovery = nodes.find(
+          (n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed",
+        );
+        const liveTransferRecoveryId =
+          (existingRecovery?.id as string | undefined) ?? `node-live-transfer-recovery-${Date.now() + 1}`;
 
         nodes.push({
           custom_sip_headers: {},
           transfer_destination: { type: "predefined", number: "{{dispatch_number}}" },
           edge: {
-            destination_node_id: transferFailedId,
+            destination_node_id: liveTransferRecoveryId,
             id: `edge-tf-${Date.now()}`,
             transition_condition: { type: "prompt", prompt: "Transfer failed" },
           },
           name: "Transfer Call",
           ignore_e164_validation: false,
           id: transferCallId,
-          transfer_option: {
-            cold_transfer_mode: "sip_invite",
-            enable_bridge_audio_cue: true,
-            type: "cold_transfer",
-            agent_detection_timeout_ms: 30000,
-            show_transferee_as_caller: false,
-          },
+          transfer_option: buildWarmTransferOption(warmTransferAgentVersion),
           type: "transfer_call",
           speak_during_execution: false,
           display_position: { x: humanPos.x + 360, y: humanPos.y + 96 },
         });
 
-        nodes.push({
-          instruction: {
-            type: "prompt",
-            text: "Let the caller know you'll have their supervisor call them back as soon as possible. Do not ask them any more questions.",
-          },
-          always_edge: closingRemarksId ? {
-            destination_node_id: closingRemarksId,
-            id: `always-edge-tf-${Date.now()}`,
-            transition_condition: { type: "prompt", prompt: "Always" },
-          } : undefined,
-          name: "Transfer Failed",
-          edges: [],
-          id: transferFailedId,
-          type: "conversation",
-          display_position: { x: humanPos.x + 720, y: humanPos.y - 96 },
-        });
+        if (!existingRecovery) {
+          nodes.push({
+            instruction: {
+              type: "prompt",
+              text: DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT,
+            },
+            always_edge: closingRemarksId ? {
+              destination_node_id: closingRemarksId,
+              id: `always-edge-tf-${Date.now()}`,
+              transition_condition: { type: "prompt", prompt: "Always" },
+            } : undefined,
+            name: "Live Transfer Recovery",
+            edges: [],
+            id: liveTransferRecoveryId,
+            type: "conversation",
+            display_position: { x: humanPos.x + 720, y: humanPos.y - 96 },
+          });
+        } else if (existingRecovery.name === "Transfer Failed") {
+          // Migrate legacy name in place so the configurable prompt round-trips.
+          existingRecovery.name = "Live Transfer Recovery";
+        }
 
         // Update Human Request to skip to Transfer Call
         humanReqNode.instruction = {
@@ -1624,43 +1638,53 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
         if (removeNames.has(nodes[i].name as string)) nodes.splice(i, 1);
       }
 
-      // Drop the shared Transfer Failed node if no transfer path or live-transfer
-      // human-request mode remains.
+      // Drop the shared Live Transfer Recovery node if no transfer path or
+      // live-transfer human-request mode remains. Match both current and legacy
+      // names so older agents are cleaned up correctly.
       const stillHasTransferPath = parsed.paths.some(
         (pa) => pa.name !== pathName && pa.endMode === "transfer",
       );
       const liveTransferHumanReq = nodes.some((n) => n.name === "Transfer Call");
       if (!stillHasTransferPath && !liveTransferHumanReq) {
-        const tfIdx = nodes.findIndex((n) => n.name === "Transfer Failed");
-        if (tfIdx >= 0) nodes.splice(tfIdx, 1);
+        const recoveryIdx = nodes.findIndex(
+          (n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed",
+        );
+        if (recoveryIdx >= 0) nodes.splice(recoveryIdx, 1);
       }
     } else {
       // mode === "transfer"
-      // Ensure the shared Transfer Failed node exists.
-      let transferFailedNode = nodes.find((n) => n.name === "Transfer Failed");
+      // Ensure the shared Live Transfer Recovery node exists. Reuse a legacy
+      // "Transfer Failed" node in place (renaming it) so the configurable
+      // prompt round-trips correctly for older agents.
+      let liveTransferRecoveryNode = nodes.find(
+        (n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed",
+      );
       const closingRemarks = nodes.find((n) => n.name === "Closing Remarks");
       const closingRemarksId = closingRemarks?.id as string | undefined;
-      if (!transferFailedNode) {
-        const transferFailedId = `node-transfer-failed-${Date.now()}`;
-        transferFailedNode = {
+      if (!liveTransferRecoveryNode) {
+        const liveTransferRecoveryId = `node-live-transfer-recovery-${Date.now()}`;
+        liveTransferRecoveryNode = {
           instruction: {
             type: "prompt",
-            text: "Let the caller know you'll have their supervisor call them back as soon as possible. Do not ask them any more questions.",
+            text: DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT,
           },
           always_edge: closingRemarksId ? {
             destination_node_id: closingRemarksId,
             id: `always-edge-tf-${Date.now()}`,
             transition_condition: { type: "prompt", prompt: "Always" },
           } : undefined,
-          name: "Transfer Failed",
+          name: "Live Transfer Recovery",
           edges: [],
-          id: transferFailedId,
+          id: liveTransferRecoveryId,
           type: "conversation",
           display_position: { x: -200, y: -1700 },
         };
-        nodes.push(transferFailedNode);
+        nodes.push(liveTransferRecoveryNode);
+      } else if (liveTransferRecoveryNode.name === "Transfer Failed") {
+        liveTransferRecoveryNode.name = "Live Transfer Recovery";
       }
-      const transferFailedId = transferFailedNode.id as string;
+      const liveTransferRecoveryId = liveTransferRecoveryNode.id as string;
+      const warmTransferAgentVersion = await getWarmTransferAgentVersion(retell());
 
       // Find / create this path's Pre-Transfer + Transfer Call nodes.
       let preTransfer = nodes.find((n) => n.name === `Pre-Transfer (${pathName})`);
@@ -1696,20 +1720,14 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
           custom_sip_headers: {},
           transfer_destination: { type: "predefined", number: transferDestination! },
           edge: {
-            destination_node_id: transferFailedId,
+            destination_node_id: liveTransferRecoveryId,
             id: `edge-tc-${Date.now()}`,
             transition_condition: { type: "prompt", prompt: "Transfer failed" },
           },
           name: `Transfer Call (${pathName})`,
           ignore_e164_validation: false,
           id: transferCallId,
-          transfer_option: {
-            cold_transfer_mode: "sip_invite",
-            enable_bridge_audio_cue: true,
-            type: "cold_transfer",
-            agent_detection_timeout_ms: 30000,
-            show_transferee_as_caller: false,
-          },
+          transfer_option: buildWarmTransferOption(warmTransferAgentVersion),
           type: "transfer_call",
           speak_during_execution: false,
           display_position: { x: 540, y: yBase + 1350 },
@@ -1720,7 +1738,7 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
         if (transferCall) {
           (transferCall.transfer_destination as Record<string, unknown>).number = transferDestination!;
           const edge = transferCall.edge as Record<string, unknown> | undefined;
-          if (edge) edge.destination_node_id = transferFailedId;
+          if (edge) edge.destination_node_id = liveTransferRecoveryId;
         }
         const ae = preTransfer.always_edge as Record<string, unknown> | undefined;
         if (ae && transferCall) ae.destination_node_id = transferCall.id as string;
@@ -1856,10 +1874,22 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
     if (typeof changes.closingStatementText === "string") {
       applyClosingPrompt("Closing Statement", changes.closingStatementText);
     }
-    // Live Transfer Recovery — strict name match. Older agents with "Transfer Failed"
-    // are intentionally not touched; this only updates agents that have the new node.
+    // Live Transfer Recovery — match current name first, then legacy
+    // "Transfer Failed". When found under the legacy name, rename it to the
+    // current name so subsequent reads/writes round-trip cleanly.
     if (typeof changes.liveTransferRecoveryPrompt === "string") {
-      applyClosingPrompt("Live Transfer Recovery", changes.liveTransferRecoveryPrompt);
+      const recoveryNode =
+        nodes.find((n) => n.name === "Live Transfer Recovery") ??
+        nodes.find((n) => n.name === "Transfer Failed");
+      if (recoveryNode?.instruction) {
+        (recoveryNode.instruction as Record<string, unknown>).text = renderTemplate(
+          changes.liveTransferRecoveryPrompt,
+          tplVars,
+        );
+        if (recoveryNode.name === "Transfer Failed") {
+          recoveryNode.name = "Live Transfer Recovery";
+        }
+      }
     }
 
     // Apply individual node prompt changes

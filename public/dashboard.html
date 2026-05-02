@@ -3753,23 +3753,41 @@
   function renderDpCard(key, dp) {
     const ftHtml = (dp.finetuneExamples || []).map((ex, i) => renderFtExample(key, i, ex)).join('');
     const actionBtns = `<button type="button" class="dp-btn-reset" style="color:#dc2626;border-color:#fca5a5;" onclick="deleteDpDefault('${esc(key)}')">Delete</button>`;
+    const isComposite = dp.composite === true;
+    const subVarsHtml = (dp.variables || []).map((v, i) => renderSubVarRow(key, i, v)).join('');
+    // Summary: show variable name(s). For composites, comma-separate the nested var names.
+    const summaryVar = isComposite && Array.isArray(dp.variables) && dp.variables.length > 0
+      ? dp.variables.map(v => v.variableName).join(', ')
+      : key;
     return `<details class="dp-card" data-dp-key="${esc(key)}" draggable="true">
-      <summary><span class="dp-drag-handle">&#9776;</span><strong>${esc(dp.label)}</strong> <span class="dp-var">${esc(key)}</span><button class="dp-inline-delete" onclick="event.preventDefault();event.stopPropagation();deleteDpDefault('${esc(key)}')" title="Delete data point">&times;</button></summary>
+      <summary><span class="dp-drag-handle">&#9776;</span><strong>${esc(dp.label)}</strong> <span class="dp-var">${esc(summaryVar)}</span><button class="dp-inline-delete" onclick="event.preventDefault();event.stopPropagation();deleteDpDefault('${esc(key)}')" title="Delete data point">&times;</button></summary>
       <div class="dp-card-body">
         <label>Variable Name</label>
         <input type="text" class="dp-key" value="${esc(key)}" onblur="this.value=this.value.toLowerCase().replace(/[\\s\\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
         <p class="settings-hint" style="margin-top:-0.3rem;">Changing this renames the variable in all future agents.</p>
         <label>Label</label>
         <input type="text" class="dp-label" value="${esc(dp.label)}">
-        <label>Type</label>
-        <select class="dp-type" onchange="toggleDpChoices(this)" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
-          <option value="string"${dp.type === 'string' ? ' selected' : ''}>string</option>
-          <option value="enum"${dp.type === 'enum' ? ' selected' : ''}>enum</option>
-          <option value="boolean"${dp.type === 'boolean' ? ' selected' : ''}>boolean</option>
-        </select>
-        <div class="dp-choices-wrap" style="display:${dp.type === 'enum' ? 'block' : 'none'};">
-          <label>Choices <span style="color:#6b7280;font-weight:normal;">(comma-separated)</span></label>
-          <input type="text" class="dp-choices" value="${esc((dp.choices || []).join(', '))}">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-top:0.5rem;">
+          <input type="checkbox" class="dp-composite" ${isComposite ? 'checked' : ''} onchange="toggleDpComposite(this)" style="margin:0;">
+          <span>Composite (captures multiple variables in one prompt)</span>
+        </label>
+        <div class="dp-single-wrap" style="display:${isComposite ? 'none' : 'block'};">
+          <label>Type</label>
+          <select class="dp-type" onchange="toggleDpChoices(this)" style="width:auto;padding:0.3rem 0.5rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
+            <option value="string"${dp.type === 'string' ? ' selected' : ''}>string</option>
+            <option value="enum"${dp.type === 'enum' ? ' selected' : ''}>enum</option>
+            <option value="boolean"${dp.type === 'boolean' ? ' selected' : ''}>boolean</option>
+          </select>
+          <div class="dp-choices-wrap" style="display:${dp.type === 'enum' ? 'block' : 'none'};">
+            <label>Choices <span style="color:#6b7280;font-weight:normal;">(comma-separated)</span></label>
+            <input type="text" class="dp-choices" value="${esc((dp.choices || []).join(', '))}">
+          </div>
+        </div>
+        <div class="dp-composite-wrap" style="display:${isComposite ? 'block' : 'none'};">
+          <label>Sub-Variables</label>
+          <p class="settings-hint" style="margin-top:-0.3rem;">Each sub-variable is extracted from the same conversation prompt and appears as its own field in outbound messages.</p>
+          <div class="dp-subvars-list">${subVarsHtml}</div>
+          <button type="button" class="ft-add-example" onclick="addSubVar('${esc(key)}')">+ Add Sub-Variable</button>
         </div>
         <label>Description</label>
         <textarea class="dp-description">${esc(dp.description || '')}</textarea>
@@ -3786,6 +3804,67 @@
         </div>
       </div>
     </details>`;
+  }
+
+  function renderSubVarRow(dpKey, idx, v) {
+    const choices = (v && v.choices) ? v.choices.join(', ') : '';
+    const type = (v && v.type) || 'string';
+    return `<div class="dp-subvar-row" style="display:grid;grid-template-columns:1fr 100px 2fr 24px;gap:0.4rem;align-items:center;margin-bottom:0.3rem;">
+      <input type="text" class="sv-name" placeholder="variable_name" value="${esc(v.variableName || '')}" onblur="this.value=this.value.toLowerCase().replace(/[\\s\\-]+/g,'_').replace(/[^a-z0-9_]/g,'')">
+      <select class="sv-type" onchange="toggleSubVarChoices(this)" style="padding:0.3rem;font-size:0.8rem;border:1px solid #d1d5db;border-radius:6px;">
+        <option value="string"${type === 'string' ? ' selected' : ''}>string</option>
+        <option value="enum"${type === 'enum' ? ' selected' : ''}>enum</option>
+        <option value="boolean"${type === 'boolean' ? ' selected' : ''}>boolean</option>
+      </select>
+      <input type="text" class="sv-choices" placeholder="${type === 'enum' ? 'choice1, choice2' : 'description'}" value="${esc(type === 'enum' ? choices : (v.description || ''))}" data-mode="${type === 'enum' ? 'choices' : 'description'}">
+      <button type="button" class="ft-row-remove" onclick="this.closest('.dp-subvar-row').remove()" title="Remove">&times;</button>
+    </div>`;
+  }
+
+  function toggleDpComposite(cb) {
+    const body = cb.closest('.dp-card-body');
+    body.querySelector('.dp-single-wrap').style.display = cb.checked ? 'none' : 'block';
+    body.querySelector('.dp-composite-wrap').style.display = cb.checked ? 'block' : 'none';
+  }
+
+  function toggleSubVarChoices(sel) {
+    const row = sel.closest('.dp-subvar-row');
+    const input = row.querySelector('.sv-choices');
+    if (sel.value === 'enum') {
+      input.placeholder = 'choice1, choice2';
+      input.dataset.mode = 'choices';
+    } else {
+      input.placeholder = 'description';
+      input.dataset.mode = 'description';
+    }
+  }
+
+  function addSubVar(dpKey) {
+    const card = document.querySelector(`.dp-card[data-dp-key="${dpKey}"]`);
+    const list = card.querySelector('.dp-subvars-list');
+    const div = document.createElement('div');
+    div.innerHTML = renderSubVarRow(dpKey, list.children.length, { variableName: '', type: 'string', description: '', choices: [] });
+    list.appendChild(div.firstElementChild);
+  }
+
+  function collectSubVars(card) {
+    const rows = card.querySelectorAll('.dp-subvar-row');
+    const out = [];
+    rows.forEach(row => {
+      const name = row.querySelector('.sv-name').value.trim();
+      if (!name) return;
+      const type = row.querySelector('.sv-type').value;
+      const extra = row.querySelector('.sv-choices');
+      const v = { variableName: name, type, description: '' };
+      if (type === 'enum') {
+        v.choices = extra.value.split(',').map(s => s.trim()).filter(Boolean);
+        v.description = name.replace(/_/g, ' ');
+      } else {
+        v.description = extra.value || name.replace(/_/g, ' ');
+      }
+      out.push(v);
+    });
+    return out;
   }
 
   // ── Drag and Drop for Data Point Cards + Category Sections ─────────
@@ -4064,9 +4143,11 @@
     const card = document.querySelector(`.dp-card[data-dp-key="${key}"]`);
     const newKey = card.querySelector('.dp-key').value.trim();
     const label = card.querySelector('.dp-label').value.trim();
+    const composite = card.querySelector('.dp-composite').checked;
     const type = card.querySelector('.dp-type').value;
     const choicesRaw = card.querySelector('.dp-choices').value;
-    const choices = type === 'enum' ? choicesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const choices = !composite && type === 'enum' ? choicesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const variables = composite ? collectSubVars(card) : undefined;
     const description = card.querySelector('.dp-description').value;
     const conversationPrompt = card.querySelector('.dp-conv-prompt').value;
     const forwardCondition = card.querySelector('.dp-fwd-condition').value;
@@ -4081,12 +4162,18 @@
       });
       if (transcript.length > 0) finetuneExamples.push({ type, transcript });
     });
-    return { newKey, label, type, choices, description, conversationPrompt, forwardCondition, finetuneExamples };
+    const out = { newKey, label, type, choices, description, conversationPrompt, forwardCondition, finetuneExamples, composite };
+    if (composite) out.variables = variables;
+    return out;
   }
 
   async function saveDpDefault(key) {
     const { newKey, ...updates } = collectDpCard(key);
     if (!updates.label) { showToast('Label is required', 'error'); return; }
+    if (updates.composite && (!updates.variables || updates.variables.length === 0)) {
+      showToast('Composite data point needs at least one sub-variable', 'error');
+      return;
+    }
 
     // If key changed, delete old and create new
     if (newKey && newKey !== key) {
@@ -4129,7 +4216,10 @@
         const summary = card.querySelector('summary');
         if (summary) {
           const handle = summary.querySelector('.dp-drag-handle').outerHTML;
-          summary.innerHTML = handle + '<strong>' + esc(updates.label) + '</strong> <span class="dp-var">' + esc(key) + '</span>';
+          const summaryVar = updates.composite && Array.isArray(updates.variables) && updates.variables.length > 0
+            ? updates.variables.map(v => v.variableName).join(', ')
+            : key;
+          summary.innerHTML = handle + '<strong>' + esc(updates.label) + '</strong> <span class="dp-var">' + esc(summaryVar) + '</span>';
         }
       }
       showToast(key + ' saved', 'success');
@@ -4717,6 +4807,11 @@
     const showChecked = fieldCfg.show !== false ? 'checked' : '';
     const reqChecked = fieldCfg.required ? 'checked' : '';
 
+    // For composite data points (multiple variableDefs), show all sub-variable
+    // names comma-separated so the user can see exactly which vars get captured.
+    const varDisplay = Array.isArray(dp.variableDefs) && dp.variableDefs.length > 1
+      ? dp.variableDefs.map(v => v.name).join(', ')
+      : dp.variableName;
     let html = '<div class="ne-dp-row" draggable="true" data-var="' + esc(dp.variableName) + '" data-field-key="' + esc(dp.variableName) + '">' +
       '<span class="ne-handle">&#9776;</span>' +
       '<span class="ne-num">' + num + '</span>' +
@@ -4724,7 +4819,7 @@
       '<input type="checkbox" ' + reqChecked + ' data-mt-key="' + esc(mtKey) + '" data-field-key="' + esc(dp.variableName) + '" class="field-required-toggle" title="Required" style="margin:0;">' +
       '<span class="ne-label">' + esc(dp.label) + '</span>' +
       (dp.orphan ? '<span style="font-size:0.6rem;color:#6b7280;background:#f3f4f6;padding:0.1rem 0.3rem;border-radius:3px;margin-left:0.25rem;">extract only</span>' : '') +
-      '<span class="ne-var">' + esc(dp.variableName) + '</span>' +
+      '<span class="ne-var">' + esc(varDisplay) + '</span>' +
       '<span class="ne-actions">';
     if (canEdit) {
       if (!dp.branchConditions || dp.branchConditions.length === 0) {

@@ -23,6 +23,7 @@ import {
   extractFlowParams,
   extractAgentParams,
 } from "../../lib/retell-sync.js";
+import { getWarmTransferAgentVersion } from "../../lib/agent-generator/warm-transfer-agent-version.js";
 
 // ── DataPoint → VariableEntry flattening ─────────────────────────────────────
 
@@ -160,13 +161,20 @@ export async function createAgentHandler(
       ? `${body.paths!.length} path(s): ${body.paths!.map(p => `"${p.name}" (${p.dataPoints.length} dps)`).join(", ")}`
       : `${body.dataPoints!.length} data points (flat)`;
     console.log(`[create-agent] generating agent for "${body.business.businessName}" — ${pathSummary}`);
+    const humanMode: HumanRequestMode = body.business.human_request_mode || "callback";
+    const anyTransferPath = hasPaths && body.paths!.some((p) => p.end_mode === "transfer");
+    const warmTransferAgentVersion =
+      humanMode === "live_transfer" || anyTransferPath
+        ? await getWarmTransferAgentVersion(retell)
+        : undefined;
     const agentConfig: AgentConfig = {
       ...body.business,
-      humanRequestMode: body.business.human_request_mode || "callback",
+      humanRequestMode: humanMode,
       closePrompt: body.business.closePrompt?.trim() || undefined,
       closingRemarksPrompt: body.business.closingRemarksPrompt?.trim() || undefined,
       closingStatementText: body.business.closingStatementText?.trim() || undefined,
       liveTransferRecoveryPrompt: body.business.liveTransferRecoveryPrompt?.trim() || undefined,
+      warmTransferAgentVersion,
     };
     const dpDefaults = await getDataPointDefaults();
     // Resolve per-path transfer destination from dispatch_by_type → client default.
