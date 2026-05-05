@@ -303,7 +303,7 @@ describe("createFromTemplateHandler — happy path", () => {
     expect(mockPersistClient).toHaveBeenCalledWith("acme-custom", expect.any(Object));
   });
 
-  it("rejects with 409 when slug already exists", async () => {
+  it("auto-increments slug when one collision exists", async () => {
     mockLoadTemplate.mockResolvedValue({
       _id: "x",
       name: "plumber",
@@ -322,8 +322,35 @@ describe("createFromTemplateHandler — happy path", () => {
       res,
     );
 
-    expect(res._status).toBe(409);
-    expect(res._json.error).toContain("already exists");
+    expect(res._status).toBe(201);
+    expect(res._json.slug).toBe("acme-plumbing-2");
+    expect(mockPersistClient).toHaveBeenCalledWith("acme-plumbing-2", expect.any(Object));
+  });
+
+  it("auto-increments slug across multiple collisions", async () => {
+    mockLoadTemplate.mockResolvedValue({
+      _id: "x",
+      name: "plumber",
+      type: "template",
+      formData: {},
+      exportConfig: makeTemplateExportConfig(),
+    });
+    mockNotificationClients["acme-plumbing"] = {};
+    mockNotificationClients["acme-plumbing-2"] = {};
+    mockNotificationClients["acme-plumbing-3"] = {};
+
+    const res = mockRes();
+    await createFromTemplateHandler(
+      mockReq({
+        template: "plumber",
+        business: { businessName: "Acme Plumbing", faqKnowledgeBase: "x" },
+      }),
+      res,
+    );
+
+    expect(res._status).toBe(201);
+    expect(res._json.slug).toBe("acme-plumbing-4");
+    expect(mockPersistClient).toHaveBeenCalledWith("acme-plumbing-4", expect.any(Object));
   });
 
   it("uses overridden client.dispatch_text_numbers from the request", async () => {

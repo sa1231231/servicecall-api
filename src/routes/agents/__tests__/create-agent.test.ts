@@ -323,12 +323,24 @@ describe("createAgentHandler — validation", () => {
     expect(res._json.error).toContain("owner phone");
   });
 
-  it("409 when slug already exists in notificationClients", async () => {
+  it("auto-increments slug when one collision exists", async () => {
     mockNotificationClients["test-co"] = { name: "Existing" };
     const res = mockRes();
     await createAgentHandler(mockReq(makeBody()), res);
-    expect(res._status).toBe(409);
-    expect(res._json.error).toContain("already exists");
+    expect(res._status).toBe(201);
+    expect(res._json.slug).toBe("test-co-2");
+    expect(mockPersistClient).toHaveBeenCalledWith("test-co-2", expect.any(Object));
+  });
+
+  it("auto-increments slug across multiple collisions", async () => {
+    mockNotificationClients["test-co"] = { name: "Existing 1" };
+    mockNotificationClients["test-co-2"] = { name: "Existing 2" };
+    mockNotificationClients["test-co-3"] = { name: "Existing 3" };
+    const res = mockRes();
+    await createAgentHandler(mockReq(makeBody()), res);
+    expect(res._status).toBe(201);
+    expect(res._json.slug).toBe("test-co-4");
+    expect(mockPersistClient).toHaveBeenCalledWith("test-co-4", expect.any(Object));
   });
 });
 

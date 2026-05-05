@@ -64,6 +64,7 @@ export interface CreateAgentSuccess {
   ok: true;
   agentId: string;
   conversationFlowId: string;
+  slug: string;
   notificationConfig: Record<string, unknown>;
   provisionedNumber: string | null;
   provisionError: string | null;
@@ -150,8 +151,20 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
       return { ok: false, status: 400, error: "Missing dispatch_text_numbers and no owner phone configured in settings" };
     }
   }
-  if (notificationClients[body.client.slug]) {
-    return { ok: false, status: 409, error: `Client slug "${body.client.slug}" already exists` };
+  // Find a unique slug. If the requested slug is taken, append -2, -3, ...
+  // until we find a free one. Lets onboarding flows that derive slug from
+  // businessName (e.g. POST /agents/from-template) create multiple agents
+  // for businesses with the same name without manual disambiguation.
+  const baseSlug = body.client.slug;
+  let slug = baseSlug;
+  let collisionCounter = 2;
+  while (notificationClients[slug]) {
+    slug = `${baseSlug}-${collisionCounter}`;
+    collisionCounter++;
+  }
+  if (slug !== baseSlug) {
+    console.log(`[create-agent] slug "${baseSlug}" taken; using "${slug}"`);
+    body.client.slug = slug;
   }
 
   const retell = new Retell({ apiKey: config.RETELL_API_KEY });
@@ -204,8 +217,6 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
       pathConfigs,
       dpDefaults,
     );
-
-    const slug = body.client.slug;
 
     // ── 2. Create conversation flow in Retell ──────────────────────────────
     const conversationFlow = agentJson.conversationFlow as Record<string, unknown>;
@@ -301,6 +312,7 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
       ok: true,
       agentId,
       conversationFlowId: conversationFlowId!,
+      slug,
       notificationConfig: jsonEntry as unknown as Record<string, unknown>,
       provisionedNumber,
       provisionError,

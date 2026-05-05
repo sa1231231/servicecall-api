@@ -60,7 +60,7 @@ export async function createFromTemplateHandler(
     res.status(201).json({
       success: true,
       template: body.template,
-      slug: fullBody.client.slug,
+      slug: result.slug,
       agent_id: result.agentId,
       conversation_flow_id: result.conversationFlowId,
       notification_config: result.notificationConfig,

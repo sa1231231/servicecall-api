@@ -17,6 +17,7 @@ export async function createAgentHandler(
       success: true,
       agent_id: result.agentId,
       conversation_flow_id: result.conversationFlowId,
+      slug: result.slug,
       notification_config: result.notificationConfig,
       provisioned_number: result.provisionedNumber,
       provision_error: result.provisionError,
