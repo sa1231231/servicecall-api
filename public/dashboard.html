@@ -1380,6 +1380,9 @@
       }
 
       document.getElementById('agentSearchBar').style.display = 'flex';
+      // Restore previously persisted sort + chip state on first paint.
+      // Idempotent — safe to call on re-renders triggered by toggleActive etc.
+      loadAgentListState();
       renderAgentList();
       wireAgentSearchInput();
     } catch (err) {
@@ -1539,7 +1542,42 @@
       agentSortKey = null;
       agentSortDir = null;
     }
+    saveAgentListState();
     renderAgentList();
+  }
+
+  // Persist sort + chips across page reloads. Keep the key unscoped so the
+  // state follows the user, not the device. Wrapped in try/catch — Safari
+  // private mode and disabled storage throw on access.
+  const AGENT_LIST_STATE_KEY = 'agentListState.v1';
+  function saveAgentListState() {
+    try {
+      const state = {
+        sortKey: agentSortKey,
+        sortDir: agentSortDir,
+        chips: agentSearchChips,
+      };
+      localStorage.setItem(AGENT_LIST_STATE_KEY, JSON.stringify(state));
+    } catch (_) { /* storage unavailable — ignore */ }
+  }
+  function loadAgentListState() {
+    try {
+      const raw = localStorage.getItem(AGENT_LIST_STATE_KEY);
+      if (!raw) return;
+      const state = JSON.parse(raw);
+      // Only accept known shapes — defensive against schema drift.
+      if (state && typeof state === 'object') {
+        if (typeof state.sortKey === 'string' || state.sortKey === null) {
+          agentSortKey = state.sortKey;
+        }
+        if (state.sortDir === 'asc' || state.sortDir === 'desc' || state.sortDir === null) {
+          agentSortDir = state.sortDir;
+        }
+        if (Array.isArray(state.chips)) {
+          agentSearchChips = state.chips.filter(c => typeof c === 'string' && c.trim());
+        }
+      }
+    } catch (_) { /* corrupt or unavailable — ignore */ }
   }
 
   function renderSearchChips() {
@@ -1557,11 +1595,13 @@
     if (!trimmed) return;
     if (agentSearchChips.includes(trimmed)) return;
     agentSearchChips.push(trimmed);
+    saveAgentListState();
     renderAgentList();
   }
 
   function removeAgentSearchChip(idx) {
     agentSearchChips.splice(idx, 1);
+    saveAgentListState();
     renderAgentList();
   }
 
@@ -1578,6 +1618,7 @@
       } else if (e.key === 'Backspace' && input.value === '' && agentSearchChips.length > 0) {
         // Backspace on empty input removes the last chip — common pattern.
         agentSearchChips.pop();
+        saveAgentListState();
         renderAgentList();
       }
     });
