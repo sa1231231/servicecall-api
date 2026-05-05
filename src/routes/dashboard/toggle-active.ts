@@ -44,7 +44,6 @@ export async function toggleActiveHandler(
     // Deactivating: find numbers that currently have this client's agent bound
     matchingNumbers = allNumbers.filter((n) => {
       if (clientAgentId && n.inbound_agents?.some((a) => a.agent_id === clientAgentId)) return true;
-      if (clientAgentId && n.inbound_agent_id === clientAgentId) return true;
       if (client.outbound_from_number && n.phone_number === client.outbound_from_number) return true;
       return false;
     });
@@ -71,7 +70,6 @@ export async function toggleActiveHandler(
         }
       } else {
         await retell.phoneNumber.update(num.phone_number, {
-          inbound_agent_id: null,
           inbound_agents: null,
         });
         console.log(`[toggle-active] cleared inbound agents on ${num.phone_number}`);

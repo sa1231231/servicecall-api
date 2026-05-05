@@ -52,7 +52,6 @@ function mockRes(): Response & { _status: number; _json: any } {
 function makeRetellNumber(phone: string, agentId?: string) {
   return {
     phone_number: phone,
-    inbound_agent_id: agentId ?? undefined,
     inbound_agents: agentId ? [{ agent_id: agentId, weight: 1 }] : undefined,
   };
 }
@@ -99,7 +98,6 @@ describe("toggleActiveHandler", () => {
       expect(res._json.active).toBe(false);
       expect(res._json.numbers_updated).toBe(1);
       expect(mockPhoneNumberUpdate).toHaveBeenCalledWith("+15551234567", {
-        inbound_agent_id: null,
         inbound_agents: null,
       });
     });
@@ -130,7 +128,7 @@ describe("toggleActiveHandler", () => {
         outbound_from_number: "+15551234567",
       };
       mockPhoneNumberList.mockResolvedValue([
-        { phone_number: "+15551234567", inbound_agent_id: undefined, inbound_agents: undefined },
+        { phone_number: "+15551234567", inbound_agents: undefined },
       ]);
       mockPhoneNumberUpdate.mockResolvedValue({});
 
@@ -166,7 +164,7 @@ describe("toggleActiveHandler", () => {
         deactivated_numbers: ["+15551234567"],
       };
       mockPhoneNumberList.mockResolvedValue([
-        { phone_number: "+15551234567", inbound_agent_id: undefined, inbound_agents: undefined },
+        { phone_number: "+15551234567", inbound_agents: undefined },
         makeRetellNumber("+15559999999", "agent_other"),
       ]);
       mockPhoneNumberUpdate.mockResolvedValue({});
@@ -207,7 +205,7 @@ describe("toggleActiveHandler", () => {
         outbound_from_number: "+15551234567",
       };
       mockPhoneNumberList.mockResolvedValue([
-        { phone_number: "+15551234567", inbound_agent_id: undefined, inbound_agents: undefined },
+        { phone_number: "+15551234567", inbound_agents: undefined },
       ]);
       mockPhoneNumberUpdate.mockResolvedValue({});
 
