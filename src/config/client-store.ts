@@ -200,8 +200,11 @@ export async function updateClientField(
   console.log(`[client-store] updated "${slug}".${field} = ${JSON.stringify(value)}`);
 }
 
+// `name` is intentionally NOT in this whitelist. Renaming a business must go
+// through the rename-business handler in node-editor.ts so it propagates to
+// the Retell agent name, conversation flow text, and phone-number nicknames —
+// not just the Mongo field.
 const EDITABLE_FIELDS = new Set([
-  "name",
   "agent_id",
   "dispatch_text_numbers",
   "dispatch_call_number",

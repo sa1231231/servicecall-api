@@ -370,8 +370,15 @@ describe("updateClientFields", () => {
   it("throws when matchedCount is 0", async () => {
     mockUpdateOne.mockResolvedValue({ matchedCount: 0 });
     await expect(
-      updateClientFields("acme", { name: "X" }),
+      updateClientFields("acme", { dispatch_call_number: "+15551234567" }),
     ).rejects.toThrow(/not found/);
+  });
+
+  it("rejects `name` updates so renames must go through rename-business", async () => {
+    await expect(
+      updateClientFields("acme", { name: "New Name" }),
+    ).rejects.toThrow(/not editable/);
+    expect(mockUpdateOne).not.toHaveBeenCalled();
   });
 
   it("re-registers agent_id when it changes", async () => {
@@ -408,7 +415,7 @@ describe("updateClientFields", () => {
   it("works when client is not in memory cache (no in-memory side effects)", async () => {
     mockUpdateOne.mockResolvedValue({ matchedCount: 1 });
     await expect(
-      updateClientFields("not-cached", { name: "X" }),
+      updateClientFields("not-cached", { dispatch_call_number: "+15551234567" }),
     ).resolves.toBeUndefined();
   });
 });

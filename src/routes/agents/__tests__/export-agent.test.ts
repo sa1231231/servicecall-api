@@ -614,6 +614,78 @@ describe("exportAgentHandler", () => {
     expect(res._json.business.liveTransferRecoveryPrompt).toBeUndefined();
   });
 
+  it("exports per-path closePrompt as business.pathClosePrompts on multi-path agents", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_id: "agent_1",
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      paths: [
+        {
+          name: "Service",
+          transitionNode: { id: "tn1" },
+          routerNode: { raw: { edges: [] } },
+          dataChain: [],
+          endMode: "callback",
+          closePrompt: "thanks for calling — service close",
+        },
+        {
+          name: "Sales",
+          transitionNode: { id: "tn2" },
+          routerNode: { raw: { edges: [] } },
+          dataChain: [],
+          endMode: "callback",
+          closePrompt: "thanks — sales close",
+        },
+      ],
+      allNodes: [],
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.business.pathClosePrompts).toEqual({
+      Service: "thanks for calling — service close",
+      Sales: "thanks — sales close",
+    });
+    // Legacy single field is omitted when per-path map exists.
+    expect(res._json.business.closePrompt).toBeUndefined();
+  });
+
+  it("transfer paths are excluded from pathClosePrompts on export", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Test",
+      agent_id: "agent_1",
+      retell_agents: { agent_1: { agent_name: "Test" } },
+    });
+    mockParseConversationFlow.mockReturnValue(makeParsed({
+      paths: [
+        {
+          name: "Emergency",
+          transitionNode: { id: "tn1" },
+          routerNode: { raw: { edges: [] } },
+          dataChain: [],
+          endMode: "transfer",
+        },
+        {
+          name: "General",
+          transitionNode: { id: "tn2" },
+          routerNode: { raw: { edges: [] } },
+          dataChain: [],
+          endMode: "callback",
+          closePrompt: "general close text",
+        },
+      ],
+      allNodes: [],
+    }));
+
+    const res = mockRes();
+    await exportAgentHandler(mockReq("test"), res);
+
+    expect(res._json.business.pathClosePrompts).toEqual({ General: "general close text" });
+  });
+
   it("exports liveTransferRecoveryPrompt from the Live Transfer Recovery node", async () => {
     mockGetClientDocument.mockResolvedValue({
       name: "Test",
