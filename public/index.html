@@ -2157,7 +2157,7 @@
     return state;
   }
 
-  function exportFormAsJson() {
+  function buildExportConfig() {
     const pathData = collectPaths();
     const paths = (pathData.paths || []).map(p => ({
       name: p.name,
@@ -2166,7 +2166,7 @@
       end_mode: p.end_mode || 'callback',
     }));
 
-    const config = {
+    return {
       version: 1,
       type: "servicecall-agent-config",
       exportedAt: new Date().toISOString(),
@@ -2201,7 +2201,10 @@
         ...(importedClientExtras.path_end_modes ? { path_end_modes: importedClientExtras.path_end_modes } : {}),
       },
     };
+  }
 
+  function exportFormAsJson() {
+    const config = buildExportConfig();
     const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -2463,11 +2466,18 @@
     const name = prompt('Template name:', defaultName);
     if (!name) return;
 
+    // Also persist the canonical /agents/create-shape config so the
+    // template can be instantiated programmatically via POST /agents/from-template.
+    let exportConfig = null;
+    try { exportConfig = buildExportConfig(); } catch (_) { /* ignore */ }
+
     try {
+      const body = { name, formData, type: 'template' };
+      if (exportConfig) body.exportConfig = exportConfig;
       const res = await fetch('/form/drafts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, formData, type: 'template' }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('Failed');
       await loadList('template');
