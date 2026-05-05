@@ -2723,12 +2723,17 @@
     const cond = card.querySelector('.path-condition')?.value || '';
     const endMode = card.querySelector('.path-end-mode:checked')?.value || 'callback';
     const dispatchCall = card.querySelector('.path-dispatch-call')?.value || '';
+    const closePrompt = card.querySelector('.path-close-prompt')?.value || '';
     detail.innerHTML = `
       <h4>Path <span class="detail-type-badge">routing</span></h4>
       <label>Path Name</label>
       <input type="text" id="detailPathName" value="${esc(name)}" placeholder="e.g. Service Call">
       <label>Transition Condition (when does the AI route here?)</label>
       <input type="text" id="detailPathCond" value="${esc(cond)}" placeholder="e.g. Caller wants service">
+
+      <label style="margin-top:0.75rem;">Close Prompt</label>
+      <textarea id="detailPathClosePrompt" rows="3" placeholder="Spoken right after data collection wraps up — specific to this path.">${esc(closePrompt)}</textarea>
+      <div class="field-hint">Spoken right after data collection wraps up. Type <code>{{business_name}}</code> to substitute the business name. Ignored when this path is set to Live Transfer.</div>
 
       <label style="margin-top:0.75rem;">End of path</label>
       <div class="detail-toggle-row">
@@ -2755,6 +2760,11 @@
     });
     document.getElementById('detailPathCond').addEventListener('input', (e) => {
       card.querySelector('.path-condition').value = e.target.value;
+      onTreeFormChange();
+    });
+    document.getElementById('detailPathClosePrompt').addEventListener('input', (e) => {
+      const closeEl = card.querySelector('.path-close-prompt');
+      if (closeEl) closeEl.value = e.target.value;
       onTreeFormChange();
     });
     detail.querySelectorAll('input[name="detailEndMode"]').forEach((radio) => {
