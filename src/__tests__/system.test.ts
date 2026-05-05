@@ -1209,7 +1209,11 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     describe("edit-prompt", () => {
       it("edits Close node", { timeout: 30_000 }, async () => {
         const struct = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
-        const closeNode = struct.nodes.find((n: any) => n.name === "Close");
+        // Multi-path agents have "Close (pathName)" nodes; single-path agents
+        // keep the legacy singleton "Close". Accept either.
+        const closeNode = struct.nodes.find((n: any) =>
+          n.name === "Close" || (typeof n.name === "string" && n.name.startsWith("Close ("))
+        );
         expect(closeNode).toBeDefined();
         const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-prompt`), {
           method: "POST", headers: authHeaders(),

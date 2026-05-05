@@ -969,8 +969,10 @@ nodeEditorRouter.post("/:agentId/add-data-point", async (req, res) => {
       req.user?.username ?? "unknown",
     );
 
-    // Find close node
-    const closeNodeId = parsed.closeNode?.id;
+    // Find close node — multi-path agents have a per-path Close, single-path
+    // agents share the singleton "Close". Falling back to parsed.closeNode keeps
+    // legacy single-path layouts working unchanged.
+    const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
     if (!closeNodeId) {
       res.status(500).json({ error: "Could not find Close node in flow" });
       return;
@@ -1070,7 +1072,7 @@ nodeEditorRouter.post("/:agentId/remove-data-point", async (req, res) => {
       req.user?.username ?? "unknown",
     );
 
-    const closeNodeId = parsed.closeNode?.id;
+    const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
     if (!closeNodeId) {
       res.status(500).json({ error: "Could not find Close node" });
       return;
@@ -1163,7 +1165,7 @@ nodeEditorRouter.post("/:agentId/reorder-data-points", async (req, res) => {
       req.user?.username ?? "unknown",
     );
 
-    const closeNodeId = parsed.closeNode?.id;
+    const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
     if (!closeNodeId) {
       res.status(500).json({ error: "Could not find Close node" });
       return;
@@ -1322,7 +1324,7 @@ nodeEditorRouter.post("/:agentId/edit-branch-condition", async (req, res) => {
       req.user?.username ?? "unknown",
     );
 
-    const closeNodeId = parsed.closeNode?.id;
+    const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
     if (!closeNodeId) {
       res.status(500).json({ error: "Could not find Close node" });
       return;
@@ -2161,15 +2163,17 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
 
     // Apply per-path data point changes (add/remove/reorder/branch)
     if (changes.paths && typeof changes.paths === "object") {
-      const closeNodeId = parsed.closeNode?.id;
-      if (!closeNodeId) {
-        res.status(500).json({ error: "Could not find Close node" });
-        return;
-      }
-
       for (const [pathName, pathChanges] of Object.entries(changes.paths as Record<string, any>)) {
         const targetPath = parsed.paths.find((pa) => pa.name === pathName);
         if (!targetPath) continue;
+        // Each callback path's chain terminates at its own Close (multi-path)
+        // or the singleton Close (single-path). Resolving per-iteration so a
+        // multi-path agent doesn't cross-wire chains to another path's Close.
+        const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
+        if (!closeNodeId) {
+          res.status(500).json({ error: "Could not find Close node" });
+          return;
+        }
 
         // pathChanges.dataPointKeys = ordered list of data point keys for this path
         if (Array.isArray(pathChanges.dataPointKeys)) {
