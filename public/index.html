@@ -743,14 +743,7 @@
        don't care can ignore the tab entirely. -->
   <div class="form-subtab-pane" data-form-pane="closing">
     <h2>Closing Prompts</h2>
-    <div class="field-hint" style="margin-top:0;">These three prompts run at the end of every call. Sensible defaults are pre-filled. Type <code>{{</code> to insert <code>business_name</code> as a green pill — it will be replaced with the business name on save.</div>
-
-    <label for="closePrompt">Close Prompt</label>
-    <div class="tmpl-editor-wrap">
-      <div class="tmpl-editor" contenteditable="true" id="closePromptEditor" data-placeholder="Thank the caller…"></div>
-      <input type="hidden" id="closePrompt">
-    </div>
-    <div class="field-hint">Spoken right after data collection wraps up. AI instruction (the agent paraphrases).</div>
+    <div class="field-hint" style="margin-top:0;">Run at the end of every call. Sensible defaults pre-filled. Type <code>{{</code> to insert <code>business_name</code> as a green pill. The <strong>Close prompt</strong> lives inside each routing path (Routing Paths tab) so it can differ per path.</div>
 
     <label for="closingRemarksPrompt">Closing Remarks Prompt</label>
     <div class="tmpl-editor-wrap">
@@ -850,7 +843,7 @@
 
   // Pre-fill closing prompts on initial load (will be overwritten by
   // auto-save / draft / template restoration if present).
-  document.getElementById('closePrompt').value = DEFAULT_CLOSE_PROMPT;
+  // Note: the Close Prompt is per-path now and gets seeded inside addPathCard.
   document.getElementById('closingRemarksPrompt').value = DEFAULT_CLOSING_REMARKS_PROMPT;
   document.getElementById('closingStatementText').value = DEFAULT_CLOSING_STATEMENT_TEXT;
   document.getElementById('liveTransferRecoveryPrompt').value = DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
@@ -868,11 +861,6 @@
   // so we can update the visual editor whenever the hidden value changes
   // (default fill, draft restore, JSON import).
   const closingEditors = {
-    closePrompt: initTemplateEditor(
-      document.getElementById('closePromptEditor'),
-      document.getElementById('closePrompt'),
-      ['business_name'],
-    ),
     closingRemarksPrompt: initTemplateEditor(
       document.getElementById('closingRemarksPromptEditor'),
       document.getElementById('closingRemarksPrompt'),
@@ -1652,6 +1640,9 @@
               <button type="button" class="btn-chain-add" onclick="addChainItem(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Data Point</button>
               <button type="button" class="btn-chain-branch" onclick="addChainBranch(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Branch</button>
             </div>
+            <label style="margin-top:0.75rem;">Close Prompt</label>
+            <textarea class="path-close-prompt" rows="3" placeholder="Spoken right after data collection wraps up — specific to this path.">${DEFAULT_CLOSE_PROMPT.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+            <div class="field-hint">Spoken right after data collection wraps up. Type <code>{{business_name}}</code> to substitute the business name. Ignored when this path is set to live transfer.</div>
             <div style="margin-top:0.75rem;">
               <label style="font-size:0.85rem;font-weight:600;color:#555;">End of path</label>
               <div class="toggle-row">
@@ -1701,6 +1692,7 @@
     const call = card.querySelector('.path-dispatch-call').value;
     const endModeRadio = card.querySelector('.path-end-mode:checked');
     const endMode = endModeRadio ? endModeRadio.value : 'callback';
+    const closePromptVal = card.querySelector('.path-close-prompt')?.value || '';
 
     // Create new card with copied name
     addPathCard(name ? name + ' (Copy)' : '');
@@ -1713,6 +1705,8 @@
     newCard.querySelector('.path-dispatch-call').value = call;
     const newEndRadio = newCard.querySelector(`.path-end-mode[value="${endMode}"]`);
     if (newEndRadio) newEndRadio.checked = true;
+    const newClose = newCard.querySelector('.path-close-prompt');
+    if (newClose) newClose.value = closePromptVal;
 
     // Restore the chain data into the new card
     const newChainRoot = newCard.querySelector('.chain-list[data-chain-root]');
@@ -1913,7 +1907,9 @@
         faqKnowledgeBase: val('faqKnowledgeBase'),
         introFinetuneExamples: [],
         human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked').value,
-        closePrompt: val('closePrompt'),
+        // Per-path Close prompts collected from each routing-path card. Only
+        // callback paths contribute; transfer paths skip the Close node.
+        pathClosePrompts: collectPathClosePrompts(),
         closingRemarksPrompt: val('closingRemarksPrompt'),
         closingStatementText: val('closingStatementText'),
         liveTransferRecoveryPrompt: val('liveTransferRecoveryPrompt'),
@@ -2122,6 +2118,22 @@
     }
   }
 
+  // Walk every routing-path card and build { [pathName]: closePromptText }.
+  // Transfer-mode paths are excluded — they bypass the Close node entirely.
+  function collectPathClosePrompts() {
+    const result = {};
+    pathsContainer.querySelectorAll('.path-card').forEach(card => {
+      const name = card.querySelector('.path-name')?.value?.trim();
+      if (!name) return;
+      const endModeRadio = card.querySelector('.path-end-mode:checked');
+      const endMode = endModeRadio ? endModeRadio.value : 'callback';
+      if (endMode === 'transfer') return;
+      const closeEl = card.querySelector('.path-close-prompt');
+      result[name] = closeEl ? closeEl.value : '';
+    });
+    return result;
+  }
+
   function collectFormState() {
     const state = {
       businessName: val('businessName'),
@@ -2134,7 +2146,6 @@
       // Summary Agent ID has no UI; persisted via summaryAgentIdValue var.
       summaryAgentId: summaryAgentIdValue || '',
       humanRequestMode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
-      closePrompt: val('closePrompt'),
       closingRemarksPrompt: val('closingRemarksPrompt'),
       closingStatementText: val('closingStatementText'),
       liveTransferRecoveryPrompt: val('liveTransferRecoveryPrompt'),
@@ -2151,6 +2162,7 @@
         dispatchEmail: getChipValues(card.querySelector('.path-dispatch-email')).join(', '),
         dispatchCall: card.querySelector('.path-dispatch-call').value,
         endMode: endModeRadio ? endModeRadio.value : 'callback',
+        closePrompt: card.querySelector('.path-close-prompt')?.value || '',
       });
     });
 
@@ -2175,7 +2187,8 @@
         faqKnowledgeBase: val('faqKnowledgeBase'),
         introFinetuneExamples: [],
         human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
-        closePrompt: val('closePrompt'),
+        // Close Prompt is per-path; export the map so a load → export cycle preserves it.
+        pathClosePrompts: collectPathClosePrompts(),
         closingRemarksPrompt: val('closingRemarksPrompt'),
         closingStatementText: val('closingStatementText'),
         liveTransferRecoveryPrompt: val('liveTransferRecoveryPrompt'),
@@ -2236,11 +2249,15 @@
           path_end_modes: c.path_end_modes && Object.keys(c.path_end_modes).length ? c.path_end_modes : null,
         };
         // Convert export format to form state
+        // Close Prompt is per-path; pull the map (or fall back to the legacy
+        // single closePrompt for old export configs that haven't migrated).
+        const importedPathClose = config.business?.pathClosePrompts || {};
+        const legacyClose = config.business?.closePrompt || '';
         const state = {
           businessName: config.business?.businessName || '',
           faqKnowledgeBase: config.business?.faqKnowledgeBase || '',
           humanRequestMode: config.business?.human_request_mode || 'callback',
-          closePrompt: config.business?.closePrompt || '',
+          closePrompt: legacyClose, // kept on state so loadFormState can fall back per-path
           closingRemarksPrompt: config.business?.closingRemarksPrompt || '',
           closingStatementText: config.business?.closingStatementText || '',
           liveTransferRecoveryPrompt: config.business?.liveTransferRecoveryPrompt || '',
@@ -2309,6 +2326,7 @@
               dispatchEmail: (pathDbt.dispatch_email || []).join(', '),
               dispatchCall: pathDbt.dispatch_call_number || '',
               endMode: p.end_mode === 'transfer' ? 'transfer' : 'callback',
+              closePrompt: importedPathClose[p.name] || legacyClose || '',
             };
           }),
         };
@@ -2326,7 +2344,6 @@
     document.getElementById('businessName').value = state.businessName || '';
     document.getElementById('faqKnowledgeBase').value = state.faqKnowledgeBase || '';
     document.getElementById('clientName').value = state.clientName || '';
-    setClosingPrompt('closePrompt', state.closePrompt || DEFAULT_CLOSE_PROMPT);
     setClosingPrompt('closingRemarksPrompt', state.closingRemarksPrompt || DEFAULT_CLOSING_REMARKS_PROMPT);
     setClosingPrompt('closingStatementText', state.closingStatementText || DEFAULT_CLOSING_STATEMENT_TEXT);
     document.getElementById('liveTransferRecoveryPrompt').value = state.liveTransferRecoveryPrompt || DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
@@ -2353,6 +2370,13 @@
       const restoreEndMode = p.endMode === 'transfer' ? 'transfer' : 'callback';
       const endRadio = card.querySelector(`.path-end-mode[value="${restoreEndMode}"]`);
       if (endRadio) endRadio.checked = true;
+      // Restore per-path Close Prompt. Falls back to legacy state.closePrompt
+      // (single global) so older drafts/templates pre-fill all paths with the
+      // previously-shared text. New saves always write per-path strings.
+      const closeEl = card.querySelector('.path-close-prompt');
+      if (closeEl) {
+        closeEl.value = p.closePrompt || state.closePrompt || DEFAULT_CLOSE_PROMPT;
+      }
 
       const chainRoot = card.querySelector('.chain-list[data-chain-root]');
       if (chainRoot) {
