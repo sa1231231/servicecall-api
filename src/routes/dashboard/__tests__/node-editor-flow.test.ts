@@ -438,7 +438,7 @@ describe("POST /:agentId/edit-path-end-mode", () => {
     expect(res._json.error).toMatch(/Variables Router/);
   });
 
-  it("switches a path to callback, pushes flow, persists path_end_modes, and audits", async () => {
+  it("switches a multi-path callback toggle creates a per-path Close, pushes flow, persists path_end_modes, audits", async () => {
     const doc = makeDoc({
       dispatch_call_number: "+15555",
       path_end_modes: { Sales: "transfer", Other: "transfer" },
@@ -447,7 +447,7 @@ describe("POST /:agentId/edit-path-end-mode", () => {
     const router = { id: "router-Sales", else_edge: { destination_node_id: "old" } };
     const nodes: any[] = [
       router,
-      { id: "close", name: "Close" },
+      { id: "close", name: "Close", instruction: { type: "prompt", text: "shared close" }, always_edge: { destination_node_id: "cr", id: "ae-1", transition_condition: { type: "prompt", prompt: "Always" } } },
       { id: "pt-Sales", name: "Pre-Transfer (Sales)" },
       { id: "tc-Sales", name: "Transfer Call (Sales)" },
     ];
@@ -467,13 +467,74 @@ describe("POST /:agentId/edit-path-end-mode", () => {
 
     expect(res._status).toBe(200);
     expect(res._json).toMatchObject({ success: true, pathName: "Sales", mode: "callback" });
-    expect(router.else_edge.destination_node_id).toBe("close");
+    // Multi-path: a new per-path Close (Sales) is created and the router edges to it.
+    const newClose = nodes.find((n: any) => n.name === "Close (Sales)");
+    expect(newClose).toBeDefined();
+    expect(router.else_edge.destination_node_id).toBe(newClose!.id);
     // Pre-Transfer + Transfer Call for Sales removed
     expect(nodes.find((n: any) => n.name === "Pre-Transfer (Sales)")).toBeUndefined();
     expect(nodes.find((n: any) => n.name === "Transfer Call (Sales)")).toBeUndefined();
     expect(mockPushFlowToRetell).toHaveBeenCalled();
     const updateCall = mockUpdateOne.mock.calls[0];
     expect(updateCall[1].$set.path_end_modes).toEqual({ Other: "transfer" });
+  });
+
+  it("single-path callback toggle reuses the singleton Close node", async () => {
+    const doc = makeDoc({
+      dispatch_call_number: "+15555",
+      path_end_modes: { Solo: "transfer" },
+    });
+    mockGetClientDocument.mockResolvedValue(doc);
+    const router = { id: "router-Solo", else_edge: { destination_node_id: "pt-Solo" } };
+    const nodes: any[] = [
+      router,
+      { id: "close", name: "Close", instruction: { type: "prompt", text: "x" }, always_edge: { destination_node_id: "cr", id: "ae", transition_condition: { type: "prompt", prompt: "Always" } } },
+      { id: "pt-Solo", name: "Pre-Transfer (Solo)" },
+      { id: "tc-Solo", name: "Transfer Call (Solo)" },
+    ];
+    mockFetchRetellAgent.mockResolvedValue({
+      canonicalJson: { conversationFlow: { nodes } }, conversationFlowId: "f1", agentName: "A",
+    });
+    mockParseConversationFlow.mockReturnValue({
+      paths: [{ name: "Solo", routerNode: { id: "router-Solo" }, endMode: "transfer" }],
+      closeNode: { id: "close" },
+    });
+    const res = makeRes();
+    await runRoute("post", "/:agentId/edit-path-end-mode",
+      makeReq({ params: { slug: "acme", agentId: "agent_1" }, body: { pathName: "Solo", mode: "callback" } }), res);
+    expect(res._status).toBe(200);
+    // Single-path: rewires to the singleton "Close" node — no per-path clone.
+    expect(router.else_edge.destination_node_id).toBe("close");
+    expect(nodes.find((n: any) => n.name === "Close (Solo)")).toBeUndefined();
+  });
+
+  it("transfer toggle removes the path's per-path Close node", async () => {
+    const doc = makeDoc({ dispatch_call_number: "+15555" });
+    mockGetClientDocument.mockResolvedValue(doc);
+    const router: any = { id: "router-Sales", else_edge: { destination_node_id: "close-Sales" } };
+    const nodes: any[] = [
+      router,
+      { id: "close-Sales", name: "Close (Sales)", instruction: { type: "prompt", text: "x" }, always_edge: { destination_node_id: "cr", id: "ae", transition_condition: { type: "prompt", prompt: "Always" } } },
+      { id: "close-Other", name: "Close (Other)" },
+      { id: "cr", name: "Closing Remarks" },
+    ];
+    mockFetchRetellAgent.mockResolvedValue({
+      canonicalJson: { conversationFlow: { nodes } }, conversationFlowId: "f1", agentName: "A",
+    });
+    mockParseConversationFlow.mockReturnValue({
+      paths: [
+        { name: "Sales", routerNode: { id: "router-Sales" }, endMode: "callback" },
+        { name: "Other", routerNode: { id: "router-Other" }, endMode: "callback" },
+      ],
+      closeNode: { id: "close-Sales" },
+    });
+    const res = makeRes();
+    await runRoute("post", "/:agentId/edit-path-end-mode",
+      makeReq({ params: { slug: "acme", agentId: "agent_1" }, body: { pathName: "Sales", mode: "transfer" } }), res);
+    expect(res._status).toBe(200);
+    expect(nodes.find((n: any) => n.name === "Close (Sales)")).toBeUndefined();
+    // Other path's Close node is preserved.
+    expect(nodes.find((n: any) => n.name === "Close (Other)")).toBeDefined();
   });
 
   it("switches a path to transfer: creates Pre-Transfer + Transfer Call + recovery", async () => {

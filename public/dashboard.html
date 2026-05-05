@@ -4746,12 +4746,11 @@
     html += '</div>';
 
     // ── Closing Prompts pane ─────────────────────────────────────────────
+    // The per-path Close Prompt lives inside each routing path's card in
+    // the "Identity & Routing Paths" pane. This pane keeps only the prompts
+    // that are global (Closing Remarks, Closing Statement, Live Transfer Recovery).
     html += '<div class="ne-subtab-pane' + (activeNeTab === 'closing' ? ' active' : '') + '" data-ne-pane="closing">';
     let renderedAnyClosing = false;
-    if (data.closePrompt !== undefined) {
-      html += fieldBlock('Close Prompt', data.closePrompt, 'openClosePromptEdit()');
-      renderedAnyClosing = true;
-    }
     if (data.closingRemarksPrompt !== undefined) {
       html += fieldBlock('Closing Remarks Prompt', data.closingRemarksPrompt, 'openClosingRemarksPromptEdit()');
       renderedAnyClosing = true;
@@ -4889,6 +4888,20 @@
         '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Dispatch Call Number</label>' +
         '<input type="text" class="dbt-call" data-mt-key="' + esc(mtKey) + '" value="' + esc(dbt.dispatch_call_number || '') + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
         '</div></details>';
+
+      // Per-path Close Prompt — shown for callback paths; transfer paths
+      // skip Close entirely and go straight to Live Transfer Recovery.
+      if (path.endMode === 'transfer') {
+        html += '<div style="margin-top:0.65rem;padding:0.4rem 0.55rem;background:#f3f4f6;border:1px dashed #d1d5db;border-radius:5px;font-size:0.75rem;color:#6b7280;">' +
+          '<strong>Close Prompt:</strong> not used in transfer mode — this path goes straight to Live Transfer Recovery.' +
+          '</div>';
+      } else {
+        html += '<div style="margin-top:0.65rem;">' +
+          fieldBlock('Close Prompt', path.closePrompt || '',
+            "openPathClosePromptEdit('" + esc(path.name) + "')",
+            { sub: '(spoken right after data collection wraps up — specific to this path)' }) +
+          '</div>';
+      }
 
       // End-of-path behavior: callback (default) vs live transfer.
       const endMode = path.endMode === 'transfer' ? 'transfer' : 'callback';
@@ -5397,6 +5410,25 @@
     };
   }
 
+  // Per-path Close prompt edit — opened from the path card in
+  // "Identity & Routing Paths" so each routing path has its own close text.
+  function openPathClosePromptEdit(pathName) {
+    if (!neData) return;
+    const path = neData.paths.find(p => p.name === pathName);
+    if (!path) return;
+    document.getElementById('promptModalTitle').textContent = 'Edit Close Prompt — ' + pathName;
+    document.getElementById('promptModalDesc').textContent = 'Spoken right after data collection wraps up for this path. AI instruction (the agent paraphrases). Type {{ to insert business_name as a green pill.';
+    useTemplateEditor(['business_name'], path.closePrompt || '');
+    document.getElementById('promptModal').style.display = '';
+    promptModalCb = (text) => {
+      path.closePrompt = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('Close prompt updated for "' + pathName + '" (save to publish)', 'success');
+    };
+  }
+
   function openClosingRemarksPromptEdit() {
     if (!neData) return;
     document.getElementById('promptModalTitle').textContent = 'Edit Closing Remarks Prompt';
@@ -5826,7 +5858,15 @@
     changes.introPrompt = neData.introPrompt;
     changes.transitionPrompt = neData.transitionPrompt;
     changes.faqKnowledgeBase = neData.faqKnowledgeBase;
-    changes.closePrompt = neData.closePrompt;
+    // Per-path Close prompts — each callback path's text. Transfer paths
+    // skip Close entirely so they're omitted. The server lazy-migrates a
+    // legacy single Close node into per-path Close nodes when prompts diverge.
+    changes.pathClosePrompts = {};
+    for (const p of neData.paths) {
+      if (p.endMode !== 'transfer') {
+        changes.pathClosePrompts[p.name] = p.closePrompt || '';
+      }
+    }
     changes.closingRemarksPrompt = neData.closingRemarksPrompt;
     changes.closingStatementText = neData.closingStatementText;
     if (neData.liveTransferRecoveryPrompt !== undefined) {

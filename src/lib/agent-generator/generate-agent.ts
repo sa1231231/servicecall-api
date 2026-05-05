@@ -289,12 +289,15 @@ When listing anything — services, time slots, examples, options — never list
     const pathLabel = isMultiPath ? rp.name : undefined;
 
     // Variables Router's else_edge points here when all data is collected.
-    // - "callback": shared Close node
+    // - "callback" multi-path: this path's own Close node (per-path prompt)
+    // - "callback" single-path: the shared Close node (legacy layout)
     // - "transfer": this path's Pre-Transfer node
     const terminalId =
       rp.endMode === "transfer" && pIds.preTransferId
         ? pIds.preTransferId
-        : ids.closeId;
+        : pIds.closeId
+          ? pIds.closeId
+          : ids.closeId;
 
     if (rp.resolved.length === 0) {
       // Empty data chain: transition skips the entire collection scaffold and
@@ -338,7 +341,26 @@ When listing anything — services, time slots, examples, options — never list
   if (humanMode === "live_transfer" || anyTransferPath) {
     allNodes.push(buildLiveTransferRecoveryNode(agentConfig, ids, pos, f));
   }
-  allNodes.push(buildCloseNode(agentConfig, ids, pos, f));
+  // Close nodes:
+  // - Multi-path: one per callback path, with per-path prompt support.
+  //   Each path's Variables Router else_edge points to its own Close node;
+  //   each Close always_edges to the shared Closing Remarks.
+  // - Single-path: one shared Close node (legacy layout). Same in both cases:
+  //   Closing Remarks → Closing Statement remain singular.
+  if (isMultiPath) {
+    resolvedPaths.forEach((rp, pathIdx) => {
+      const pIds = ids.paths[pathIdx];
+      if (rp.endMode === "transfer" || !pIds.closeId) return;
+      allNodes.push(
+        buildCloseNode(agentConfig, ids, pos, f, {
+          nodeId: pIds.closeId,
+          pathName: rp.name,
+        }),
+      );
+    });
+  } else {
+    allNodes.push(buildCloseNode(agentConfig, ids, pos, f));
+  }
   allNodes.push(...buildClosingSequence(agentConfig, ids, pos, f));
   allNodes.push(buildIrrelevantGuardrailNode(ids, pos, f));
   allNodes.push(buildEmergencyGuardrailNode(ids, pos, f));

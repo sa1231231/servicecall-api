@@ -234,7 +234,12 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       const instr = node?.raw.instruction as Record<string, unknown> | undefined;
       return (instr?.text as string) ?? "";
     };
-    const closePrompt = findInstructionText("Close");
+    // closePrompt is the legacy/global value: use the singleton "Close" if it
+    // exists (single-path agents), else fall back to the first per-path Close
+    // (parser already does this resolution). Per-path values are also
+    // returned in paths[].closePrompt below.
+    const closePromptInstr = parsed.closeNode?.raw.instruction as Record<string, unknown> | undefined;
+    const closePrompt = (closePromptInstr?.text as string) ?? "";
     const closingRemarksPrompt = findInstructionText("Closing Remarks");
     const closingStatementText = findInstructionText("Closing Statement");
 
@@ -280,6 +285,10 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
         transitionCondition: transitionConditions[p.name] ?? "",
         endMode: p.endMode,
         transferDestination: p.transferDestination,
+        // Per-path Close prompt (callback paths only). Empty/absent for
+        // transfer paths since they skip the Close node entirely.
+        closePrompt: p.endMode === "callback" ? (p.closePrompt ?? closePrompt ?? "") : "",
+        closeNodeId: p.closeNode?.id,
         dataPoints: p.dataChain.map((dp) => ({
           variableName: dp.variableName,
           label: dp.label,
@@ -1689,8 +1698,7 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
       return;
     }
 
-    const closeNodeId = parsed.closeNode?.id;
-    if (!closeNodeId) {
+    if (!parsed.closeNode?.id) {
       res.status(500).json({ error: "Could not find Close node" });
       return;
     }
@@ -1708,9 +1716,41 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
     }
 
     if (mode === "callback") {
-      // Rewire the path's Variables Router else_edge → shared Close node.
+      // Rewire the path's Variables Router else_edge → its Close node.
+      // Multi-path agents: each callback path owns a "Close (pathName)" node;
+      // create one if it doesn't already exist (e.g. path was previously in
+      // transfer mode). Single-path agents share the singleton "Close".
+      const isMultiPath = parsed.paths.length > 1;
+      let closeNodeIdForPath: string;
+      if (isMultiPath) {
+        const existingPerPathClose = nodes.find(
+          (n) => n.name === `Close (${pathName})`,
+        );
+        if (existingPerPathClose) {
+          closeNodeIdForPath = existingPerPathClose.id as string;
+        } else {
+          // Build a new per-path Close node, seeded from any existing Close
+          // (per-path or legacy) so the prompt text + always_edge are sane.
+          const templateClose = nodes.find((n) =>
+            typeof n.name === "string" && (n.name as string).startsWith("Close (")
+          ) ?? nodes.find((n) => n.name === "Close");
+          if (!templateClose) {
+            res.status(500).json({ error: "No existing Close node to seed from" });
+            return;
+          }
+          const newClose = JSON.parse(JSON.stringify(templateClose)) as Record<string, unknown>;
+          newClose.id = `node-close-${pathName}-${Date.now()}`;
+          newClose.name = `Close (${pathName})`;
+          const ae = newClose.always_edge as Record<string, unknown>;
+          ae.id = `always-edge-close-${pathName}-${Date.now()}`;
+          nodes.push(newClose);
+          closeNodeIdForPath = newClose.id as string;
+        }
+      } else {
+        closeNodeIdForPath = parsed.closeNode.id;
+      }
       const elseEdge = routerNode.else_edge as Record<string, unknown> | undefined;
-      if (elseEdge) elseEdge.destination_node_id = closeNodeId;
+      if (elseEdge) elseEdge.destination_node_id = closeNodeIdForPath;
 
       // Remove this path's Pre-Transfer + Transfer Call nodes, if any.
       const removeNames = new Set<string>([
@@ -1830,6 +1870,14 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
       // Rewire Variables Router else_edge → Pre-Transfer.
       const elseEdge = routerNode.else_edge as Record<string, unknown> | undefined;
       if (elseEdge) elseEdge.destination_node_id = preTransfer.id as string;
+
+      // Remove this path's per-path Close node — it's orphaned now that the
+      // router edges to Pre-Transfer instead. Single-path agents and any
+      // shared "Close" node stay (other paths still need them).
+      const orphanCloseIdx = nodes.findIndex(
+        (n) => n.name === `Close (${pathName})`,
+      );
+      if (orphanCloseIdx >= 0) nodes.splice(orphanCloseIdx, 1);
     }
 
     const errors = validateConversationFlow(flow);
@@ -1948,8 +1996,79 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
         (node.instruction as Record<string, unknown>).text = renderTemplate(text, tplVars);
       }
     };
-    if (typeof changes.closePrompt === "string") {
-      applyClosingPrompt("Close", changes.closePrompt);
+    // Per-path Close handling. Two input shapes are accepted:
+    //  - changes.pathClosePrompts: { [pathName]: text }   (preferred)
+    //  - changes.closePrompt: string                       (legacy: applies to every callback path)
+    // Single-path agents and unmigrated multi-path agents have a singleton
+    // "Close" node. Per-path multi-path agents have "Close (pathName)" nodes.
+    // When the writer sees distinct prompts for different paths in a legacy
+    // singleton agent, it splits the Close node lazily.
+    let pathClosePromptMap: Record<string, string> | undefined;
+    if (changes.pathClosePrompts && typeof changes.pathClosePrompts === "object") {
+      pathClosePromptMap = changes.pathClosePrompts as Record<string, string>;
+    } else if (typeof changes.closePrompt === "string") {
+      pathClosePromptMap = {};
+      for (const pp of parsed.paths) {
+        if (pp.endMode === "callback") pathClosePromptMap[pp.name] = changes.closePrompt;
+      }
+    }
+    if (pathClosePromptMap) {
+      const callbackPaths = parsed.paths.filter((p) => p.endMode === "callback");
+      // Capture the legacy singleton's id before any mutation. After the
+      // first claim renames it, the name no longer ends in just "Close" —
+      // but its id is what subsequent paths' routers still point to, which
+      // is how we know they're sharing the about-to-be-split legacy node.
+      const legacyCloseId = nodes.find((n) => n.name === "Close")?.id as string | undefined;
+      let legacyClaimed = false;
+
+      callbackPaths.forEach((pp, i) => {
+        const text = pathClosePromptMap![pp.name];
+        if (typeof text !== "string") return;
+        const renderedText = renderTemplate(text, tplVars);
+
+        const router = nodes.find((n) => n.id === pp.routerNode.id);
+        const elseEdge = router?.else_edge as Record<string, unknown> | undefined;
+        const currentTerminalId = elseEdge?.destination_node_id as string | undefined;
+        const currentClose = currentTerminalId
+          ? nodes.find((n) => n.id === currentTerminalId)
+          : undefined;
+        if (!currentClose || !currentClose.instruction) return;
+
+        const isLegacyShared = !!legacyCloseId && currentClose.id === legacyCloseId;
+        const currentName = String(currentClose.name ?? "");
+
+        if (!isLegacyShared && currentName.startsWith("Close (")) {
+          // Path has its own per-path Close already — just update text.
+          (currentClose.instruction as Record<string, unknown>).text = renderedText;
+          return;
+        }
+
+        // Legacy singleton path: either truly named "Close" (first iteration
+        // before claim) or renamed to "Close (firstPath)" but still shared by
+        // subsequent paths whose routers haven't been rewired yet.
+        if (callbackPaths.length === 1) {
+          (currentClose.instruction as Record<string, unknown>).text = renderedText;
+          return;
+        }
+        if (!legacyClaimed) {
+          // First-encountered callback path claims the legacy node.
+          currentClose.name = `Close (${pp.name})`;
+          (currentClose.instruction as Record<string, unknown>).text = renderedText;
+          legacyClaimed = true;
+          return;
+        }
+        // Later paths get a fresh clone, and their routers are rewired to it.
+        const newClose = JSON.parse(JSON.stringify(currentClose)) as Record<string, unknown>;
+        newClose.id = `node-${Date.now()}-${Math.random().toString(36).slice(2, 9)}-${i}`;
+        newClose.name = `Close (${pp.name})`;
+        (newClose.instruction as Record<string, unknown>).text = renderedText;
+        const ae = newClose.always_edge as Record<string, unknown>;
+        ae.id = `always-edge-${Date.now()}-${Math.random().toString(36).slice(2, 11)}-${i}`;
+        nodes.push(newClose);
+        if (router) {
+          (router.else_edge as Record<string, unknown>).destination_node_id = newClose.id as string;
+        }
+      });
     }
     if (typeof changes.closingRemarksPrompt === "string") {
       applyClosingPrompt("Closing Remarks", changes.closingRemarksPrompt);

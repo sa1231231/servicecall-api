@@ -82,7 +82,7 @@ describe("Agent creator — feature reflection", () => {
       expect(serialized).toContain("MARKER_AGENT_INTRO");
     });
 
-    it("closePrompt populates the Close node", () => {
+    it("closePrompt populates the Close node (single-path)", () => {
       const { agent } = generateAgent(
         { ...baseConfig, closePrompt: "MARKER_CLOSE_PROMPT_99" },
         ["full_name"],
@@ -92,6 +92,64 @@ describe("Agent creator — feature reflection", () => {
       const close = findNodeByName(agent, "Close");
       expect(close, "Close node missing").toBeDefined();
       expect(close!.instruction?.text ?? "").toContain("MARKER_CLOSE_PROMPT_99");
+    });
+
+    it("multi-path callback agents produce one Close node per path with the global closePrompt as default", () => {
+      const { agent } = generateAgent(
+        { ...baseConfig, closePrompt: "GLOBAL_DEFAULT_CLOSE" },
+        [],
+        [
+          { name: "Service", transitionCondition: "service request", dataPoints: ["full_name"] },
+          { name: "Sales", transitionCondition: "sales inquiry", dataPoints: ["full_name"] },
+        ],
+        DEFAULTS,
+      );
+      const flow = (agent.conversationFlow as any);
+      const closeService = flow.nodes.find((n: any) => n.name === "Close (Service)");
+      const closeSales = flow.nodes.find((n: any) => n.name === "Close (Sales)");
+      expect(closeService).toBeDefined();
+      expect(closeSales).toBeDefined();
+      expect(closeService.instruction.text).toContain("GLOBAL_DEFAULT_CLOSE");
+      expect(closeSales.instruction.text).toContain("GLOBAL_DEFAULT_CLOSE");
+      // No singleton "Close" node remains in multi-path
+      expect(flow.nodes.find((n: any) => n.name === "Close")).toBeUndefined();
+    });
+
+    it("pathClosePrompts overrides the Close prompt per path; missing paths fall back to closePrompt", () => {
+      const { agent } = generateAgent(
+        {
+          ...baseConfig,
+          closePrompt: "DEFAULT_CLOSE",
+          pathClosePrompts: { Service: "SERVICE_CLOSE_OVERRIDE" },
+        },
+        [],
+        [
+          { name: "Service", transitionCondition: "service request", dataPoints: ["full_name"] },
+          { name: "Sales", transitionCondition: "sales inquiry", dataPoints: ["full_name"] },
+        ],
+        DEFAULTS,
+      );
+      const flow = (agent.conversationFlow as any);
+      const closeService = flow.nodes.find((n: any) => n.name === "Close (Service)");
+      const closeSales = flow.nodes.find((n: any) => n.name === "Close (Sales)");
+      expect(closeService.instruction.text).toContain("SERVICE_CLOSE_OVERRIDE");
+      expect(closeService.instruction.text).not.toContain("DEFAULT_CLOSE");
+      expect(closeSales.instruction.text).toContain("DEFAULT_CLOSE");
+    });
+
+    it("transfer-mode paths in multi-path agents have no Close node", () => {
+      const { agent } = generateAgent(
+        { ...baseConfig, closePrompt: "X" },
+        [],
+        [
+          { name: "Emergency", transitionCondition: "emergency", dataPoints: ["full_name"], endMode: "transfer", transferDestination: "+18005551234" },
+          { name: "General", transitionCondition: "general", dataPoints: ["full_name"] },
+        ],
+        DEFAULTS,
+      );
+      const flow = (agent.conversationFlow as any);
+      expect(flow.nodes.find((n: any) => n.name === "Close (Emergency)")).toBeUndefined();
+      expect(flow.nodes.find((n: any) => n.name === "Close (General)")).toBeDefined();
     });
 
     it("closingRemarksPrompt populates the Closing Remarks node", () => {

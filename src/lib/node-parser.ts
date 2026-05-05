@@ -32,6 +32,11 @@ export interface ParsedPath {
   endMode: "callback" | "transfer";
   preTransferNode?: ParsedNode;
   transferCallNode?: ParsedNode;
+  /** The terminal Close node for this callback path (per-path or shared singleton).
+   *  Undefined when endMode === "transfer". */
+  closeNode?: ParsedNode;
+  /** The Close prompt text for this path. Undefined when endMode === "transfer". */
+  closePrompt?: string;
   /** Resolved E.164 number baked into the path's transfer_call node (when endMode === "transfer"). */
   transferDestination?: string;
 }
@@ -100,8 +105,13 @@ export function parseConversationFlow(
   // Find FAQ node
   const faqNode = allNodes.find((n) => n.name === "Admin/FAQ") ?? null;
 
-  // Find Close node
-  const closeNode = allNodes.find((n) => n.name === "Close") ?? null;
+  // Find Close node — either the legacy singleton "Close" or, for multi-path
+  // callback agents, the first per-path "Close (pathName)". Per-path nodes
+  // are also exposed individually on each ParsedPath below.
+  const closeNode =
+    allNodes.find((n) => n.name === "Close")
+    ?? allNodes.find((n) => n.name.startsWith("Close ("))
+    ?? null;
 
   // Find closing sequence nodes
   const closingNodes = allNodes.filter(
@@ -238,6 +248,8 @@ function buildParsedPath(
   let preTransferNode: ParsedNode | undefined;
   let transferCallNode: ParsedNode | undefined;
   let transferDestination: string | undefined;
+  let closeNode: ParsedNode | undefined;
+  let closePrompt: string | undefined;
   const routerElseEdge = routerNode.raw.else_edge as Record<string, unknown> | undefined;
   const terminalId = routerElseEdge?.destination_node_id as string | undefined;
   const terminalNode = terminalId ? nodeMap.get(terminalId) : undefined;
@@ -255,6 +267,12 @@ function buildParsedPath(
         const tcNode = nodeMap.get(tcId);
         if (tcNode && tcNode.type === "transfer_call") transferCallNode = tcNode;
       }
+    } else if (terminalNode.name === "Close" || terminalNode.name.startsWith("Close (")) {
+      // Callback path: per-path Close (name ends with "(pathName)") or the
+      // legacy shared "Close" singleton.
+      closeNode = terminalNode;
+      const instr = terminalNode.raw.instruction as Record<string, unknown> | undefined;
+      closePrompt = (instr?.text as string) ?? "";
     }
   }
   if (transferCallNode) {
@@ -331,6 +349,8 @@ function buildParsedPath(
     preTransferNode,
     transferCallNode,
     transferDestination,
+    closeNode,
+    closePrompt,
   };
 }
 

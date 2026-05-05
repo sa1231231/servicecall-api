@@ -929,8 +929,11 @@ describe("round-trip integrity", () => {
 
     for (const path of parsed.paths) {
       const origVars = getPathVariableNames(path);
+      // Multi-path callback agents have a per-path Close — route the
+      // regenerated data chain to *that* close, not the first one found.
+      const terminalId = path.closeNode?.id ?? parsed.closeNode!.id;
       const result = regenerateDataChain(
-        path, dataPointsFromChain(path.dataChain), parsed.closeNode!.id,
+        path, dataPointsFromChain(path.dataChain), terminalId,
         path.name === "Default" ? undefined : path.name,
       );
       applyRegeneratedChain(agent, result);

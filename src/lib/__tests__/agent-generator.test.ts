@@ -545,7 +545,7 @@ describe("if/else branch support", () => {
 // ── Per-path end mode (callback vs live transfer) ───────────────────────────
 
 describe("per-path end mode", () => {
-  it("default end mode is callback — variables router else_edge → Close", () => {
+  it("default end mode is callback — each path's router else_edge → its own Close (A/B)", () => {
     const { agent } = generateAgent(
       baseConfig,
       [],
@@ -556,12 +556,21 @@ describe("per-path end mode", () => {
       TEST_DEFAULTS,
     );
     const flow = agent.conversationFlow as any;
-    const closeNode = flow.nodes.find((n: any) => n.name === "Close");
-    expect(closeNode).toBeDefined();
+    const closeA = flow.nodes.find((n: any) => n.name === "Close (A)");
+    const closeB = flow.nodes.find((n: any) => n.name === "Close (B)");
+    expect(closeA).toBeDefined();
+    expect(closeB).toBeDefined();
+    expect(closeA.id).not.toBe(closeB.id);
     const routerA = flow.nodes.find((n: any) => n.name === "Variables Router (A)");
     const routerB = flow.nodes.find((n: any) => n.name === "Variables Router (B)");
-    expect(routerA.else_edge.destination_node_id).toBe(closeNode.id);
-    expect(routerB.else_edge.destination_node_id).toBe(closeNode.id);
+    expect(routerA.else_edge.destination_node_id).toBe(closeA.id);
+    expect(routerB.else_edge.destination_node_id).toBe(closeB.id);
+    // Both per-path Close nodes share Closing Remarks
+    const closingRemarks = flow.nodes.find((n: any) => n.name === "Closing Remarks");
+    expect(closeA.always_edge.destination_node_id).toBe(closingRemarks.id);
+    expect(closeB.always_edge.destination_node_id).toBe(closingRemarks.id);
+    // No legacy unsuffixed "Close" node in multi-path agents
+    expect(flow.nodes.find((n: any) => n.name === "Close")).toBeUndefined();
     expect(flow.nodes.find((n: any) => n.name?.startsWith("Pre-Transfer"))).toBeUndefined();
     expect(flow.nodes.find((n: any) => n.type === "transfer_call")).toBeUndefined();
   });
@@ -590,10 +599,12 @@ describe("per-path end mode", () => {
     expect(transferCall.type).toBe("transfer_call");
     expect(transferCall.transfer_destination.number).toBe(dest);
 
-    // Callback-mode path stays on Close
-    const close = flow.nodes.find((n: any) => n.name === "Close");
+    // Callback-mode path stays on its own per-path Close (multi-path agent)
+    const close = flow.nodes.find((n: any) => n.name === "Close (Quote)");
     const routerQuote = flow.nodes.find((n: any) => n.name === "Variables Router (Quote)");
     expect(routerQuote.else_edge.destination_node_id).toBe(close.id);
+    // Transfer paths don't have a Close node
+    expect(flow.nodes.find((n: any) => n.name === "Close (Emergency)")).toBeUndefined();
 
     // Shared Live Transfer Recovery node exists once
     const recovery = flow.nodes.filter((n: any) => n.name === "Live Transfer Recovery");

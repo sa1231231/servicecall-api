@@ -54,6 +54,10 @@ export interface PathIds {
   chain: Array<{ convId: string; confirmId: string }>;
   preTransferId?: string;
   transferCallId?: string;
+  // Callback paths in multi-path agents own their own Close node.
+  // Single-path agents and transfer paths leave this undefined and use
+  // the shared ids.closeId / Pre-Transfer respectively.
+  closeId?: string;
 }
 
 export type HumanRequestMode = "live_transfer" | "callback";
@@ -108,6 +112,10 @@ export interface AgentConfig {
   introFinetuneExamples: FinetuneExample[];
   humanRequestMode?: HumanRequestMode;
   closePrompt?: string;
+  // Per-path overrides for the Close prompt (multi-path agents only).
+  // Map keys are path names. Paths missing from the map fall back to
+  // closePrompt (the global default).
+  pathClosePrompts?: Record<string, string>;
   closingRemarksPrompt?: string;
   closingStatementText?: string;
   liveTransferRecoveryPrompt?: string;
@@ -177,6 +185,10 @@ export function generateIds(
   pathDataPoints: DataPoint[][],
   pathEndModes?: Array<"callback" | "transfer">,
 ): Ids {
+  // Multi-path callback agents get a per-path Close node so the close prompt
+  // can differ per path. Single-path agents keep the shared ids.closeId for
+  // layout/backwards-compat.
+  const isMultiPath = pathDataPoints.length > 1;
   const paths: PathIds[] = pathDataPoints.map((dps, idx) => {
     const isTransfer = pathEndModes?.[idx] === "transfer";
     return {
@@ -190,6 +202,7 @@ export function generateIds(
       ...(isTransfer
         ? { preTransferId: f.nodeId(), transferCallId: f.nodeId() }
         : {}),
+      ...(!isTransfer && isMultiPath ? { closeId: f.nodeId() } : {}),
     };
   });
 
@@ -995,8 +1008,21 @@ export function buildCloseNode(
   ids: Ids,
   pos: Positions,
   f: IdFactory,
+  overrides?: {
+    nodeId?: string;
+    pathName?: string;
+    promptText?: string;
+    displayPosition?: Position;
+  },
 ) {
-  const template = agentConfig.closePrompt ?? DEFAULT_CLOSE_PROMPT;
+  // Per-path build: caller supplies pathName + own nodeId. The single-Close
+  // legacy build leaves overrides undefined and uses ids.closeId / "Close".
+  const template =
+    overrides?.promptText
+    ?? (overrides?.pathName ? agentConfig.pathClosePrompts?.[overrides.pathName] : undefined)
+    ?? agentConfig.closePrompt
+    ?? DEFAULT_CLOSE_PROMPT;
+  const name = overrides?.pathName ? `Close (${overrides.pathName})` : "Close";
   return {
     instruction: {
       type: "prompt",
@@ -1007,11 +1033,11 @@ export function buildCloseNode(
       id: `always-edge-${f.nextTs()}-${randomSuffix(9)}`,
       transition_condition: { type: "prompt", prompt: "Always" },
     },
-    name: "Close",
+    name,
     edges: [],
-    id: ids.closeId,
+    id: overrides?.nodeId ?? ids.closeId,
     type: "conversation",
-    display_position: pos.close,
+    display_position: overrides?.displayPosition ?? pos.close,
   };
 }
 
