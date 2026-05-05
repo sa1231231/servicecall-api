@@ -4544,7 +4544,13 @@
       '<span style="font-size:0.82rem;font-weight:600;color:#555;">Display Name</span></div>' +
       '<div style="margin-bottom:0.75rem;">' +
       '<input class="edit-input" id="ne-display-name" value="' + esc(originalDoc?.name || '') + '" placeholder="Business name" style="margin-bottom:0.15rem;">' +
-      '<div class="config-hint">Appears in SMS/email notifications as the business identity.</div></div>';
+      '<div class="config-hint">Appears in SMS/email notifications. <strong>Does not</strong> rewrite prompts or the Retell agent name.</div>';
+    if (canEdit) {
+      const currentBusinessName = esc(originalDoc?.name || '');
+      html += '<button class="ne-btn" onclick="neRenameBusinessEverywhere(\'' + currentBusinessName + '\')" style="margin-top:0.4rem;font-size:0.7rem;background:#fef3c7;border-color:#fde68a;color:#92400e;">Rename business everywhere…</button>' +
+        '<div class="config-hint" style="margin-top:0.25rem;">Find/replace the business name across the system prompt, welcome line, closing prompts, FAQ text, and the Retell agent name. Pushes immediately to Retell. Snapshotted for rollback.</div>';
+    }
+    html += '</div>';
     const greetingVal = originalDoc?.notification_greeting || '';
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
       '<span style="font-size:0.82rem;font-weight:600;color:#555;">Notification Greeting</span></div>' +
@@ -5344,6 +5350,47 @@
     markNeDirty();
     renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
     showToast('Human request mode changed (save to publish)', 'success');
+  }
+
+  // Find/replace the business name across the agent's prompts, welcome line,
+  // closing prompts, FAQ, agent_name, etc., and push to Retell. Discards any
+  // unsaved Save & Publish edits to avoid stale-state conflicts.
+  async function neRenameBusinessEverywhere(currentName) {
+    if (neDirty && !confirm('You have unsaved changes that will be discarded if you rename now. Save & Publish first, or click OK to discard.')) {
+      return;
+    }
+    const newName = prompt(
+      'Rename business everywhere.\n\n' +
+      'This rewrites every occurrence of "' + currentName + '" across the system prompt, ' +
+      'welcome line, closing prompts, FAQ text, and the Retell agent name. ' +
+      'Pushes immediately to Retell. Snapshotted for rollback.\n\n' +
+      'New business name:',
+      currentName,
+    );
+    if (!newName) return;
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === currentName) return;
+
+    try {
+      const res = await fetch(
+        '/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/rename-business',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newName: trimmed, oldName: currentName }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.details || 'Failed');
+
+      neDirty = false;
+      // Editor state is now stale — reload from server.
+      neData = null;
+      await loadNodeEditor(neSlug, neAgentId);
+      showToast('Business renamed: "' + currentName + '" → "' + trimmed + '"', 'success');
+    } catch (err) {
+      showToast('Rename failed: ' + err.message, 'error');
+    }
   }
 
   // Per-path end-mode toggle. The server pushes to Retell immediately (this is

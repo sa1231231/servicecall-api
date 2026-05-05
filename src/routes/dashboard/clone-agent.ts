@@ -13,6 +13,7 @@ import {
   extractAgentParams,
 } from "../../lib/retell-sync.js";
 import { generateSlug } from "../../lib/slug.js";
+import { replaceBusinessName } from "../../lib/replace-business-name.js";
 
 // ── FAQ node template (must match agent-generator/node-builders.ts) ──────────
 
@@ -22,17 +23,6 @@ const FAQ_PROMPT_PREFIX = `Your goal is to answer administrative and general que
 `;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function replaceBusinessName(
-  obj: Record<string, unknown>,
-  oldName: string,
-  newName: string,
-): Record<string, unknown> {
-  const serialized = JSON.stringify(obj);
-  const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const regex = new RegExp(escaped, "gi");
-  return JSON.parse(serialized.replace(regex, newName));
-}
 
 function replaceFaq(
   flow: Record<string, unknown>,

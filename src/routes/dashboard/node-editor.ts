@@ -34,6 +34,7 @@ import {
 } from "../../lib/agent-generator/node-builders.js";
 import { getWarmTransferAgentVersion } from "../../lib/agent-generator/warm-transfer-agent-version.js";
 import { renderTemplate } from "../../lib/build-notification.js";
+import { replaceBusinessName } from "../../lib/replace-business-name.js";
 
 export const nodeEditorRouter = Router({ mergeParams: true });
 
@@ -646,6 +647,88 @@ nodeEditorRouter.post("/:agentId/edit-agent-settings", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error(`[node-editor] edit-agent-settings error:`, msg);
+    res.status(500).json({ error: msg });
+  }
+});
+
+// ── POST /:agentId/rename-business — Propagate Business Name Everywhere ─────
+
+nodeEditorRouter.post("/:agentId/rename-business", async (req, res) => {
+  const p = req.params as Record<string, string>;
+  const slug = p.slug;
+  const agentId = p.agentId;
+  const newName = typeof req.body.newName === "string" ? req.body.newName.trim() : "";
+  const oldNameOverride = typeof req.body.oldName === "string" ? req.body.oldName.trim() : "";
+
+  if (!newName) {
+    res.status(400).json({ error: "newName (non-empty string) is required" });
+    return;
+  }
+
+  const resolved = await resolveAgentId(slug, agentId);
+  if (!resolved) {
+    res.status(404).json({ error: "Agent not found" });
+    return;
+  }
+
+  try {
+    const snapshot = await pullLatest(agentId);
+    const currentName = oldNameOverride || snapshot.agentName || resolved.doc.name;
+    if (!currentName) {
+      res.status(400).json({ error: "Cannot rename: current business name is empty" });
+      return;
+    }
+    if (currentName === newName) {
+      res.json({ success: true, unchanged: true, oldName: currentName, newName });
+      return;
+    }
+
+    // Snapshot before rewriting so the rename is rollback-able like other edits.
+    await createVersionSnapshot(
+      slug, agentId, snapshot.canonicalJson, "manual_edit",
+      `Rename business: "${currentName}" → "${newName}"`,
+      req.user?.username ?? "unknown",
+    );
+
+    // Find/replace across the canonical JSON. Catches global prompt, welcome
+    // message, closing prompts, transfer prompts, FAQ mentions, agent_name —
+    // anywhere the old name was baked in at generation time.
+    const renamedCanonical = replaceBusinessName(
+      snapshot.canonicalJson,
+      currentName,
+      newName,
+    );
+    // The case-insensitive match could land mixed-case occurrences in the JSON;
+    // pin agent_name explicitly to the new casing.
+    renamedCanonical.agent_name = newName;
+    const renamedFlow = renamedCanonical.conversationFlow as Record<string, unknown>;
+
+    // Validate the modified flow before pushing.
+    const errors = validateConversationFlow(renamedFlow);
+    if (errors.length > 0) {
+      res.status(400).json({ error: "Renamed flow failed validation", errors });
+      return;
+    }
+
+    // Push to Retell (flow + agent-level rename), then sync MongoDB.
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, renamedCanonical);
+    await retell().agent.update(agentId, { agent_name: newName } as any);
+
+    await getDb()
+      .collection<JsonClientEntry & { _id: string }>("clients")
+      .updateOne({ _id: slug } as any, { $set: { name: newName } });
+
+    const fresh = await pullLatest(agentId);
+    await storeCanonical(slug, agentId, fresh.canonicalJson, { ...resolved.doc, name: newName });
+
+    await logAudit(req, "rename_business", `${slug}/${agentId}`, {
+      oldName: currentName,
+      newName,
+    });
+    res.json({ success: true, oldName: currentName, newName });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error(`[node-editor] rename-business error:`, msg);
     res.status(500).json({ error: msg });
   }
 });
