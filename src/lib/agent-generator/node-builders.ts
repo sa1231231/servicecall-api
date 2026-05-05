@@ -1,5 +1,9 @@
 import type { DataPoint, FinetuneExample } from "./data-point-registry.js";
-import { NOT_MENTIONED, PHONE_COLLECTED_FLAG, PATH_TAKEN_VAR } from "./data-point-registry.js";
+import {
+  NOT_MENTIONED,
+  PHONE_COLLECTED_FLAG,
+  PATH_TAKEN_VAR,
+} from "./data-point-registry.js";
 import { renderTemplate } from "../build-notification.js";
 
 // Default templates for the three closing nodes. Use {{business_name}} — substituted on the way to Retell.
@@ -368,11 +372,7 @@ Welcome the caller: "Thank you for calling ${config.businessName}, this is Antho
 
 If the caller greets you, reciprocate the sentiment and then ask how you can help them.
 
-Stay in this node until the caller expresses clear intent to move forward with service. This includes:
-- Wanting to sign up
-- Wanting to schedule service
-- Wanting a quote
-- Wanting to get started
+Do not assume their name until they tell you explicitly.
 
 Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ global node handle those and return here.`,
     },
@@ -418,8 +418,7 @@ ${faqKnowledgeBase}`,
         id: f.edgeId(),
         transition_condition: {
           type: "prompt",
-          prompt:
-            "You answered the caller's question.",
+          prompt: "You answered the caller's question.",
         },
       },
     ],
@@ -568,7 +567,11 @@ export function buildPreTransferNode(
   pathLabel: string | undefined,
   f: IdFactory,
 ) {
-  if (!pathIds.preTransferId || !pathIds.transferCallId || !pathPos.preTransfer) {
+  if (
+    !pathIds.preTransferId ||
+    !pathIds.transferCallId ||
+    !pathPos.preTransfer
+  ) {
     throw new Error("buildPreTransferNode: pathIds/pos missing transfer slots");
   }
   const text = renderTemplate(DEFAULT_PRE_TRANSFER_PROMPT, {
@@ -599,7 +602,9 @@ export function buildPerPathTransferCallNode(
   warmTransferAgentVersion?: number,
 ) {
   if (!pathIds.transferCallId || !pathPos.transferCall) {
-    throw new Error("buildPerPathTransferCallNode: pathIds/pos missing transfer slots");
+    throw new Error(
+      "buildPerPathTransferCallNode: pathIds/pos missing transfer slots",
+    );
   }
   return {
     custom_sip_headers: {},
@@ -625,11 +630,15 @@ export function buildLiveTransferRecoveryNode(
   pos: Positions,
   f: IdFactory,
 ) {
-  const template = agentConfig.liveTransferRecoveryPrompt ?? DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
+  const template =
+    agentConfig.liveTransferRecoveryPrompt ??
+    DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
   return {
     instruction: {
       type: "prompt",
-      text: renderTemplate(template, { business_name: agentConfig.businessName }),
+      text: renderTemplate(template, {
+        business_name: agentConfig.businessName,
+      }),
     },
     always_edge: {
       destination_node_id: ids.closingRemarksId,
@@ -649,7 +658,11 @@ export function buildLiveTransferRecoveryNode(
   };
 }
 
-export function buildIrrelevantGuardrailNode(ids: Ids, pos: Positions, f: IdFactory) {
+export function buildIrrelevantGuardrailNode(
+  ids: Ids,
+  pos: Positions,
+  f: IdFactory,
+) {
   return {
     instruction: {
       type: "prompt",
@@ -711,7 +724,11 @@ Set a clear boundary by stating that you cannot continue unrelated conversations
   };
 }
 
-export function buildEmergencyGuardrailNode(ids: Ids, pos: Positions, f: IdFactory) {
+export function buildEmergencyGuardrailNode(
+  ids: Ids,
+  pos: Positions,
+  f: IdFactory,
+) {
   return {
     instruction: {
       type: "prompt",
@@ -896,8 +913,16 @@ export function buildDataChain(
         // don't fire when the variable is "Not Mentioned" or "Caller Doesn't Know"
         if (bc.operator === "!=") {
           branchEqs.push(
-            { left: `{{${bc.variable}}}`, operator: "!=", right: NOT_MENTIONED },
-            { left: `{{${bc.variable}}}`, operator: "!=", right: "Caller Doesn't Know" },
+            {
+              left: `{{${bc.variable}}}`,
+              operator: "!=",
+              right: NOT_MENTIONED,
+            },
+            {
+              left: `{{${bc.variable}}}`,
+              operator: "!=",
+              right: "Caller Doesn't Know",
+            },
           );
         }
       }
@@ -906,10 +931,7 @@ export function buildDataChain(
         id: f.edgeId(),
         transition_condition: {
           type: "equation",
-          equations: [
-            ...missingEquations,
-            ...branchEqs,
-          ],
+          equations: [...missingEquations, ...branchEqs],
           operator: "&&",
         },
       };
@@ -1018,15 +1040,19 @@ export function buildCloseNode(
   // Per-path build: caller supplies pathName + own nodeId. The single-Close
   // legacy build leaves overrides undefined and uses ids.closeId / "Close".
   const template =
-    overrides?.promptText
-    ?? (overrides?.pathName ? agentConfig.pathClosePrompts?.[overrides.pathName] : undefined)
-    ?? agentConfig.closePrompt
-    ?? DEFAULT_CLOSE_PROMPT;
+    overrides?.promptText ??
+    (overrides?.pathName
+      ? agentConfig.pathClosePrompts?.[overrides.pathName]
+      : undefined) ??
+    agentConfig.closePrompt ??
+    DEFAULT_CLOSE_PROMPT;
   const name = overrides?.pathName ? `Close (${overrides.pathName})` : "Close";
   return {
     instruction: {
       type: "prompt",
-      text: renderTemplate(template, { business_name: agentConfig.businessName }),
+      text: renderTemplate(template, {
+        business_name: agentConfig.businessName,
+      }),
     },
     always_edge: {
       destination_node_id: ids.closingRemarksId,
@@ -1048,8 +1074,10 @@ export function buildClosingSequence(
   f: IdFactory,
 ) {
   const lastX = pos.close.x;
-  const remarksTemplate = agentConfig.closingRemarksPrompt ?? DEFAULT_CLOSING_REMARKS_PROMPT;
-  const statementTemplate = agentConfig.closingStatementText ?? DEFAULT_CLOSING_STATEMENT_TEXT;
+  const remarksTemplate =
+    agentConfig.closingRemarksPrompt ?? DEFAULT_CLOSING_REMARKS_PROMPT;
+  const statementTemplate =
+    agentConfig.closingStatementText ?? DEFAULT_CLOSING_STATEMENT_TEXT;
   const vars = { business_name: agentConfig.businessName };
   return [
     {
@@ -1191,8 +1219,7 @@ export function buildAgentRoot(
       {
         type: "system-presets",
         name: "user_sentiment",
-        description:
-          "Evaluate user's sentiment, mood and satisfaction level.",
+        description: "Evaluate user's sentiment, mood and satisfaction level.",
       },
     ],
     conversationFlow,
