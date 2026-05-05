@@ -4546,8 +4546,10 @@
       '<input class="edit-input" id="ne-display-name" value="' + esc(originalDoc?.name || '') + '" placeholder="Business name" style="margin-bottom:0.15rem;">' +
       '<div class="config-hint">Appears in SMS/email notifications. <strong>Does not</strong> rewrite prompts or the Retell agent name.</div>';
     if (canEdit) {
-      const currentBusinessName = esc(originalDoc?.name || '');
-      html += '<button class="ne-btn" onclick="neRenameBusinessEverywhere(\'' + currentBusinessName + '\')" style="margin-top:0.4rem;font-size:0.7rem;background:#fef3c7;border-color:#fde68a;color:#92400e;">Rename business everywhere…</button>' +
+      // No argument passed — handler reads the current name from neData/originalDoc
+      // at click time. Inlining the name into the onclick attribute would break
+      // for businesses with apostrophes ("Bob's HVAC").
+      html += '<button class="ne-btn" onclick="neRenameBusinessEverywhere()" style="margin-top:0.4rem;font-size:0.7rem;background:#fef3c7;border-color:#fde68a;color:#92400e;">Rename business everywhere…</button>' +
         '<div class="config-hint" style="margin-top:0.25rem;">Find/replace the business name across the system prompt, welcome line, closing prompts, FAQ text, and the Retell agent name. Pushes immediately to Retell. Snapshotted for rollback.</div>';
     }
     html += '</div>';
@@ -5354,8 +5356,17 @@
 
   // Find/replace the business name across the agent's prompts, welcome line,
   // closing prompts, FAQ, agent_name, etc., and push to Retell. Discards any
-  // unsaved Save & Publish edits to avoid stale-state conflicts.
-  async function neRenameBusinessEverywhere(currentName) {
+  // unsaved Save & Publish edits to avoid stale-state conflicts. The current
+  // name is read from the Display Name input rather than passed through the
+  // onclick attribute (avoids JS-quote escaping bugs for names with apostrophes).
+  async function neRenameBusinessEverywhere() {
+    const nameInput = document.getElementById('ne-display-name');
+    const currentName = (nameInput?.value || '').trim();
+    if (!currentName) {
+      showToast('Cannot rename: current business name is empty', 'error');
+      return;
+    }
+
     if (neDirty && !confirm('You have unsaved changes that will be discarded if you rename now. Save & Publish first, or click OK to discard.')) {
       return;
     }
