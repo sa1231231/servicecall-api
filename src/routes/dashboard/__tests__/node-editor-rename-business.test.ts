@@ -5,6 +5,8 @@ import { makeRes, makeReq, makeDoc, runRoute as runRouteHelper } from "./node-ed
 const {
   mockAgentUpdate,
   mockFlowUpdate,
+  mockPhoneList,
+  mockPhoneUpdate,
   mockGetClientDocument,
   mockLoadClientsFromDb,
   mockGetDb,
@@ -21,6 +23,8 @@ const {
 } = vi.hoisted(() => ({
   mockAgentUpdate: vi.fn(),
   mockFlowUpdate: vi.fn(),
+  mockPhoneList: vi.fn(),
+  mockPhoneUpdate: vi.fn(),
   mockGetClientDocument: vi.fn(),
   mockLoadClientsFromDb: vi.fn(),
   mockGetDb: vi.fn(),
@@ -41,6 +45,7 @@ vi.mock("retell-sdk", () => ({
   default: class {
     conversationFlow = { update: mockFlowUpdate };
     agent = { update: mockAgentUpdate };
+    phoneNumber = { list: mockPhoneList, update: mockPhoneUpdate };
   },
 }));
 vi.mock("../../../config/client-store.js", () => ({
@@ -101,7 +106,8 @@ const runRoute = (method: string, path: string, req: Request, res: Response) =>
 
 beforeEach(() => {
   for (const m of [
-    mockAgentUpdate, mockFlowUpdate, mockGetClientDocument, mockLoadClientsFromDb,
+    mockAgentUpdate, mockFlowUpdate, mockPhoneList, mockPhoneUpdate,
+    mockGetClientDocument, mockLoadClientsFromDb,
     mockGetDb, mockUpdateOne, mockFetchRetellAgent, mockPushFlowToRetell,
     mockExtractVariables, mockParseConversationFlow, mockValidateConversationFlow,
     mockCreateVersionSnapshot, mockLogAudit, mockDeriveNotificationConfig, mockRequireRoot,
@@ -118,6 +124,8 @@ beforeEach(() => {
   mockAgentUpdate.mockResolvedValue(undefined);
   mockFlowUpdate.mockResolvedValue(undefined);
   mockPushFlowToRetell.mockResolvedValue(undefined);
+  mockPhoneList.mockResolvedValue([]);
+  mockPhoneUpdate.mockResolvedValue(undefined);
 });
 
 function makeSnapshot(name: string) {
@@ -246,6 +254,95 @@ describe("POST /:agentId/rename-business", () => {
     expect(mockLogAudit).toHaveBeenCalled();
     const auditAction = mockLogAudit.mock.calls[0][1];
     expect(auditAction).toBe("rename_business");
+  });
+
+  it("updates nickname on every Retell phone number bound to the agent", async () => {
+    mockGetClientDocument.mockResolvedValue(
+      makeDoc({ name: "Acme Plumbing", outbound_from_number: "+15550000000" }),
+    );
+    mockFetchRetellAgent
+      .mockResolvedValueOnce(makeSnapshot("Acme Plumbing"))
+      .mockResolvedValueOnce(makeSnapshot("Beta Plumbing"));
+    mockPhoneList.mockResolvedValue([
+      { phone_number: "+18158804070", inbound_agents: [{ agent_id: "agent_1", weight: 1 }] },
+      { phone_number: "+15550000000", inbound_agents: [] }, // outbound-only fallback match
+      { phone_number: "+15559999999", inbound_agents: [{ agent_id: "agent_other", weight: 1 }] }, // unrelated
+    ]);
+
+    const res = makeRes();
+    await runRoute("post", "/:agentId/rename-business",
+      makeReq({
+        params: { slug: "acme", agentId: "agent_1" },
+        body: { newName: "Beta Plumbing" },
+      }), res);
+
+    expect(res._status).toBe(200);
+    expect(res._json.success).toBe(true);
+    expect(res._json.nickname_updated).toEqual(["+18158804070", "+15550000000"]);
+    expect(res._json.nickname_errors).toBeUndefined();
+
+    expect(mockPhoneUpdate).toHaveBeenCalledTimes(2);
+    expect(mockPhoneUpdate).toHaveBeenCalledWith("+18158804070", { nickname: "Beta Plumbing" });
+    expect(mockPhoneUpdate).toHaveBeenCalledWith("+15550000000", { nickname: "Beta Plumbing" });
+    expect(mockPhoneUpdate).not.toHaveBeenCalledWith("+15559999999", expect.anything());
+  });
+
+  it("returns success with nickname_errors when one phone update fails", async () => {
+    mockGetClientDocument.mockResolvedValue(makeDoc({ name: "Acme Plumbing" }));
+    mockFetchRetellAgent
+      .mockResolvedValueOnce(makeSnapshot("Acme Plumbing"))
+      .mockResolvedValueOnce(makeSnapshot("Beta Plumbing"));
+    mockPhoneList.mockResolvedValue([
+      { phone_number: "+18158804070", inbound_agents: [{ agent_id: "agent_1", weight: 1 }] },
+      { phone_number: "+18159990000", inbound_agents: [{ agent_id: "agent_1", weight: 1 }] },
+    ]);
+    mockPhoneUpdate
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("retell rejected"));
+
+    const res = makeRes();
+    await runRoute("post", "/:agentId/rename-business",
+      makeReq({
+        params: { slug: "acme", agentId: "agent_1" },
+        body: { newName: "Beta Plumbing" },
+      }), res);
+
+    expect(res._status).toBe(200);
+    expect(res._json.success).toBe(true);
+    expect(res._json.nickname_updated).toEqual(["+18158804070"]);
+    expect(res._json.nickname_errors).toEqual(["+18159990000: retell rejected"]);
+
+    // Mongo + audit still ran despite the per-number failure.
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: "acme" },
+      { $set: { name: "Beta Plumbing" } },
+    );
+    expect(mockLogAudit).toHaveBeenCalled();
+  });
+
+  it("survives phoneNumber.list() failure without aborting the rename", async () => {
+    mockGetClientDocument.mockResolvedValue(makeDoc({ name: "Acme Plumbing" }));
+    mockFetchRetellAgent
+      .mockResolvedValueOnce(makeSnapshot("Acme Plumbing"))
+      .mockResolvedValueOnce(makeSnapshot("Beta Plumbing"));
+    mockPhoneList.mockRejectedValue(new Error("retell list down"));
+
+    const res = makeRes();
+    await runRoute("post", "/:agentId/rename-business",
+      makeReq({
+        params: { slug: "acme", agentId: "agent_1" },
+        body: { newName: "Beta Plumbing" },
+      }), res);
+
+    expect(res._status).toBe(200);
+    expect(res._json.success).toBe(true);
+    expect(res._json.nickname_errors).toEqual(["list: retell list down"]);
+    expect(mockPhoneUpdate).not.toHaveBeenCalled();
+    // Mongo write still happened.
+    expect(mockUpdateOne).toHaveBeenCalledWith(
+      { _id: "acme" },
+      { $set: { name: "Beta Plumbing" } },
+    );
   });
 
   it("uses oldName override when provided", async () => {

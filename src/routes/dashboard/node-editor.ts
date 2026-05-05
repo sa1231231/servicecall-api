@@ -723,6 +723,39 @@ nodeEditorRouter.post("/:agentId/rename-business", async (req, res) => {
     await pushFlowToRetell(retell(), snapshot.conversationFlowId, renamedCanonical);
     await retell().agent.update(agentId, { agent_name: newName } as any);
 
+    // Propagate to phone-number display names (Retell nickname). Numbers are
+    // matched by inbound_agent binding, with outbound_from_number as a
+    // fallback for outbound-only numbers. Per-number failures don't abort —
+    // the agent/flow/Mongo writes already succeeded above, so we collect
+    // errors and surface them to the caller.
+    const nicknameUpdated: string[] = [];
+    const nicknameErrors: string[] = [];
+    try {
+      const allNumbers = await retell().phoneNumber.list();
+      const matching = allNumbers.filter((n) => {
+        if (n.inbound_agents?.some((a) => a.agent_id === agentId)) return true;
+        if (
+          resolved.doc.outbound_from_number &&
+          n.phone_number === resolved.doc.outbound_from_number
+        ) return true;
+        return false;
+      });
+      for (const num of matching) {
+        try {
+          await retell().phoneNumber.update(num.phone_number, { nickname: newName } as any);
+          nicknameUpdated.push(num.phone_number);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`[node-editor] rename-business: failed to update nickname on ${num.phone_number}: ${msg}`);
+          nicknameErrors.push(`${num.phone_number}: ${msg}`);
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[node-editor] rename-business: failed to list phone numbers: ${msg}`);
+      nicknameErrors.push(`list: ${msg}`);
+    }
+
     await getDb()
       .collection<JsonClientEntry & { _id: string }>("clients")
       .updateOne({ _id: slug } as any, { $set: { name: newName } });
@@ -733,8 +766,17 @@ nodeEditorRouter.post("/:agentId/rename-business", async (req, res) => {
     await logAudit(req, "rename_business", `${slug}/${agentId}`, {
       oldName: currentName,
       newName,
+      nicknameUpdated,
+      nicknameErrors,
     });
-    res.json({ success: true, oldName: currentName, newName });
+    const response: Record<string, unknown> = {
+      success: true,
+      oldName: currentName,
+      newName,
+      nickname_updated: nicknameUpdated,
+    };
+    if (nicknameErrors.length > 0) response.nickname_errors = nicknameErrors;
+    res.json(response);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error(`[node-editor] rename-business error:`, msg);
