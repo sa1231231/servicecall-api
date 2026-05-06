@@ -6,6 +6,7 @@ import express from "express";
 import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import { listAgentsHandler } from "./list-agents.js";
+import { listPhoneNumbersHandler } from "./list-phone-numbers.js";
 import { toggleShadowHandler } from "./toggle-shadow.js";
 import { toggleActiveHandler } from "./toggle-active.js";
 import { getAgentHandler } from "./get-agent.js";
@@ -84,6 +85,7 @@ export const dashboardApiRouter = Router();
 dashboardApiRouter.use(express.json());
 
 dashboardApiRouter.get("/agents", listAgentsHandler);
+dashboardApiRouter.get("/phone-numbers", listPhoneNumbersHandler);
 dashboardApiRouter.get("/agents/:slug", getAgentHandler);
 dashboardApiRouter.get("/agents/:slug/calls", getCallsHandler);
 dashboardApiRouter.patch("/agents/:slug/shadow", requirePermission("edit_agents"), toggleShadowHandler);

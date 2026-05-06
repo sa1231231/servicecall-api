@@ -17,6 +17,7 @@ export async function listAgentsHandler(_req: Request, res: Response): Promise<v
     trial_start_date: doc.trial_start_date ?? null,
     mtd_cogs_cents: mtdBySlug[doc._id] ?? 0,
     folder_id: doc.folder_id ?? null,
+    outbound_from_number: doc.outbound_from_number ?? null,
   }));
   res.json(summaries);
 }

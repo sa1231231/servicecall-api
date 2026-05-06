@@ -1282,6 +1282,9 @@
   let agentSearchChips = [];
   let agentSortKey = null;
   let agentSortDir = null;
+  // Map of agent_id → array of bound phone-number entries from Retell.
+  // Refreshed every time loadAgents() runs (live source of truth).
+  let agentPhoneByAgent = {};
   // Folders for grouping agents on the dashboard. Loaded once alongside the
   // agent list. Always includes an implicit "Unfiled" pseudo-folder rendered
   // first so agents without a folder_id stay visible.
@@ -1445,10 +1448,11 @@
         });
       }
 
-      const [res, settingsRes, foldersRes] = await Promise.all([
+      const [res, settingsRes, foldersRes, phonesRes] = await Promise.all([
         fetch('/dashboard/api/agents'),
         fetch('/dashboard/api/settings'),
         fetch('/dashboard/api/folders'),
+        fetch('/dashboard/api/phone-numbers'),
       ]);
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const agents = await res.json();
@@ -1456,6 +1460,7 @@
       agentTrialDays = globalSettings.free_trial_days || 14;
       agentRows = agents;
       agentFolders = foldersRes.ok ? await foldersRes.json() : [];
+      agentPhoneByAgent = phonesRes.ok ? ((await phonesRes.json()).byAgent || {}) : {};
 
       if (agents.length === 0) {
         document.getElementById('agentSearchBar').style.display = 'none';
@@ -1531,6 +1536,8 @@
     const cmpStr = (x, y) => (x || '').localeCompare(y || '');
     const cmpNum = (x, y) => (x ?? 0) - (y ?? 0);
     const cmpBool = (x, y) => (x === y ? 0 : x ? 1 : -1);
+    // Status now encodes Disabled (2) > Shadow (1) > Live (0) as a single rank.
+    const statusRank = (x) => x.active === false ? 2 : (x.shadow_mode ? 1 : 0);
     return rows.slice().sort((a, b) => {
       let r = 0;
       switch (agentSortKey) {
@@ -1547,12 +1554,19 @@
           break;
         }
         case 'status':
-        case 'shadow':
-          r = cmpBool(!!a.shadow_mode, !!b.shadow_mode); break;
+          r = cmpNum(statusRank(a), statusRank(b)); break;
         case 'mtd_cogs':
           r = cmpNum(a.mtd_cogs_cents, b.mtd_cogs_cents); break;
-        case 'active':
-          r = cmpBool(a.active !== false, b.active !== false); break;
+        case 'phone': {
+          const pa = phoneNumbersForAgent(a)[0]?.label || '';
+          const pb = phoneNumbersForAgent(b)[0]?.label || '';
+          // Empty phone sorts after any phone regardless of direction.
+          if (!pa && !pb) r = 0;
+          else if (!pa) r = 1;
+          else if (!pb) r = -1;
+          else r = cmpStr(pa, pb);
+          break;
+        }
         default:
           r = 0;
       }
@@ -1602,8 +1616,7 @@
       headerCell('trial', 'Trial') +
       headerCell('status', 'Status') +
       headerCell('mtd_cogs', 'MTD COGS', ' title="Month-to-date cost of goods sold"') +
-      headerCell('active', 'Active') +
-      headerCell('shadow', 'Shadow Mode') +
+      headerCell('phone', 'Phone') +
       '</tr></thead>';
 
     // Decide the order folders are rendered in. Unfiled always first; then
@@ -1649,7 +1662,7 @@
         ' ondrop="onFolderDrop(event, \'' + esc(folder._id) + '\')"' +
         ' ondragover="onFolderDragOver(event)" ondragleave="onFolderDragLeave(event)">' +
         '<tr class="folder-header' + (isUnfiled ? ' unfiled' : '') + '" onclick="toggleFolder(\'' + esc(folder._id) + '\')">' +
-          '<td colspan="6">' +
+          '<td colspan="5">' +
             '<span class="folder-header-arrow">▶</span>' +
             '<span class="folder-header-name" data-folder-id="' + esc(folder._id) + '">' + esc(folder.name) + '</span>' +
             '<span class="folder-header-count">(' + rows.length + ')</span>' +
@@ -1668,8 +1681,11 @@
   }
 
   function renderAgentRow(a, canEdit) {
-    const sc = a.shadow_mode ? 'badge-shadow' : 'badge-live';
-    const sl = a.shadow_mode ? 'Shadow' : 'Live';
+    // Tri-state status badge: Disabled (active off) > Shadow (shadow on) > Live.
+    let sc, sl;
+    if (a.active === false) { sc = 'badge-expired'; sl = 'Disabled'; }
+    else if (a.shadow_mode) { sc = 'badge-shadow'; sl = 'Shadow'; }
+    else { sc = 'badge-live'; sl = 'Live'; }
     const cogsCents = a.mtd_cogs_cents ?? 0;
     const cogsHtml = cogsCents > 0
       ? '$' + (cogsCents / 100).toFixed(2)
@@ -1692,6 +1708,11 @@
           'onclick="event.stopPropagation();openMoveFolderMenu(event,\'' + esc(a.slug) + '\')">📁</button>'
       : '';
 
+    const phones = phoneNumbersForAgent(a);
+    const phoneHtml = phones.length > 0
+      ? phones.map(p => '<span title="' + esc(p.title) + '">' + esc(p.label) + '</span>').join(', ')
+      : '<span style="color:#aaa">—</span>';
+
     return '<tr class="clickable-row" onclick="showDetail(\'' + esc(a.slug) + '\')"' +
       ' data-slug="' + esc(a.slug) + '"' +
       (canEdit ? ' draggable="true" ondragstart="onAgentDragStart(event)" ondragend="onAgentDragEnd(event)"' : '') +
@@ -1700,21 +1721,28 @@
       '<td>' + trialHtml + '</td>' +
       '<td><span class="badge ' + sc + '" data-status>' + sl + '</span></td>' +
       '<td style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>' +
-      '<td onclick="event.stopPropagation()">' +
-        '<label class="toggle">' +
-          '<input type="checkbox" ' + (a.active !== false ? 'checked' : '') +
-            ' onchange="toggleActive(\'' + esc(a.slug) + '\', this)">' +
-          '<span class="slider"></span>' +
-        '</label>' +
-      '</td>' +
-      '<td onclick="event.stopPropagation()">' +
-        '<label class="toggle">' +
-          '<input type="checkbox" ' + (a.shadow_mode ? 'checked' : '') +
-            ' onchange="toggleShadow(\'' + esc(a.slug) + '\', this)">' +
-          '<span class="slider"></span>' +
-        '</label>' +
-      '</td>' +
+      '<td style="font-variant-numeric:tabular-nums;color:#444">' + phoneHtml + '</td>' +
       '</tr>';
+  }
+
+  // Build the display list for the Phone column. Unions Retell's bound numbers
+  // (live source of truth) with the client's outbound_from_number from Mongo
+  // — the latter can exist for outbound-only numbers Retell doesn't bind.
+  function phoneNumbersForAgent(a) {
+    const out = [];
+    const seen = new Set();
+    const fromRetell = (agentPhoneByAgent && a.agent_id) ? (agentPhoneByAgent[a.agent_id] || []) : [];
+    for (const p of fromRetell) {
+      if (seen.has(p.phone_number)) continue;
+      seen.add(p.phone_number);
+      const title = p.role + (p.nickname ? ' · ' + p.nickname : '');
+      out.push({ label: p.phone_number, title });
+    }
+    if (a.outbound_from_number && !seen.has(a.outbound_from_number)) {
+      seen.add(a.outbound_from_number);
+      out.push({ label: a.outbound_from_number, title: 'outbound' });
+    }
+    return out;
   }
 
   function toggleFolder(folderId) {
@@ -1762,7 +1790,10 @@
         const state = JSON.parse(raw);
         if (state && typeof state === 'object') {
           if (typeof state.sortKey === 'string' || state.sortKey === null) {
-            agentSortKey = state.sortKey;
+            // Migrate retired keys (active/shadow merged into status).
+            agentSortKey = (state.sortKey === 'active' || state.sortKey === 'shadow')
+              ? 'status'
+              : state.sortKey;
           }
           if (state.sortDir === 'asc' || state.sortDir === 'desc' || state.sortDir === null) {
             agentSortDir = state.sortDir;
@@ -2096,10 +2127,22 @@
     document.getElementById('tab-settings').innerHTML = '<div class="loading">Loading...</div>';
 
     try {
-      const res = await fetch('/dashboard/api/agents/' + slug);
+      const [res, phonesRes] = await Promise.all([
+        fetch('/dashboard/api/agents/' + slug),
+        fetch('/dashboard/api/phone-numbers'),
+      ]);
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const doc = await res.json();
-      renderDetail(doc);
+      // Refresh the cached map so the list view also picks up Retell-side
+      // changes the next time it renders without a full page reload.
+      if (phonesRes.ok) {
+        agentPhoneByAgent = (await phonesRes.json()).byAgent || {};
+      }
+      const phones = phoneNumbersForAgent({
+        agent_id: doc.agent_id,
+        outbound_from_number: doc.outbound_from_number,
+      });
+      renderDetail(doc, phones);
     } catch (err) {
       document.getElementById('tab-settings').innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
       return;
@@ -2696,7 +2739,7 @@
     }
   });
 
-  function renderDetail(doc) {
+  function renderDetail(doc, phones) {
     originalDoc = JSON.parse(JSON.stringify(doc));
 
     const sm = doc.shadow_mode;
@@ -2705,9 +2748,19 @@
     const inactiveBadge = doc.active === false
       ? ' <span class="badge" style="font-size:0.7rem;vertical-align:middle;background:#fee2e2;color:#991b1b;">Inactive</span>'
       : '';
+    const phoneChips = (phones && phones.length > 0)
+      ? phones.map(p =>
+          '<span class="badge badge-live" title="' + esc(p.title) + '" ' +
+            'style="font-size:0.72rem;vertical-align:middle;font-variant-numeric:tabular-nums;">' +
+            esc(p.label) + '</span>'
+        ).join(' ')
+      : '<span class="badge badge-shadow" style="font-size:0.72rem;vertical-align:middle;">No phone bound</span>';
     document.getElementById('detailHeader').innerHTML =
       `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
-      buildHeaderButtons(doc._id) + `</h1>`;
+      buildHeaderButtons(doc._id) + `</h1>` +
+      `<div class="detail-phone-chips" style="margin:-0.25rem 0 0.6rem 0;display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">` +
+        `<span style="font-size:0.72rem;color:#777;">Phone:</span>${phoneChips}` +
+      `</div>`;
     document.getElementById('smokeResults').innerHTML = '';
 
     // Render tab content
