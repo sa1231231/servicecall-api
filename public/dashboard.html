@@ -39,6 +39,67 @@
   }
   td { border-bottom: 1px solid #f0f0f0; }
   tr:last-child td { border-bottom: none; }
+  /* Sticky column headers on the agent list so labels stay visible while
+     scrolling. Override the table-level overflow:hidden, otherwise the
+     table itself becomes the sticky container and the header never sticks. */
+  #agentList table { overflow: visible; }
+  #agentList thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f9fafb;
+    box-shadow: inset 0 -2px 0 #e5e7eb;
+  }
+  /* Quick-copy buttons next to identifiers (slug, agent_id, phone). */
+  .copy-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0.2rem 0.4rem; border: 1px solid #d1d5db; border-radius: 4px;
+    background: #fff; font-size: 0.7rem; line-height: 1; color: #555;
+    cursor: pointer; vertical-align: middle; user-select: none;
+  }
+  .copy-btn:hover { background: #f3f4f6; border-color: #9ca3af; }
+  .copy-btn:active { background: #e5e7eb; }
+  .input-with-copy { display: flex; gap: 0.4rem; align-items: stretch; }
+  .input-with-copy .edit-input { flex: 1; }
+  .detail-phone-chips .copyable { cursor: copy; }
+  .detail-phone-chips .copyable:hover { filter: brightness(0.96); }
+  /* Command palette (Cmd+K agent switcher). */
+  .cmd-palette-overlay {
+    position: fixed; inset: 0; background: rgba(15,23,42,0.4);
+    z-index: 1000; display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 12vh;
+  }
+  .cmd-palette {
+    width: min(640px, 92vw); background: #fff; border-radius: 10px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.25); overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .cmd-palette-input {
+    width: 100%; padding: 0.85rem 1rem; border: none; outline: none;
+    font-size: 0.95rem; border-bottom: 1px solid #e5e7eb; box-sizing: border-box;
+  }
+  .cmd-palette-results {
+    list-style: none; margin: 0; padding: 0;
+    max-height: 60vh; overflow-y: auto;
+  }
+  .cmd-palette-results li {
+    padding: 0.55rem 1rem; cursor: pointer;
+    display: flex; gap: 0.6rem; align-items: center;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  .cmd-palette-results li.active { background: #eef2ff; }
+  .cmd-palette-results li:hover { background: #f9fafb; }
+  .cmd-palette-results .cmd-name { font-weight: 600; color: #111; flex: 1; }
+  .cmd-palette-results .cmd-slug { font-family: monospace; font-size: 0.72rem; color: #888; }
+  .cmd-palette-empty { padding: 1rem; color: #888; font-size: 0.85rem; text-align: center; }
+  .cmd-palette-hint {
+    padding: 0.5rem 1rem; background: #f9fafb; border-top: 1px solid #e5e7eb;
+    font-size: 0.72rem; color: #777; display: flex; gap: 1rem; justify-content: space-between;
+  }
+  .cmd-palette-hint kbd {
+    background: #fff; border: 1px solid #d1d5db; border-radius: 3px;
+    padding: 0.05rem 0.3rem; font-family: monospace; font-size: 0.7rem; color: #555;
+  }
   .td-summary { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mobile-collected-data { display: none; }
   .clickable-row { cursor: pointer; }
@@ -2164,7 +2225,8 @@
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('listView').style.display = '';
-    history.replaceState(null, '', '/dashboard/');
+    currentSlug = null;
+    if (window.location.hash) history.pushState(null, '', '/dashboard/');
   }
 
   // ── DETAIL VIEW ────────────────────────────────────────────────────
@@ -2222,7 +2284,18 @@
 
   function setAgentDetailHash(slug, tab) {
     const params = '#agent=' + encodeURIComponent(slug) + (tab ? '&tab=' + encodeURIComponent(tab) : '');
-    history.replaceState(null, '', params);
+    if (window.location.hash === params) return;
+    // Push a history entry when switching to a *different* agent so the
+    // browser back button returns to the previous agent / list. Tab changes
+    // within the same agent only replace, so flipping between Settings and
+    // Billing doesn't pollute history.
+    const m = window.location.hash.match(/^#agent=([^&]+)/);
+    const currentSlugInUrl = m ? decodeURIComponent(m[1]) : null;
+    if (currentSlugInUrl !== slug) {
+      history.pushState(null, '', params);
+    } else {
+      history.replaceState(null, '', params);
+    }
   }
 
   // Row click router for the agent list. Cmd/Ctrl-click and middle-click open
@@ -2821,7 +2894,8 @@
       : '';
     const phoneChips = (phones && phones.length > 0)
       ? phones.map(p =>
-          '<span class="badge badge-live" title="' + esc(p.title) + '" ' +
+          '<span class="badge badge-live copyable" title="' + esc(p.title) + ' (click to copy)" ' +
+            'onclick="copyToClipboard(\'' + esc(p.label) + '\', \'Phone\')" ' +
             'style="font-size:0.72rem;vertical-align:middle;font-variant-numeric:tabular-nums;">' +
             esc(p.label) + '</span>'
         ).join(' ')
@@ -2858,8 +2932,19 @@
         <div class="config-hint">Renames the agent only on this dashboard, the Retell console, and Retell phone-number nicknames. <strong>Does not</strong> propagate into prompts, conversation flow text, or post-hook messages — leave blank to fall back to the business name.</div>
       </dd>
 
+      <dt title="URL-safe identifier for this client — used in the agent dashboard URL and as the Mongo _id">Slug</dt><dd>
+        <div class="input-with-copy">
+          <input class="edit-input" value="${esc(doc._id || '')}" readonly style="font-family:monospace;font-size:0.78rem;background:#f9fafb;">
+          <button type="button" class="copy-btn" title="Copy slug" onclick="copyToClipboard('${esc(doc._id || '')}', 'Slug')">⧉ Copy</button>
+        </div>
+        <div class="config-hint">Read-only identifier — used in the agent's URL and notification webhook payloads.</div>
+      </dd>
+
       <dt title="Retell agent ID linked to this client — inbound calls from this agent trigger notifications">Agent ID</dt><dd>
-        <input class="edit-input" id="input-agent-id" value="${esc(doc.agent_id || '')}" placeholder="agent_..." style="font-family:monospace;font-size:0.78rem;">
+        <div class="input-with-copy">
+          <input class="edit-input" id="input-agent-id" value="${esc(doc.agent_id || '')}" placeholder="agent_..." style="font-family:monospace;font-size:0.78rem;">
+          <button type="button" class="copy-btn" title="Copy agent ID" onclick="copyToClipboard(document.getElementById('input-agent-id').value, 'Agent ID')">⧉ Copy</button>
+        </div>
         <div class="config-hint">Retell agent ID linked to this client. Inbound calls from this agent trigger dispatch notifications.</div></dd>
 
       <dt title="When off, inbound calls to this agent are silently rejected">Agent Active</dt><dd>
@@ -4110,7 +4195,9 @@
     document.getElementById('listView').style.display = 'none';
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('settingsView').style.display = '';
-    history.replaceState(null, '', '#settings');
+    if (window.location.hash !== '#settings') {
+      history.pushState(null, '', '#settings');
+    }
     switchSettingsTab('general');
 
     try {
@@ -4185,7 +4272,7 @@
     document.getElementById('listView').style.display = '';
     // Clear the #settings hash so a refresh stays on the agent list instead
     // of bouncing back into settings.
-    history.replaceState(null, '', '/dashboard/');
+    if (window.location.hash) history.pushState(null, '', '/dashboard/');
   }
 
   // Tabs on the global settings page (mirrors the agent dashboard tab pattern).
@@ -6623,20 +6710,189 @@
     }
   }
 
-  // ── INIT ───────────────────────────────────────────────────────────
-  loadAgents().then(() => {
+  // Render the right view based on the current URL hash. Used both at
+  // initial load and on browser back/forward (popstate). Nav functions are
+  // idempotent — they no-op the pushState when the hash already matches —
+  // so calling them from popstate doesn't add stray history entries.
+  function renderFromHash() {
     const hash = window.location.hash;
     if (hash === '#settings') {
       showSettings();
+      return;
+    }
+    const m = hash.match(/^#agent=([^&]+)/);
+    if (m) {
+      const slug = decodeURIComponent(m[1]);
+      showDetail(slug);
+      return;
+    }
+    // No hash — show list view directly, no pushState since we got here
+    // via browser navigation that already updated the URL.
+    document.getElementById('detailView').style.display = 'none';
+    document.getElementById('settingsView').style.display = 'none';
+    document.getElementById('listView').style.display = '';
+    currentSlug = null;
+  }
+
+  window.addEventListener('popstate', renderFromHash);
+
+  // ── Cmd+K command palette ──────────────────────────────────────────
+  // Modal-style fuzzy switcher over the cached `agentRows`. Opens with
+  // Cmd+K (mac) / Ctrl+K (win/linux) from anywhere. Arrow keys navigate
+  // results, Enter opens, Cmd/Ctrl+Enter opens in a new tab, Esc closes.
+  let cmdPaletteResults = [];
+  let cmdPaletteActive = 0;
+
+  function ensureCommandPalette() {
+    if (document.getElementById('commandPaletteOverlay')) return;
+    const wrap = document.createElement('div');
+    wrap.id = 'commandPaletteOverlay';
+    wrap.className = 'cmd-palette-overlay';
+    wrap.style.display = 'none';
+    wrap.innerHTML =
+      '<div class="cmd-palette" role="dialog" aria-label="Agent quick switcher">' +
+        '<input type="text" id="cmdPaletteInput" class="cmd-palette-input" placeholder="Jump to agent..." autocomplete="off">' +
+        '<ul id="cmdPaletteResults" class="cmd-palette-results"></ul>' +
+        '<div class="cmd-palette-hint">' +
+          '<span><kbd>↑</kbd> <kbd>↓</kbd> navigate &nbsp; <kbd>↵</kbd> open &nbsp; <kbd>⌘</kbd>+<kbd>↵</kbd> new tab</span>' +
+          '<span><kbd>esc</kbd> close</span>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click', (e) => {
+      if (e.target === wrap) closeCommandPalette();
+    });
+    const input = document.getElementById('cmdPaletteInput');
+    input.addEventListener('input', () => renderCommandPalette(input.value));
+    input.addEventListener('keydown', onCommandPaletteKey);
+  }
+
+  function openCommandPalette() {
+    if (!Array.isArray(agentRows) || agentRows.length === 0) return;
+    ensureCommandPalette();
+    const overlay = document.getElementById('commandPaletteOverlay');
+    overlay.style.display = 'flex';
+    const input = document.getElementById('cmdPaletteInput');
+    input.value = '';
+    renderCommandPalette('');
+    setTimeout(() => input.focus(), 0);
+  }
+
+  function closeCommandPalette() {
+    const overlay = document.getElementById('commandPaletteOverlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  function isCommandPaletteOpen() {
+    const overlay = document.getElementById('commandPaletteOverlay');
+    return !!(overlay && overlay.style.display !== 'none');
+  }
+
+  function renderCommandPalette(query) {
+    const q = (query || '').trim().toLowerCase();
+    const all = agentRows || [];
+    cmdPaletteResults = q
+      ? all.filter(a => {
+          const name = (a.display_name || a.name || '').toLowerCase();
+          const slug = (a.slug || '').toLowerCase();
+          return name.includes(q) || slug.includes(q);
+        })
+      : all.slice(0, 12);
+    cmdPaletteActive = 0;
+    const list = document.getElementById('cmdPaletteResults');
+    if (cmdPaletteResults.length === 0) {
+      list.innerHTML = '<div class="cmd-palette-empty">No agents match "' + esc(query) + '"</div>';
+      return;
+    }
+    list.innerHTML = cmdPaletteResults.map((a, i) =>
+      '<li class="' + (i === 0 ? 'active' : '') + '" data-idx="' + i + '" onclick="selectCommandPalette(' + i + ', event)">' +
+        '<span class="cmd-name">' + esc(a.display_name || a.name) + '</span>' +
+        '<span class="cmd-slug">' + esc(a.slug) + '</span>' +
+      '</li>'
+    ).join('');
+  }
+
+  function moveCommandPaletteActive(delta) {
+    if (cmdPaletteResults.length === 0) return;
+    cmdPaletteActive = (cmdPaletteActive + delta + cmdPaletteResults.length) % cmdPaletteResults.length;
+    const items = document.querySelectorAll('#cmdPaletteResults li');
+    items.forEach((el, i) => el.classList.toggle('active', i === cmdPaletteActive));
+    const active = items[cmdPaletteActive];
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+
+  function selectCommandPalette(idx, event) {
+    const a = cmdPaletteResults[idx];
+    if (!a) return;
+    const newTab = event && (event.metaKey || event.ctrlKey);
+    closeCommandPalette();
+    if (newTab) {
+      window.open('#agent=' + encodeURIComponent(a.slug), '_blank');
     } else {
-      const m = hash.match(/^#agent=([^&]+)/);
-      if (m) {
-        const slug = decodeURIComponent(m[1]);
-        // showDetail reads &tab= from the hash itself for deep linking.
-        showDetail(slug);
+      showDetail(a.slug);
+    }
+  }
+
+  function onCommandPaletteKey(e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveCommandPaletteActive(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveCommandPaletteActive(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); selectCommandPalette(cmdPaletteActive, e); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeCommandPalette(); }
+  }
+
+  // Copy text to the clipboard and toast a confirmation. Used by the
+  // copy-icon buttons next to slug / agent_id / phone fields.
+  async function copyToClipboard(text, label) {
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast((label || 'Copied') + ': ' + text, 'success');
+    } catch (err) {
+      showToast('Copy failed', 'error');
+    }
+  }
+
+  // Global keyboard shortcuts:
+  //   Cmd/Ctrl+K   open the agent quick-switcher palette
+  //   /            focus the agent-list search (when on the list view)
+  //   Esc          back to list from editor / settings (or close palette / blur input)
+  window.addEventListener('keydown', (e) => {
+    const tag = (e.target.tagName || '').toLowerCase();
+    const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable;
+
+    if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (isCommandPaletteOpen()) closeCommandPalette();
+      else openCommandPalette();
+      return;
+    }
+
+    if (e.key === '/' && !isEditable && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      const listVisible = document.getElementById('listView').style.display !== 'none';
+      const input = document.getElementById('agentSearchInput');
+      if (listVisible && input && input.offsetParent !== null) {
+        e.preventDefault();
+        input.focus();
       }
+      return;
+    }
+
+    if (e.key === 'Escape') {
+      // Palette has its own Esc handler attached to the input; this branch
+      // only fires when palette isn't focused. Close it if open.
+      if (isCommandPaletteOpen()) { closeCommandPalette(); return; }
+      // If a field is focused, just blur it — don't yank the user out of the
+      // editor mid-edit.
+      if (isEditable) { e.target.blur(); return; }
+      const detailVisible = document.getElementById('detailView').style.display !== 'none';
+      const settingsVisible = document.getElementById('settingsView').style.display !== 'none';
+      if (detailVisible) showList();
+      else if (settingsVisible) hideSettings();
     }
   });
+
+  // ── INIT ───────────────────────────────────────────────────────────
+  loadAgents().then(renderFromHash);
 </script>
 </body>
 </html>
