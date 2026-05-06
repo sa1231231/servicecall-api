@@ -221,6 +221,82 @@ describe("updateAgentHandler", () => {
     expect(res._status).toBe(400);
     expect(mockUpdateClientFields).not.toHaveBeenCalled();
   });
+
+  // ── contact_* fields (admin-only Client Contact info on the Billing tab) ──
+  // The handler trims strings, converts blanks to null, and rejects values
+  // that aren't string/null. Same pattern as display_name above.
+  describe("contact_* field normalization", () => {
+    it("trims whitespace-only contact_name to null", async () => {
+      mockUpdateClientFields.mockResolvedValue(undefined);
+      mockGetClientDocument.mockResolvedValue({ name: "Acme" });
+      const res = makeRes();
+      await updateAgentHandler(
+        makeReq({ params: { slug: "acme" }, body: { contact_name: "   " } }),
+        res,
+      );
+      expect(res._status).toBe(200);
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_name: null });
+    });
+
+    it("trims surrounding whitespace on contact_email and saves", async () => {
+      mockUpdateClientFields.mockResolvedValue(undefined);
+      mockGetClientDocument.mockResolvedValue({ name: "Acme" });
+      const res = makeRes();
+      await updateAgentHandler(
+        makeReq({ params: { slug: "acme" }, body: { contact_email: "  ops@x.com  " } }),
+        res,
+      );
+      expect(res._status).toBe(200);
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_email: "ops@x.com" });
+    });
+
+    it("rejects non-string non-null contact_phone with 400", async () => {
+      const res = makeRes();
+      await updateAgentHandler(
+        makeReq({ params: { slug: "acme" }, body: { contact_phone: 5551234567 } }),
+        res,
+      );
+      expect(res._status).toBe(400);
+      expect(res._json.error).toMatch(/contact_phone/);
+      expect(mockUpdateClientFields).not.toHaveBeenCalled();
+    });
+
+    it("passes contact_timezone through unchanged when valid", async () => {
+      mockUpdateClientFields.mockResolvedValue(undefined);
+      mockGetClientDocument.mockResolvedValue({ name: "Acme" });
+      const res = makeRes();
+      await updateAgentHandler(
+        makeReq({ params: { slug: "acme" }, body: { contact_timezone: "America/Chicago" } }),
+        res,
+      );
+      expect(res._status).toBe(200);
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_timezone: "America/Chicago" });
+    });
+
+    it("converts empty-string contact_notes to null", async () => {
+      mockUpdateClientFields.mockResolvedValue(undefined);
+      mockGetClientDocument.mockResolvedValue({ name: "Acme" });
+      const res = makeRes();
+      await updateAgentHandler(
+        makeReq({ params: { slug: "acme" }, body: { contact_notes: "" } }),
+        res,
+      );
+      expect(res._status).toBe(200);
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_notes: null });
+    });
+
+    it("accepts explicit null on any contact_* field", async () => {
+      mockUpdateClientFields.mockResolvedValue(undefined);
+      mockGetClientDocument.mockResolvedValue({ name: "Acme" });
+      const res = makeRes();
+      await updateAgentHandler(
+        makeReq({ params: { slug: "acme" }, body: { contact_name: null } }),
+        res,
+      );
+      expect(res._status).toBe(200);
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_name: null });
+    });
+  });
 });
 
 describe("toggleShadowHandler", () => {

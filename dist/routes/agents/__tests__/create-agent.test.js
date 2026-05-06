@@ -298,6 +298,30 @@ describe("createAgentHandler — success path", () => {
         expect(res._json.provision_error).toContain("no numbers available");
         expect(mockLogPhoneEvent).not.toHaveBeenCalled();
     });
+    it("auto-populates contact_timezone from a US area code on the dispatch number", async () => {
+        await createAgentHandler(mockReq(makeBody({
+            client: {
+                slug: "test-co",
+                dispatch_text_numbers: ["+15550001111"],
+                dispatch_call_number: "+12125551234", // NYC → America/New_York
+            },
+        })), mockRes());
+        expect(mockPersistClient.mock.calls[0][1].contact_timezone).toBe("America/New_York");
+    });
+    it("leaves contact_timezone unset when the area code doesn't fit a supported zone (Arizona/602)", async () => {
+        await createAgentHandler(mockReq(makeBody({
+            client: {
+                slug: "test-co",
+                dispatch_text_numbers: ["+15550001111"],
+                dispatch_call_number: "+16025551234", // Phoenix — areaCodeToTimezone returns null
+            },
+        })), mockRes());
+        expect(mockPersistClient.mock.calls[0][1].contact_timezone).toBeUndefined();
+    });
+    it("leaves contact_timezone unset when no dispatch_call_number is provided", async () => {
+        await createAgentHandler(mockReq(makeBody()), mockRes());
+        expect(mockPersistClient.mock.calls[0][1].contact_timezone).toBeUndefined();
+    });
     it("persists dispatch_call_overrides on jsonEntry", async () => {
         const overrides = { "+15550001111": "+15558888888" };
         await createAgentHandler(mockReq(makeBody({
