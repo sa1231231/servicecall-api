@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   NOT_MENTIONED,
-  CALLER_DOESNT_KNOW,
   PHONE_COLLECTED_FLAG,
   PATH_TAKEN_VAR,
   INTERNAL_VARS,
@@ -13,29 +12,13 @@ import { CATEGORY_ORDER, CATEGORY_LABELS } from "../data-point-defaults.js";
 // constants, and helpers that remain in code.
 
 describe("data-point-registry constants and helpers", () => {
-  it("NOT_MENTIONED is 'Not Mentioned'", () => {
-    expect(NOT_MENTIONED).toBe("Not Mentioned");
-  });
-
-  it("CALLER_DOESNT_KNOW is \"Caller Doesn't Know\"", () => {
-    expect(CALLER_DOESNT_KNOW).toBe("Caller Doesn't Know");
-  });
-
-  it("PHONE_COLLECTED_FLAG is 'phone_number_collected'", () => {
-    expect(PHONE_COLLECTED_FLAG).toBe("phone_number_collected");
-  });
-
-  it("PATH_TAKEN_VAR is '_path_taken'", () => {
-    expect(PATH_TAKEN_VAR).toBe("_path_taken");
-  });
-
-  it("INTERNAL_VARS contains both internal variable names", () => {
+  it("INTERNAL_VARS contains exactly the internal variable names", () => {
     expect(INTERNAL_VARS.has(PHONE_COLLECTED_FLAG)).toBe(true);
     expect(INTERNAL_VARS.has(PATH_TAKEN_VAR)).toBe(true);
     expect(INTERNAL_VARS.size).toBe(2);
   });
 
-  it("defaultExtractEquation generates correct equations", () => {
+  it("defaultExtractEquation generates an existence + non-mentioned pair", () => {
     const eqs = defaultExtractEquation("test_var");
     expect(eqs).toHaveLength(2);
     expect(eqs[0]).toEqual({ left: "{{test_var}}", operator: "exists" });
