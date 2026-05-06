@@ -2532,7 +2532,9 @@
     document.getElementById('dispatchCallNumber').value = state.dispatchCallNumber || '';
     setFormChipValues('chip-dispatch-email', csvToArray(state.dispatchEmail || ''));
     // No UI for summary agent — restore directly into the module var.
-    if (state.summaryAgentId) summaryAgentIdValue = state.summaryAgentId;
+    // Always-assign so a draft without summaryAgentId clears any prior value
+    // (avoids leak when loading Draft A → Draft B).
+    summaryAgentIdValue = state.summaryAgentId || '';
 
     const modeRadio = document.querySelector(`input[name="humanRequestMode"][value="${state.humanRequestMode || 'callback'}"]`);
     if (modeRadio) modeRadio.checked = true;
@@ -2575,9 +2577,16 @@
     if (pathsContainer.children.length === 0) {
       addPathCard('Default');
     }
-    // Re-render the tree + diagram view layers after state restoration
+    // Re-render the tree + diagram view layers after state restoration.
+    // Also clear the tree selection — the previously-selected card was
+    // removed by the innerHTML wipe above, so its pathId is now stale.
+    // Without this reset the detail panel keeps showing the old path's
+    // values (transition condition, close prompt, dispatch overrides),
+    // which looks like "the new draft didn't overwrite".
+    treeSelected = null;
     if (typeof renderPathTree === 'function') renderPathTree();
     if (typeof renderFlowDiagram === 'function') renderFlowDiagram();
+    if (typeof renderDetailPanel === 'function') renderDetailPanel(null);
   }
 
   // ── Auto-save to localStorage ─────────────────────────────
