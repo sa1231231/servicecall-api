@@ -4,7 +4,7 @@ import { config } from "../config.js";
 const twilioClient = Twilio(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN);
 const retell = new Retell({ apiKey: config.RETELL_API_KEY });
 const DEFAULT_AREA_CODE = 815;
-function extractAreaCode(phoneNumber) {
+export function extractAreaCode(phoneNumber) {
     // E.164 US format: +1AAANNNNNNN
     const digits = phoneNumber.replace(/\D/g, "");
     // Strip leading 1 if present

@@ -19,6 +19,8 @@ import {
   type VariableEntry,
 } from "./notification-config.js";
 import { extractFlowParams, extractAgentParams } from "./retell-sync.js";
+import { extractAreaCode } from "./provision-number.js";
+import { areaCodeToTimezone } from "./area-code-timezone.js";
 import { getWarmTransferAgentVersion } from "./agent-generator/warm-transfer-agent-version.js";
 
 // ── Request Body Type ────────────────────────────────────────────────────────
@@ -276,6 +278,19 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
     }
     if (typeof body.client.weekly_report_enabled === "boolean") {
       jsonEntry.weekly_report_enabled = body.client.weekly_report_enabled;
+    }
+
+    // Auto-populate Client Contact timezone from the dispatch number's area
+    // code so the operator gets a sensible default in the Billing tab. Only
+    // applied if a US area code we recognize maps to one of the four IANA
+    // zones the dropdown supports; otherwise left unset for manual selection.
+    const dispatchNumberForAreaCode = body.client.dispatch_call_number
+      || (body.client.dispatch_by_type
+        ? Object.values(body.client.dispatch_by_type).find(o => o.dispatch_call_number)?.dispatch_call_number
+        : null);
+    if (dispatchNumberForAreaCode) {
+      const tz = areaCodeToTimezone(extractAreaCode(dispatchNumberForAreaCode));
+      if (tz) jsonEntry.contact_timezone = tz;
     }
 
     await persistClient(slug, jsonEntry);

@@ -19,7 +19,7 @@ interface ProvisionResult {
   phoneNumberSid: string;
 }
 
-function extractAreaCode(phoneNumber: string): number {
+export function extractAreaCode(phoneNumber: string): number {
   // E.164 US format: +1AAANNNNNNN
   const digits = phoneNumber.replace(/\D/g, "");
   // Strip leading 1 if present

@@ -61,6 +61,11 @@ vi.mock("../../../config/client-store.js", () => ({
 
 vi.mock("../../../lib/provision-number.js", () => ({
   provisionPhoneNumber: (...a: any[]) => mockProvisionPhoneNumber(...a),
+  extractAreaCode: (phone: string) => {
+    const digits = phone.replace(/\D/g, "");
+    const national = digits.startsWith("1") && digits.length === 11 ? digits.slice(1) : digits;
+    return parseInt(national.slice(0, 3), 10);
+  },
 }));
 
 vi.mock("../../../lib/data-point-defaults.js", () => ({
