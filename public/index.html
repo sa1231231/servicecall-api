@@ -603,6 +603,22 @@
 </head>
 <body>
 <a href="/dashboard/" style="display:inline-block;padding:0.4rem 0.7rem;margin-bottom:0.5rem;background:#fff;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;color:#444;text-decoration:none;">&larr; Back to Dashboard</a>
+
+<!-- ── Fine-tune Examples Modal ────────────────────────────────────
+     Mirrors the dashboard's editor — generic over a FinetuneExample[],
+     consumed by both per-data-point and per-path-transition flows. -->
+<div id="ftModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.4);z-index:9000;align-items:flex-start;justify-content:center;padding-top:8vh;" onclick="if(event.target===this)closeFtModal()">
+  <div style="width:min(720px,92vw);background:#fff;border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,0.25);padding:1rem;display:flex;flex-direction:column;">
+    <h3 id="ftModalTitle" style="margin:0 0 0.4rem;font-size:1.1rem;">Edit Fine-tune Examples</h3>
+    <p id="ftModalDesc" style="margin:0 0 0.75rem;color:#666;font-size:0.82rem;"></p>
+    <div id="ftModalList" style="max-height:55vh;overflow-y:auto;padding-right:0.25rem;"></div>
+    <button type="button" onclick="ftModalAddExample()" style="margin-top:0.5rem;font-size:0.8rem;padding:0.35rem 0.7rem;background:#fff;border:1px dashed #2563eb;border-radius:5px;color:#2563eb;cursor:pointer;align-self:flex-start;">+ Add Example</button>
+    <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.75rem;">
+      <button type="button" onclick="closeFtModal()" style="padding:0.4rem 0.9rem;border:1px solid #d1d5db;border-radius:5px;background:#fff;cursor:pointer;">Cancel</button>
+      <button type="button" onclick="saveFtModal()" style="padding:0.4rem 0.9rem;border:none;border-radius:5px;background:#2563eb;color:#fff;cursor:pointer;">Save</button>
+    </div>
+  </div>
+</div>
 <h1 style="margin-top:0.25rem;">Create Retell Agent</h1>
 <p style="color:#666;font-size:0.85rem;margin-top:0;">Fill in the fields below and click Create to provision a new agent.</p>
 
@@ -797,6 +813,115 @@
   const resultDiv = document.getElementById('result');
   const submitBtn = document.getElementById('submitBtn');
   const pathsContainer = document.getElementById('routingPaths');
+
+  // ── Fine-tune Examples Modal ───────────────────────────────────────
+  // Generic editor — see public/dashboard.html for the dashboard variant.
+  // Caller passes the current array and an onSave callback. Storage on
+  // chain-items / path-cards is via dataset attributes (JSON-encoded) so
+  // it roundtrips through drafts and JSON export/import for free.
+  let _ftModalCb = null;
+  let _ftModalAllowNegative = true;
+
+  function _escFt(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function _ftRowHtml(role, content) {
+    return '<div class="ft-row" style="display:flex;gap:0.4rem;margin-bottom:0.25rem;">' +
+      '<select style="padding:0.2rem 0.3rem;font-size:0.76rem;flex-shrink:0;">' +
+        '<option value="user"' + (role === 'user' ? ' selected' : '') + '>user</option>' +
+        '<option value="agent"' + (role === 'agent' ? ' selected' : '') + '>agent</option>' +
+      '</select>' +
+      '<input type="text" value="' + _escFt(content) + '" placeholder="Transcript line..." style="flex:1;padding:0.25rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">' +
+      '<button type="button" onclick="this.closest(\'.ft-row\').remove()" style="padding:0 0.4rem;font-size:0.85rem;background:#fff;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer;color:#888;">&times;</button>' +
+    '</div>';
+  }
+
+  function _ftExampleHtml(ex) {
+    const rows = (ex.transcript || []).map(t => _ftRowHtml(t.role || 'user', t.content || '')).join('');
+    return '<div class="ft-example" style="border:1px solid #e5e7eb;border-radius:6px;padding:0.6rem;margin-bottom:0.5rem;background:#fafafa;">' +
+      '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;">' +
+        '<select class="ft-type" style="padding:0.25rem 0.4rem;font-size:0.78rem;">' +
+          '<option value="positive"' + (ex.type === 'positive' ? ' selected' : '') + '>positive</option>' +
+          (_ftModalAllowNegative
+            ? '<option value="negative"' + (ex.type === 'negative' ? ' selected' : '') + '>negative</option>'
+            : '') +
+        '</select>' +
+        '<button type="button" onclick="this.closest(\'.ft-example\').remove()" style="margin-left:auto;font-size:0.72rem;padding:0.2rem 0.5rem;background:#fee2e2;border:1px solid #fecaca;border-radius:4px;cursor:pointer;">Remove</button>' +
+      '</div>' +
+      '<div class="ft-rows">' + rows + '</div>' +
+      '<button type="button" onclick="ftModalAddRow(this)" style="margin-top:0.35rem;font-size:0.72rem;padding:0.2rem 0.5rem;background:#fff;border:1px dashed #d1d5db;border-radius:4px;cursor:pointer;color:#555;">+ Add line</button>' +
+    '</div>';
+  }
+
+  function ftModalAddRow(btn) {
+    const rows = btn.previousElementSibling;
+    const div = document.createElement('div');
+    div.innerHTML = _ftRowHtml('user', '');
+    rows.appendChild(div.firstElementChild);
+  }
+
+  function ftModalAddExample() {
+    const list = document.getElementById('ftModalList');
+    const div = document.createElement('div');
+    div.innerHTML = _ftExampleHtml({ type: 'positive', transcript: [{ role: 'user', content: '' }] });
+    list.appendChild(div.firstElementChild);
+  }
+
+  function openFtEditor(opts) {
+    _ftModalCb = opts.onSave;
+    _ftModalAllowNegative = opts.allowNegative !== false;
+    document.getElementById('ftModalTitle').textContent = opts.title || 'Edit Fine-tune Examples';
+    document.getElementById('ftModalDesc').textContent = opts.description || '';
+    const list = document.getElementById('ftModalList');
+    const examples = Array.isArray(opts.examples) ? opts.examples : [];
+    list.innerHTML = examples.length === 0
+      ? '<div style="padding:1rem;color:#888;font-size:0.82rem;text-align:center;border:1px dashed #e5e7eb;border-radius:6px;">No examples yet — click + Add Example to create one.</div>'
+      : examples.map(_ftExampleHtml).join('');
+    document.getElementById('ftModal').style.display = 'flex';
+  }
+
+  function closeFtModal() {
+    document.getElementById('ftModal').style.display = 'none';
+    _ftModalCb = null;
+  }
+
+  function saveFtModal() {
+    if (!_ftModalCb) { closeFtModal(); return; }
+    const examples = [];
+    document.querySelectorAll('#ftModalList .ft-example').forEach((card) => {
+      const type = card.querySelector('.ft-type').value;
+      const transcript = [];
+      card.querySelectorAll('.ft-row').forEach((row) => {
+        const role = row.querySelector('select').value;
+        const content = row.querySelector('input').value;
+        if (content.trim()) transcript.push({ role, content });
+      });
+      if (transcript.length > 0) examples.push({ type, transcript });
+    });
+    _ftModalCb(examples);
+    closeFtModal();
+  }
+
+  // ── Fine-tune storage helpers ────────────────────────────────────
+  // Each chain-item (DP) and path-card stashes its examples as JSON in
+  // a data-finetunes / data-transition-finetunes attribute so they
+  // roundtrip through drafts (collectFormState/loadFormState) and JSON
+  // export/import (buildExportConfig/loadFromJsonFile) automatically.
+  function getFtFromEl(el, attr) {
+    if (!el) return [];
+    const raw = el.dataset[attr];
+    if (!raw) return [];
+    try { return JSON.parse(raw); } catch { return []; }
+  }
+  function setFtOnEl(el, attr, examples) {
+    if (!el) return;
+    if (Array.isArray(examples) && examples.length > 0) {
+      el.dataset[attr] = JSON.stringify(examples);
+    } else {
+      delete el.dataset[attr];
+    }
+  }
 
   // ── Form sub-tab switcher ──────────────────────────────────────────
   // Toggles which .form-subtab-pane is visible. Auto-switches to the
@@ -1768,6 +1893,7 @@
         const select = node.querySelector('.chain-dp-select');
         if (!select) continue;
         const dpValue = select.value;
+        const itemFinetunes = getFtFromEl(node, 'finetunes');
         if (!dpValue || dpValue === '__custom__') {
           // Custom data point
           const fields = node.querySelector('.chain-custom-fields');
@@ -1783,7 +1909,7 @@
             description: fields.querySelector('.cc-description').value.trim(),
             conversationPrompt: isOrphan ? '' : fields.querySelector('.cc-conversationPrompt').value.trim(),
             forwardCondition: isOrphan ? '' : fields.querySelector('.cc-forwardCondition').value.trim(),
-            finetuneExamples: [],
+            finetuneExamples: itemFinetunes,
             extractSuccessEquation: [
               { left: `{{${variableName}}}`, operator: 'exists' },
               { left: `{{${variableName}}}`, operator: '!=', right: 'Not Mentioned' },
@@ -1791,8 +1917,12 @@
           };
           if (isOrphan) dpObj.orphan = true;
           items.push(dpObj);
+        } else if (itemFinetunes.length > 0) {
+          // Built-in ref with overrides — promote to a Partial<DataPoint>
+          // object so the per-DP fine-tunes flow into the generator.
+          items.push({ variableName: dpValue, finetuneExamples: itemFinetunes });
         } else {
-          items.push(dpValue); // built-in ref
+          items.push(dpValue); // built-in ref, no override
         }
       } else if (node.dataset.type === 'branch') {
         const variable = node.querySelector('.branch-variable').value;
@@ -1845,6 +1975,10 @@
           if (pathSms.length) pathEntry.dispatchOverride.dispatch_text_numbers = pathSms;
           if (pathEmail.length) pathEntry.dispatchOverride.dispatch_email = pathEmail;
           if (pathCall) pathEntry.dispatchOverride.dispatch_call_number = pathCall;
+        }
+        const transFt = getFtFromEl(card, 'transitionFinetunes');
+        if (transFt.length > 0) {
+          pathEntry.transitionFinetuneExamples = transFt;
         }
 
         paths.push(pathEntry);
@@ -2035,12 +2169,19 @@
     for (const node of chainList.children) {
       if (node.dataset.type === 'datapoint') {
         const sel = node.querySelector('.chain-dp-select');
+        const ft = getFtFromEl(node, 'finetunes');
         if (sel && sel.value && sel.value !== '__custom__') {
-          items.push(sel.value);
+          // Built-in ref. Compact string form when no overrides; otherwise
+          // emit an object so drafts/JSON can roundtrip the fine-tunes.
+          if (ft.length > 0) {
+            items.push({ _ref: sel.value, finetuneExamples: ft });
+          } else {
+            items.push(sel.value);
+          }
         } else if (sel && sel.value === '__custom__') {
           const f = node.querySelector('.chain-custom-fields');
           if (f) {
-            items.push({
+            const obj = {
               _custom: true,
               variableName: f.querySelector('.cc-variableName').value,
               label: f.querySelector('.cc-label').value,
@@ -2049,7 +2190,9 @@
               description: f.querySelector('.cc-description').value,
               conversationPrompt: f.querySelector('.cc-conversationPrompt').value,
               forwardCondition: f.querySelector('.cc-forwardCondition').value,
-            });
+            };
+            if (ft.length > 0) obj.finetuneExamples = ft;
+            items.push(obj);
           }
         }
       } else if (node.dataset.type === 'branch') {
@@ -2074,6 +2217,11 @@
     for (const item of items) {
       if (typeof item === 'string') {
         addChainItem(chainList, item);
+      } else if (item._ref) {
+        // Built-in ref with fine-tune overrides
+        addChainItem(chainList, item._ref);
+        const last = chainList.lastElementChild;
+        if (item.finetuneExamples) setFtOnEl(last, 'finetunes', item.finetuneExamples);
       } else if (item._branch) {
         const branchEl = addChainBranch(chainList, item);
         if (branchEl) {
@@ -2085,6 +2233,7 @@
       } else if (item._custom) {
         addChainItem(chainList, '__custom__');
         const lastItem = chainList.lastElementChild;
+        if (item.finetuneExamples) setFtOnEl(lastItem, 'finetunes', item.finetuneExamples);
         const f = lastItem.querySelector('.chain-custom-fields');
         if (f) {
           f.querySelector('.cc-variableName').value = item.variableName || '';
@@ -2138,6 +2287,7 @@
     pathsContainer.querySelectorAll('.path-card').forEach(card => {
       const chainRoot = card.querySelector('.chain-list[data-chain-root]');
       const endModeRadio = card.querySelector('.path-end-mode:checked');
+      const transFt = getFtFromEl(card, 'transitionFinetunes');
       state.routingPaths.push({
         name: card.querySelector('.path-name').value,
         condition: card.querySelector('.path-condition').value,
@@ -2147,6 +2297,7 @@
         dispatchCall: card.querySelector('.path-dispatch-call').value,
         endMode: endModeRadio ? endModeRadio.value : 'callback',
         closePrompt: card.querySelector('.path-close-prompt')?.value || '',
+        ...(transFt.length > 0 ? { transitionFinetuneExamples: transFt } : {}),
       });
     });
 
@@ -2160,6 +2311,7 @@
       transitionCondition: p.transitionCondition,
       dataPoints: p.dataPoints,
       end_mode: p.end_mode || 'callback',
+      ...(p.transitionFinetuneExamples ? { transitionFinetuneExamples: p.transitionFinetuneExamples } : {}),
     }));
 
     return {
@@ -2261,7 +2413,13 @@
               // Resolve the data point item (built-in key or custom)
               let dpItem;
               if (dp.variableName && BUILTIN_DATA[dp.variableName]) {
-                dpItem = dp.variableName;
+                // Built-in ref: compact string when no fine-tune overrides;
+                // _ref object when there are, so restoreChain stashes them.
+                if (Array.isArray(dp.finetuneExamples) && dp.finetuneExamples.length > 0) {
+                  dpItem = { _ref: dp.variableName, finetuneExamples: dp.finetuneExamples };
+                } else {
+                  dpItem = dp.variableName;
+                }
               } else {
                 dpItem = {
                   _custom: true,
@@ -2274,6 +2432,9 @@
                   forwardCondition: dp.forwardCondition || '',
                 };
                 if (dp.orphan) dpItem.orphan = true;
+                if (Array.isArray(dp.finetuneExamples) && dp.finetuneExamples.length > 0) {
+                  dpItem.finetuneExamples = dp.finetuneExamples;
+                }
               }
 
               // If this data point has branch conditions, wrap in nested branches
@@ -2310,6 +2471,9 @@
               dispatchCall: pathDbt.dispatch_call_number || '',
               endMode: p.end_mode === 'transfer' ? 'transfer' : 'callback',
               closePrompt: importedPathClose[p.name] || legacyClose || '',
+              ...(Array.isArray(p.transitionFinetuneExamples) && p.transitionFinetuneExamples.length > 0
+                ? { transitionFinetuneExamples: p.transitionFinetuneExamples }
+                : {}),
             };
           }),
         };
@@ -2358,6 +2522,11 @@
       const closeEl = card.querySelector('.path-close-prompt');
       if (closeEl) {
         closeEl.value = p.closePrompt || state.closePrompt || DEFAULT_CLOSE_PROMPT;
+      }
+      // Restore per-path transition fine-tune examples onto the card so
+      // they roundtrip on the next collectFormState / collectPaths call.
+      if (Array.isArray(p.transitionFinetuneExamples)) {
+        setFtOnEl(card, 'transitionFinetunes', p.transitionFinetuneExamples);
       }
 
       const chainRoot = card.querySelector('.chain-list[data-chain-root]');
@@ -2705,12 +2874,18 @@
     const endMode = card.querySelector('.path-end-mode:checked')?.value || 'callback';
     const dispatchCall = card.querySelector('.path-dispatch-call')?.value || '';
     const closePrompt = card.querySelector('.path-close-prompt')?.value || '';
+    const transFt = getFtFromEl(card, 'transitionFinetunes');
     detail.innerHTML = `
       <h4>Path <span class="detail-type-badge">routing</span></h4>
       <label>Path Name</label>
       <input type="text" id="detailPathName" value="${esc(name)}" placeholder="e.g. Service Call">
       <label>Transition Condition (when does the AI route here?)</label>
       <input type="text" id="detailPathCond" value="${esc(cond)}" placeholder="e.g. Caller wants service">
+
+      <div style="margin-top:0.6rem;display:flex;align-items:center;gap:0.5rem;">
+        <button type="button" id="detailPathFtBtn" class="primary" style="padding:0.35rem 0.7rem;font-size:0.78rem;">Edit Transition Fine-tunes${transFt.length > 0 ? ' (' + transFt.length + ')' : ''}</button>
+        <span style="font-size:0.72rem;color:#6b7280;">Examples that route the caller to this path.</span>
+      </div>
 
       <label style="margin-top:0.75rem;">Close Prompt</label>
       <textarea id="detailPathClosePrompt" rows="3" placeholder="Spoken right after data collection wraps up — specific to this path.">${esc(closePrompt)}</textarea>
@@ -2759,6 +2934,21 @@
       card.querySelector('.path-dispatch-call').value = e.target.value;
       onTreeFormChange();
     });
+    document.getElementById('detailPathFtBtn').addEventListener('click', () => {
+      openFtEditor({
+        title: 'Transition Fine-tunes — ' + (card.querySelector('.path-name')?.value || 'Path'),
+        description: 'Examples that route the caller to this path. Positive only — Retell ignores transition examples without a destination.',
+        examples: getFtFromEl(card, 'transitionFinetunes'),
+        allowNegative: false,
+        onSave: (newExamples) => {
+          // Force every saved example to positive in case validation
+          // ever lets a negative slip through (defense-in-depth).
+          const cleaned = newExamples.map((ex) => ({ ...ex, type: 'positive' }));
+          setFtOnEl(card, 'transitionFinetunes', cleaned);
+          onTreeFormChange({ refreshDetail: true });
+        },
+      });
+    });
   }
 
   function renderDetailDataPoint(pathId, itemId) {
@@ -2769,6 +2959,7 @@
     const sel = item.querySelector('.chain-dp-select');
     const currentVal = sel?.value || '';
     const options = sel?.innerHTML || '';
+    const dpFt = getFtFromEl(item, 'finetunes');
     detail.innerHTML = `
       <h4>Data Point <span class="detail-type-badge">collect</span></h4>
       <label>Variable</label>
@@ -2776,6 +2967,10 @@
       <p style="font-size:0.72rem;color:#6b7280;margin-top:0.4rem;">
         Pick a built-in data point or "Custom" to define a new one. Editing the underlying conversation prompt or extraction logic happens in Settings → Categories.
       </p>
+      <div style="margin-top:0.6rem;display:flex;align-items:center;gap:0.5rem;">
+        <button type="button" id="detailDpFtBtn" class="primary" style="padding:0.35rem 0.7rem;font-size:0.78rem;">Edit Fine-tunes${dpFt.length > 0 ? ' (' + dpFt.length + ')' : ''}</button>
+        <span style="font-size:0.72rem;color:#6b7280;">Per-DP utterance examples (overrides the default for this agent).</span>
+      </div>
     `;
     document.getElementById('detailDpVar').value = currentVal;
     document.getElementById('detailDpVar').addEventListener('change', (e) => {
@@ -2783,6 +2978,17 @@
       // Trigger the existing onChainDpChange logic so custom DP fields render correctly
       if (typeof onChainDpChange === 'function') onChainDpChange(sel);
       onTreeFormChange();
+    });
+    document.getElementById('detailDpFtBtn').addEventListener('click', () => {
+      openFtEditor({
+        title: 'Fine-tunes — ' + (sel?.options[sel.selectedIndex]?.text || 'Data Point'),
+        description: 'Positive examples advance to the confirm step. Negative examples keep the agent asking the question.',
+        examples: getFtFromEl(item, 'finetunes'),
+        onSave: (newExamples) => {
+          setFtOnEl(item, 'finetunes', newExamples);
+          onTreeFormChange({ refreshDetail: true });
+        },
+      });
     });
   }
 
