@@ -5,7 +5,7 @@ import { describe, it, expect, afterAll } from "vitest";
 
 const BASE_URL = process.env.SYSTEM_TEST_URL ?? process.env.BASE_URL;
 const API_KEY = process.env.API_KEY;
-const ADMIN_PASSWORD = process.env.ROOT_PASSWORD ?? process.env.ADMIN_PASSWORD;
+const ROOT_PASSWORD = process.env.ROOT_PASSWORD;
 
 // All tests use Demo Meter (demo-meter / Demo Team) as the canonical test agent.
 // Multi-path (measure_me + dont_measure_me), branches, callback mode.
@@ -26,7 +26,7 @@ function authHeaders(extra: Record<string, string> = {}): Record<string, string>
 }
 
 function basicAuthHeader(): string {
-  return "Basic " + Buffer.from(`admin:${ADMIN_PASSWORD}`).toString("base64");
+  return "Basic " + Buffer.from(`admin:${ROOT_PASSWORD}`).toString("base64");
 }
 
 async function json(resp: Response): Promise<any> {
@@ -2029,6 +2029,190 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         method: "DELETE",
       });
       expect(resp.status).toBe(401);
+    });
+  });
+
+  // ── 26. Display Name (Retell sync) ─────────────────────────────────────────
+  // PATCH display_name should update Mongo, return success, and report that
+  // the Retell-side push (agent.agent_name + phone-number nicknames) ran.
+  // Each test restores the prior value so the shared Demo Meter agent is
+  // left exactly as it was found.
+
+  describe("Display name (Retell sync)", { timeout: 30_000 }, () => {
+    let originalDisplayName: string | null | undefined;
+
+    it("captures original display_name", async () => {
+      const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+      originalDisplayName = doc.display_name ?? null;
+    });
+
+    it("PATCH display_name updates Mongo and reports a Retell sync", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}`), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ display_name: "Demo Meter (system-test)" }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+      expect(body.doc.display_name).toBe("Demo Meter (system-test)");
+      // Server returns display_sync metadata when it pushed to Retell.
+      expect(body.display_sync?.agentNameUpdated).toBe(true);
+    });
+
+    it("dashboard list reflects the new display_name", async () => {
+      const list = await json(await fetch(url("/dashboard/api/agents"), { headers: authHeaders() }));
+      const row = list.find((a: any) => a.slug === SLUG);
+      expect(row?.display_name).toBe("Demo Meter (system-test)");
+    });
+
+    it("clearing display_name (empty string → null) falls back to business name", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}`), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ display_name: "" }),
+      });
+      expect(resp.status).toBe(200);
+      expect((await json(resp)).doc.display_name).toBeNull();
+    });
+
+    it("rejects non-string non-null display_name with 400", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}`), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ display_name: 42 }),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    afterAll(async () => {
+      if (originalDisplayName !== undefined) {
+        await fetch(url(`/dashboard/api/agents/${SLUG}`), {
+          method: "PATCH", headers: authHeaders(),
+          body: JSON.stringify({ display_name: originalDisplayName }),
+        });
+      }
+    });
+  });
+
+  // ── 27. Rename Business (script-only contract) ────────────────────────────
+  // The rename flow rewrites prompts/flow text + Mongo `name`, and (per the
+  // new contract) does NOT push agent_name to Retell or update phone-number
+  // nicknames — those are owned by display_name. Cleanup is a second
+  // rename-business call that restores the original name.
+
+  describe("Rename business (script-only contract)", { timeout: 60_000 }, () => {
+    let originalName: string | undefined;
+    let tempName: string | undefined;
+
+    it("captures original business name", async () => {
+      const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+      originalName = doc.name;
+      expect(typeof originalName).toBe("string");
+    });
+
+    it("rename rewrites script + Mongo without reporting nickname work", async () => {
+      tempName = `${originalName} TEMP-${Date.now()}`;
+      const resp = await fetch(
+        url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/rename-business`),
+        {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ newName: tempName, oldName: originalName }),
+        },
+      );
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+      expect(body.oldName).toBe(originalName);
+      expect(body.newName).toBe(tempName);
+      // New contract: response no longer carries nickname_updated/nickname_errors.
+      expect(body.nickname_updated).toBeUndefined();
+      expect(body.nickname_errors).toBeUndefined();
+
+      // Mongo name updated.
+      const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+      expect(doc.name).toBe(tempName);
+    });
+
+    afterAll(async () => {
+      // Restore by renaming back. Re-read the current name in case the test
+      // above failed mid-flight, so we always use a correct oldName.
+      if (!originalName) return;
+      const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+      if (doc.name === originalName) return;
+      await fetch(
+        url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/rename-business`),
+        {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({ newName: originalName, oldName: doc.name }),
+        },
+      );
+    });
+  });
+
+  // ── 28. Folders CRUD + agent move ─────────────────────────────────────────
+  // Creates a temp folder, lists it, moves the test agent in, then in afterAll
+  // restores the agent's original folder and deletes the temp folder.
+
+  describe("Folders CRUD + agent move", { timeout: 30_000 }, () => {
+    let testFolderId: string | undefined;
+    let originalFolderId: string | null | undefined;
+
+    it("captures Demo Meter's current folder", async () => {
+      const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+      originalFolderId = doc.folder_id ?? null;
+    });
+
+    it("creates a test folder", async () => {
+      const resp = await fetch(url("/dashboard/api/folders"), {
+        method: "POST", headers: authHeaders(),
+        body: JSON.stringify({ name: `_systest_${Date.now()}` }),
+      });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      testFolderId = body._id ?? body.id;
+      expect(testFolderId).toBeTruthy();
+    });
+
+    it("lists the new folder", async () => {
+      const folders = await json(await fetch(url("/dashboard/api/folders"), { headers: authHeaders() }));
+      expect(Array.isArray(folders)).toBe(true);
+      expect(folders.some((f: any) => f._id === testFolderId)).toBe(true);
+    });
+
+    it("moves Demo Meter into the test folder", async () => {
+      const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/folder`), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ folder_id: testFolderId }),
+      });
+      expect(resp.status).toBe(200);
+      const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+      expect(doc.folder_id).toBe(testFolderId);
+    });
+
+    afterAll(async () => {
+      // Restore folder_id first so the temp folder is empty when we delete it.
+      if (originalFolderId !== undefined) {
+        await fetch(url(`/dashboard/api/agents/${SLUG}/folder`), {
+          method: "PATCH", headers: authHeaders(),
+          body: JSON.stringify({ folder_id: originalFolderId }),
+        });
+      }
+      if (testFolderId) {
+        await fetch(url(`/dashboard/api/folders/${testFolderId}`), {
+          method: "DELETE", headers: authHeaders(),
+        });
+      }
+    });
+  });
+
+  // ── 29. Phone numbers list ────────────────────────────────────────────────
+  // Read-only — no cleanup needed.
+
+  describe("Phone numbers list", () => {
+    it("GET /dashboard/api/phone-numbers returns the byAgent map", async () => {
+      const resp = await fetch(url("/dashboard/api/phone-numbers"), { headers: authHeaders() });
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+      expect(body.byAgent).toBeDefined();
+      expect(typeof body.byAgent).toBe("object");
     });
   });
 });
