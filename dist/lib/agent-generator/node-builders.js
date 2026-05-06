@@ -242,11 +242,11 @@ Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ
             // training utterance. Folded into the intro node's single finetune
             // array because Retell expects all transition examples on the source
             // node, with destination_node_id distinguishing where each leads.
-            ...((pathConfigs || []).flatMap((p, i) => (p.transitionFinetuneExamples || []).map((ex) => ({
+            ...(pathConfigs || []).flatMap((p, i) => (p.transitionFinetuneExamples || []).map((ex) => ({
                 transcript: ex.transcript,
                 id: ex.id || `fe-${f.nextTs()}`,
                 destination_node_id: ids.paths[i].transitionId,
-            })))),
+            }))),
         ],
         id: ids.introId,
         type: "conversation",
@@ -913,7 +913,7 @@ export function buildAgentRoot(businessName, conversationFlow) {
         voice_model: "eleven_turbo_v2",
         fallback_voice_ids: [],
         voice_temperature: 0.44,
-        voice_speed: 1.12,
+        voice_speed: 1.02,
         enable_dynamic_voice_speed: false,
         volume: 1.92,
         enable_backchannel: false,
@@ -934,8 +934,8 @@ export function buildAgentRoot(businessName, conversationFlow) {
         voicemail_option: { action: { type: "hangup" } },
         stt_mode: "custom",
         custom_stt_config: {
-            provider: "soniox",
-            endpointing_ms: 700,
+            provider: "deepgram",
+            endpointing_ms: 1200,
         },
         allow_user_dtmf: false,
         user_dtmf_options: {},
