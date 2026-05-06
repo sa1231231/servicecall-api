@@ -244,22 +244,19 @@ formRouter.get("/data-points", async (_req, res) => {
   }
 });
 
-// ── Agent Drafts & Templates ────────────────────────────────────────────────
+// ── Agent Drafts ────────────────────────────────────────────────────────────
+// Drafts and "templates" used to be tracked separately via a `type` field on
+// each doc; that distinction is gone. Every saved form config is just a draft.
+// A user can name a draft "Template - Foo" by convention if they want, but
+// the code makes no distinction.
 function draftsCollection() {
   return getDb().collection("agent_drafts");
 }
 
-formRouter.get("/drafts", async (req, res) => {
+formRouter.get("/drafts", async (_req, res) => {
   try {
-    const filter: any = {};
-    if (req.query.type === "template") {
-      filter.type = "template";
-    } else if (req.query.type === "draft" || !req.query.type) {
-      // Default: return drafts (including legacy docs without a type field)
-      filter.type = { $ne: "template" };
-    }
     const drafts = await draftsCollection()
-      .find(filter, { projection: { name: 1, type: 1, updatedAt: 1 } })
+      .find({}, { projection: { name: 1, updatedAt: 1 } })
       .sort({ updatedAt: -1 })
       .toArray();
     res.json(drafts);
@@ -280,12 +277,11 @@ formRouter.get("/drafts/:id", async (req, res) => {
 
 formRouter.post("/drafts", async (req, res) => {
   try {
-    const { name, formData, type, exportConfig } = req.body;
+    const { name, formData, exportConfig } = req.body;
     if (!name || !formData) { res.status(400).json({ error: "name and formData are required" }); return; }
     const doc: Record<string, unknown> = {
       name,
       formData,
-      type: type === "template" ? "template" : "draft",
       createdAt: new Date(),
       updatedAt: new Date(),
     };

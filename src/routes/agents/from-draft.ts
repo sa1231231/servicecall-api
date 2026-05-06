@@ -4,12 +4,12 @@ import {
   type CreateAgentBody,
 } from "../../lib/agent-from-config.js";
 import {
-  loadTemplate,
+  loadDraft,
   applyOverrides,
-} from "../../lib/agent-from-template.js";
+} from "../../lib/agent-from-draft.js";
 
-interface FromTemplateRequest {
-  template: string;
+interface FromDraftRequest {
+  draft: string;
   business: {
     businessName: string;
     faqKnowledgeBase: string;
@@ -17,14 +17,14 @@ interface FromTemplateRequest {
   client?: Partial<CreateAgentBody["client"]>;
 }
 
-export async function createFromTemplateHandler(
+export async function createFromDraftHandler(
   req: Request,
   res: Response,
 ): Promise<void> {
-  const body = req.body as FromTemplateRequest;
+  const body = req.body as FromDraftRequest;
 
-  if (!body?.template || typeof body.template !== "string") {
-    res.status(400).json({ error: "Missing required field: template (template name)" });
+  if (!body?.draft || typeof body.draft !== "string") {
+    res.status(400).json({ error: "Missing required field: draft (draft name)" });
     return;
   }
   if (!body.business?.businessName || !body.business?.faqKnowledgeBase) {
@@ -32,24 +32,24 @@ export async function createFromTemplateHandler(
     return;
   }
 
-  const template = await loadTemplate(body.template);
-  if (!template) {
-    res.status(404).json({ error: `Template "${body.template}" not found` });
+  const draft = await loadDraft(body.draft);
+  if (!draft) {
+    res.status(404).json({ error: `Draft "${body.draft}" not found` });
     return;
   }
-  if (!template.exportConfig) {
+  if (!draft.exportConfig) {
     res.status(400).json({
-      error: `Template "${body.template}" lacks programmatic config`,
-      details: "Open the template in the agent form and click 'Save as Template' once to migrate it. This adds the canonical config alongside the form state.",
+      error: `Draft "${body.draft}" lacks programmatic config`,
+      details: "Open the draft in the agent form and click 'Save Draft' once to migrate it. This adds the canonical config alongside the form state.",
     });
     return;
   }
 
   console.log(
-    `[from-template] instantiating "${body.template}" → "${body.business.businessName}"`,
+    `[from-draft] instantiating "${body.draft}" → "${body.business.businessName}"`,
   );
 
-  const fullBody = applyOverrides(template.exportConfig, {
+  const fullBody = applyOverrides(draft.exportConfig, {
     business: body.business,
     client: body.client,
   });
@@ -59,7 +59,7 @@ export async function createFromTemplateHandler(
   if (result.ok) {
     res.status(201).json({
       success: true,
-      template: body.template,
+      draft: body.draft,
       slug: result.slug,
       agent_id: result.agentId,
       conversation_flow_id: result.conversationFlowId,

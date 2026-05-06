@@ -14,8 +14,8 @@ vi.mock("../db.js", () => ({
   getDb: () => mockGetDb(),
 }));
 
-const { slugify, loadTemplate, applyOverrides } = await import(
-  "../agent-from-template.js"
+const { slugify, loadDraft, applyOverrides } = await import(
+  "../agent-from-draft.js"
 );
 
 // ── slugify ────────────────────────────────────────────────────────────────
@@ -34,7 +34,7 @@ describe("slugify", () => {
     expect(slugify("&&Foo&&")).toBe("foo");
   });
 
-  it("matches the UI's slug regex (public/index.html:1922)", () => {
+  it("matches the UI's slug regex (public/index.html slugify)", () => {
     const ui = (s: string) =>
       s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     for (const s of ["Acme Co", "JA Fleet, LLC", "10-Star Plumbing!"]) {
@@ -111,7 +111,7 @@ describe("applyOverrides", () => {
     expect(out.client.slug).toBe("custom-slug");
   });
 
-  it("preserves template's other client fields when not overridden", () => {
+  it("preserves the draft's other client fields when not overridden", () => {
     const base = makeBaseConfig();
     const out = applyOverrides(base, {
       business: { businessName: "Acme", faqKnowledgeBase: "x" },
@@ -135,7 +135,7 @@ describe("applyOverrides", () => {
     expect(out.client.dispatch_email).toEqual(["dispatch@original.com"]);
   });
 
-  it("preserves paths from the template", () => {
+  it("preserves paths from the draft", () => {
     const base = makeBaseConfig();
     const out = applyOverrides(base, {
       business: { businessName: "Acme", faqKnowledgeBase: "x" },
@@ -153,11 +153,10 @@ describe("applyOverrides", () => {
     expect(base).toEqual(snapshot);
   });
 
-  // Regression: a template's stored client.name was leaking into freshly
-  // created agents (e.g. "Handy Quinn" from-template'd off the
-  // "Second Opinion Services" template ended up with
-  // client.name="Second Opinion Services" because the spread of
-  // exportConfig.client carried it through unchanged).
+  // Regression: a draft's stored client.name was leaking into freshly created
+  // agents (e.g. "Handy Quinn" instantiated from the "Second Opinion Services"
+  // draft ended up with client.name="Second Opinion Services" because the
+  // spread of exportConfig.client carried it through unchanged).
   it("pins client.name to the new businessName when no explicit override", () => {
     const base = makeBaseConfig();
     expect(base.client.name).toBe("Original Co");
@@ -168,7 +167,7 @@ describe("applyOverrides", () => {
     expect(out.client.name).not.toBe(base.client.name);
   });
 
-  it("respects an explicit client.name override over both template and businessName", () => {
+  it("respects an explicit client.name override over both draft and businessName", () => {
     const base = makeBaseConfig();
     const out = applyOverrides(base, {
       business: { businessName: "Handy Quinn", faqKnowledgeBase: "x" },
@@ -178,9 +177,9 @@ describe("applyOverrides", () => {
   });
 });
 
-// ── loadTemplate ───────────────────────────────────────────────────────────
+// ── loadDraft ──────────────────────────────────────────────────────────────
 
-describe("loadTemplate", () => {
+describe("loadDraft", () => {
   beforeEach(() => {
     mockCollection.find.mockReset();
   });
@@ -195,20 +194,22 @@ describe("loadTemplate", () => {
     return cursor;
   }
 
-  it("returns the most recently updated template matching the name", async () => {
-    const doc = { _id: "x", name: "plumber", type: "template", formData: {}, exportConfig: makeBaseConfig() };
+  it("returns the most recently updated draft matching the name (no type filter)", async () => {
+    const doc = { _id: "x", name: "plumber", formData: {}, exportConfig: makeBaseConfig() };
     const cursor = setupFindResult(doc);
 
-    const result = await loadTemplate("plumber");
+    const result = await loadDraft("plumber");
     expect(result).toEqual(doc);
-    expect(mockCollection.find).toHaveBeenCalledWith({ type: "template", name: "plumber" });
+    // The query should NOT include a type filter — the unification removed
+    // the drafts/templates distinction.
+    expect(mockCollection.find).toHaveBeenCalledWith({ name: "plumber" });
     expect(cursor.sort).toHaveBeenCalledWith({ updatedAt: -1 });
     expect(cursor.limit).toHaveBeenCalledWith(1);
   });
 
-  it("returns null when no template matches", async () => {
+  it("returns null when no draft matches", async () => {
     setupFindResult(null);
-    const result = await loadTemplate("nonexistent");
+    const result = await loadDraft("nonexistent");
     expect(result).toBeNull();
   });
 });

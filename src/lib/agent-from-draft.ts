@@ -1,17 +1,16 @@
 import { getDb } from "./db.js";
 import type { CreateAgentBody } from "./agent-from-config.js";
 
-export interface TemplateDoc {
+export interface DraftDoc {
   _id: unknown;
   name: string;
-  type: "template";
   formData: Record<string, unknown>;
   exportConfig?: CreateAgentBody;
   createdAt?: Date;
   updatedAt?: Date;
 }
 
-export interface FromTemplateOverrides {
+export interface FromDraftOverrides {
   business: {
     businessName: string;
     faqKnowledgeBase: string;
@@ -26,19 +25,22 @@ export function slugify(input: string): string {
     .replace(/^-|-$/g, "");
 }
 
-export async function loadTemplate(name: string): Promise<TemplateDoc | null> {
+// Look up the most-recently-updated draft by name. The collection used to
+// distinguish "drafts" and "templates" via a `type` field; that distinction
+// has been collapsed — every saved form config is now just a draft.
+export async function loadDraft(name: string): Promise<DraftDoc | null> {
   const doc = await getDb()
     .collection("agent_drafts")
-    .find({ type: "template", name })
+    .find({ name })
     .sort({ updatedAt: -1 })
     .limit(1)
     .next();
-  return (doc as TemplateDoc | null) ?? null;
+  return (doc as DraftDoc | null) ?? null;
 }
 
 export function applyOverrides(
   exportConfig: CreateAgentBody,
-  overrides: FromTemplateOverrides,
+  overrides: FromDraftOverrides,
 ): CreateAgentBody {
   const slug = overrides.client?.slug?.trim()
     || slugify(overrides.business.businessName);
@@ -53,7 +55,7 @@ export function applyOverrides(
     client: {
       ...exportConfig.client,
       ...(overrides.client ?? {}),
-      // Pin client.name to the new businessName so the template's stored
+      // Pin client.name to the new businessName so the draft's stored
       // client.name can never leak into a fresh agent. Explicit
       // overrides.client.name still wins because the spread above runs first.
       name: overrides.client?.name ?? overrides.business.businessName,

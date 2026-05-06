@@ -61,8 +61,6 @@
   .sb-btn-save:hover { background: #047857; }
   .sb-btn-load { background: #2563eb; color: #fff; border: none; }
   .sb-btn-load:hover { background: #1d4ed8; }
-  .sb-btn-template { background: #7c3aed; color: #fff; border: none; }
-  .sb-btn-template:hover { background: #6d28d9; }
   .sb-btn-delete { background: #fff; color: #dc2626; border: 1px solid #fca5a5; }
   .sb-btn-delete:hover { background: #fef2f2; }
   .save-bar .sb-label { font-size: 0.78rem; font-weight: 600; color: #555; white-space: nowrap; min-width: 70px; }
@@ -616,24 +614,17 @@
 
 <div class="save-bar">
   <div class="save-bar-row">
-    <span class="sb-label">Templates:</span>
-    <select id="templateSelect"><option value="">— Select a template —</option></select>
-    <button type="button" class="sb-btn-load" onclick="loadSelected('template')">Load</button>
-    <button type="button" class="sb-btn-template" onclick="saveAsTemplate()">Save as Template</button>
-    <button type="button" class="sb-btn-delete" onclick="deleteSelected('template')">Delete</button>
+    <span class="sb-label">Drafts:</span>
+    <select id="draftSelect"><option value="">— Select a draft —</option></select>
+    <button type="button" class="sb-btn-load" onclick="loadSelected()">Load</button>
+    <button type="button" class="sb-btn-save" onclick="saveDraft()">Save Draft</button>
+    <button type="button" class="sb-btn-delete" onclick="deleteSelected()">Delete</button>
   </div>
   <div class="save-bar-row">
     <span class="sb-label">JSON:</span>
     <input type="file" id="jsonFileInput" accept=".json" style="display:none" onchange="loadFromJsonFile(this)">
     <button type="button" class="sb-btn-load" onclick="document.getElementById('jsonFileInput').click()">Load from JSON</button>
     <button type="button" class="sb-btn-save" onclick="exportFormAsJson()">Export JSON</button>
-  </div>
-  <div class="save-bar-row">
-    <span class="sb-label">Drafts:</span>
-    <select id="draftSelect"><option value="">— Select a draft —</option></select>
-    <button type="button" class="sb-btn-load" onclick="loadSelected('draft')">Load</button>
-    <button type="button" class="sb-btn-save" onclick="saveDraft()">Save Draft</button>
-    <button type="button" class="sb-btn-delete" onclick="deleteSelected('draft')">Delete</button>
   </div>
   <span class="save-bar-status" id="saveBarStatus"></span>
 </div>
@@ -2010,16 +2001,14 @@
 
   // ── List loaders ──────────────────────────────────────────
 
-  async function loadList(type) {
+  async function loadList() {
     try {
-      const res = await fetch('/form/drafts?type=' + type);
+      const res = await fetch('/form/drafts');
       if (!res.ok) return;
       const items = await res.json();
-      const sel = document.getElementById(type === 'template' ? 'templateSelect' : 'draftSelect');
+      const sel = document.getElementById('draftSelect');
       const currentVal = sel.value;
-      sel.innerHTML = type === 'template'
-        ? '<option value="">— Select a template —</option>'
-        : '<option value="">— Select a draft —</option>';
+      sel.innerHTML = '<option value="">— Select a draft —</option>';
       for (const d of items) {
         const date = new Date(d.updatedAt).toLocaleDateString();
         const opt = document.createElement('option');
@@ -2032,8 +2021,7 @@
   }
 
   function loadAllLists() {
-    loadList('draft');
-    loadList('template');
+    loadList();
   }
 
   // ── Collect / Restore form state ──────────────────────────
@@ -2448,62 +2436,44 @@
     const formData = collectFormState();
     const name = formData.businessName || 'Untitled Draft';
 
+    // Also persist the canonical /agents/create-shape config so the draft
+    // can be instantiated programmatically via POST /agents/from-draft.
+    let exportConfig = null;
+    try { exportConfig = buildExportConfig(); } catch (_) { /* ignore */ }
+
     try {
       if (currentDraftId) {
+        const body = { name, formData };
+        if (exportConfig) body.exportConfig = exportConfig;
         const res = await fetch('/form/drafts/' + currentDraftId, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, formData }),
+          body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error('Failed');
         showSaveStatus('Draft updated');
       } else {
+        const body = { name, formData };
+        if (exportConfig) body.exportConfig = exportConfig;
         const res = await fetch('/form/drafts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, formData, type: 'draft' }),
+          body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error('Failed');
         const data = await res.json();
         currentDraftId = data._id;
         showSaveStatus('Draft saved');
       }
-      await loadList('draft');
+      await loadList();
       document.getElementById('draftSelect').value = currentDraftId || '';
     } catch (err) {
       showSaveStatus('Save failed');
     }
   }
 
-  async function saveAsTemplate() {
-    const formData = collectFormState();
-    const defaultName = formData.businessName || 'Untitled Template';
-    const name = prompt('Template name:', defaultName);
-    if (!name) return;
-
-    // Also persist the canonical /agents/create-shape config so the
-    // template can be instantiated programmatically via POST /agents/from-template.
-    let exportConfig = null;
-    try { exportConfig = buildExportConfig(); } catch (_) { /* ignore */ }
-
-    try {
-      const body = { name, formData, type: 'template' };
-      if (exportConfig) body.exportConfig = exportConfig;
-      const res = await fetch('/form/drafts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('Failed');
-      await loadList('template');
-      showSaveStatus('Template saved');
-    } catch (err) {
-      showSaveStatus('Save failed');
-    }
-  }
-
-  async function loadSelected(type) {
-    const sel = document.getElementById(type === 'template' ? 'templateSelect' : 'draftSelect');
+  async function loadSelected() {
+    const sel = document.getElementById('draftSelect');
     const id = sel.value;
     if (!id) return;
 
@@ -2512,34 +2482,26 @@
       if (!res.ok) throw new Error('Failed');
       const item = await res.json();
       loadFormState(item.formData);
-
-      if (type === 'template') {
-        // Loading a template starts a fresh draft — don't link to the template ID
-        currentDraftId = null;
-        document.getElementById('draftSelect').value = '';
-        showSaveStatus('Template loaded');
-      } else {
-        currentDraftId = item._id;
-        showSaveStatus('Draft loaded');
-      }
+      currentDraftId = item._id;
+      showSaveStatus('Draft loaded');
     } catch (err) {
       showSaveStatus('Load failed');
     }
   }
 
-  async function deleteSelected(type) {
-    const sel = document.getElementById(type === 'template' ? 'templateSelect' : 'draftSelect');
+  async function deleteSelected() {
+    const sel = document.getElementById('draftSelect');
     const id = sel.value;
     if (!id) return;
-    if (!confirm('Delete this ' + type + '?')) return;
+    if (!confirm('Delete this draft?')) return;
 
     try {
       const res = await fetch('/form/drafts/' + id, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed');
-      if (type === 'draft' && currentDraftId === id) currentDraftId = null;
+      if (currentDraftId === id) currentDraftId = null;
       sel.value = '';
-      await loadList(type);
-      showSaveStatus(type === 'template' ? 'Template deleted' : 'Draft deleted');
+      await loadList();
+      showSaveStatus('Draft deleted');
     } catch (err) {
       showSaveStatus('Delete failed');
     }

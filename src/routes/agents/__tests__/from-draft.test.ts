@@ -17,7 +17,7 @@ const {
   mockGetSettings,
   mockGetWarmTransferAgentVersion,
   mockNotificationClients,
-  mockLoadTemplate,
+  mockLoadDraft,
 } = vi.hoisted(() => ({
   mockFlowCreate: vi.fn(),
   mockAgentCreate: vi.fn(),
@@ -34,7 +34,7 @@ const {
   mockGetSettings: vi.fn(),
   mockGetWarmTransferAgentVersion: vi.fn(),
   mockNotificationClients: {} as Record<string, any>,
-  mockLoadTemplate: vi.fn(),
+  mockLoadDraft: vi.fn(),
 }));
 
 vi.mock("../../../config.js", () => ({
@@ -92,18 +92,18 @@ vi.mock("../../../lib/settings.js", () => ({
   getSettings: (...a: any[]) => mockGetSettings(...a),
 }));
 
-// Mock loadTemplate at the import boundary used by the route handler.
-vi.mock("../../../lib/agent-from-template.js", async () => {
-  const actual = await vi.importActual<typeof import("../../../lib/agent-from-template.js")>(
-    "../../../lib/agent-from-template.js",
+// Mock loadDraft at the import boundary used by the route handler.
+vi.mock("../../../lib/agent-from-draft.js", async () => {
+  const actual = await vi.importActual<typeof import("../../../lib/agent-from-draft.js")>(
+    "../../../lib/agent-from-draft.js",
   );
   return {
     ...actual,
-    loadTemplate: (...a: any[]) => mockLoadTemplate(...a),
+    loadDraft: (...a: any[]) => mockLoadDraft(...a),
   };
 });
 
-const { createFromTemplateHandler } = await import("../from-template.js");
+const { createFromDraftHandler } = await import("../from-draft.js");
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -117,7 +117,7 @@ function mockRes() {
   return res;
 }
 
-function makeTemplateExportConfig() {
+function makeDraftExportConfig() {
   return {
     business: {
       businessName: "Original Plumbing",
@@ -178,21 +178,21 @@ beforeEach(() => {
 
 // ── Validation ─────────────────────────────────────────────────────────────
 
-describe("createFromTemplateHandler — validation", () => {
-  it("400 when template is missing", async () => {
+describe("createFromDraftHandler — validation", () => {
+  it("400 when draft is missing", async () => {
     const res = mockRes();
-    await createFromTemplateHandler(
+    await createFromDraftHandler(
       mockReq({ business: { businessName: "X", faqKnowledgeBase: "y" } }),
       res,
     );
     expect(res._status).toBe(400);
-    expect(res._json.error).toContain("template");
+    expect(res._json.error).toContain("draft");
   });
 
   it("400 when business.businessName is missing", async () => {
     const res = mockRes();
-    await createFromTemplateHandler(
-      mockReq({ template: "plumber", business: { faqKnowledgeBase: "y" } }),
+    await createFromDraftHandler(
+      mockReq({ draft: "plumber", business: { faqKnowledgeBase: "y" } }),
       res,
     );
     expect(res._status).toBe(400);
@@ -201,59 +201,57 @@ describe("createFromTemplateHandler — validation", () => {
 
   it("400 when business.faqKnowledgeBase is missing", async () => {
     const res = mockRes();
-    await createFromTemplateHandler(
-      mockReq({ template: "plumber", business: { businessName: "X" } }),
+    await createFromDraftHandler(
+      mockReq({ draft: "plumber", business: { businessName: "X" } }),
       res,
     );
     expect(res._status).toBe(400);
     expect(res._json.error).toContain("faqKnowledgeBase");
   });
 
-  it("404 when template not found", async () => {
-    mockLoadTemplate.mockResolvedValue(null);
+  it("404 when draft not found", async () => {
+    mockLoadDraft.mockResolvedValue(null);
     const res = mockRes();
-    await createFromTemplateHandler(
-      mockReq({ template: "nonexistent", business: { businessName: "X", faqKnowledgeBase: "y" } }),
+    await createFromDraftHandler(
+      mockReq({ draft: "nonexistent", business: { businessName: "X", faqKnowledgeBase: "y" } }),
       res,
     );
     expect(res._status).toBe(404);
     expect(res._json.error).toContain("not found");
   });
 
-  it("400 when template has no exportConfig", async () => {
-    mockLoadTemplate.mockResolvedValue({
+  it("400 when draft has no exportConfig", async () => {
+    mockLoadDraft.mockResolvedValue({
       _id: "x",
       name: "old",
-      type: "template",
       formData: {},
     });
     const res = mockRes();
-    await createFromTemplateHandler(
-      mockReq({ template: "old", business: { businessName: "X", faqKnowledgeBase: "y" } }),
+    await createFromDraftHandler(
+      mockReq({ draft: "old", business: { businessName: "X", faqKnowledgeBase: "y" } }),
       res,
     );
     expect(res._status).toBe(400);
     expect(res._json.error).toContain("programmatic config");
-    expect(res._json.details).toContain("Save as Template");
+    expect(res._json.details).toContain("Save Draft");
   });
 });
 
 // ── Happy path ─────────────────────────────────────────────────────────────
 
-describe("createFromTemplateHandler — happy path", () => {
+describe("createFromDraftHandler — happy path", () => {
   it("instantiates an agent with overridden businessName and faq", async () => {
-    mockLoadTemplate.mockResolvedValue({
+    mockLoadDraft.mockResolvedValue({
       _id: "x",
       name: "plumber",
-      type: "template",
       formData: {},
-      exportConfig: makeTemplateExportConfig(),
+      exportConfig: makeDraftExportConfig(),
     });
 
     const res = mockRes();
-    await createFromTemplateHandler(
+    await createFromDraftHandler(
       mockReq({
-        template: "plumber",
+        draft: "plumber",
         business: {
           businessName: "Acme Plumbing Co",
           faqKnowledgeBase: "## New Acme FAQ",
@@ -264,7 +262,7 @@ describe("createFromTemplateHandler — happy path", () => {
 
     expect(res._status).toBe(201);
     expect(res._json.success).toBe(true);
-    expect(res._json.template).toBe("plumber");
+    expect(res._json.draft).toBe("plumber");
     expect(res._json.slug).toBe("acme-plumbing-co");
     expect(res._json.agent_id).toBe("agent_test");
     expect(res._json.conversation_flow_id).toBe("cf_test");
@@ -280,18 +278,17 @@ describe("createFromTemplateHandler — happy path", () => {
   });
 
   it("respects an explicit client.slug override", async () => {
-    mockLoadTemplate.mockResolvedValue({
+    mockLoadDraft.mockResolvedValue({
       _id: "x",
       name: "plumber",
-      type: "template",
       formData: {},
-      exportConfig: makeTemplateExportConfig(),
+      exportConfig: makeDraftExportConfig(),
     });
 
     const res = mockRes();
-    await createFromTemplateHandler(
+    await createFromDraftHandler(
       mockReq({
-        template: "plumber",
+        draft: "plumber",
         business: { businessName: "Acme Plumbing", faqKnowledgeBase: "x" },
         client: { slug: "acme-custom" },
       }),
@@ -304,19 +301,18 @@ describe("createFromTemplateHandler — happy path", () => {
   });
 
   it("auto-increments slug when one collision exists", async () => {
-    mockLoadTemplate.mockResolvedValue({
+    mockLoadDraft.mockResolvedValue({
       _id: "x",
       name: "plumber",
-      type: "template",
       formData: {},
-      exportConfig: makeTemplateExportConfig(),
+      exportConfig: makeDraftExportConfig(),
     });
     mockNotificationClients["acme-plumbing"] = { name: "Already there" };
 
     const res = mockRes();
-    await createFromTemplateHandler(
+    await createFromDraftHandler(
       mockReq({
-        template: "plumber",
+        draft: "plumber",
         business: { businessName: "Acme Plumbing", faqKnowledgeBase: "x" },
       }),
       res,
@@ -328,21 +324,20 @@ describe("createFromTemplateHandler — happy path", () => {
   });
 
   it("auto-increments slug across multiple collisions", async () => {
-    mockLoadTemplate.mockResolvedValue({
+    mockLoadDraft.mockResolvedValue({
       _id: "x",
       name: "plumber",
-      type: "template",
       formData: {},
-      exportConfig: makeTemplateExportConfig(),
+      exportConfig: makeDraftExportConfig(),
     });
     mockNotificationClients["acme-plumbing"] = {};
     mockNotificationClients["acme-plumbing-2"] = {};
     mockNotificationClients["acme-plumbing-3"] = {};
 
     const res = mockRes();
-    await createFromTemplateHandler(
+    await createFromDraftHandler(
       mockReq({
-        template: "plumber",
+        draft: "plumber",
         business: { businessName: "Acme Plumbing", faqKnowledgeBase: "x" },
       }),
       res,
@@ -354,19 +349,18 @@ describe("createFromTemplateHandler — happy path", () => {
   });
 
   // Regression for the "Handy Quinn shows as Second Opinion Services" bug:
-  // applyOverrides used to leak the template's stored client.name into the
-  // new agent. Fix pins client.name to the override's businessName by default.
-  it("pins client.name to the new businessName, ignoring the template's stored client.name", async () => {
-    mockLoadTemplate.mockResolvedValue({
+  // applyOverrides used to leak the draft's stored client.name into the new
+  // agent. Fix pins client.name to the override's businessName by default.
+  it("pins client.name to the new businessName, ignoring the draft's stored client.name", async () => {
+    mockLoadDraft.mockResolvedValue({
       _id: "x",
       name: "second-opinion",
-      type: "template",
       formData: {},
-      // Template's stored client.name differs from the override's businessName.
+      // Draft's stored client.name differs from the override's businessName.
       exportConfig: {
-        ...makeTemplateExportConfig(),
+        ...makeDraftExportConfig(),
         client: {
-          ...makeTemplateExportConfig().client,
+          ...makeDraftExportConfig().client,
           name: "Second Opinion Services",
           slug: "second-opinion-services",
         },
@@ -374,9 +368,9 @@ describe("createFromTemplateHandler — happy path", () => {
     });
 
     const res = mockRes();
-    await createFromTemplateHandler(
+    await createFromDraftHandler(
       mockReq({
-        template: "second-opinion",
+        draft: "second-opinion",
         business: { businessName: "Handy Quinn", faqKnowledgeBase: "## FAQ" },
       }),
       res,
@@ -385,26 +379,25 @@ describe("createFromTemplateHandler — happy path", () => {
     expect(res._status).toBe(201);
 
     // The merged client config passed into deriveNotificationConfig must
-    // carry the new businessName as `name`, not the template's stale value.
+    // carry the new businessName as `name`, not the draft's stale value.
     const mergedClient = mockDeriveNotificationConfig.mock.calls[0][1];
     expect(mergedClient.name).toBe("Handy Quinn");
     expect(mergedClient.name).not.toBe("Second Opinion Services");
     expect(mergedClient.slug).toBe("handy-quinn");
   });
 
-  it("respects an explicit client.name override over both template and businessName", async () => {
-    mockLoadTemplate.mockResolvedValue({
+  it("respects an explicit client.name override over both draft and businessName", async () => {
+    mockLoadDraft.mockResolvedValue({
       _id: "x",
       name: "plumber",
-      type: "template",
       formData: {},
-      exportConfig: makeTemplateExportConfig(),
+      exportConfig: makeDraftExportConfig(),
     });
 
     const res = mockRes();
-    await createFromTemplateHandler(
+    await createFromDraftHandler(
       mockReq({
-        template: "plumber",
+        draft: "plumber",
         business: { businessName: "Handy Quinn", faqKnowledgeBase: "x" },
         client: { name: "Quinn Heating LLC" },
       }),
@@ -417,18 +410,17 @@ describe("createFromTemplateHandler — happy path", () => {
   });
 
   it("uses overridden client.dispatch_text_numbers from the request", async () => {
-    mockLoadTemplate.mockResolvedValue({
+    mockLoadDraft.mockResolvedValue({
       _id: "x",
       name: "plumber",
-      type: "template",
       formData: {},
-      exportConfig: makeTemplateExportConfig(),
+      exportConfig: makeDraftExportConfig(),
     });
 
     const res = mockRes();
-    await createFromTemplateHandler(
+    await createFromDraftHandler(
       mockReq({
-        template: "plumber",
+        draft: "plumber",
         business: { businessName: "Acme", faqKnowledgeBase: "x" },
         client: { dispatch_text_numbers: ["+19998887777"] },
       }),
