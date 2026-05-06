@@ -1250,6 +1250,25 @@
   </div>
 </div>
 
+<!-- ── Fine-tune Examples Edit Modal ──────────────────────────────────
+     Generic editor used both for per-data-point fine-tune examples and
+     per-path transition examples. Caller passes the current array and a
+     save callback via openFtEditor({ title, description, examples,
+     allowNegative, onSave }). The body builds rows out of #ftModalList
+     and saveFtModal() collects them back into a FinetuneExample[].   -->
+<div id="ftModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeFtModal()">
+  <div class="modal" style="width:720px;">
+    <h3 id="ftModalTitle">Edit Fine-tune Examples</h3>
+    <p class="modal-desc" id="ftModalDesc"></p>
+    <div id="ftModalList" style="max-height:55vh;overflow-y:auto;padding-right:0.25rem;"></div>
+    <button type="button" class="ft-add-example" onclick="ftModalAddExample()" style="margin-top:0.5rem;font-size:0.78rem;">+ Add Example</button>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeFtModal()">Cancel</button>
+      <button class="btn-confirm" onclick="saveFtModal()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Branch Condition Edit Modal ──────────────────────────────────── -->
 <div id="branchModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeBranchModal()">
   <div class="modal" style="width:440px;">
@@ -5401,6 +5420,7 @@
       neData = await nodeRes.json();
       neVersionData = verRes.ok ? await verRes.json() : { versions: [], total: 0 };
       neDirty = false;
+      _ftResetTouched();
       renderNodeEditor(neData, neVersionData);
     } catch (err) {
       container.innerHTML = '<h2>Node Editor</h2><div class="error-msg">' + esc(err.message) + '</div>';
@@ -5555,11 +5575,13 @@
       html += '<div class="ne-path-body">';
 
       // Transition condition
+      const transFtCount = (path.transitionFinetuneExamples || []).length;
       html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;padding:0.3rem 0.5rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:5px;font-size:0.78rem;">' +
         '<span style="color:#0369a1;font-weight:600;flex-shrink:0;">Transition:</span>' +
         '<span style="color:#555;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(path.transitionCondition || '(none)') + '</span>';
       if (canEdit) {
         html += '<button class="ne-btn" onclick="openTransitionEdit(\'' + esc(path.name) + '\')" style="font-size:0.68rem;flex-shrink:0;">Edit</button>';
+        html += '<button class="ne-btn" onclick="editTransitionFinetunes(\'' + esc(path.name) + '\')" style="font-size:0.68rem;flex-shrink:0;" title="Edit transition fine-tune examples">Fine-tunes' + (transFtCount > 0 ? ' (' + transFtCount + ')' : '') + '</button>';
       }
       html += '</div>';
 
@@ -5891,6 +5913,8 @@
       }
       if (!dp.orphan) {
         html += '<button class="ne-btn" onclick="openPromptEdit(\'' + esc(dp.collectNodeId) + '\',\'' + esc(dp.label) + '\')">Edit</button>';
+        const dpFtCount = (dp.finetuneExamples || []).length;
+        html += '<button class="ne-btn" onclick="editDpFinetunes(\'' + esc(pathName) + '\',\'' + esc(dp.variableName) + '\')" title="Edit fine-tune examples for this question">FT' + (dpFtCount > 0 ? ' (' + dpFtCount + ')' : '') + '</button>';
       }
       html += '<button class="ne-btn ne-btn-remove" onclick="neRemoveDataPoint(\'' + esc(dp.variableName) + '\',\'' + esc(pathName) + '\')">Remove</button>';
     }
@@ -6097,6 +6121,145 @@
       promptModalUsesTemplate = false;
       promptModalTemplateApi = null;
     }
+  }
+
+  // ── Fine-tune Examples Modal ────────────────────────────────────
+  // Generic editor over a FinetuneExample[]. Used both for per-DP and
+  // per-path-transition fine-tunes — caller passes the current array
+  // and an onSave callback. Mutations land in neData; markNeDirty is
+  // the caller's responsibility (so the count badge re-renders cleanly).
+  let ftModalCb = null;
+  let ftModalAllowNegative = true;
+
+  function ftModalRenderExample(ex) {
+    const rows = (ex.transcript || [])
+      .map((t) => ftModalRowHtml(t.role || 'user', t.content || ''))
+      .join('');
+    return '<div class="ft-example" style="border:1px solid #e5e7eb;border-radius:6px;padding:0.6rem;margin-bottom:0.5rem;background:#fafafa;">' +
+      '<div class="ft-header" style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem;">' +
+        '<select class="ft-type" style="padding:0.25rem 0.4rem;font-size:0.78rem;">' +
+          '<option value="positive"' + (ex.type === 'positive' ? ' selected' : '') + '>positive</option>' +
+          (ftModalAllowNegative
+            ? '<option value="negative"' + (ex.type === 'negative' ? ' selected' : '') + '>negative</option>'
+            : '') +
+        '</select>' +
+        '<button type="button" class="ft-remove" onclick="this.closest(\'.ft-example\').remove()" style="margin-left:auto;font-size:0.72rem;padding:0.2rem 0.5rem;background:#fee2e2;border:1px solid #fecaca;border-radius:4px;cursor:pointer;">Remove</button>' +
+      '</div>' +
+      '<div class="ft-rows">' + rows + '</div>' +
+      '<button type="button" class="ft-add-row" onclick="ftModalAddRow(this)" style="margin-top:0.35rem;font-size:0.72rem;padding:0.2rem 0.5rem;background:#fff;border:1px dashed #d1d5db;border-radius:4px;cursor:pointer;color:#555;">+ Add line</button>' +
+    '</div>';
+  }
+
+  function ftModalRowHtml(role, content) {
+    return '<div class="ft-row" style="display:flex;gap:0.4rem;margin-bottom:0.25rem;">' +
+      '<select style="padding:0.2rem 0.3rem;font-size:0.76rem;flex-shrink:0;">' +
+        '<option value="user"' + (role === 'user' ? ' selected' : '') + '>user</option>' +
+        '<option value="agent"' + (role === 'agent' ? ' selected' : '') + '>agent</option>' +
+      '</select>' +
+      '<input type="text" value="' + esc(content) + '" placeholder="Transcript line..." style="flex:1;padding:0.25rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">' +
+      '<button type="button" class="ft-row-remove" onclick="this.closest(\'.ft-row\').remove()" title="Remove line" style="padding:0 0.4rem;font-size:0.85rem;background:#fff;border:1px solid #e5e7eb;border-radius:4px;cursor:pointer;color:#888;">&times;</button>' +
+    '</div>';
+  }
+
+  function ftModalAddRow(btn) {
+    const rows = btn.previousElementSibling;
+    const div = document.createElement('div');
+    div.innerHTML = ftModalRowHtml('user', '');
+    rows.appendChild(div.firstElementChild);
+  }
+
+  function ftModalAddExample() {
+    const list = document.getElementById('ftModalList');
+    const div = document.createElement('div');
+    div.innerHTML = ftModalRenderExample({ type: 'positive', transcript: [{ role: 'user', content: '' }] });
+    list.appendChild(div.firstElementChild);
+  }
+
+  function openFtEditor(opts) {
+    ftModalCb = opts.onSave;
+    ftModalAllowNegative = opts.allowNegative !== false;
+    document.getElementById('ftModalTitle').textContent = opts.title || 'Edit Fine-tune Examples';
+    document.getElementById('ftModalDesc').textContent = opts.description || '';
+    const list = document.getElementById('ftModalList');
+    const examples = Array.isArray(opts.examples) ? opts.examples : [];
+    list.innerHTML = examples.length === 0
+      ? '<div style="padding:1rem;color:#888;font-size:0.82rem;text-align:center;border:1px dashed #e5e7eb;border-radius:6px;">No examples yet — click + Add Example to create one.</div>'
+      : examples.map(ftModalRenderExample).join('');
+    document.getElementById('ftModal').style.display = '';
+  }
+
+  function closeFtModal() {
+    document.getElementById('ftModal').style.display = 'none';
+    ftModalCb = null;
+  }
+
+  function saveFtModal() {
+    if (!ftModalCb) { closeFtModal(); return; }
+    const examples = [];
+    document.querySelectorAll('#ftModalList .ft-example').forEach((card) => {
+      const type = card.querySelector('.ft-type').value;
+      const transcript = [];
+      card.querySelectorAll('.ft-row').forEach((row) => {
+        const role = row.querySelector('select').value;
+        const content = row.querySelector('input').value;
+        if (content.trim()) transcript.push({ role, content });
+      });
+      if (transcript.length > 0) examples.push({ type, transcript });
+    });
+    ftModalCb(examples);
+    closeFtModal();
+  }
+
+  // Fine-tune touched tracking — only mutated entries are sent on save so
+  // we don't clobber server-side examples we never showed the user. Reset
+  // each time the editor is freshly loaded for an agent.
+  const _ftTouchedDps = new Set();
+  const _ftTouchedPaths = new Set();
+  function _ftResetTouched() {
+    _ftTouchedDps.clear();
+    _ftTouchedPaths.clear();
+  }
+
+  function editDpFinetunes(pathName, varName) {
+    if (!neData) return;
+    const path = neData.paths.find((p) => p.name === pathName);
+    const dp = path?.dataPoints.find((d) => d.variableName === varName);
+    if (!dp) return;
+    openFtEditor({
+      title: 'Fine-tunes — ' + (dp.label || dp.variableName),
+      description: 'Positive examples advance the agent to the confirm step. Negative examples keep it asking the question.',
+      examples: dp.finetuneExamples || [],
+      onSave: (newExamples) => {
+        dp.finetuneExamples = newExamples;
+        _ftTouchedDps.add(dp.collectNodeId);
+        markNeDirty();
+        renderNodeEditor(neData, neVersionData);
+        showToast('Fine-tunes updated (save to publish)', 'success');
+      },
+    });
+  }
+
+  function editTransitionFinetunes(pathName) {
+    if (!neData) return;
+    const path = neData.paths.find((p) => p.name === pathName);
+    if (!path) return;
+    openFtEditor({
+      title: 'Transition fine-tunes — ' + path.name,
+      description: 'Examples that route the caller to this path. Only positive examples make sense here; negative/agent-level examples live on the intro node and are managed separately.',
+      examples: path.transitionFinetuneExamples || [],
+      allowNegative: false,
+      onSave: (newExamples) => {
+        // Force every saved example to positive — Retell ignores transition
+        // examples without a destination, so a "negative" here would be
+        // silently dropped at generation. The dropdown is also hidden in
+        // the modal (allowNegative=false) but defense-in-depth.
+        path.transitionFinetuneExamples = newExamples.map((ex) => ({ ...ex, type: 'positive' }));
+        _ftTouchedPaths.add(path.name);
+        markNeDirty();
+        renderNodeEditor(neData, neVersionData);
+        showToast('Transition fine-tunes updated (save to publish)', 'success');
+      },
+    });
   }
 
   // ── Transition prompt edit (local, shared across paths) ─────────
@@ -6651,6 +6814,29 @@
           }
         }
         changes.paths[path.name] = pathChanges;
+      }
+    }
+
+    // Fine-tunes — only send entries the user actually touched this
+    // session. Sending all of them would be idempotent on the server but
+    // would make the audit log churn for no-op edits. _ftTouchedDps and
+    // _ftTouchedPaths are populated by editDpFinetunes / editTransitionFinetunes.
+    if (_ftTouchedDps.size > 0) {
+      changes.dataPointFinetunes = {};
+      for (const path of neData.paths) {
+        for (const dp of (path.dataPoints || [])) {
+          if (_ftTouchedDps.has(dp.collectNodeId)) {
+            changes.dataPointFinetunes[dp.collectNodeId] = dp.finetuneExamples || [];
+          }
+        }
+      }
+    }
+    if (_ftTouchedPaths.size > 0) {
+      changes.transitionFinetunes = {};
+      for (const path of neData.paths) {
+        if (_ftTouchedPaths.has(path.name)) {
+          changes.transitionFinetunes[path.name] = path.transitionFinetuneExamples || [];
+        }
       }
     }
 

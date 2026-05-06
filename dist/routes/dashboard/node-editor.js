@@ -146,6 +146,34 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
                 ? fullText.slice(faqPrefix.length)
                 : fullText;
         }
+        // Read fine-tune examples from a node's finetune_transition_examples
+        // array, normalizing back to the FinetuneExample shape (where `type` is
+        // derived from the presence of destination_node_id — Retell stores a
+        // node id for positives and omits the field for negatives).
+        function readNodeFinetunes(node) {
+            const arr = node?.finetune_transition_examples ?? [];
+            return arr.map((ex) => {
+                const out = {
+                    type: ex.destination_node_id ? "positive" : "negative",
+                    transcript: ex.transcript,
+                };
+                if (ex.id)
+                    out.id = ex.id;
+                if (ex.destination_node_id)
+                    out.destination = ex.destination_node_id;
+                return out;
+            });
+        }
+        // Per-path transition examples live on the intro node, distinguished by
+        // destination_node_id. Agent-level (no-destination) examples are pulled
+        // out separately so the UI can treat them as the agent's "fallback"
+        // negatives independent of any specific path.
+        function readIntroFinetunesForPath(transitionNodeId) {
+            return readNodeFinetunes(parsed.introNode.raw).filter((ex) => ex.destination === transitionNodeId);
+        }
+        function readIntroAgentLevelFinetunes() {
+            return readNodeFinetunes(parsed.introNode.raw).filter((ex) => !ex.destination);
+        }
         // Extract branch conditions from data points
         function extractBranchConditions(dp) {
             // Check the router edge for this data point's branch conditions
@@ -237,6 +265,7 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
             humanRequestMode,
             humanRequestNodeId: humanReqNode?.id,
             transitionConditions,
+            introFinetuneExamples: readIntroAgentLevelFinetunes(),
             paths: parsed.paths.map((p) => ({
                 name: p.name,
                 transitionNodeId: p.transitionNode.id,
@@ -249,6 +278,9 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
                 // transfer paths since they skip the Close node entirely.
                 closePrompt: p.endMode === "callback" ? (p.closePrompt ?? closePrompt ?? "") : "",
                 closeNodeId: p.closeNode?.id,
+                // Path-scoped positive examples that route the caller to this
+                // path. Stored on the intro node, filtered here by destination.
+                transitionFinetuneExamples: readIntroFinetunesForPath(p.transitionNode.id),
                 dataPoints: p.dataChain.map((dp) => ({
                     variableName: dp.variableName,
                     label: dp.label,
@@ -258,6 +290,7 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
                     forwardCondition: dp.forwardCondition,
                     variableDefs: dp.variableDefs,
                     branchConditions: extractBranchConditions(dp),
+                    finetuneExamples: readNodeFinetunes(dp.collectNode.raw),
                 })),
             })),
             nodes: parsed.allNodes.map((n) => ({
