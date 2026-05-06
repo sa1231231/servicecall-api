@@ -1349,7 +1349,7 @@
   // Module-level so it survives renderNodeEditor() re-runs (each modal save
   // re-renders the whole panel). Reset to "system" when loading a different
   // agent — see loadNodeEditor.
-  const NE_TABS = ['system', 'intro', 'closing', 'paths'];
+  const NE_TABS = ['system', 'paths'];
   let activeNeTab = 'system';
   // Agent list state — fetched once by loadAgents(), then re-sorted/filtered
   // client-side as the user clicks headers or adds/removes search chips.
@@ -5444,8 +5444,6 @@
       '" data-ne-tab="' + id + '" onclick="switchNeTab(\'' + id + '\')">' + label + '</button>';
     html += '<div class="ne-subtabs">' +
       tab('system', 'System') +
-      tab('intro', 'Intro') +
-      tab('closing', 'Closing Prompts') +
       tab('paths', 'Identity &amp; Routing Paths') +
       '</div>';
 
@@ -5469,43 +5467,10 @@
     }
     html += '</div>';
 
-    // ── Intro pane: Intro Prompt + Transition Prompt ─────────────────────
-    html += '<div class="ne-subtab-pane' + (activeNeTab === 'intro' ? ' active' : '') + '" data-ne-pane="intro">';
-    if (data.introNodeId) {
-      html += fieldBlock('Intro Prompt', data.introPrompt, "openPromptEdit('" + esc(data.introNodeId) + "','Intro')");
-    }
-    if (data.transitionPrompt !== undefined) {
-      html += fieldBlock('Transition Prompt', data.transitionPrompt, 'openTransitionPromptEdit()');
-    }
-    if (!data.introNodeId && data.transitionPrompt === undefined) {
-      html += '<div class="ne-global-prompt" style="color:#888;">No intro or transition prompts to edit.</div>';
-    }
-    html += '</div>';
-
-    // ── Closing Prompts pane ─────────────────────────────────────────────
-    // The per-path Close Prompt lives inside each routing path's card in
-    // the "Identity & Routing Paths" pane. This pane keeps only the prompts
-    // that are global (Closing Remarks, Closing Statement, Live Transfer Recovery).
-    html += '<div class="ne-subtab-pane' + (activeNeTab === 'closing' ? ' active' : '') + '" data-ne-pane="closing">';
-    let renderedAnyClosing = false;
-    if (data.closingRemarksPrompt !== undefined) {
-      html += fieldBlock('Closing Remarks Prompt', data.closingRemarksPrompt, 'openClosingRemarksPromptEdit()');
-      renderedAnyClosing = true;
-    }
-    if (data.closingStatementText !== undefined) {
-      html += fieldBlock('Closing Statement', data.closingStatementText, 'openClosingStatementEdit()', { sub: '(spoken verbatim)' });
-      renderedAnyClosing = true;
-    }
-    if (data.liveTransferRecoveryPrompt !== undefined) {
-      html += fieldBlock('Live Transfer Recovery', data.liveTransferRecoveryPrompt, 'openLiveTransferRecoveryEdit()', { sub: '(if transfer fails)' });
-      renderedAnyClosing = true;
-    }
-    if (!renderedAnyClosing) {
-      html += '<div class="ne-global-prompt" style="color:#888;">No closing prompts to edit.</div>';
-    }
-    html += '</div>';
-
     // ── Identity & Routing Paths pane ────────────────────────────────────
+    // Holds, in chronological order: Identity, Intro prompts, Routing Paths,
+    // and Closing prompts. (Intro and Closing used to be standalone tabs;
+    // collapsed in here so the editor only has two tabs total.)
     html += '<div class="ne-subtab-pane' + (activeNeTab === 'paths' ? ' active' : '') + '" data-ne-pane="paths">';
 
     // Identity sub-section (Business Name + Notification Greeting)
@@ -5532,6 +5497,19 @@
       '<input type="hidden" id="ne-greeting-hidden" value="' + esc(greetingVal) + '">' +
       '</div>' +
       '<div class="config-hint">First line of every SMS/email. Leave blank for default. Type <code>{{</code> for variables.</div></div>';
+
+    // ── Intro sub-section (was its own tab) ──────────────────────────────
+    // Sits above Routing Paths so the editor reads chronologically: what the
+    // agent says first, then how the conversation branches.
+    if (data.introNodeId || data.transitionPrompt !== undefined) {
+      html += '<h3>Intro</h3>';
+      if (data.introNodeId) {
+        html += fieldBlock('Intro Prompt', data.introPrompt, "openPromptEdit('" + esc(data.introNodeId) + "','Intro')");
+      }
+      if (data.transitionPrompt !== undefined) {
+        html += fieldBlock('Transition Prompt', data.transitionPrompt, 'openTransitionPromptEdit()');
+      }
+    }
 
     // Routing Paths sub-section
     html += '<h3>Routing Paths <span style="color:#888;font-weight:400;font-size:0.7rem;text-transform:none;letter-spacing:0;">(' + data.paths.length + ')</span></h3>';
@@ -5670,6 +5648,27 @@
     // "+ Add Path" button lives inside the Identity & Routing Paths pane.
     if (canEdit) {
       html += '<button class="ne-btn" onclick="neAddPath()" style="margin:0.5rem 0 0;padding:0.4rem 1rem;font-size:0.82rem;color:#2563eb;border:1px dashed #93b4f5;">+ Add Path</button>';
+    }
+
+    // ── Closing sub-section (was its own tab) ────────────────────────────
+    // Sits at the bottom of the pane: what the agent says last. Per-path
+    // Close Prompts live inside each path's card above; only the *global*
+    // closing prompts (remarks / statement / transfer recovery) live here.
+    const hasClosingFields =
+      data.closingRemarksPrompt !== undefined ||
+      data.closingStatementText !== undefined ||
+      data.liveTransferRecoveryPrompt !== undefined;
+    if (hasClosingFields) {
+      html += '<h3 style="margin-top:1.25rem;">Closing</h3>';
+      if (data.closingRemarksPrompt !== undefined) {
+        html += fieldBlock('Closing Remarks Prompt', data.closingRemarksPrompt, 'openClosingRemarksPromptEdit()');
+      }
+      if (data.closingStatementText !== undefined) {
+        html += fieldBlock('Closing Statement', data.closingStatementText, 'openClosingStatementEdit()', { sub: '(spoken verbatim)' });
+      }
+      if (data.liveTransferRecoveryPrompt !== undefined) {
+        html += fieldBlock('Live Transfer Recovery', data.liveTransferRecoveryPrompt, 'openLiveTransferRecoveryEdit()', { sub: '(if transfer fails)' });
+      }
     }
 
     // Close the Identity & Routing Paths pane.
