@@ -6,6 +6,7 @@ import {
   type RawDataPoint,
   type BranchNode,
   type BranchCondition,
+  type FinetuneExample,
 } from "./data-point-registry.js";
 import {
   makeIdFactory,
@@ -43,6 +44,10 @@ export interface PathConfig {
   endMode?: PathEndMode;
   /** Resolved E.164 number to transfer to. Required when endMode === "transfer". */
   transferDestination?: string;
+  /** Positive examples that should route the caller to this path. Merged
+   *  into the intro node's finetune_transition_examples at generation time
+   *  with destination_node_id set to this path's transition node. */
+  transitionFinetuneExamples?: FinetuneExample[];
 }
 
 export interface ResolvedPath {
@@ -277,6 +282,7 @@ When listing anything — services, time slots, examples, options — never list
         ? paths.map((p) => ({
             name: p.name,
             transitionCondition: p.transitionCondition,
+            transitionFinetuneExamples: p.transitionFinetuneExamples,
           }))
         : undefined,
     ),

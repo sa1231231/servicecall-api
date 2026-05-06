@@ -10,6 +10,7 @@ import {
   type RawDataPoint,
   type DataPoint,
   type PathConfig,
+  type FinetuneExample,
 } from "./agent-generator/index.js";
 import type { HumanRequestMode } from "./agent-generator/node-builders.js";
 import {
@@ -33,6 +34,10 @@ export interface CreateAgentBody {
     transitionCondition: string;
     dataPoints: RawDataPoint[];
     end_mode?: "callback" | "transfer";
+    /** Positive examples that route the caller to this path. Forwarded
+     *  to PathConfig.transitionFinetuneExamples; merged into the intro
+     *  node's finetune_transition_examples at generation time. */
+    transitionFinetuneExamples?: FinetuneExample[];
   }>;
   client: {
     slug: string;
@@ -222,6 +227,7 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
             dataPoints: p.dataPoints,
             endMode,
             transferDestination: transferDestination ?? undefined,
+            transitionFinetuneExamples: p.transitionFinetuneExamples,
           };
         })
       : undefined;

@@ -1,4 +1,4 @@
-import { type DataPoint, type RawDataPoint } from "./data-point-registry.js";
+import { type DataPoint, type RawDataPoint, type FinetuneExample } from "./data-point-registry.js";
 import { type AgentConfig } from "./node-builders.js";
 export type PathEndMode = "callback" | "transfer";
 export interface PathConfig {
@@ -8,6 +8,10 @@ export interface PathConfig {
     endMode?: PathEndMode;
     /** Resolved E.164 number to transfer to. Required when endMode === "transfer". */
     transferDestination?: string;
+    /** Positive examples that should route the caller to this path. Merged
+     *  into the intro node's finetune_transition_examples at generation time
+     *  with destination_node_id set to this path's transition node. */
+    transitionFinetuneExamples?: FinetuneExample[];
 }
 export interface ResolvedPath {
     name: string;

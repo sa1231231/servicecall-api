@@ -98,6 +98,10 @@ export interface AgentConfig {
 export interface IntroPathConfig {
     name: string;
     transitionCondition: string;
+    /** Positive examples that should route the caller to this path. Folded
+     *  into the intro node's finetune_transition_examples with destination
+     *  set to this path's transitionId. */
+    transitionFinetuneExamples?: FinetuneExample[];
 }
 export declare function makeIdFactory(baseMs?: number): IdFactory;
 export declare function generateIds(f: IdFactory, pathDataPoints: DataPoint[][], pathEndModes?: Array<"callback" | "transfer">): Ids;
@@ -144,7 +148,14 @@ export declare function buildIntroNode(config: AgentConfig, ids: Ids, pos: Posit
         };
     }[];
     start_speaker: string;
-    finetune_transition_examples: Record<string, unknown>[];
+    finetune_transition_examples: (Record<string, unknown> | {
+        transcript: {
+            content: string;
+            role: "user" | "agent";
+        }[];
+        id: string;
+        destination_node_id: string;
+    })[];
     id: string;
     type: string;
     display_position: Position;

@@ -1,4 +1,4 @@
-import { type AgentConfig, type RawDataPoint } from "./agent-generator/index.js";
+import { type AgentConfig, type RawDataPoint, type FinetuneExample } from "./agent-generator/index.js";
 import type { HumanRequestMode } from "./agent-generator/node-builders.js";
 export interface CreateAgentBody {
     business: AgentConfig & {
@@ -10,6 +10,10 @@ export interface CreateAgentBody {
         transitionCondition: string;
         dataPoints: RawDataPoint[];
         end_mode?: "callback" | "transfer";
+        /** Positive examples that route the caller to this path. Forwarded
+         *  to PathConfig.transitionFinetuneExamples; merged into the intro
+         *  node's finetune_transition_examples at generation time. */
+        transitionFinetuneExamples?: FinetuneExample[];
     }>;
     client: {
         slug: string;

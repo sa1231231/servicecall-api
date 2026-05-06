@@ -165,6 +165,7 @@ When listing anything — services, time slots, examples, options — never list
         ? paths.map((p) => ({
             name: p.name,
             transitionCondition: p.transitionCondition,
+            transitionFinetuneExamples: p.transitionFinetuneExamples,
         }))
         : undefined));
     // Per-path nodes: transition + data chain (+ optional pre-transfer + transfer-call)

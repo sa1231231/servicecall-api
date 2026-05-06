@@ -50,6 +50,105 @@ describe("Agent creator — feature reflection", () => {
             expect(serialized).toContain("MARKER_USER_INTRO");
             expect(serialized).toContain("MARKER_AGENT_INTRO");
         });
+        it("per-path transitionFinetuneExamples land on the intro node with the right destination", () => {
+            const example = {
+                type: "positive",
+                transcript: [
+                    { content: "I want to schedule service", role: "user" },
+                    { content: "Got it — let me get some info.", role: "agent" },
+                ],
+                id: "ft-service-1",
+            };
+            const { agent } = generateAgent({ ...baseConfig }, [], [
+                {
+                    name: "Service",
+                    transitionCondition: "service request",
+                    dataPoints: ["full_name"],
+                    transitionFinetuneExamples: [example],
+                },
+                { name: "Sales", transitionCondition: "sales inquiry", dataPoints: ["full_name"] },
+            ], DEFAULTS);
+            const flow = agent.conversationFlow;
+            const startNodeId = flow.start_node_id;
+            const intro = flow.nodes.find((n) => n.id === startNodeId);
+            const examples = intro.finetune_transition_examples;
+            const serviceTransitionId = intro.edges.find((e) => e.transition_condition.prompt === "service request").destination_node_id;
+            // Expect exactly one example, with destination matching the Service path's transition node.
+            expect(examples).toHaveLength(1);
+            expect(examples[0].id).toBe("ft-service-1");
+            expect(examples[0].destination_node_id).toBe(serviceTransitionId);
+            expect(JSON.stringify(examples[0].transcript)).toContain("I want to schedule service");
+        });
+        it("multiple paths each contribute their own transitionFinetuneExamples to the intro node", () => {
+            const { agent } = generateAgent({ ...baseConfig }, [], [
+                {
+                    name: "Service",
+                    transitionCondition: "service request",
+                    dataPoints: ["full_name"],
+                    transitionFinetuneExamples: [
+                        {
+                            type: "positive",
+                            transcript: [{ content: "USER_FOR_SERVICE", role: "user" }],
+                        },
+                    ],
+                },
+                {
+                    name: "Sales",
+                    transitionCondition: "sales inquiry",
+                    dataPoints: ["full_name"],
+                    transitionFinetuneExamples: [
+                        {
+                            type: "positive",
+                            transcript: [{ content: "USER_FOR_SALES", role: "user" }],
+                        },
+                    ],
+                },
+            ], DEFAULTS);
+            const flow = agent.conversationFlow;
+            const intro = flow.nodes.find((n) => n.id === flow.start_node_id);
+            const examples = intro.finetune_transition_examples;
+            const serviceDest = intro.edges.find((e) => e.transition_condition.prompt === "service request").destination_node_id;
+            const salesDest = intro.edges.find((e) => e.transition_condition.prompt === "sales inquiry").destination_node_id;
+            expect(examples).toHaveLength(2);
+            const service = examples.find((e) => JSON.stringify(e.transcript).includes("USER_FOR_SERVICE"));
+            const sales = examples.find((e) => JSON.stringify(e.transcript).includes("USER_FOR_SALES"));
+            expect(service.destination_node_id).toBe(serviceDest);
+            expect(sales.destination_node_id).toBe(salesDest);
+        });
+        it("agent-level introFinetuneExamples coexist with per-path transitionFinetuneExamples", () => {
+            const introEx = {
+                type: "positive",
+                transcript: [{ content: "AGENT_LEVEL_INTRO_EXAMPLE", role: "user" }],
+            };
+            const pathEx = {
+                type: "positive",
+                transcript: [{ content: "PATH_LEVEL_EXAMPLE", role: "user" }],
+            };
+            const { agent } = generateAgent({ ...baseConfig, introFinetuneExamples: [introEx] }, [], [
+                {
+                    name: "Service",
+                    transitionCondition: "service request",
+                    dataPoints: ["full_name"],
+                    transitionFinetuneExamples: [pathEx],
+                },
+                { name: "Sales", transitionCondition: "sales inquiry", dataPoints: ["full_name"] },
+            ], DEFAULTS);
+            const flow = agent.conversationFlow;
+            const intro = flow.nodes.find((n) => n.id === flow.start_node_id);
+            const serialized = JSON.stringify(intro.finetune_transition_examples);
+            expect(serialized).toContain("AGENT_LEVEL_INTRO_EXAMPLE");
+            expect(serialized).toContain("PATH_LEVEL_EXAMPLE");
+            expect(intro.finetune_transition_examples).toHaveLength(2);
+        });
+        it("a path with no transitionFinetuneExamples doesn't pollute the intro node's array", () => {
+            const { agent } = generateAgent({ ...baseConfig }, [], [
+                { name: "Service", transitionCondition: "service request", dataPoints: ["full_name"] },
+                { name: "Sales", transitionCondition: "sales inquiry", dataPoints: ["full_name"] },
+            ], DEFAULTS);
+            const flow = agent.conversationFlow;
+            const intro = flow.nodes.find((n) => n.id === flow.start_node_id);
+            expect(intro.finetune_transition_examples).toEqual([]);
+        });
         it("closePrompt populates the Close node (single-path)", () => {
             const { agent } = generateAgent({ ...baseConfig, closePrompt: "MARKER_CLOSE_PROMPT_99" }, ["full_name"], undefined, DEFAULTS);
             const close = findNodeByName(agent, "Close");

@@ -129,6 +129,10 @@ export interface AgentConfig {
 export interface IntroPathConfig {
   name: string;
   transitionCondition: string;
+  /** Positive examples that should route the caller to this path. Folded
+   *  into the intro node's finetune_transition_examples with destination
+   *  set to this path's transitionId. */
+  transitionFinetuneExamples?: FinetuneExample[];
 }
 
 // ── ID Factory ───────────────────────────────────────────────────────────────
@@ -379,12 +383,25 @@ Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ
     name: "Intro",
     edges,
     start_speaker: "agent",
-    finetune_transition_examples: resolveFinetuneExamples(
-      config.introFinetuneExamples,
-      ids.paths[0].transitionId,
-      nodeMap,
-      f,
-    ),
+    finetune_transition_examples: [
+      ...resolveFinetuneExamples(
+        config.introFinetuneExamples,
+        ids.paths[0].transitionId,
+        nodeMap,
+        f,
+      ),
+      // Per-path positive examples: each is a "this caller wants path X"
+      // training utterance. Folded into the intro node's single finetune
+      // array because Retell expects all transition examples on the source
+      // node, with destination_node_id distinguishing where each leads.
+      ...((pathConfigs || []).flatMap((p, i) =>
+        (p.transitionFinetuneExamples || []).map((ex) => ({
+          transcript: ex.transcript,
+          id: ex.id || `fe-${f.nextTs()}`,
+          destination_node_id: ids.paths[i].transitionId,
+        })),
+      )),
+    ],
     id: ids.introId,
     type: "conversation",
     display_position: pos.intro,
