@@ -617,6 +617,17 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     it("rejects provision-number without slug", async () => {
       expect((await fetch(url("/agents/provision-number"), { method: "POST", headers: authHeaders(), body: "{}" })).status).toBe(400);
     });
+    // Unification regression: drafts and templates were collapsed; the route
+    // is now /agents/from-draft. Old path is gone.
+    it("rejects from-draft without draft field", async () => {
+      const r = await fetch(url("/agents/from-draft"), { method: "POST", headers: authHeaders(), body: "{}" });
+      expect(r.status).toBe(400);
+      expect((await json(r)).error).toMatch(/draft/);
+    });
+    it("legacy /agents/from-template returns 404 (route removed)", async () => {
+      const r = await fetch(url("/agents/from-template"), { method: "POST", headers: authHeaders(), body: "{}" });
+      expect(r.status).toBe(404);
+    });
   });
 
   // ── 17. Data Point Defaults ─────────────────────────────────────────
