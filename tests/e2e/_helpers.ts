@@ -91,6 +91,22 @@ export async function apiPatch<T>(
   return (await resp.json()) as T;
 }
 
+/** Convenience: POST JSON body. */
+export async function apiPost<T>(
+  env: E2EEnv,
+  path: string,
+  body: unknown,
+): Promise<T> {
+  const resp = await apiFetch(env, path, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    throw new Error(`apiPost ${path} failed: ${resp.status} ${await resp.text()}`);
+  }
+  return (await resp.json()) as T;
+}
+
 /** Demo Meter is the canonical test agent across system + e2e tests. */
 export const DEMO_METER = {
   slug: "demo-meter",
