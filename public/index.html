@@ -1230,15 +1230,18 @@
   // dashboard's per-agent edit UI (Settings tab + Node Editor) handles
   // editing these on existing agents — the create form just round-trips
   // them so a backup → restore preserves the full client config.
-  let importedClientExtras = {
-    dispatch_call_overrides: null,   // Record<string, string> or null
-    dispatch_cc: null,               // string or null
-    webhook_url: null,               // string or null
-    notification_greeting: null,     // string or null
-    weekly_report_enabled: null,     // boolean or null
-    outbound_from_number: null,      // string or null
-    path_end_modes: null,            // Record<path, "callback"|"transfer"> or null
-  };
+  function emptyImportedClientExtras() {
+    return {
+      dispatch_call_overrides: null,   // Record<string, string> or null
+      dispatch_cc: null,               // string or null
+      webhook_url: null,               // string or null
+      notification_greeting: null,     // string or null
+      weekly_report_enabled: null,     // boolean or null
+      outbound_from_number: null,      // string or null
+      path_end_modes: null,            // Record<path, "callback"|"transfer"> or null
+    };
+  }
+  let importedClientExtras = emptyImportedClientExtras();
 
   // Auto-load API key and defaults from server environment
   let ownerPhone = '';
@@ -2722,6 +2725,10 @@
       const res = await fetch('/form/drafts/' + id);
       if (!res.ok) throw new Error('Failed');
       const item = await res.json();
+      // Reset JSON-import extras so a prior file import can't leak into a
+      // freshly-loaded draft. (loadFromJsonFile sets these BEFORE calling
+      // loadFormState, so the reset has to live here, not in loadFormState.)
+      importedClientExtras = emptyImportedClientExtras();
       loadFormState(item.formData);
       currentDraftId = item._id;
       showSaveStatus('Draft loaded');
