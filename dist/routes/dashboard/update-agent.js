@@ -22,7 +22,7 @@ export async function updateAgentHandler(req, res) {
             return;
         }
     }
-    for (const field of ["contact_name", "contact_phone", "contact_email", "contact_notes"]) {
+    for (const field of ["contact_name", "contact_phone", "contact_email", "contact_timezone", "contact_notes"]) {
         if (!(field in body))
             continue;
         const v = body[field];

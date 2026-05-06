@@ -74,6 +74,7 @@ export interface JsonClientEntry {
   contact_name?: string | null;
   contact_phone?: string | null;
   contact_email?: string | null;
+  contact_timezone?: string | null;
   contact_notes?: string | null;
   phone_fallback_to_caller?: boolean;
   hide_not_mentioned?: boolean;
@@ -243,6 +244,7 @@ const EDITABLE_FIELDS = new Set([
   "contact_name",
   "contact_phone",
   "contact_email",
+  "contact_timezone",
   "contact_notes",
   "message_types",
   "resolve_rules",

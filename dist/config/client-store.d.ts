@@ -56,6 +56,7 @@ export interface JsonClientEntry {
     contact_name?: string | null;
     contact_phone?: string | null;
     contact_email?: string | null;
+    contact_timezone?: string | null;
     contact_notes?: string | null;
     phone_fallback_to_caller?: boolean;
     hide_not_mentioned?: boolean;

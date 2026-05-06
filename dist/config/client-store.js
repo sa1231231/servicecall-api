@@ -122,6 +122,7 @@ const EDITABLE_FIELDS = new Set([
     "contact_name",
     "contact_phone",
     "contact_email",
+    "contact_timezone",
     "contact_notes",
     "message_types",
     "resolve_rules",
