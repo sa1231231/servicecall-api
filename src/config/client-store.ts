@@ -70,6 +70,9 @@ export interface JsonClientEntry {
   retell_agents?: Record<string, Record<string, unknown>>;
   last_deployed_at?: string;
   portal_token?: string | null;
+  // ID of the agent_folders document this client belongs to. Null/missing
+  // means the client lives in the "Unfiled" pseudo-folder on the dashboard.
+  folder_id?: string | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -225,6 +228,7 @@ const EDITABLE_FIELDS = new Set([
   "trial_start_date",
   "message_types",
   "resolve_rules",
+  "folder_id",
 ]);
 
 /** Update multiple fields on a client in MongoDB and in memory. */

@@ -14,6 +14,13 @@ import { updateAgentHandler } from "./update-agent.js";
 import { cloneAgentHandler } from "./clone-agent.js";
 import { deleteAgentHandler } from "./delete-agent.js";
 import {
+  listFoldersHandler,
+  createFolderHandler,
+  updateFolderHandler,
+  deleteFolderHandler,
+} from "./folders.js";
+import { moveAgentFolderHandler } from "./move-agent-folder.js";
+import {
   getClientDocument,
   generatePortalToken,
   listDeletedClients,
@@ -84,6 +91,15 @@ dashboardApiRouter.patch("/agents/:slug/active", requirePermission("edit_agents"
 dashboardApiRouter.patch("/agents/:slug", requirePermission("edit_agents"), updateAgentHandler);
 dashboardApiRouter.post("/agents/:slug/clone", requirePermission("clone_agents"), cloneAgentHandler);
 dashboardApiRouter.delete("/agents/:slug", requireRootForProtectedSlug, requirePermission("delete_agents"), deleteAgentHandler);
+dashboardApiRouter.patch("/agents/:slug/folder", requirePermission("edit_agents"), moveAgentFolderHandler);
+
+// ── Folders ─────────────────────────────────────────────────────────────────
+// Read is open to any dashboard viewer; mutations require edit_agents.
+// Deleting a folder moves its agents back to "Unfiled" (root) — never deletes.
+dashboardApiRouter.get("/folders", listFoldersHandler);
+dashboardApiRouter.post("/folders", requirePermission("edit_agents"), createFolderHandler);
+dashboardApiRouter.patch("/folders/:id", requirePermission("edit_agents"), updateFolderHandler);
+dashboardApiRouter.delete("/folders/:id", requirePermission("edit_agents"), deleteFolderHandler);
 
 // ── Export ───────────────────────────────────────────────────────────────────
 import { exportAgentHandler } from "../agents/export-agent.js";

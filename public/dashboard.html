@@ -77,6 +77,79 @@
     padding: 1rem; text-align: center; color: #6b7280;
     background: #fff; border: 1px dashed #cbd5e1; border-radius: 6px;
   }
+  /* Folder grouping in the agent list */
+  .folder-toolbar {
+    display: flex; gap: 0.5rem; align-items: center;
+    margin-bottom: 0.5rem;
+  }
+  .btn-new-folder {
+    font-size: 0.78rem; padding: 0.3rem 0.7rem;
+    background: #f0f9ff; border: 1px solid #bae6fd; color: #0369a1;
+    border-radius: 5px; cursor: pointer;
+  }
+  .btn-new-folder:hover { background: #e0f2fe; }
+  tbody.folder-group[data-collapsed="true"] tr:not(.folder-header) { display: none; }
+  tr.folder-header > td {
+    background: #f1f5f9;
+    border-top: 2px solid #cbd5e1;
+    padding: 0.5rem 0.75rem;
+    font-weight: 600;
+    color: #1e293b;
+    cursor: pointer;
+    user-select: none;
+  }
+  tr.folder-header.unfiled > td {
+    background: #fafafa; border-top: 1px solid #e2e8f0; color: #475569;
+  }
+  tr.folder-header.drop-target > td {
+    background: #dbeafe; border-top: 2px solid #2563eb;
+  }
+  .folder-header-arrow {
+    display: inline-block; width: 1em; transition: transform 0.15s;
+    color: #64748b; margin-right: 0.4rem;
+  }
+  tbody.folder-group[data-collapsed="false"] .folder-header-arrow { transform: rotate(90deg); }
+  .folder-header-name {
+    display: inline-block; min-width: 6em; cursor: text;
+  }
+  .folder-header-name[contenteditable="true"]:focus {
+    outline: 2px solid #2563eb; outline-offset: 2px; background: #fff;
+    border-radius: 3px; padding: 0 0.2rem;
+  }
+  .folder-header-count {
+    color: #64748b; font-weight: 500; margin-left: 0.5rem;
+    font-size: 0.78rem;
+  }
+  .folder-header-actions {
+    float: right; display: inline-flex; gap: 0.4rem;
+    font-size: 0.72rem; font-weight: 500;
+  }
+  .folder-header-actions button {
+    background: transparent; border: 1px solid #cbd5e1; border-radius: 4px;
+    padding: 0.15rem 0.5rem; cursor: pointer; color: #475569;
+  }
+  .folder-header-actions button:hover { background: #fff; border-color: #94a3b8; }
+  .folder-header-actions button.danger:hover { color: #991b1b; border-color: #fca5a5; }
+  .clickable-row[draggable="true"] { cursor: pointer; }
+  .clickable-row.dragging { opacity: 0.4; }
+  .move-folder-btn {
+    background: transparent; border: none; cursor: pointer;
+    color: #6b7280; padding: 0.15rem 0.3rem; font-size: 0.85rem;
+  }
+  .move-folder-btn:hover { color: #1e40af; }
+  .move-folder-menu {
+    position: absolute; z-index: 50; min-width: 12rem;
+    background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    padding: 0.25rem 0;
+    font-size: 0.82rem;
+  }
+  .move-folder-menu .move-folder-item {
+    padding: 0.4rem 0.7rem; cursor: pointer; color: #1e293b;
+  }
+  .move-folder-menu .move-folder-item:hover { background: #f1f5f9; }
+  .move-folder-menu .move-folder-item.current { color: #94a3b8; cursor: default; }
+  .move-folder-menu .move-folder-item.current:hover { background: transparent; }
   .badge {
     display: inline-block;
     padding: 0.15rem 0.5rem;
@@ -789,8 +862,11 @@
   <div id="agentSearchBar" class="agent-search-bar" style="display:none;">
     <div class="agent-search-chips" id="agentSearchChips"></div>
     <input type="text" id="agentSearchInput" class="agent-search-input"
-      placeholder="Search agents — press Enter to add a chip (multiple chips = OR)"
+      placeholder="Search agents and folders — press Enter to add a chip (multiple chips = OR)"
       autocomplete="off">
+  </div>
+  <div id="folderToolbar" class="folder-toolbar" style="display:none;" data-perm="edit_agents">
+    <button type="button" class="btn-new-folder" onclick="createFolderPrompt()">+ New Folder</button>
   </div>
   <div id="agentList"><div class="loading">Loading agents...</div></div>
 </div>
@@ -1206,6 +1282,12 @@
   let agentSearchChips = [];
   let agentSortKey = null;
   let agentSortDir = null;
+  // Folders for grouping agents on the dashboard. Loaded once alongside the
+  // agent list. Always includes an implicit "Unfiled" pseudo-folder rendered
+  // first so agents without a folder_id stay visible.
+  let agentFolders = [];                  // [{_id, name, position}] from server
+  let agentExpandedFolders = new Set();   // folder ids that are currently open
+  const UNFILED_FOLDER_ID = '__unfiled__';
   let callOffset = 0;
   const CALL_LIMIT = 50;
   let dashAllCalls = [];
@@ -1363,31 +1445,43 @@
         });
       }
 
-      const [res, settingsRes] = await Promise.all([
+      const [res, settingsRes, foldersRes] = await Promise.all([
         fetch('/dashboard/api/agents'),
         fetch('/dashboard/api/settings'),
+        fetch('/dashboard/api/folders'),
       ]);
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const agents = await res.json();
       const globalSettings = settingsRes.ok ? await settingsRes.json() : {};
       agentTrialDays = globalSettings.free_trial_days || 14;
       agentRows = agents;
+      agentFolders = foldersRes.ok ? await foldersRes.json() : [];
 
       if (agents.length === 0) {
         document.getElementById('agentSearchBar').style.display = 'none';
+        document.getElementById('folderToolbar').style.display = 'none';
         document.getElementById('agentList').innerHTML = '<div class="loading">No agents found.</div>';
         return;
       }
 
       document.getElementById('agentSearchBar').style.display = 'flex';
-      // Restore previously persisted sort + chip state on first paint.
-      // Idempotent — safe to call on re-renders triggered by toggleActive etc.
+      const tb = document.getElementById('folderToolbar');
+      // Show toolbar respecting the data-perm gate that the global startup pass applied.
+      if (tb && tb.style.display !== 'none' || (currentUser?.permissions?.edit_agents)) {
+        tb.style.display = 'flex';
+      }
+      // Restore previously persisted sort + chip + expanded-folder state.
       loadAgentListState();
       renderAgentList();
       wireAgentSearchInput();
     } catch (err) {
       document.getElementById('agentList').innerHTML = '<div class="error-msg">Error: ' + esc(err.message) + '</div>';
     }
+  }
+
+  function folderById(id) {
+    if (!id) return null;
+    return agentFolders.find(f => f._id === id) || null;
   }
 
   // ── Agent list state + render ──────────────────────────────────────────────
@@ -1403,10 +1497,19 @@
 
   function agentMatchesChip(a, chip) {
     const needle = chip.toLowerCase();
+    const folder = folderById(a.folder_id);
+    const folderName = folder ? folder.name : '';
     return (
       (a.name || '').toLowerCase().includes(needle) ||
-      (a.slug || '').toLowerCase().includes(needle)
+      (a.slug || '').toLowerCase().includes(needle) ||
+      folderName.toLowerCase().includes(needle)
     );
+  }
+
+  function folderMatchesChips(folder) {
+    if (agentSearchChips.length === 0) return false;
+    const name = (folder?.name || '').toLowerCase();
+    return agentSearchChips.some(c => name.includes(c.toLowerCase()));
   }
 
   function filteredAgents() {
@@ -1459,14 +1562,31 @@
     });
   }
 
+  // Render the agent list grouped by folder. Each folder renders as a
+  // <tbody class="folder-group"> containing a header row and the agent rows.
+  // Collapsed state is tracked on the tbody via data-collapsed; CSS hides
+  // non-header rows when collapsed. When chips are active, folders with
+  // matching contents (or matching name) auto-expand for the duration.
   function renderAgentList() {
     renderSearchChips();
-    const visible = sortedAgents(filteredAgents());
+    const filtered = filteredAgents();
     const listEl = document.getElementById('agentList');
+    const canEdit = !!currentUser?.permissions?.edit_agents;
 
-    if (visible.length === 0 && agentSearchChips.length > 0) {
-      listEl.innerHTML = '<div class="agent-search-empty">No agents match the current search. Remove a chip to widen the results.</div>';
+    if (filtered.length === 0 && agentSearchChips.length === 0) {
+      // No agents at all — but folders may still exist; bail with the loading message.
+      listEl.innerHTML = '<div class="loading">No agents found.</div>';
       return;
+    }
+    if (filtered.length === 0 && agentSearchChips.length > 0) {
+      // Search matched nothing in the agents — but a folder name might match.
+      // Show every matching folder header as an empty group; otherwise the
+      // standard "no matches" message.
+      const matchedFolders = agentFolders.filter(folderMatchesChips);
+      if (matchedFolders.length === 0) {
+        listEl.innerHTML = '<div class="agent-search-empty">No agents match the current search. Remove a chip to widen the results.</div>';
+        return;
+      }
     }
 
     const headerCell = (key, label, attrs) => {
@@ -1484,51 +1604,124 @@
       headerCell('mtd_cogs', 'MTD COGS', ' title="Month-to-date cost of goods sold"') +
       headerCell('active', 'Active') +
       headerCell('shadow', 'Shadow Mode') +
-      '</tr></thead><tbody>';
+      '</tr></thead>';
 
-    for (const a of visible) {
-      const sc = a.shadow_mode ? 'badge-shadow' : 'badge-live';
-      const sl = a.shadow_mode ? 'Shadow' : 'Live';
-      const cogsCents = a.mtd_cogs_cents ?? 0;
-      const cogsHtml = cogsCents > 0
-        ? '$' + (cogsCents / 100).toFixed(2)
-        : '<span style="color:#aaa">$0.00</span>';
+    // Decide the order folders are rendered in. Unfiled always first; then
+    // user-created folders in their stored position order.
+    const orderedFolders = [
+      { _id: UNFILED_FOLDER_ID, name: 'Unfiled', position: -1 },
+      ...agentFolders.slice().sort((a, b) => a.position - b.position),
+    ];
 
-      let trialHtml = '<span style="color:#aaa">—</span>';
-      const remaining = trialRemainingDays(a);
-      if (remaining !== null) {
-        if (remaining > 4) {
-          trialHtml = '<span class="badge badge-live">' + remaining + 'd left</span>';
-        } else if (remaining > 0) {
-          trialHtml = '<span class="badge badge-shadow">' + remaining + 'd left</span>';
-        } else {
-          trialHtml = '<span class="badge badge-expired">Expired</span>';
-        }
-      }
-
-      html += '<tr class="clickable-row" onclick="showDetail(\'' + esc(a.slug) + '\')" data-slug="' + esc(a.slug) + '">' +
-        '<td><strong>' + esc(a.name) + '</strong></td>' +
-        '<td>' + trialHtml + '</td>' +
-        '<td><span class="badge ' + sc + '" data-status>' + sl + '</span></td>' +
-        '<td style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>' +
-        '<td onclick="event.stopPropagation()">' +
-          '<label class="toggle">' +
-            '<input type="checkbox" ' + (a.active !== false ? 'checked' : '') +
-              ' onchange="toggleActive(\'' + esc(a.slug) + '\', this)">' +
-            '<span class="slider"></span>' +
-          '</label>' +
-        '</td>' +
-        '<td onclick="event.stopPropagation()">' +
-          '<label class="toggle">' +
-            '<input type="checkbox" ' + (a.shadow_mode ? 'checked' : '') +
-              ' onchange="toggleShadow(\'' + esc(a.slug) + '\', this)">' +
-            '<span class="slider"></span>' +
-          '</label>' +
-        '</td>' +
-        '</tr>';
+    // Bucket filtered agents by folder. Anything pointing at a deleted folder
+    // (or null) lands in Unfiled so nothing disappears.
+    const byFolder = new Map();
+    for (const f of orderedFolders) byFolder.set(f._id, []);
+    for (const a of filtered) {
+      const fid = (a.folder_id && byFolder.has(a.folder_id)) ? a.folder_id : UNFILED_FOLDER_ID;
+      byFolder.get(fid).push(a);
     }
-    html += '</tbody></table>';
+
+    const chipsActive = agentSearchChips.length > 0;
+    for (const folder of orderedFolders) {
+      const rows = byFolder.get(folder._id) || [];
+      const isUnfiled = folder._id === UNFILED_FOLDER_ID;
+      // Skip empty Unfiled bucket when no chips and no agents — keeps the
+      // dashboard clean for users who organize everything.
+      if (isUnfiled && rows.length === 0 && !chipsActive) continue;
+      // Skip empty user folder during search unless the folder name itself matched.
+      if (!isUnfiled && rows.length === 0 && chipsActive && !folderMatchesChips(folder)) continue;
+
+      const userExpanded = agentExpandedFolders.has(folder._id);
+      // While searching, expand any folder with content or whose name matches
+      // so results stay visible without manual interaction.
+      const autoExpand = chipsActive && (rows.length > 0 || folderMatchesChips(folder));
+      const collapsed = !(userExpanded || autoExpand);
+
+      const sorted = sortedAgents(rows);
+      const headerActions = !isUnfiled && canEdit
+        ? '<span class="folder-header-actions" onclick="event.stopPropagation()">' +
+          '<button type="button" onclick="renameFolderInline(\'' + esc(folder._id) + '\', this)">Rename</button>' +
+          '<button type="button" class="danger" onclick="deleteFolderConfirm(\'' + esc(folder._id) + '\')">Delete</button>' +
+          '</span>'
+        : '';
+      html += '<tbody class="folder-group" data-folder-id="' + esc(folder._id) + '" data-collapsed="' + collapsed + '"' +
+        ' ondrop="onFolderDrop(event, \'' + esc(folder._id) + '\')"' +
+        ' ondragover="onFolderDragOver(event)" ondragleave="onFolderDragLeave(event)">' +
+        '<tr class="folder-header' + (isUnfiled ? ' unfiled' : '') + '" onclick="toggleFolder(\'' + esc(folder._id) + '\')">' +
+          '<td colspan="6">' +
+            '<span class="folder-header-arrow">▶</span>' +
+            '<span class="folder-header-name" data-folder-id="' + esc(folder._id) + '">' + esc(folder.name) + '</span>' +
+            '<span class="folder-header-count">(' + rows.length + ')</span>' +
+            headerActions +
+          '</td>' +
+        '</tr>';
+
+      for (const a of sorted) {
+        html += renderAgentRow(a, canEdit);
+      }
+      html += '</tbody>';
+    }
+
+    html += '</table>';
     listEl.innerHTML = html;
+  }
+
+  function renderAgentRow(a, canEdit) {
+    const sc = a.shadow_mode ? 'badge-shadow' : 'badge-live';
+    const sl = a.shadow_mode ? 'Shadow' : 'Live';
+    const cogsCents = a.mtd_cogs_cents ?? 0;
+    const cogsHtml = cogsCents > 0
+      ? '$' + (cogsCents / 100).toFixed(2)
+      : '<span style="color:#aaa">$0.00</span>';
+
+    let trialHtml = '<span style="color:#aaa">—</span>';
+    const remaining = trialRemainingDays(a);
+    if (remaining !== null) {
+      if (remaining > 4) {
+        trialHtml = '<span class="badge badge-live">' + remaining + 'd left</span>';
+      } else if (remaining > 0) {
+        trialHtml = '<span class="badge badge-shadow">' + remaining + 'd left</span>';
+      } else {
+        trialHtml = '<span class="badge badge-expired">Expired</span>';
+      }
+    }
+
+    const moveBtn = canEdit
+      ? '<button class="move-folder-btn" title="Move to folder…" ' +
+          'onclick="event.stopPropagation();openMoveFolderMenu(event,\'' + esc(a.slug) + '\')">📁</button>'
+      : '';
+
+    return '<tr class="clickable-row" onclick="showDetail(\'' + esc(a.slug) + '\')"' +
+      ' data-slug="' + esc(a.slug) + '"' +
+      (canEdit ? ' draggable="true" ondragstart="onAgentDragStart(event)" ondragend="onAgentDragEnd(event)"' : '') +
+      '>' +
+      '<td><strong>' + esc(a.name) + '</strong> ' + moveBtn + '</td>' +
+      '<td>' + trialHtml + '</td>' +
+      '<td><span class="badge ' + sc + '" data-status>' + sl + '</span></td>' +
+      '<td style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>' +
+      '<td onclick="event.stopPropagation()">' +
+        '<label class="toggle">' +
+          '<input type="checkbox" ' + (a.active !== false ? 'checked' : '') +
+            ' onchange="toggleActive(\'' + esc(a.slug) + '\', this)">' +
+          '<span class="slider"></span>' +
+        '</label>' +
+      '</td>' +
+      '<td onclick="event.stopPropagation()">' +
+        '<label class="toggle">' +
+          '<input type="checkbox" ' + (a.shadow_mode ? 'checked' : '') +
+            ' onchange="toggleShadow(\'' + esc(a.slug) + '\', this)">' +
+          '<span class="slider"></span>' +
+        '</label>' +
+      '</td>' +
+      '</tr>';
+  }
+
+  function toggleFolder(folderId) {
+    if (agentExpandedFolders.has(folderId)) agentExpandedFolders.delete(folderId);
+    else agentExpandedFolders.add(folderId);
+    saveAgentListState();
+    renderAgentList();
   }
 
   function setAgentSort(key) {
@@ -1556,28 +1749,44 @@
         sortKey: agentSortKey,
         sortDir: agentSortDir,
         chips: agentSearchChips,
+        expandedFolders: [...agentExpandedFolders],
       };
       localStorage.setItem(AGENT_LIST_STATE_KEY, JSON.stringify(state));
     } catch (_) { /* storage unavailable — ignore */ }
   }
   function loadAgentListState() {
+    let restored = false;
     try {
       const raw = localStorage.getItem(AGENT_LIST_STATE_KEY);
-      if (!raw) return;
-      const state = JSON.parse(raw);
-      // Only accept known shapes — defensive against schema drift.
-      if (state && typeof state === 'object') {
-        if (typeof state.sortKey === 'string' || state.sortKey === null) {
-          agentSortKey = state.sortKey;
-        }
-        if (state.sortDir === 'asc' || state.sortDir === 'desc' || state.sortDir === null) {
-          agentSortDir = state.sortDir;
-        }
-        if (Array.isArray(state.chips)) {
-          agentSearchChips = state.chips.filter(c => typeof c === 'string' && c.trim());
+      if (raw) {
+        const state = JSON.parse(raw);
+        if (state && typeof state === 'object') {
+          if (typeof state.sortKey === 'string' || state.sortKey === null) {
+            agentSortKey = state.sortKey;
+          }
+          if (state.sortDir === 'asc' || state.sortDir === 'desc' || state.sortDir === null) {
+            agentSortDir = state.sortDir;
+          }
+          if (Array.isArray(state.chips)) {
+            agentSearchChips = state.chips.filter(c => typeof c === 'string' && c.trim());
+          }
+          if (Array.isArray(state.expandedFolders)) {
+            agentExpandedFolders = new Set(
+              state.expandedFolders.filter(id => typeof id === 'string'),
+            );
+            restored = true;
+          }
         }
       }
     } catch (_) { /* corrupt or unavailable — ignore */ }
+    // First-time visitors: default every folder (and Unfiled) to expanded so
+    // nothing hides on first paint.
+    if (!restored) {
+      agentExpandedFolders = new Set([
+        UNFILED_FOLDER_ID,
+        ...agentFolders.map(f => f._id),
+      ]);
+    }
   }
 
   function renderSearchChips() {
@@ -1623,6 +1832,204 @@
       }
     });
     agentSearchInputWired = true;
+  }
+
+  // ── Folder CRUD ─────────────────────────────────────────────────────────────
+
+  async function createFolderPrompt() {
+    const name = prompt('Folder name:');
+    if (!name || !name.trim()) return;
+    try {
+      const res = await fetch('/dashboard/api/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      const created = await res.json();
+      agentFolders.push(created);
+      // Expand the new folder by default so the user sees they've created it.
+      agentExpandedFolders.add(created._id);
+      saveAgentListState();
+      renderAgentList();
+      showToast('Folder "' + created.name + '" created', 'success');
+    } catch (err) {
+      showToast('Create failed: ' + err.message, 'error');
+    }
+  }
+
+  // Inline rename: turn the folder name span into a contenteditable, save on blur or Enter.
+  function renameFolderInline(folderId, btn) {
+    const folderRow = btn.closest('tr.folder-header');
+    if (!folderRow) return;
+    const nameEl = folderRow.querySelector('.folder-header-name');
+    if (!nameEl) return;
+    const original = nameEl.textContent;
+    nameEl.setAttribute('contenteditable', 'true');
+    nameEl.focus();
+    // Select all the existing text
+    const range = document.createRange();
+    range.selectNodeContents(nameEl);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    const finish = async (commit) => {
+      nameEl.setAttribute('contenteditable', 'false');
+      nameEl.removeEventListener('blur', onBlur);
+      nameEl.removeEventListener('keydown', onKey);
+      const next = (nameEl.textContent || '').trim();
+      if (!commit || !next || next === original) {
+        nameEl.textContent = original;
+        return;
+      }
+      try {
+        const res = await fetch('/dashboard/api/folders/' + encodeURIComponent(folderId), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: next }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+        const updated = await res.json();
+        const f = agentFolders.find(x => x._id === folderId);
+        if (f) f.name = updated.name;
+        renderAgentList();
+        showToast('Folder renamed', 'success');
+      } catch (err) {
+        nameEl.textContent = original;
+        showToast('Rename failed: ' + err.message, 'error');
+      }
+    };
+    const onBlur = () => finish(true);
+    const onKey = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); nameEl.blur(); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    };
+    nameEl.addEventListener('blur', onBlur);
+    nameEl.addEventListener('keydown', onKey);
+  }
+
+  async function deleteFolderConfirm(folderId) {
+    const folder = folderById(folderId);
+    if (!folder) return;
+    const ok = confirm('Delete folder "' + folder.name + '"? Agents inside will move to Unfiled — they won\'t be deleted.');
+    if (!ok) return;
+    try {
+      const res = await fetch('/dashboard/api/folders/' + encodeURIComponent(folderId), {
+        method: 'DELETE',
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      const result = await res.json();
+      // Drop the folder locally and bring its agents back to root.
+      agentFolders = agentFolders.filter(f => f._id !== folderId);
+      agentExpandedFolders.delete(folderId);
+      for (const a of agentRows) {
+        if (a.folder_id === folderId) a.folder_id = null;
+      }
+      saveAgentListState();
+      renderAgentList();
+      showToast('Folder deleted — ' + (result.agents_unfiled || 0) + ' agents moved to Unfiled', 'success');
+    } catch (err) {
+      showToast('Delete failed: ' + err.message, 'error');
+    }
+  }
+
+  // ── Move-to-folder dropdown ─────────────────────────────────────────────────
+
+  let openMoveMenuEl = null;
+  function openMoveFolderMenu(evt, slug) {
+    closeMoveFolderMenu();
+    const a = agentRows.find(x => x.slug === slug);
+    if (!a) return;
+    const menu = document.createElement('div');
+    menu.className = 'move-folder-menu';
+    const target = (id, label, isCurrent) => {
+      const cls = 'move-folder-item' + (isCurrent ? ' current' : '');
+      const onclick = isCurrent ? '' : 'onclick="moveAgentToFolder(\'' + esc(slug) + '\',' + (id === null ? 'null' : '\'' + esc(id) + '\'') + ')"';
+      return '<div class="' + cls + '"' + (onclick ? ' ' + onclick : '') + '>' + label + '</div>';
+    };
+    let html = '';
+    const currentId = a.folder_id || null;
+    html += target(null, 'Unfiled (root)', currentId === null);
+    for (const f of agentFolders.slice().sort((a, b) => a.position - b.position)) {
+      html += target(f._id, esc(f.name), currentId === f._id);
+    }
+    menu.innerHTML = html;
+    document.body.appendChild(menu);
+    // Position next to the click point
+    const rect = evt.currentTarget.getBoundingClientRect();
+    menu.style.top = (rect.bottom + window.scrollY) + 'px';
+    menu.style.left = (rect.left + window.scrollX) + 'px';
+    openMoveMenuEl = menu;
+    setTimeout(() => document.addEventListener('click', closeMoveFolderMenu, { once: true }), 0);
+  }
+  function closeMoveFolderMenu() {
+    if (openMoveMenuEl) {
+      openMoveMenuEl.remove();
+      openMoveMenuEl = null;
+    }
+  }
+
+  async function moveAgentToFolder(slug, folderId) {
+    closeMoveFolderMenu();
+    try {
+      const res = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/folder', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_id: folderId }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      const a = agentRows.find(x => x.slug === slug);
+      if (a) a.folder_id = folderId;
+      // If the destination folder is collapsed, expand it so the user sees the move.
+      if (folderId) agentExpandedFolders.add(folderId);
+      else agentExpandedFolders.add(UNFILED_FOLDER_ID);
+      saveAgentListState();
+      renderAgentList();
+      const label = folderId ? (folderById(folderId)?.name || 'folder') : 'Unfiled';
+      showToast('Moved to ' + label, 'success');
+    } catch (err) {
+      showToast('Move failed: ' + err.message, 'error');
+    }
+  }
+
+  // ── Drag-and-drop ───────────────────────────────────────────────────────────
+
+  let draggingSlug = null;
+  function onAgentDragStart(evt) {
+    const tr = evt.currentTarget;
+    draggingSlug = tr.dataset.slug;
+    tr.classList.add('dragging');
+    // Set dataTransfer so Firefox honors the drag.
+    evt.dataTransfer.effectAllowed = 'move';
+    try { evt.dataTransfer.setData('text/plain', draggingSlug); } catch (_) {}
+  }
+  function onAgentDragEnd(evt) {
+    evt.currentTarget.classList.remove('dragging');
+    draggingSlug = null;
+    document.querySelectorAll('tr.folder-header.drop-target').forEach(el => el.classList.remove('drop-target'));
+  }
+  function onFolderDragOver(evt) {
+    if (!draggingSlug) return;
+    evt.preventDefault();
+    evt.dataTransfer.dropEffect = 'move';
+    const tbody = evt.currentTarget;
+    const header = tbody.querySelector('tr.folder-header');
+    if (header) header.classList.add('drop-target');
+  }
+  function onFolderDragLeave(evt) {
+    const tbody = evt.currentTarget;
+    // Only clear when the cursor leaves the entire tbody, not an inner cell.
+    if (tbody.contains(evt.relatedTarget)) return;
+    const header = tbody.querySelector('tr.folder-header');
+    if (header) header.classList.remove('drop-target');
+  }
+  function onFolderDrop(evt, folderId) {
+    if (!draggingSlug) return;
+    evt.preventDefault();
+    const slug = draggingSlug;
+    const targetId = folderId === UNFILED_FOLDER_ID ? null : folderId;
+    moveAgentToFolder(slug, targetId);
   }
 
   async function toggleActive(slug, cb) {
