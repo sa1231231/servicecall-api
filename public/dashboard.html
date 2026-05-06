@@ -1752,7 +1752,8 @@
       mtd_cogs: '<td style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>',
       phone: '<td style="font-variant-numeric:tabular-nums;color:#444">' + phoneHtml + '</td>',
     };
-    return '<tr class="clickable-row" onclick="showDetail(\'' + esc(a.slug) + '\')"' +
+    return '<tr class="clickable-row" onclick="agentRowClick(event, \'' + esc(a.slug) + '\')"' +
+      ' onauxclick="agentRowClick(event, \'' + esc(a.slug) + '\')"' +
       ' data-slug="' + esc(a.slug) + '"' +
       (canEdit ? ' draggable="true" ondragstart="onAgentDragStart(event)" ondragend="onAgentDragEnd(event)"' : '') +
       '>' +
@@ -2222,6 +2223,20 @@
   function setAgentDetailHash(slug, tab) {
     const params = '#agent=' + encodeURIComponent(slug) + (tab ? '&tab=' + encodeURIComponent(tab) : '');
     history.replaceState(null, '', params);
+  }
+
+  // Row click router for the agent list. Cmd/Ctrl-click and middle-click open
+  // the editor in a new tab; plain click navigates in place via showDetail.
+  // Right-click (button 2) is left alone so the native context menu works.
+  function agentRowClick(event, slug) {
+    const newTab = event.metaKey || event.ctrlKey || event.button === 1;
+    if (newTab) {
+      event.preventDefault();
+      window.open('#agent=' + encodeURIComponent(slug), '_blank');
+      return;
+    }
+    if (event.button === 2) return;
+    showDetail(slug);
   }
 
   // Switch to a tab. Prompts before discarding unsaved changes in the
