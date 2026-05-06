@@ -1,5 +1,8 @@
 import type { Request, Response } from "express";
+import Retell from "retell-sdk";
+import { config } from "../../config.js";
 import { updateClientFields, getClientDocument } from "../../config/client-store.js";
+import { syncRetellDisplayLabels } from "../../lib/retell-display-sync.js";
 
 export async function updateAgentHandler(
   req: Request,
@@ -13,10 +16,53 @@ export async function updateAgentHandler(
     return;
   }
 
+  // Normalize empty-string display_name to null so the dashboard's fallback
+  // (`display_name ?? name`) works rather than rendering a blank header.
+  if ("display_name" in body) {
+    const v = body.display_name;
+    if (typeof v === "string") {
+      const trimmed = v.trim();
+      body.display_name = trimmed === "" ? null : trimmed;
+    } else if (v !== null) {
+      res.status(400).json({ error: "display_name must be a string or null" });
+      return;
+    }
+  }
+
   try {
     await updateClientFields(slug, body);
     const doc = await getClientDocument(slug);
-    res.json({ success: true, doc });
+
+    // If the caller updated display_name, push the new label to Retell:
+    //   - agent.agent_name (the console title)
+    //   - phone-number nicknames bound to this agent
+    // The label that goes to Retell is `display_name ?? name` so clearing the
+    // display name reverts Retell to the business name.
+    let displaySync: Awaited<ReturnType<typeof syncRetellDisplayLabels>> | undefined;
+    if ("display_name" in body && doc?.agent_id) {
+      const label = (doc.display_name && doc.display_name.trim()) || doc.name;
+      const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+      try {
+        displaySync = await syncRetellDisplayLabels(
+          retell,
+          doc.agent_id,
+          doc.outbound_from_number ?? null,
+          label,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[update-agent] display_name push to Retell failed for ${slug}: ${msg}`);
+        res.status(502).json({
+          error: `Saved to MongoDB but failed to push display name to Retell: ${msg}`,
+          doc,
+        });
+        return;
+      }
+    }
+
+    const response: Record<string, unknown> = { success: true, doc };
+    if (displaySync) response.display_sync = displaySync;
+    res.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     const status = message.includes("not found") ? 404 : 400;

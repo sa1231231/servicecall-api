@@ -26,7 +26,7 @@ const { sendOwnerCallMonitor } = await import("../owner-monitor.js");
 function makeClient(overrides = {}) {
     return {
         name: "Acme",
-        agent_ids: ["agent_1"],
+        agent_id: "agent_1",
         dispatch_text_numbers: [],
         dispatch_call_number: null,
         summary_agent_id: null,

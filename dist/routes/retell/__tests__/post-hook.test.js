@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ── Mocks ──────────────────────────────────────────────────────────────────
 vi.mock("../../../config.js", () => ({
     config: {
@@ -64,7 +64,7 @@ function makeRes() {
 function makeClient(overrides = {}) {
     return {
         name: "Acme",
-        agent_ids: ["agent_1"],
+        agent_id: "agent_1",
         dispatch_text_numbers: ["+15550001111"],
         dispatch_email: ["acme@x.com"],
         dispatch_cc: null,
@@ -183,6 +183,43 @@ describe("postHookHandler — web calls", () => {
         expect(mockSendSmsToAll).not.toHaveBeenCalled();
         expect(mockSendEmail).not.toHaveBeenCalled();
         expect(mockSaveCallLog).toHaveBeenCalledWith(expect.objectContaining({ outcome: "web_call", from_number: "Web Call" }));
+    });
+});
+describe("postHookHandler — test mode", () => {
+    it("logs test_call and skips dispatch when x-test-mode + x-api-key are set", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient();
+        mockAgentIdToSlug["agent_1"] = "acme";
+        const res = makeRes();
+        await postHookHandler(makeReq(makeBody(), { "x-api-key": "internal-api-key", "x-test-mode": "true" }), res);
+        expect(res._json.outcome).toBe("test_call");
+        expect(mockSendSmsToAll).not.toHaveBeenCalled();
+        expect(mockSendEmail).not.toHaveBeenCalled();
+        expect(mockTriggerDispatchCall).not.toHaveBeenCalled();
+        expect(mockSaveCallLog).toHaveBeenCalledWith(expect.objectContaining({ outcome: "test_call", test_mode: true }));
+    });
+    it("ignores x-test-mode when x-api-key is not set (untrusted caller)", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient();
+        mockAgentIdToSlug["agent_1"] = "acme";
+        const res = makeRes();
+        await postHookHandler(makeReq(makeBody(), { "x-test-mode": "true" }), res);
+        // Falls through to normal dispatch path because test-mode is gated on internal auth
+        expect(mockSendSmsToAll).toHaveBeenCalled();
+        expect(mockSaveCallLog).toHaveBeenCalledWith(expect.not.objectContaining({ test_mode: true }));
+    });
+    it("skips surge alerts under test mode", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient();
+        mockAgentIdToSlug["agent_1"] = "acme";
+        mockCheckAgentAlerts.mockReturnValue({
+            callSurge: { fired: true, count: 99 },
+            costSurge: { fired: true, totalCents: 9999 },
+        });
+        const res = makeRes();
+        await postHookHandler(makeReq(makeBody(), { "x-api-key": "internal-api-key", "x-test-mode": "true" }), res);
+        // checkAgentAlerts should not have been invoked at all under test mode
+        expect(mockCheckAgentAlerts).not.toHaveBeenCalled();
+        // Owner SMS/email should NOT have fired even though the mock would have said "fired"
+        expect(mockSendSms).not.toHaveBeenCalled();
+        expect(mockSendEmail).not.toHaveBeenCalled();
     });
 });
 describe("postHookHandler — dispatch happy path", () => {
@@ -338,5 +375,123 @@ describe("postHookHandler — webhook callback", () => {
         await postHookHandler(makeReq(makeBody()), makeRes());
         expect(fetchMock).not.toHaveBeenCalled();
         vi.unstubAllGlobals();
+    });
+    it("swallows fetch rejection and still returns 200", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient({ webhook_url: "https://hook/x" });
+        mockAgentIdToSlug["agent_1"] = "acme";
+        const fetchMock = vi.fn().mockRejectedValue(new Error("net down"));
+        vi.stubGlobal("fetch", fetchMock);
+        const res = makeRes();
+        await postHookHandler(makeReq(makeBody()), res);
+        expect(res._status).toBe(200);
+        expect(res._json.success).toBe(true);
+        vi.unstubAllGlobals();
+    });
+});
+// ── Build-notification error paths ─────────────────────────────────────────
+describe("postHookHandler — build-notification error branches", () => {
+    it("returns 500 when no_message_type is reported", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient();
+        mockAgentIdToSlug["agent_1"] = "acme";
+        const buildMod = await import("../../../lib/build-notification.js");
+        const spy = vi.spyOn(buildMod, "buildNotificationMessages").mockReturnValue({
+            ok: false, reason: "no_message_type", details: "no types configured",
+        });
+        const res = makeRes();
+        try {
+            await postHookHandler(makeReq(makeBody()), res);
+            expect(res._status).toBe(500);
+            expect(res._json.message).toMatch(/No message type/);
+        }
+        finally {
+            spy.mockRestore();
+        }
+    });
+    it("returns 200 outcome=skipped_required_field when failed_required", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient();
+        mockAgentIdToSlug["agent_1"] = "acme";
+        const buildMod = await import("../../../lib/build-notification.js");
+        const spy = vi.spyOn(buildMod, "buildNotificationMessages").mockReturnValue({
+            ok: false, reason: "failed_required", details: "missing phone",
+        });
+        const res = makeRes();
+        try {
+            await postHookHandler(makeReq(makeBody()), res);
+            expect(res._json.outcome).toBe("skipped_required_field");
+            expect(mockSaveCallLog).toHaveBeenCalledWith(expect.objectContaining({ outcome: "skipped_required_field" }));
+        }
+        finally {
+            spy.mockRestore();
+        }
+    });
+    it("returns 200 outcome=skipped_empty_call when empty_call", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient();
+        mockAgentIdToSlug["agent_1"] = "acme";
+        const buildMod = await import("../../../lib/build-notification.js");
+        const spy = vi.spyOn(buildMod, "buildNotificationMessages").mockReturnValue({
+            ok: false, reason: "empty_call", details: "no data",
+        });
+        const res = makeRes();
+        try {
+            await postHookHandler(makeReq(makeBody()), res);
+            expect(res._json.outcome).toBe("skipped_empty_call");
+        }
+        finally {
+            spy.mockRestore();
+        }
+    });
+});
+// ── Email delivery follow-up ───────────────────────────────────────────────
+describe("postHookHandler — email delivery follow-up", () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+    it("checks resend status and stays silent on OK delivery", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient();
+        mockAgentIdToSlug["agent_1"] = "acme";
+        mockSendEmail.mockResolvedValue({ id: "resend_abc" });
+        mockGetEmailStatus.mockResolvedValue({ last_event: "delivered" });
+        await postHookHandler(makeReq(makeBody()), makeRes());
+        // Initial 2 emails are queued (client + maybe others); the check fires
+        // after 5s. Advance the clock and let the microtasks run.
+        await vi.advanceTimersByTimeAsync(5_500);
+        expect(mockGetEmailStatus).toHaveBeenCalledWith("resend_abc");
+        // No alert email should be sent (only the original client email).
+        const alertCalls = mockSendEmail.mock.calls.filter(([args]) => String(args.subject).includes("[SCS Alert]"));
+        expect(alertCalls).toHaveLength(0);
+    });
+    it("sends owner alert when last_event is 'bounced'", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient();
+        mockAgentIdToSlug["agent_1"] = "acme";
+        mockSendEmail.mockResolvedValue({ id: "resend_xyz" });
+        mockGetEmailStatus.mockResolvedValue({
+            last_event: "bounced",
+            to: "acme@x.com",
+            cc: null,
+            subject: "Test",
+            created_at: "2026-05-02T00:00:00Z",
+        });
+        await postHookHandler(makeReq(makeBody()), makeRes());
+        await vi.advanceTimersByTimeAsync(5_500);
+        const alertCalls = mockSendEmail.mock.calls.filter(([args]) => String(args.subject).includes("[SCS Alert]"));
+        expect(alertCalls.length).toBeGreaterThan(0);
+        expect(alertCalls[0][0].body).toContain("bounced");
+        expect(alertCalls[0][0].body).toContain("resend_xyz");
+    });
+    it("swallows getEmailStatus failures (no alert, no crash)", async () => {
+        mockAgentIdToClient["agent_1"] = makeClient();
+        mockAgentIdToSlug["agent_1"] = "acme";
+        mockSendEmail.mockResolvedValue({ id: "resend_err" });
+        mockGetEmailStatus.mockRejectedValue(new Error("resend api down"));
+        const res = makeRes();
+        await postHookHandler(makeReq(makeBody()), res);
+        await vi.advanceTimersByTimeAsync(5_500);
+        expect(res._status).toBe(200);
+        // Should not have crashed and should not have sent any [SCS Alert]
+        const alertCalls = mockSendEmail.mock.calls.filter(([args]) => String(args.subject).includes("[SCS Alert]"));
+        expect(alertCalls).toHaveLength(0);
     });
 });

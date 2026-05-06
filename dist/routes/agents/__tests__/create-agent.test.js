@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── Hoisted mocks ──────────────────────────────────────────────────────────
-const { mockFlowCreate, mockAgentCreate, mockFlowDelete, mockProvisionPhoneNumber, mockGetDataPointDefaults, mockGenerateAgent, mockDeriveNotificationConfig, mockDeriveMultiPathNotificationConfig, mockToLabel, mockExtractFlowParams, mockExtractAgentParams, mockPersistClient, mockUpdateClientField, mockLogPhoneEvent, mockGetSettings, mockNotificationClients, } = vi.hoisted(() => ({
+const { mockFlowCreate, mockAgentCreate, mockFlowDelete, mockProvisionPhoneNumber, mockGetDataPointDefaults, mockGenerateAgent, mockDeriveNotificationConfig, mockDeriveMultiPathNotificationConfig, mockToLabel, mockExtractFlowParams, mockExtractAgentParams, mockPersistClient, mockUpdateClientField, mockLogPhoneEvent, mockGetSettings, mockGetWarmTransferAgentVersion, mockNotificationClients, } = vi.hoisted(() => ({
     mockFlowCreate: vi.fn(),
     mockAgentCreate: vi.fn(),
     mockFlowDelete: vi.fn(),
@@ -16,6 +16,7 @@ const { mockFlowCreate, mockAgentCreate, mockFlowDelete, mockProvisionPhoneNumbe
     mockUpdateClientField: vi.fn(),
     mockLogPhoneEvent: vi.fn(),
     mockGetSettings: vi.fn(),
+    mockGetWarmTransferAgentVersion: vi.fn(),
     mockNotificationClients: {},
 }));
 vi.mock("../../../config.js", () => ({
@@ -42,6 +43,9 @@ vi.mock("../../../lib/data-point-defaults.js", () => ({
 }));
 vi.mock("../../../lib/agent-generator/index.js", () => ({
     generateAgent: (...a) => mockGenerateAgent(...a),
+}));
+vi.mock("../../../lib/agent-generator/warm-transfer-agent-version.js", () => ({
+    getWarmTransferAgentVersion: (...a) => mockGetWarmTransferAgentVersion(...a),
 }));
 vi.mock("../../../lib/notification-config.js", () => ({
     toLabel: (...a) => mockToLabel(...a),
@@ -103,7 +107,7 @@ beforeEach(() => {
     });
     mockDeriveNotificationConfig.mockReturnValue({
         name: "Test Co",
-        agent_ids: ["agent_test"],
+        agent_id: "agent_test",
         dispatch_text_numbers: ["+15550001111"],
         dispatch_call_number: null,
         summary_agent_id: null,
@@ -115,7 +119,7 @@ beforeEach(() => {
     });
     mockDeriveMultiPathNotificationConfig.mockReturnValue({
         name: "Test Co",
-        agent_ids: ["agent_test"],
+        agent_id: "agent_test",
         dispatch_text_numbers: ["+15550001111"],
         dispatch_call_number: null,
         summary_agent_id: null,
@@ -132,6 +136,7 @@ beforeEach(() => {
     });
     mockGetSettings.mockResolvedValue({ owner_phone: "+13017872841" });
     mockLogPhoneEvent.mockResolvedValue(undefined);
+    mockGetWarmTransferAgentVersion.mockResolvedValue(7);
     for (const k of Object.keys(mockNotificationClients))
         delete mockNotificationClients[k];
 });
@@ -177,14 +182,22 @@ describe("createAgentHandler — validation", () => {
         expect(res._status).toBe(400);
         expect(res._json.error).toContain("transitionCondition");
     });
-    it("400 when paths[i].dataPoints empty", async () => {
+    it("400 when paths[i].dataPoints not an array", async () => {
+        const res = mockRes();
+        await createAgentHandler(mockReq(makeBody({
+            dataPoints: undefined,
+            paths: [{ name: "p", transitionCondition: "c", dataPoints: "not-an-array" }],
+        })), res);
+        expect(res._status).toBe(400);
+        expect(res._json.error).toContain("dataPoints");
+    });
+    it("accepts paths[i].dataPoints empty (immediate callback path)", async () => {
         const res = mockRes();
         await createAgentHandler(mockReq(makeBody({
             dataPoints: undefined,
             paths: [{ name: "p", transitionCondition: "c", dataPoints: [] }],
         })), res);
-        expect(res._status).toBe(400);
-        expect(res._json.error).toContain("dataPoints");
+        expect(res._status).toBe(201);
     });
     it("400 when paths[i].end_mode invalid", async () => {
         const res = mockRes();
@@ -233,12 +246,23 @@ describe("createAgentHandler — validation", () => {
         expect(res._status).toBe(400);
         expect(res._json.error).toContain("owner phone");
     });
-    it("409 when slug already exists in notificationClients", async () => {
+    it("auto-increments slug when one collision exists", async () => {
         mockNotificationClients["test-co"] = { name: "Existing" };
         const res = mockRes();
         await createAgentHandler(mockReq(makeBody()), res);
-        expect(res._status).toBe(409);
-        expect(res._json.error).toContain("already exists");
+        expect(res._status).toBe(201);
+        expect(res._json.slug).toBe("test-co-2");
+        expect(mockPersistClient).toHaveBeenCalledWith("test-co-2", expect.any(Object));
+    });
+    it("auto-increments slug across multiple collisions", async () => {
+        mockNotificationClients["test-co"] = { name: "Existing 1" };
+        mockNotificationClients["test-co-2"] = { name: "Existing 2" };
+        mockNotificationClients["test-co-3"] = { name: "Existing 3" };
+        const res = mockRes();
+        await createAgentHandler(mockReq(makeBody()), res);
+        expect(res._status).toBe(201);
+        expect(res._json.slug).toBe("test-co-4");
+        expect(mockPersistClient).toHaveBeenCalledWith("test-co-4", expect.any(Object));
     });
 });
 // ── Success path + new field passthrough ──────────────────────────────────
@@ -467,6 +491,21 @@ describe("createAgentHandler — agentConfig closing prompts", () => {
         expect(agentConfig.closingRemarksPrompt).toBeUndefined();
         expect(agentConfig.closingStatementText).toBeUndefined();
         expect(agentConfig.liveTransferRecoveryPrompt).toBeUndefined();
+    });
+    it("fetches and forwards warmTransferAgentVersion when human_request_mode is live_transfer", async () => {
+        mockGetWarmTransferAgentVersion.mockResolvedValue(11);
+        await createAgentHandler(mockReq(makeBody({
+            business: { businessName: "Test Co", faqKnowledgeBase: "FAQ", human_request_mode: "live_transfer" },
+        })), mockRes());
+        expect(mockGetWarmTransferAgentVersion).toHaveBeenCalled();
+        const agentConfig = mockGenerateAgent.mock.calls[0][0];
+        expect(agentConfig.warmTransferAgentVersion).toBe(11);
+    });
+    it("skips warm-transfer fetch when no live transfer is configured", async () => {
+        await createAgentHandler(mockReq(makeBody()), mockRes());
+        expect(mockGetWarmTransferAgentVersion).not.toHaveBeenCalled();
+        const agentConfig = mockGenerateAgent.mock.calls[0][0];
+        expect(agentConfig.warmTransferAgentVersion).toBeUndefined();
     });
 });
 // ── Error handling ─────────────────────────────────────────────────────────

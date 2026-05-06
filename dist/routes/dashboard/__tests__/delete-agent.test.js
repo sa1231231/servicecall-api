@@ -58,7 +58,7 @@ describe("deleteAgentHandler", () => {
     });
     it("renames Retell agents instead of deleting them", async () => {
         mockGetClientDocument.mockResolvedValue({
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: {
                 agent_1: { conversationFlow: { conversation_flow_id: "flow_1" } },
             },
@@ -82,7 +82,7 @@ describe("deleteAgentHandler", () => {
     });
     it("soft-deletes client in MongoDB", async () => {
         mockGetClientDocument.mockResolvedValue({
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: {} },
         });
         mockRetrieve.mockResolvedValue({ agent_name: "Test" });
@@ -91,22 +91,22 @@ describe("deleteAgentHandler", () => {
         await deleteAgentHandler(mockReq("test-slug"), res);
         expect(mockSoftDeleteClient).toHaveBeenCalledWith("test-slug");
     });
-    it("handles agents in agent_ids not in retell_agents", async () => {
+    it("handles agent_id not in retell_agents map (belt-and-suspenders)", async () => {
         mockGetClientDocument.mockResolvedValue({
-            agent_ids: ["agent_1", "agent_2"],
-            retell_agents: { agent_1: {} },
+            agent_id: "agent_1",
+            retell_agents: { agent_2: {} }, // agent_id not in the map
         });
         mockRetrieve.mockResolvedValue({ agent_name: "Agent" });
         mockUpdate.mockResolvedValue({});
         const res = mockRes();
         await deleteAgentHandler(mockReq("test"), res);
-        // Both agents should be renamed
+        // Both retell_agents entry AND agent_id (from belt-and-suspenders) renamed
         expect(mockRetrieve).toHaveBeenCalledTimes(2);
         expect(mockUpdate).toHaveBeenCalledTimes(2);
     });
     it("collects warnings when Retell rename fails", async () => {
         mockGetClientDocument.mockResolvedValue({
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: {} },
         });
         mockRetrieve.mockRejectedValue(new Error("Agent not found in Retell"));
@@ -118,7 +118,7 @@ describe("deleteAgentHandler", () => {
     });
     it("expiry date is 30 days in the future", async () => {
         mockGetClientDocument.mockResolvedValue({
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: {} },
         });
         mockRetrieve.mockResolvedValue({ agent_name: "Test" });

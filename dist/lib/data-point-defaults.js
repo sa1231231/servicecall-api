@@ -54,7 +54,28 @@ export async function getDataPointDefault(key) {
 }
 /** Update a single data point default. */
 export async function updateDataPointDefault(key, updates) {
-    const result = await collection().findOneAndUpdate({ _id: key }, { $set: updates }, { returnDocument: "after" });
+    // When composite is explicitly toggled off, wipe the nested variables and
+    // restore a default extract equation on the parent so the dp goes back to
+    // behaving as a single-variable extract.
+    const $set = { ...updates };
+    const $unset = {};
+    if (updates.composite === false) {
+        delete $set.composite;
+        delete $set.variables;
+        $unset.composite = "";
+        $unset.variables = "";
+        if (!updates.extractSuccessEquation) {
+            $set.extractSuccessEquation = defaultExtractEquation(key);
+        }
+    }
+    else if (updates.composite === true && Array.isArray(updates.variables) && updates.variables.length > 0) {
+        // Composite parents don't extract themselves.
+        $set.extractSuccessEquation = [];
+    }
+    const update = { $set };
+    if (Object.keys($unset).length > 0)
+        update.$unset = $unset;
+    const result = await collection().findOneAndUpdate({ _id: key }, update, { returnDocument: "after" });
     if (result) {
         console.log(`[data-point-defaults] updated "${key}"`);
     }
@@ -71,6 +92,7 @@ export async function createDataPointDefault(key, data) {
     const allDocs = await collection().find({ category }).toArray();
     const maxOrder = allDocs.reduce((max, d) => Math.max(max, d.sortOrder ?? 0), -1);
     const varName = key;
+    const isComposite = data.composite === true && Array.isArray(data.variables) && data.variables.length > 0;
     const dp = {
         _id: key,
         label: data.label,
@@ -84,12 +106,14 @@ export async function createDataPointDefault(key, data) {
         forwardCondition: data.forwardCondition ||
             `The caller has provided their ${varName.replace(/_/g, " ")} or has indicated they don't know it`,
         finetuneExamples: [],
-        extractSuccessEquation: defaultExtractEquation(varName),
+        // Composite parents don't extract themselves — their nested variables do.
+        extractSuccessEquation: isComposite ? [] : defaultExtractEquation(varName),
         category,
         sortOrder: maxOrder + 1,
+        ...(isComposite && { composite: true, variables: data.variables }),
     };
     await collection().insertOne(dp);
-    console.log(`[data-point-defaults] created custom data point "${key}"`);
+    console.log(`[data-point-defaults] created custom data point "${key}"${isComposite ? ` (composite: ${data.variables.length} vars)` : ""}`);
     const { _id, ...rest } = dp;
     return rest;
 }

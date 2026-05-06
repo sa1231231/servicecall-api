@@ -10,11 +10,7 @@ async function resolveAgentPhoneNumber(agentId) {
     for (const n of numbers) {
         if (n.outbound_agents?.some((a) => a.agent_id === agentId))
             return n.phone_number;
-        if (n.outbound_agent_id === agentId)
-            return n.phone_number;
         if (n.inbound_agents?.some((a) => a.agent_id === agentId))
-            return n.phone_number;
-        if (n.inbound_agent_id === agentId)
             return n.phone_number;
     }
     return null;

@@ -3,3 +3,5 @@ export declare function requireRole(...allowed: Array<"super_admin" | "admin" | 
 export declare function requirePermission(perm: string): (req: Request, res: Response, next: NextFunction) => void;
 export declare const adminOnly: (req: Request, res: Response, next: NextFunction) => void;
 export declare function requireRoot(req: Request, res: Response, next: NextFunction): void;
+export declare const ROOT_ONLY_DELETE_SLUGS: Set<string>;
+export declare function requireRootForProtectedSlug(req: Request, res: Response, next: NextFunction): void;

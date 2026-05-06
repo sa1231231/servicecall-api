@@ -11,6 +11,7 @@ export async function listAgentsHandler(_req: Request, res: Response): Promise<v
   const summaries = docs.map((doc) => ({
     slug: doc._id,
     name: doc.name,
+    display_name: doc.display_name ?? null,
     shadow_mode: doc.shadow_mode ?? false,
     active: doc.active,
     agent_id: doc.agent_id,

@@ -45,16 +45,16 @@ describe("exportAgentHandler", () => {
         expect(res._status).toBe(404);
         expect(res._json.error).toContain("not found");
     });
-    it("returns 400 when no agent IDs", async () => {
-        mockGetClientDocument.mockResolvedValue({ agent_ids: [] });
+    it("returns 400 when no agent_id", async () => {
+        mockGetClientDocument.mockResolvedValue({ agent_id: "" });
         const res = mockRes();
         await exportAgentHandler(mockReq("test"), res);
         expect(res._status).toBe(400);
-        expect(res._json.error).toContain("No agent IDs");
+        expect(res._json.error).toContain("No agent_id");
     });
     it("returns 400 when no canonical JSON", async () => {
         mockGetClientDocument.mockResolvedValue({
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: {},
         });
         const res = mockRes();
@@ -65,7 +65,7 @@ describe("exportAgentHandler", () => {
     it("exports config with correct structure", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test Co",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test Agent" } },
             dispatch_text_numbers: ["+15551234567"],
             dispatch_call_number: null,
@@ -107,7 +107,7 @@ describe("exportAgentHandler", () => {
     it("sets download headers", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed());
@@ -119,7 +119,7 @@ describe("exportAgentHandler", () => {
     it("detects live_transfer mode", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -132,7 +132,7 @@ describe("exportAgentHandler", () => {
     it("defaults to callback mode", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -145,7 +145,7 @@ describe("exportAgentHandler", () => {
     it("extracts FAQ knowledge base", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         const faqText = "Your goal is to answer administrative and general questions briefly and accurately.\n\nWe are open 9-5.";
@@ -159,7 +159,7 @@ describe("exportAgentHandler", () => {
     it("includes choices when present on variable def", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -184,7 +184,7 @@ describe("exportAgentHandler", () => {
     it("includes orphan flag in exported data points", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -223,7 +223,7 @@ describe("exportAgentHandler", () => {
     it("returns 500 when parser throws", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockImplementation(() => { throw new Error("Parse error"); });
@@ -235,7 +235,7 @@ describe("exportAgentHandler", () => {
     it("extracts per-path transitionCondition from intro edges", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -276,7 +276,7 @@ describe("exportAgentHandler", () => {
     it("leaves transitionCondition empty when intro has no matching edge", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -295,7 +295,7 @@ describe("exportAgentHandler", () => {
     it("reconstructs branch conditions from router edges (filtering sentinels)", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -352,7 +352,7 @@ describe("exportAgentHandler", () => {
     it("omits _branchConditions when no meaningful equations remain", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -389,7 +389,7 @@ describe("exportAgentHandler", () => {
     it("handles non-equation transition conditions on router (no branch info added)", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -421,7 +421,7 @@ describe("exportAgentHandler", () => {
     it("extracts FAQ without prefix when prefix is missing", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -434,7 +434,7 @@ describe("exportAgentHandler", () => {
     it("falls back to client name when agent_name is missing on canonical", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test Co Inc",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: {} }, // no agent_name
         });
         mockParseConversationFlow.mockReturnValue(makeParsed());
@@ -445,7 +445,7 @@ describe("exportAgentHandler", () => {
     it("includes dispatch_by_type when present on the doc", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
             dispatch_by_type: {
                 emergency: { dispatch_text_numbers: ["+15558888888"] },
@@ -461,7 +461,7 @@ describe("exportAgentHandler", () => {
     it("defaults phone_fallback_to_caller to true when not set", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed());
@@ -472,7 +472,7 @@ describe("exportAgentHandler", () => {
     it("preserves phone_fallback_to_caller=false when explicitly set", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
             phone_fallback_to_caller: false,
         });
@@ -484,7 +484,7 @@ describe("exportAgentHandler", () => {
     it("returns 400 when retell_agents is missing entirely", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             // no retell_agents
         });
         const res = mockRes();
@@ -495,7 +495,7 @@ describe("exportAgentHandler", () => {
     it("exports closing prompts from canonical Close / Closing Remarks / Closing Statement nodes", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -514,7 +514,7 @@ describe("exportAgentHandler", () => {
     it("omits closing prompts when nodes are absent or empty", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -527,10 +527,76 @@ describe("exportAgentHandler", () => {
         expect(res._json.business.closingStatementText).toBeUndefined();
         expect(res._json.business.liveTransferRecoveryPrompt).toBeUndefined();
     });
+    it("exports per-path closePrompt as business.pathClosePrompts on multi-path agents", async () => {
+        mockGetClientDocument.mockResolvedValue({
+            name: "Test",
+            agent_id: "agent_1",
+            retell_agents: { agent_1: { agent_name: "Test" } },
+        });
+        mockParseConversationFlow.mockReturnValue(makeParsed({
+            paths: [
+                {
+                    name: "Service",
+                    transitionNode: { id: "tn1" },
+                    routerNode: { raw: { edges: [] } },
+                    dataChain: [],
+                    endMode: "callback",
+                    closePrompt: "thanks for calling — service close",
+                },
+                {
+                    name: "Sales",
+                    transitionNode: { id: "tn2" },
+                    routerNode: { raw: { edges: [] } },
+                    dataChain: [],
+                    endMode: "callback",
+                    closePrompt: "thanks — sales close",
+                },
+            ],
+            allNodes: [],
+        }));
+        const res = mockRes();
+        await exportAgentHandler(mockReq("test"), res);
+        expect(res._json.business.pathClosePrompts).toEqual({
+            Service: "thanks for calling — service close",
+            Sales: "thanks — sales close",
+        });
+        // Legacy single field is omitted when per-path map exists.
+        expect(res._json.business.closePrompt).toBeUndefined();
+    });
+    it("transfer paths are excluded from pathClosePrompts on export", async () => {
+        mockGetClientDocument.mockResolvedValue({
+            name: "Test",
+            agent_id: "agent_1",
+            retell_agents: { agent_1: { agent_name: "Test" } },
+        });
+        mockParseConversationFlow.mockReturnValue(makeParsed({
+            paths: [
+                {
+                    name: "Emergency",
+                    transitionNode: { id: "tn1" },
+                    routerNode: { raw: { edges: [] } },
+                    dataChain: [],
+                    endMode: "transfer",
+                },
+                {
+                    name: "General",
+                    transitionNode: { id: "tn2" },
+                    routerNode: { raw: { edges: [] } },
+                    dataChain: [],
+                    endMode: "callback",
+                    closePrompt: "general close text",
+                },
+            ],
+            allNodes: [],
+        }));
+        const res = mockRes();
+        await exportAgentHandler(mockReq("test"), res);
+        expect(res._json.business.pathClosePrompts).toEqual({ General: "general close text" });
+    });
     it("exports liveTransferRecoveryPrompt from the Live Transfer Recovery node", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -545,7 +611,7 @@ describe("exportAgentHandler", () => {
     it("exports per-path end_mode from parsed.paths[i].endMode", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
         });
         mockParseConversationFlow.mockReturnValue(makeParsed({
@@ -574,7 +640,7 @@ describe("exportAgentHandler", () => {
     it("exports client.path_end_modes + dispatch_call_overrides + webhook_url + notification_greeting", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Test",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             retell_agents: { agent_1: { agent_name: "Test" } },
             path_end_modes: { emergency: "transfer" },
             dispatch_call_overrides: { "+15551111111": "+15552222222" },

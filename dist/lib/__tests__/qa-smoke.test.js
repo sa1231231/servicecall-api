@@ -35,7 +35,7 @@ function makeClientDoc(overrides = {}) {
     return {
         _id: "test-plumbing",
         name: "Test Plumbing",
-        agent_ids: ["agent_test"],
+        agent_id: "agent_test",
         dispatch_text_numbers: ["+15551234567"],
         dispatch_call_number: null,
         summary_agent_id: null,

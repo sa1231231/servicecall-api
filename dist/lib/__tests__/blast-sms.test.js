@@ -17,7 +17,7 @@ import { gatherRecipients, personalizeMessage, previewBlast, sendBlast, } from "
 function addClient(slug, overrides = {}) {
     mockNotificationClients[slug] = {
         name: "Test " + slug,
-        agent_ids: ["agent_" + slug],
+        agent_id: "agent_" + slug,
         dispatch_text_numbers: ["+15550000001"],
         shadow_mode: false,
         active: undefined,

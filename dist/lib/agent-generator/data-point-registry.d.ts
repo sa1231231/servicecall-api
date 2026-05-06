@@ -17,6 +17,8 @@ export interface VariableDef {
     type: "string" | "enum" | "boolean";
     choices?: string[];
     description: string;
+    /** Display label used in outbound communications. Falls back to toLabel(variableName) when omitted. */
+    label?: string;
 }
 export interface DataPoint {
     composite?: boolean;

@@ -32,6 +32,11 @@ export interface ParsedPath {
     endMode: "callback" | "transfer";
     preTransferNode?: ParsedNode;
     transferCallNode?: ParsedNode;
+    /** The terminal Close node for this callback path (per-path or shared singleton).
+     *  Undefined when endMode === "transfer". */
+    closeNode?: ParsedNode;
+    /** The Close prompt text for this path. Undefined when endMode === "transfer". */
+    closePrompt?: string;
     /** Resolved E.164 number baked into the path's transfer_call node (when endMode === "transfer"). */
     transferDestination?: string;
 }

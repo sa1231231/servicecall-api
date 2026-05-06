@@ -35,9 +35,12 @@ export async function getCallLogById(callId) {
     return callLogs().findOne({ _id: callId });
 }
 /** Get call logs for a client, sorted newest first. */
-export async function getCallLogsByClient(clientSlug, limit = 50, offset = 0) {
+export async function getCallLogsByClient(clientSlug, limit = 50, offset = 0, options = {}) {
+    const filter = { client_slug: clientSlug };
+    if (!options.includeTests)
+        filter.test_mode = { $ne: true };
     return callLogs()
-        .find({ client_slug: clientSlug })
+        .find(filter)
         .sort({ created_at: -1 })
         .skip(offset)
         .limit(limit)

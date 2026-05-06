@@ -259,18 +259,21 @@ formRouter.get("/drafts/:id", async (req, res) => {
 });
 formRouter.post("/drafts", async (req, res) => {
     try {
-        const { name, formData, type } = req.body;
+        const { name, formData, type, exportConfig } = req.body;
         if (!name || !formData) {
             res.status(400).json({ error: "name and formData are required" });
             return;
         }
-        const result = await draftsCollection().insertOne({
+        const doc = {
             name,
             formData,
             type: type === "template" ? "template" : "draft",
             createdAt: new Date(),
             updatedAt: new Date(),
-        });
+        };
+        if (exportConfig)
+            doc.exportConfig = exportConfig;
+        const result = await draftsCollection().insertOne(doc);
         res.json({ success: true, _id: result.insertedId, name });
     }
     catch (err) {
@@ -279,12 +282,14 @@ formRouter.post("/drafts", async (req, res) => {
 });
 formRouter.put("/drafts/:id", async (req, res) => {
     try {
-        const { name, formData } = req.body;
+        const { name, formData, exportConfig } = req.body;
         const updates = { updatedAt: new Date() };
         if (name)
             updates.name = name;
         if (formData)
             updates.formData = formData;
+        if (exportConfig)
+            updates.exportConfig = exportConfig;
         const result = await draftsCollection().findOneAndUpdate({ _id: new ObjectId(req.params.id) }, { $set: updates }, { returnDocument: "after" });
         if (!result) {
             res.status(404).json({ error: "Draft not found" });

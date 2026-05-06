@@ -39,11 +39,9 @@ export async function deleteAgentHandler(req, res) {
     for (const agentId of Object.keys(retellAgents)) {
         await markRetellAgent(retell, agentId, warnings);
     }
-    // Also handle any agent_ids not in retell_agents (belt-and-suspenders)
-    for (const agentId of doc.agent_ids ?? []) {
-        if (retellAgents[agentId])
-            continue; // already handled above
-        await markRetellAgent(retell, agentId, warnings);
+    // Also handle agent_id if not already covered by retell_agents (belt-and-suspenders)
+    if (doc.agent_id && !retellAgents[doc.agent_id]) {
+        await markRetellAgent(retell, doc.agent_id, warnings);
     }
     // Soft-delete: mark as deleted but keep in MongoDB for 30-day recovery
     await softDeleteClient(slug);

@@ -12,9 +12,9 @@ export async function provisionNumberHandler(req, res) {
         res.status(404).json({ error: `Client "${slug}" not found` });
         return;
     }
-    const agentId = doc.agent_ids?.[0];
+    const agentId = doc.agent_id;
     if (!agentId) {
-        res.status(400).json({ error: `Client "${slug}" has no agent_ids` });
+        res.status(400).json({ error: `Client "${slug}" has no agent_id` });
         return;
     }
     // Derive area code: client-level dispatch call > per-path override > default (815)

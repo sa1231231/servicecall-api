@@ -11,12 +11,11 @@ export async function exportAgentHandler(req, res) {
         res.status(404).json({ error: `Client "${slug}" not found` });
         return;
     }
-    const agentIds = doc.agent_ids ?? [];
-    if (agentIds.length === 0) {
-        res.status(400).json({ error: "No agent IDs found for this client" });
+    const agentId = doc.agent_id;
+    if (!agentId) {
+        res.status(400).json({ error: "No agent_id found for this client" });
         return;
     }
-    const agentId = agentIds[0];
     const canonical = doc.retell_agents?.[agentId];
     if (!canonical) {
         res.status(400).json({ error: "No canonical JSON found for this agent" });
@@ -40,23 +39,37 @@ export async function exportAgentHandler(req, res) {
         // human-request transfer node, distinct from per-path "Transfer Call (X)".
         const hasGlobalTransferCall = parsed.allNodes.some((n) => n.name === "Transfer Call");
         const humanRequestMode = hasGlobalTransferCall ? "live_transfer" : "callback";
-        // Extract closing-prompt text from the canonical's closing-sequence nodes
-        // (Close, Closing Remarks, Closing Statement). These are global, shared
-        // across all callback-mode paths. If absent we omit the field so the
-        // create-form import falls back to defaults.
+        // Extract closing-prompt text from the canonical's closing-sequence nodes.
+        // Closing Remarks and Closing Statement are global. Close is per-path on
+        // multi-path agents (one "Close (pathName)" per callback path) and a
+        // singleton "Close" on single-path agents.
         function findInstructionText(nodeName) {
             const node = parsed.allNodes.find((n) => n.name === nodeName);
             const instr = node?.raw.instruction;
             const text = instr?.text;
             return text && text.length > 0 ? text : undefined;
         }
+        // Per-path close map from each path's discovered closeNode (parser walks
+        // the Variables Router else_edge to find each path's terminal Close).
+        const pathClosePrompts = {};
+        for (const pp of parsed.paths) {
+            if (pp.endMode !== "callback")
+                continue;
+            const text = pp.closePrompt;
+            if (text && text.length > 0)
+                pathClosePrompts[pp.name] = text;
+        }
+        // Legacy single closePrompt: emitted when there's a singleton "Close" node
+        // (single-path agents). For multi-path agents the per-path map above is
+        // the source of truth and the singleton field is omitted.
         const closePrompt = findInstructionText("Close");
         const closingRemarksPrompt = findInstructionText("Closing Remarks");
         const closingStatementText = findInstructionText("Closing Statement");
         // Live Transfer Recovery — only present on agents that have at least one
         // transfer-mode path (or live-transfer human-request mode). Spoken when
-        // a transfer fails to bridge.
-        const liveTransferRecoveryPrompt = findInstructionText("Live Transfer Recovery");
+        // a transfer fails to bridge. Falls back to the legacy "Transfer Failed"
+        // name for agents created before the rename.
+        const liveTransferRecoveryPrompt = findInstructionText("Live Transfer Recovery") ?? findInstructionText("Transfer Failed");
         // Extract transition conditions from intro edges
         const introEdges = parsed.introNode.raw.edges;
         // Build paths with data points
@@ -147,7 +160,12 @@ export async function exportAgentHandler(req, res) {
                 human_request_mode: humanRequestMode,
                 // Closing prompts (omitted if the node text is empty so that import
                 // falls back to defaults rather than persisting an empty string).
-                ...(closePrompt !== undefined ? { closePrompt } : {}),
+                // Per-path close prompts win on multi-path agents; the legacy single
+                // closePrompt is emitted only when no per-path map was found (single-
+                // path layouts) so older importers keep working.
+                ...(Object.keys(pathClosePrompts).length > 0
+                    ? { pathClosePrompts }
+                    : (closePrompt !== undefined ? { closePrompt } : {})),
                 ...(closingRemarksPrompt !== undefined ? { closingRemarksPrompt } : {}),
                 ...(closingStatementText !== undefined ? { closingStatementText } : {}),
                 ...(liveTransferRecoveryPrompt !== undefined ? { liveTransferRecoveryPrompt } : {}),

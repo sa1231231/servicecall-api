@@ -37,7 +37,7 @@ function mockRes() {
 function makeClient(overrides = {}) {
     return {
         name: "Test Co",
-        agent_ids: ["agent_abc"],
+        agent_id: "agent_abc",
         dispatch_text_numbers: ["+15551234567"],
         active: undefined,
         ...overrides,

@@ -12,7 +12,8 @@ export interface ResolveRuleEntry {
 }
 export interface JsonClientEntry {
     name: string;
-    agent_ids: string[];
+    display_name?: string | null;
+    agent_id: string;
     dispatch_text_numbers: string[];
     dispatch_call_number: string | null;
     dispatch_call_overrides?: Record<string, string>;
@@ -59,6 +60,7 @@ export interface JsonClientEntry {
     retell_agents?: Record<string, Record<string, unknown>>;
     last_deployed_at?: string;
     portal_token?: string | null;
+    folder_id?: string | null;
 }
 export declare function ruleToFunction(rule: ResolveRule | undefined, rules: ResolveRuleEntry[] | undefined, defaultType: string): (vars: Record<string, string>) => string;
 export declare function toClientConfig(entry: JsonClientEntry): ClientNotificationConfig;
@@ -97,7 +99,7 @@ export declare function getAllClientSummaries(): Array<{
     slug: string;
     name: string;
     shadow_mode: boolean;
-    agent_ids: string[];
+    agent_id: string;
 }>;
 /** Generate a portal token for a client and persist it. */
 export declare function generatePortalToken(slug: string): Promise<string>;

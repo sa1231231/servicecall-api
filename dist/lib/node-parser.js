@@ -41,8 +41,12 @@ export function parseConversationFlow(canonicalJson) {
     const globalNodes = allNodes.filter((n) => n.raw.global_node_setting != null);
     // Find FAQ node
     const faqNode = allNodes.find((n) => n.name === "Admin/FAQ") ?? null;
-    // Find Close node
-    const closeNode = allNodes.find((n) => n.name === "Close") ?? null;
+    // Find Close node — either the legacy singleton "Close" or, for multi-path
+    // callback agents, the first per-path "Close (pathName)". Per-path nodes
+    // are also exposed individually on each ParsedPath below.
+    const closeNode = allNodes.find((n) => n.name === "Close")
+        ?? allNodes.find((n) => n.name.startsWith("Close ("))
+        ?? null;
     // Find closing sequence nodes
     const closingNodes = allNodes.filter((n) => n.name === "Closing Remarks" ||
         n.name === "Closing Statement");
@@ -137,6 +141,8 @@ function buildParsedPath(pathName, transitionNode, frontExtractNode, routerNode,
     let preTransferNode;
     let transferCallNode;
     let transferDestination;
+    let closeNode;
+    let closePrompt;
     const routerElseEdge = routerNode.raw.else_edge;
     const terminalId = routerElseEdge?.destination_node_id;
     const terminalNode = terminalId ? nodeMap.get(terminalId) : undefined;
@@ -156,6 +162,13 @@ function buildParsedPath(pathName, transitionNode, frontExtractNode, routerNode,
                 if (tcNode && tcNode.type === "transfer_call")
                     transferCallNode = tcNode;
             }
+        }
+        else if (terminalNode.name === "Close" || terminalNode.name.startsWith("Close (")) {
+            // Callback path: per-path Close (name ends with "(pathName)") or the
+            // legacy shared "Close" singleton.
+            closeNode = terminalNode;
+            const instr = terminalNode.raw.instruction;
+            closePrompt = instr?.text ?? "";
         }
     }
     if (transferCallNode) {
@@ -235,6 +248,8 @@ function buildParsedPath(pathName, transitionNode, frontExtractNode, routerNode,
         preTransferNode,
         transferCallNode,
         transferDestination,
+        closeNode,
+        closePrompt,
     };
 }
 function parseDataPointFromNodes(collectNode, confirmNode) {

@@ -194,7 +194,7 @@ async function checkNotificationFires(clientDoc, agentId, options) {
 export async function runSmokeTest(retell, clientDoc, options = {}) {
     const start = Date.now();
     const slug = clientDoc._id;
-    const agentId = clientDoc.agent_ids[0] ?? "";
+    const agentId = clientDoc.agent_id ?? "";
     const checks = [];
     // 1. Agent config present — prefer canonical JSON from MongoDB, fall back to live Retell API
     let snapshot = null;

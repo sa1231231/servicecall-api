@@ -202,7 +202,7 @@ describe("POST /:agentId/rename-business", () => {
     expect(mockAgentUpdate).not.toHaveBeenCalled();
   });
 
-  it("snapshots, replaces, pushes flow + agent_name, updates client.name, audits", async () => {
+  it("snapshots, replaces flow, updates client.name, audits — without touching agent_name or phone nicknames", async () => {
     mockGetClientDocument
       .mockResolvedValueOnce(makeDoc({ name: "Acme Plumbing" }))
       // resolveAgentId is called once at the top; storeCanonical does NOT
@@ -239,10 +239,17 @@ describe("POST /:agentId/rename-business", () => {
     expect(pushedFlow.global_prompt).toContain("Beta Plumbing");
     expect(pushedFlow.global_prompt).not.toContain("Acme Plumbing");
     expect(pushedFlow.nodes[0].instruction.text).toContain("Beta Plumbing");
+    // With no display_name on the doc, agent_name in the canonical JSON
+    // mirrors the new business name (preserves prior behavior for agents
+    // that haven't customized their dashboard label).
     expect(pushedCanonical.agent_name).toBe("Beta Plumbing");
 
-    // Agent-level rename pushed.
-    expect(mockAgentUpdate).toHaveBeenCalledWith("agent_1", { agent_name: "Beta Plumbing" });
+    // The Retell-side agent.update + phone-number nicknames are NOT touched
+    // by rename-business anymore — those surfaces are owned by display_name
+    // (PATCH /agents/:slug). See update-agent.ts.
+    expect(mockAgentUpdate).not.toHaveBeenCalled();
+    expect(mockPhoneList).not.toHaveBeenCalled();
+    expect(mockPhoneUpdate).not.toHaveBeenCalled();
 
     // client.name updated in MongoDB.
     expect(mockUpdateOne).toHaveBeenCalledWith(
@@ -256,18 +263,13 @@ describe("POST /:agentId/rename-business", () => {
     expect(auditAction).toBe("rename_business");
   });
 
-  it("updates nickname on every Retell phone number bound to the agent", async () => {
+  it("does not touch Retell phone numbers — even when the agent has many bound numbers", async () => {
     mockGetClientDocument.mockResolvedValue(
       makeDoc({ name: "Acme Plumbing", outbound_from_number: "+15550000000" }),
     );
     mockFetchRetellAgent
       .mockResolvedValueOnce(makeSnapshot("Acme Plumbing"))
       .mockResolvedValueOnce(makeSnapshot("Beta Plumbing"));
-    mockPhoneList.mockResolvedValue([
-      { phone_number: "+18158804070", inbound_agents: [{ agent_id: "agent_1", weight: 1 }] },
-      { phone_number: "+15550000000", inbound_agents: [] }, // outbound-only fallback match
-      { phone_number: "+15559999999", inbound_agents: [{ agent_id: "agent_other", weight: 1 }] }, // unrelated
-    ]);
 
     const res = makeRes();
     await runRoute("post", "/:agentId/rename-business",
@@ -278,71 +280,37 @@ describe("POST /:agentId/rename-business", () => {
 
     expect(res._status).toBe(200);
     expect(res._json.success).toBe(true);
-    expect(res._json.nickname_updated).toEqual(["+18158804070", "+15550000000"]);
-    expect(res._json.nickname_errors).toBeUndefined();
-
-    expect(mockPhoneUpdate).toHaveBeenCalledTimes(2);
-    expect(mockPhoneUpdate).toHaveBeenCalledWith("+18158804070", { nickname: "Beta Plumbing" });
-    expect(mockPhoneUpdate).toHaveBeenCalledWith("+15550000000", { nickname: "Beta Plumbing" });
-    expect(mockPhoneUpdate).not.toHaveBeenCalledWith("+15559999999", expect.anything());
-  });
-
-  it("returns success with nickname_errors when one phone update fails", async () => {
-    mockGetClientDocument.mockResolvedValue(makeDoc({ name: "Acme Plumbing" }));
-    mockFetchRetellAgent
-      .mockResolvedValueOnce(makeSnapshot("Acme Plumbing"))
-      .mockResolvedValueOnce(makeSnapshot("Beta Plumbing"));
-    mockPhoneList.mockResolvedValue([
-      { phone_number: "+18158804070", inbound_agents: [{ agent_id: "agent_1", weight: 1 }] },
-      { phone_number: "+18159990000", inbound_agents: [{ agent_id: "agent_1", weight: 1 }] },
-    ]);
-    mockPhoneUpdate
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("retell rejected"));
-
-    const res = makeRes();
-    await runRoute("post", "/:agentId/rename-business",
-      makeReq({
-        params: { slug: "acme", agentId: "agent_1" },
-        body: { newName: "Beta Plumbing" },
-      }), res);
-
-    expect(res._status).toBe(200);
-    expect(res._json.success).toBe(true);
-    expect(res._json.nickname_updated).toEqual(["+18158804070"]);
-    expect(res._json.nickname_errors).toEqual(["+18159990000: retell rejected"]);
-
-    // Mongo + audit still ran despite the per-number failure.
-    expect(mockUpdateOne).toHaveBeenCalledWith(
-      { _id: "acme" },
-      { $set: { name: "Beta Plumbing" } },
-    );
-    expect(mockLogAudit).toHaveBeenCalled();
-  });
-
-  it("survives phoneNumber.list() failure without aborting the rename", async () => {
-    mockGetClientDocument.mockResolvedValue(makeDoc({ name: "Acme Plumbing" }));
-    mockFetchRetellAgent
-      .mockResolvedValueOnce(makeSnapshot("Acme Plumbing"))
-      .mockResolvedValueOnce(makeSnapshot("Beta Plumbing"));
-    mockPhoneList.mockRejectedValue(new Error("retell list down"));
-
-    const res = makeRes();
-    await runRoute("post", "/:agentId/rename-business",
-      makeReq({
-        params: { slug: "acme", agentId: "agent_1" },
-        body: { newName: "Beta Plumbing" },
-      }), res);
-
-    expect(res._status).toBe(200);
-    expect(res._json.success).toBe(true);
-    expect(res._json.nickname_errors).toEqual(["list: retell list down"]);
+    // Phone-number side effects belong to the display_name flow now.
+    expect(mockPhoneList).not.toHaveBeenCalled();
     expect(mockPhoneUpdate).not.toHaveBeenCalled();
-    // Mongo write still happened.
-    expect(mockUpdateOne).toHaveBeenCalledWith(
-      { _id: "acme" },
-      { $set: { name: "Beta Plumbing" } },
+    // No nickname_* fields in the response — they were removed.
+    expect(res._json.nickname_updated).toBeUndefined();
+    expect(res._json.nickname_errors).toBeUndefined();
+  });
+
+  it("preserves the existing display_name in agent_name pin when one is set", async () => {
+    mockGetClientDocument.mockResolvedValue(
+      makeDoc({ name: "Acme Plumbing", display_name: "Acme HVAC (demo)" }),
     );
+    mockFetchRetellAgent
+      .mockResolvedValueOnce(makeSnapshot("Acme Plumbing"))
+      .mockResolvedValueOnce(makeSnapshot("Beta Plumbing"));
+
+    const res = makeRes();
+    await runRoute("post", "/:agentId/rename-business",
+      makeReq({
+        params: { slug: "acme", agentId: "agent_1" },
+        body: { newName: "Beta Plumbing" },
+      }), res);
+
+    expect(res._status).toBe(200);
+    expect(res._json.success).toBe(true);
+    // Renaming the business must not clobber the user's chosen dashboard label.
+    const pushedCanonical = mockPushFlowToRetell.mock.calls[0][2];
+    expect(pushedCanonical.agent_name).toBe("Acme HVAC (demo)");
+    // Prompt text still rewritten with the new business name.
+    expect(pushedCanonical.conversationFlow.global_prompt).toContain("Beta Plumbing");
+    expect(mockAgentUpdate).not.toHaveBeenCalled();
   });
 
   it("uses oldName override when provided", async () => {

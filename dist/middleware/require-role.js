@@ -32,3 +32,12 @@ export function requireRoot(req, res, next) {
     }
     next();
 }
+export const ROOT_ONLY_DELETE_SLUGS = new Set(["demo-meter"]);
+export function requireRootForProtectedSlug(req, res, next) {
+    const slug = String(req.params.slug ?? "");
+    if (ROOT_ONLY_DELETE_SLUGS.has(slug) && !req.user?.isRoot) {
+        res.status(403).json({ error: "Root access required to delete this agent" });
+        return;
+    }
+    next();
+}

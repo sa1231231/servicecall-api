@@ -4,18 +4,13 @@ import { notificationClients } from "../../_cache/clients.js";
 import { getClientDocument, persistClient, } from "../../config/client-store.js";
 import { fetchRetellAgent, extractFlowParams, extractAgentParams, } from "../../lib/retell-sync.js";
 import { generateSlug } from "../../lib/slug.js";
+import { replaceBusinessName } from "../../lib/replace-business-name.js";
 // ── FAQ node template (must match agent-generator/node-builders.ts) ──────────
 const FAQ_NODE_NAME = "Admin/FAQ";
 const FAQ_PROMPT_PREFIX = `Your goal is to answer administrative and general questions briefly and accurately.
 
 `;
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function replaceBusinessName(obj, oldName, newName) {
-    const serialized = JSON.stringify(obj);
-    const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(escaped, "gi");
-    return JSON.parse(serialized.replace(regex, newName));
-}
 function replaceFaq(flow, newFaq) {
     const nodes = flow.nodes;
     if (!nodes)
@@ -51,9 +46,9 @@ export async function cloneAgentHandler(req, res) {
         res.status(404).json({ error: `Client "${sourceSlug}" not found` });
         return;
     }
-    const sourceAgentId = sourceDoc.agent_ids?.[0];
+    const sourceAgentId = sourceDoc.agent_id;
     if (!sourceAgentId) {
-        res.status(400).json({ error: "Source client has no agent_ids" });
+        res.status(400).json({ error: "Source client has no agent_id" });
         return;
     }
     // Generate slug
@@ -93,7 +88,7 @@ export async function cloneAgentHandler(req, res) {
         // Build client entry — copy structure from source, use new dispatch config
         const entry = {
             name: newName,
-            agent_ids: [newAgentId],
+            agent_id: newAgentId,
             dispatch_text_numbers: body.dispatch_text_numbers ?? [],
             dispatch_call_number: body.dispatch_call_number ?? null,
             dispatch_email: body.dispatch_email ?? null,

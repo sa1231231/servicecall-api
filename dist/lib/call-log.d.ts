@@ -12,6 +12,7 @@ export interface CallLogDocument {
     message_type_label: string;
     outcome: string;
     shadow_mode: boolean;
+    test_mode?: boolean;
     call_summary?: string;
     user_sentiment?: string;
     call_successful?: boolean;
@@ -39,4 +40,6 @@ export declare function enrichCallLog(callId: string, data: {
 /** Get a single call log by ID. */
 export declare function getCallLogById(callId: string): Promise<CallLogDocument | null>;
 /** Get call logs for a client, sorted newest first. */
-export declare function getCallLogsByClient(clientSlug: string, limit?: number, offset?: number): Promise<CallLogDocument[]>;
+export declare function getCallLogsByClient(clientSlug: string, limit?: number, offset?: number, options?: {
+    includeTests?: boolean;
+}): Promise<CallLogDocument[]>;

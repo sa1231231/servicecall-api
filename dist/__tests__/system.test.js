@@ -101,7 +101,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             const demo = body.find((a) => a.slug === SLUG);
             expect(demo).toBeDefined();
             expect(demo.name).toContain("Demo Team");
-            expect(demo.agent_ids).toContain(AGENT_ID);
+            expect(demo.agent_id).toBe(AGENT_ID);
         });
         it("returns full detail for Demo Team", async () => {
             const resp = await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() });
@@ -109,7 +109,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             const body = await json(resp);
             expect(body._id).toBe(SLUG);
             expect(body.name).toContain("Demo Team");
-            expect(body.agent_ids).toContain(AGENT_ID);
+            expect(body.agent_id).toBe(AGENT_ID);
             expect(body.message_types).toBeDefined();
             expect(Object.keys(body.message_types).length).toBeGreaterThanOrEqual(1);
             expect(body.retell_agents).toBeDefined();
@@ -444,7 +444,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             const resp = await fetch(url(`/portal/${SLUG}/api/settings?token=${portalToken}`), {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ shadow_mode: false, agent_ids: ["hacked"] }),
+                body: JSON.stringify({ shadow_mode: false, agent_id: "hacked" }),
             });
             // Should return 400 (no valid fields) since non-whitelisted fields are ignored
             expect(resp.status).toBe(400);
@@ -1062,7 +1062,9 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         describe("edit-prompt", () => {
             it("edits Close node", { timeout: 30_000 }, async () => {
                 const struct = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
-                const closeNode = struct.nodes.find((n) => n.name === "Close");
+                // Multi-path agents have "Close (pathName)" nodes; single-path agents
+                // keep the legacy singleton "Close". Accept either.
+                const closeNode = struct.nodes.find((n) => n.name === "Close" || (typeof n.name === "string" && n.name.startsWith("Close (")));
                 expect(closeNode).toBeDefined();
                 const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-prompt`), {
                     method: "POST", headers: authHeaders(),

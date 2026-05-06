@@ -34,10 +34,10 @@ describe("notificationClients", () => {
             expect(Array.isArray(client.dispatch_text_numbers), `${key}.dispatch_text_numbers should be an array`).toBe(true);
         }
     });
-    it("maps agent_ids to clients correctly", () => {
+    it("maps agent_id to clients correctly", () => {
         for (const [, client] of Object.entries(notificationClients)) {
-            for (const agentId of client.agent_ids) {
-                expect(agentIdToClient[agentId]).toBe(client);
+            if (client.agent_id) {
+                expect(agentIdToClient[client.agent_id]).toBe(client);
             }
         }
     });

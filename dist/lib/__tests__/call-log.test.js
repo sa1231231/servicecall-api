@@ -105,11 +105,17 @@ describe("getCallLogsByClient", () => {
         const cursor = chainableFind(docs);
         mockFind.mockReturnValue(cursor);
         const result = await getCallLogsByClient("acme");
-        expect(mockFind).toHaveBeenCalledWith({ client_slug: "acme" });
+        expect(mockFind).toHaveBeenCalledWith({ client_slug: "acme", test_mode: { $ne: true } });
         expect(cursor.sort).toHaveBeenCalledWith({ created_at: -1 });
         expect(cursor.skip).toHaveBeenCalledWith(0);
         expect(cursor.limit).toHaveBeenCalledWith(50);
         expect(result).toBe(docs);
+    });
+    it("includes test_mode entries when includeTests=true", async () => {
+        const cursor = chainableFind([]);
+        mockFind.mockReturnValue(cursor);
+        await getCallLogsByClient("acme", 50, 0, { includeTests: true });
+        expect(mockFind).toHaveBeenCalledWith({ client_slug: "acme" });
     });
     it("respects custom limit and offset", async () => {
         const cursor = chainableFind([]);

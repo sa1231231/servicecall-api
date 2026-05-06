@@ -769,7 +769,10 @@ describe("round-trip integrity", () => {
         const parsed = parseConversationFlow(agent);
         for (const path of parsed.paths) {
             const origVars = getPathVariableNames(path);
-            const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), parsed.closeNode.id, path.name === "Default" ? undefined : path.name);
+            // Multi-path callback agents have a per-path Close — route the
+            // regenerated data chain to *that* close, not the first one found.
+            const terminalId = path.closeNode?.id ?? parsed.closeNode.id;
+            const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), terminalId, path.name === "Default" ? undefined : path.name);
             applyRegeneratedChain(agent, result);
             const errors = validateConversationFlow(agent.conversationFlow);
             expect(errors).toEqual([]);

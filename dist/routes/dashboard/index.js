@@ -6,6 +6,7 @@ import express from "express";
 import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import { listAgentsHandler } from "./list-agents.js";
+import { listPhoneNumbersHandler } from "./list-phone-numbers.js";
 import { toggleShadowHandler } from "./toggle-shadow.js";
 import { toggleActiveHandler } from "./toggle-active.js";
 import { getAgentHandler } from "./get-agent.js";
@@ -13,13 +14,15 @@ import { getCallsHandler } from "./get-calls.js";
 import { updateAgentHandler } from "./update-agent.js";
 import { cloneAgentHandler } from "./clone-agent.js";
 import { deleteAgentHandler } from "./delete-agent.js";
+import { listFoldersHandler, createFolderHandler, updateFolderHandler, deleteFolderHandler, } from "./folders.js";
+import { moveAgentFolderHandler } from "./move-agent-folder.js";
 import { getClientDocument, generatePortalToken, listDeletedClients, restoreClient, deleteClient, } from "../../config/client-store.js";
 import { getCallLogById } from "../../lib/call-log.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { getSettings, updateSettings } from "../../lib/settings.js";
 import { runBackup } from "../../lib/backup.js";
 import { getDataPointDefaultsWithCategory, updateDataPointDefault, createDataPointDefault, deleteDataPointDefault, reorderDataPointDefaults, CATEGORY_ORDER, CATEGORY_LABELS, } from "../../lib/data-point-defaults.js";
-import { requirePermission } from "../../middleware/require-role.js";
+import { requirePermission, requireRootForProtectedSlug } from "../../middleware/require-role.js";
 import { logAudit } from "../../lib/audit.js";
 import { nodeEditorRouter } from "./node-editor.js";
 import { alertRootIfNeeded } from "../../lib/root-alerts.js";
@@ -51,13 +54,22 @@ dashboardRouter.get("/config", (req, res) => {
 export const dashboardApiRouter = Router();
 dashboardApiRouter.use(express.json());
 dashboardApiRouter.get("/agents", listAgentsHandler);
+dashboardApiRouter.get("/phone-numbers", listPhoneNumbersHandler);
 dashboardApiRouter.get("/agents/:slug", getAgentHandler);
 dashboardApiRouter.get("/agents/:slug/calls", getCallsHandler);
 dashboardApiRouter.patch("/agents/:slug/shadow", requirePermission("edit_agents"), toggleShadowHandler);
 dashboardApiRouter.patch("/agents/:slug/active", requirePermission("edit_agents"), toggleActiveHandler);
 dashboardApiRouter.patch("/agents/:slug", requirePermission("edit_agents"), updateAgentHandler);
 dashboardApiRouter.post("/agents/:slug/clone", requirePermission("clone_agents"), cloneAgentHandler);
-dashboardApiRouter.delete("/agents/:slug", requirePermission("delete_agents"), deleteAgentHandler);
+dashboardApiRouter.delete("/agents/:slug", requireRootForProtectedSlug, requirePermission("delete_agents"), deleteAgentHandler);
+dashboardApiRouter.patch("/agents/:slug/folder", requirePermission("edit_agents"), moveAgentFolderHandler);
+// ── Folders ─────────────────────────────────────────────────────────────────
+// Read is open to any dashboard viewer; mutations require edit_agents.
+// Deleting a folder moves its agents back to "Unfiled" (root) — never deletes.
+dashboardApiRouter.get("/folders", listFoldersHandler);
+dashboardApiRouter.post("/folders", requirePermission("edit_agents"), createFolderHandler);
+dashboardApiRouter.patch("/folders/:id", requirePermission("edit_agents"), updateFolderHandler);
+dashboardApiRouter.delete("/folders/:id", requirePermission("edit_agents"), deleteFolderHandler);
 // ── Export ───────────────────────────────────────────────────────────────────
 import { exportAgentHandler } from "../agents/export-agent.js";
 dashboardApiRouter.get("/agents/:slug/export", exportAgentHandler);
@@ -78,7 +90,7 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("mana
             const deletedPattern = /\s*\[DELETED — expires \d{4}-\d{2}-\d{2}\]$/;
             const allIds = new Set([
                 ...Object.keys(doc.retell_agents ?? {}),
-                ...(doc.agent_ids ?? []),
+                ...(doc.agent_id ? [doc.agent_id] : []),
             ]);
             for (const agentId of allIds) {
                 try {
@@ -104,7 +116,7 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("mana
         res.status(500).json({ error: msg });
     }
 });
-dashboardApiRouter.delete("/deleted-agents/:slug", requirePermission("manage_deleted"), async (req, res) => {
+dashboardApiRouter.delete("/deleted-agents/:slug", requireRootForProtectedSlug, requirePermission("manage_deleted"), async (req, res) => {
     const slug = String(req.params.slug);
     try {
         // Actually delete from Retell now (permanent delete)
@@ -132,15 +144,14 @@ dashboardApiRouter.delete("/deleted-agents/:slug", requirePermission("manage_del
                     }
                 }
             }
-            for (const agentId of doc.agent_ids ?? []) {
-                if (retellAgents[agentId])
-                    continue;
+            // Belt-and-suspenders: also delete the agent_id if not already in retell_agents map
+            if (doc.agent_id && !retellAgents[doc.agent_id]) {
                 try {
-                    await retell.agent.delete(agentId);
-                    console.log(`[permanent-delete] deleted Retell agent ${agentId} (from agent_ids)`);
+                    await retell.agent.delete(doc.agent_id);
+                    console.log(`[permanent-delete] deleted Retell agent ${doc.agent_id} (from agent_id)`);
                 }
                 catch (err) {
-                    console.warn(`[permanent-delete] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
+                    console.warn(`[permanent-delete] could not delete Retell agent ${doc.agent_id}: ${err instanceof Error ? err.message : err}`);
                 }
             }
         }
@@ -377,13 +388,13 @@ dashboardApiRouter.patch("/data-point-defaults/:key", requirePermission("manage_
 });
 dashboardApiRouter.post("/data-point-defaults", requirePermission("manage_data_points"), async (req, res) => {
     try {
-        const { key, label, category, type, choices, description, conversationPrompt, forwardCondition } = req.body;
+        const { key, label, category, type, choices, description, conversationPrompt, forwardCondition, composite, variables } = req.body;
         if (!key || !label) {
             res.status(400).json({ error: "key and label are required" });
             return;
         }
         const dp = await createDataPointDefault(key, {
-            label, category, type, choices, description, conversationPrompt, forwardCondition,
+            label, category, type, choices, description, conversationPrompt, forwardCondition, composite, variables,
         });
         await logAudit(req, "create_data_point", key);
         alertRootIfNeeded(req, "create_data_point", key);

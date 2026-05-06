@@ -100,9 +100,9 @@ export function generateAgent(agentConfig, rawDataPoints, pathConfigs, defaults)
     const isMultiPath = paths.length > 1;
     // Validate and resolve data points per path
     const resolvedPaths = paths.map((p) => {
-        if (!p.dataPoints || p.dataPoints.length === 0) {
-            throw new Error(`Path "${p.name}" has no data points`);
-        }
+        // Empty data-point arrays are allowed — useful for "if intent matches,
+        // transfer/callback immediately" paths where no data collection happens.
+        const dataPoints = p.dataPoints || [];
         const endMode = p.endMode === "transfer" ? "transfer" : "callback";
         if (endMode === "transfer" && !p.transferDestination) {
             throw new Error(`Path "${p.name}" end mode is "transfer" but no dispatch call number is set (per-path or client default)`);
@@ -110,7 +110,7 @@ export function generateAgent(agentConfig, rawDataPoints, pathConfigs, defaults)
         try {
             return {
                 name: p.name,
-                resolved: resolveDataPoints(p.dataPoints, defaults),
+                resolved: dataPoints.length === 0 ? [] : resolveDataPoints(dataPoints, defaults),
                 endMode,
                 transferDestination: p.transferDestination,
             };
@@ -172,20 +172,31 @@ When listing anything — services, time slots, examples, options — never list
         const pIds = ids.paths[pathIdx];
         const pPos = pos.paths[pathIdx];
         const pathLabel = isMultiPath ? rp.name : undefined;
-        allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel));
         // Variables Router's else_edge points here when all data is collected.
-        // - "callback": shared Close node
+        // - "callback" multi-path: this path's own Close node (per-path prompt)
+        // - "callback" single-path: the shared Close node (legacy layout)
         // - "transfer": this path's Pre-Transfer node
         const terminalId = rp.endMode === "transfer" && pIds.preTransferId
             ? pIds.preTransferId
-            : ids.closeId;
-        allNodes.push(...buildDataChain(rp.resolved, pIds, pPos, terminalId, f, pathLabel));
+            : pIds.closeId
+                ? pIds.closeId
+                : ids.closeId;
+        if (rp.resolved.length === 0) {
+            // Empty data chain: transition skips the entire collection scaffold and
+            // jumps straight to the terminal (Close for callback, Pre-Transfer for
+            // transfer). No Extract / Router / collect / confirm nodes generated.
+            allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel, terminalId));
+        }
+        else {
+            allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel));
+            allNodes.push(...buildDataChain(rp.resolved, pIds, pPos, terminalId, f, pathLabel));
+        }
         if (rp.endMode === "transfer") {
             if (!rp.transferDestination) {
                 throw new Error(`Path "${rp.name}": missing transferDestination`);
             }
             allNodes.push(buildPreTransferNode(pIds, pPos, agentConfig, pathLabel, f));
-            allNodes.push(buildPerPathTransferCallNode(pIds, pPos, ids, rp.transferDestination, pathLabel, f));
+            allNodes.push(buildPerPathTransferCallNode(pIds, pPos, ids, rp.transferDestination, pathLabel, f, agentConfig.warmTransferAgentVersion));
         }
     });
     // Shared global + closing nodes
@@ -193,13 +204,32 @@ When listing anything — services, time slots, examples, options — never list
     allNodes.push(buildFaqNode(faqKnowledgeBase, ids, pos, f, isMultiPath));
     allNodes.push(buildHumanRequestNode(ids, pos, f, humanMode));
     if (humanMode === "live_transfer") {
-        allNodes.push(buildTransferCallNode(ids, pos, f));
+        allNodes.push(buildTransferCallNode(ids, pos, f, agentConfig.warmTransferAgentVersion));
     }
     // Build the shared Live Transfer Recovery node when any transfer path exists.
     if (humanMode === "live_transfer" || anyTransferPath) {
         allNodes.push(buildLiveTransferRecoveryNode(agentConfig, ids, pos, f));
     }
-    allNodes.push(buildCloseNode(agentConfig, ids, pos, f));
+    // Close nodes:
+    // - Multi-path: one per callback path, with per-path prompt support.
+    //   Each path's Variables Router else_edge points to its own Close node;
+    //   each Close always_edges to the shared Closing Remarks.
+    // - Single-path: one shared Close node (legacy layout). Same in both cases:
+    //   Closing Remarks → Closing Statement remain singular.
+    if (isMultiPath) {
+        resolvedPaths.forEach((rp, pathIdx) => {
+            const pIds = ids.paths[pathIdx];
+            if (rp.endMode === "transfer" || !pIds.closeId)
+                return;
+            allNodes.push(buildCloseNode(agentConfig, ids, pos, f, {
+                nodeId: pIds.closeId,
+                pathName: rp.name,
+            }));
+        });
+    }
+    else {
+        allNodes.push(buildCloseNode(agentConfig, ids, pos, f));
+    }
     allNodes.push(...buildClosingSequence(agentConfig, ids, pos, f));
     allNodes.push(buildIrrelevantGuardrailNode(ids, pos, f));
     allNodes.push(buildEmergencyGuardrailNode(ids, pos, f));

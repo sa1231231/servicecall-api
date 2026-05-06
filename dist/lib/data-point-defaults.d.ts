@@ -1,4 +1,4 @@
-import { type DataPoint } from "./agent-generator/data-point-registry.js";
+import { type DataPoint, type VariableDef } from "./agent-generator/data-point-registry.js";
 export declare const CATEGORY_ORDER: string[];
 export declare const CATEGORY_LABELS: Record<string, string>;
 export interface StoredDataPoint extends DataPoint {
@@ -24,6 +24,8 @@ export declare function createDataPointDefault(key: string, data: {
     description?: string;
     conversationPrompt?: string;
     forwardCondition?: string;
+    composite?: boolean;
+    variables?: VariableDef[];
 }): Promise<StoredDataPoint>;
 /** Delete a data point default. */
 export declare function deleteDataPointDefault(key: string): Promise<boolean>;

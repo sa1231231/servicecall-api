@@ -700,16 +700,22 @@ nodeEditorRouter.post("/:agentId/rename-business", async (req, res) => {
     );
 
     // Find/replace across the canonical JSON. Catches global prompt, welcome
-    // message, closing prompts, transfer prompts, FAQ mentions, agent_name —
-    // anywhere the old name was baked in at generation time.
+    // message, closing prompts, transfer prompts, FAQ mentions — anywhere the
+    // old name was baked into prompt text at generation time.
     const renamedCanonical = replaceBusinessName(
       snapshot.canonicalJson,
       currentName,
       newName,
     );
-    // The case-insensitive match could land mixed-case occurrences in the JSON;
-    // pin agent_name explicitly to the new casing.
-    renamedCanonical.agent_name = newName;
+    // agent_name is owned by the dashboard `display_name` field (see
+    // update-agent.ts). Only pin it to the new business name when the doc has
+    // no display_name set — otherwise renaming the business would clobber the
+    // user's chosen dashboard label.
+    if (!resolved.doc.display_name) {
+      renamedCanonical.agent_name = newName;
+    } else {
+      renamedCanonical.agent_name = resolved.doc.display_name;
+    }
     const renamedFlow = renamedCanonical.conversationFlow as Record<string, unknown>;
 
     // Validate the modified flow before pushing.
@@ -719,42 +725,12 @@ nodeEditorRouter.post("/:agentId/rename-business", async (req, res) => {
       return;
     }
 
-    // Push to Retell (flow + agent-level rename), then sync MongoDB.
+    // Push the rewritten flow to Retell. We deliberately do NOT call
+    // `agent.update({ agent_name })` or update phone-number nicknames here —
+    // those surfaces are driven by `display_name` (PATCH /agents/:slug), so
+    // renaming the business name in scripts leaves the dashboard/console
+    // labels alone.
     await pushFlowToRetell(retell(), snapshot.conversationFlowId, renamedCanonical);
-    await retell().agent.update(agentId, { agent_name: newName } as any);
-
-    // Propagate to phone-number display names (Retell nickname). Numbers are
-    // matched by inbound_agent binding, with outbound_from_number as a
-    // fallback for outbound-only numbers. Per-number failures don't abort —
-    // the agent/flow/Mongo writes already succeeded above, so we collect
-    // errors and surface them to the caller.
-    const nicknameUpdated: string[] = [];
-    const nicknameErrors: string[] = [];
-    try {
-      const allNumbers = await retell().phoneNumber.list();
-      const matching = allNumbers.filter((n) => {
-        if (n.inbound_agents?.some((a) => a.agent_id === agentId)) return true;
-        if (
-          resolved.doc.outbound_from_number &&
-          n.phone_number === resolved.doc.outbound_from_number
-        ) return true;
-        return false;
-      });
-      for (const num of matching) {
-        try {
-          await retell().phoneNumber.update(num.phone_number, { nickname: newName } as any);
-          nicknameUpdated.push(num.phone_number);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error(`[node-editor] rename-business: failed to update nickname on ${num.phone_number}: ${msg}`);
-          nicknameErrors.push(`${num.phone_number}: ${msg}`);
-        }
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[node-editor] rename-business: failed to list phone numbers: ${msg}`);
-      nicknameErrors.push(`list: ${msg}`);
-    }
 
     await getDb()
       .collection<JsonClientEntry & { _id: string }>("clients")
@@ -766,17 +742,12 @@ nodeEditorRouter.post("/:agentId/rename-business", async (req, res) => {
     await logAudit(req, "rename_business", `${slug}/${agentId}`, {
       oldName: currentName,
       newName,
-      nicknameUpdated,
-      nicknameErrors,
     });
-    const response: Record<string, unknown> = {
+    res.json({
       success: true,
       oldName: currentName,
       newName,
-      nickname_updated: nicknameUpdated,
-    };
-    if (nicknameErrors.length > 0) response.nickname_errors = nicknameErrors;
-    res.json(response);
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error(`[node-editor] rename-business error:`, msg);

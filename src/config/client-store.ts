@@ -25,6 +25,12 @@ export interface ResolveRuleEntry {
 
 export interface JsonClientEntry {
   name: string;
+  // Optional dashboard-only label. Drives the agent dashboard list/detail
+  // header, the Retell console agent_name, and Retell phone-number nicknames.
+  // Does NOT propagate into prompts, conversation flow text, FAQ, or
+  // post-hook templates — those continue to use `name`. Falls back to `name`
+  // when unset.
+  display_name?: string | null;
   agent_id: string;
   dispatch_text_numbers: string[];
   dispatch_call_number: string | null;
@@ -203,12 +209,14 @@ export async function updateClientField(
   console.log(`[client-store] updated "${slug}".${field} = ${JSON.stringify(value)}`);
 }
 
-// `name` is intentionally NOT in this whitelist. Renaming a business must go
-// through the rename-business handler in node-editor.ts so it propagates to
-// the Retell agent name, conversation flow text, and phone-number nicknames —
-// not just the Mongo field.
+// `name` is intentionally NOT in this whitelist. Renaming the business name
+// must go through the rename-business handler in node-editor.ts so it
+// propagates into prompts, welcome line, FAQ, etc. The dashboard label that
+// users actually see is `display_name`, which has its own side-effect path
+// (Retell agent_name + phone nicknames) layered on top in update-agent.ts.
 const EDITABLE_FIELDS = new Set([
   "agent_id",
+  "display_name",
   "dispatch_text_numbers",
   "dispatch_call_number",
   "dispatch_call_overrides",

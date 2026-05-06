@@ -20,6 +20,9 @@ export async function postHookHandler(req, res) {
     const agentId = req.body?.call?.agent_id ?? null;
     const isTestClient = agentIdToClient[agentId]?.name === "Test Client";
     const isInternalCall = req.headers["x-api-key"] === config.API_KEY;
+    // Test mode: only honored for internal callers (x-api-key match). Suppresses
+    // surge alerts and all dispatch (SMS/email/voice), tags the call log.
+    const isTestMode = isInternalCall && req.headers["x-test-mode"] === "true";
     if (!isTestClient && !isInternalCall) {
         const sig = req.headers["x-retell-signature"] ?? "";
         const rawBody = req.rawBody;
@@ -80,6 +83,7 @@ export async function postHookHandler(req, res) {
             message_type_label: typeLabel,
             outcome,
             shadow_mode: client.shadow_mode ?? false,
+            ...(isTestMode && { test_mode: true }),
             call_cost_cents: call.call_cost?.combined_cost ?? undefined,
             sms_count: counts.sms_count,
             email_count: counts.email_count,
@@ -87,7 +91,10 @@ export async function postHookHandler(req, res) {
         };
     }
     // Per-agent call surge & cost surge alerts (runs for ALL calls — web, shadow, dispatched)
-    const alerts = checkAgentAlerts(agentId, call.call_cost?.combined_cost);
+    // Skipped under test-mode so cross-agent live tests don't page the owner.
+    const alerts = isTestMode
+        ? { callSurge: { fired: false, count: 0 }, costSurge: { fired: false, totalCents: 0 } }
+        : checkAgentAlerts(agentId, call.call_cost?.combined_cost);
     if (alerts.callSurge.fired) {
         const surgeSubject = `[CALL SURGE] ${clientConfig.name} — ${alerts.callSurge.count} calls in the last hour`;
         const surgeBody = `Call surge detected for "${clientConfig.name}" (${clientSlug}).\n\n${alerts.callSurge.count} calls received in the last hour.\n\nThis alert will not repeat for 1 hour.\n\n— Service Call Saver Monitor`;
@@ -101,9 +108,12 @@ export async function postHookHandler(req, res) {
         sendSms(ownerConfig.phone, costSubject).catch(() => { });
         sendEmail({ to: ownerConfig.email, subject: costSubject, body: costBody }).catch(() => { });
     }
-    // Skip dispatch for web calls — log only
-    if (isWebCall) {
-        console.log("retell-post-hook: web call — logging but skipping dispatch");
+    // Skip dispatch for web calls or test-mode calls — log only.
+    // Test-mode forces this branch even when from_number is set, so cross-agent
+    // live tests don't trigger real SMS/email/voice on production clients.
+    if (isWebCall || isTestMode) {
+        const branch = isTestMode ? "test mode" : "web call";
+        console.log(`retell-post-hook: ${branch} — logging but skipping dispatch`);
         const typeKey = clientConfig.resolve_type(allVars);
         const messageType = clientConfig.message_types[typeKey] ?? clientConfig.message_types[clientConfig.default_message_type];
         const typeLabel = messageType?.label ?? "";
@@ -115,8 +125,9 @@ export async function postHookHandler(req, res) {
                     fields[f.key] = String(val);
             }
         }
-        saveCallLog(buildCallLog("web_call", typeKey, typeLabel, fields)).catch(() => { });
-        res.status(200).json({ success: true, outcome: "web_call" });
+        const outcome = isTestMode ? "test_call" : "web_call";
+        saveCallLog(buildCallLog(outcome, typeKey, typeLabel, fields)).catch(() => { });
+        res.status(200).json({ success: true, outcome });
         return;
     }
     // Build notification messages

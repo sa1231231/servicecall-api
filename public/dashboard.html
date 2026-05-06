@@ -158,24 +158,6 @@
   .folder-header-actions button.danger:hover { color: #991b1b; border-color: #fca5a5; }
   .clickable-row[draggable="true"] { cursor: pointer; }
   .clickable-row.dragging { opacity: 0.4; }
-  .move-folder-btn {
-    background: transparent; border: none; cursor: pointer;
-    color: #6b7280; padding: 0.15rem 0.3rem; font-size: 0.85rem;
-  }
-  .move-folder-btn:hover { color: #1e40af; }
-  .move-folder-menu {
-    position: absolute; z-index: 50; min-width: 12rem;
-    background: #fff; border: 1px solid #cbd5e1; border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    padding: 0.25rem 0;
-    font-size: 0.82rem;
-  }
-  .move-folder-menu .move-folder-item {
-    padding: 0.4rem 0.7rem; cursor: pointer; color: #1e293b;
-  }
-  .move-folder-menu .move-folder-item:hover { background: #f1f5f9; }
-  .move-folder-menu .move-folder-item.current { color: #94a3b8; cursor: default; }
-  .move-folder-menu .move-folder-item.current:hover { background: transparent; }
   .badge {
     display: inline-block;
     padding: 0.15rem 0.5rem;
@@ -1758,11 +1740,6 @@
       }
     }
 
-    const moveBtn = canEdit
-      ? '<button class="move-folder-btn" title="Move to folder…" ' +
-          'onclick="event.stopPropagation();openMoveFolderMenu(event,\'' + esc(a.slug) + '\')">📁</button>'
-      : '';
-
     const phones = phoneNumbersForAgent(a);
     const phoneHtml = phones.length > 0
       ? phones.map(p => '<span title="' + esc(p.title) + '">' + esc(p.label) + '</span>').join(', ')
@@ -1780,7 +1757,6 @@
       (canEdit ? ' draggable="true" ondragstart="onAgentDragStart(event)" ondragend="onAgentDragEnd(event)"' : '') +
       '>' +
       AGENT_COLUMNS.filter(c => isColumnVisible(c.key)).map(c => cells[c.key]).join('') +
-      (canEdit ? '<td style="width:1px;white-space:nowrap;text-align:right;padding-right:0.5rem;" onclick="event.stopPropagation()">' + moveBtn + '</td>' : '') +
       '</tr>';
   }
 
@@ -2079,44 +2055,10 @@
     }
   }
 
-  // ── Move-to-folder dropdown ─────────────────────────────────────────────────
-
-  let openMoveMenuEl = null;
-  function openMoveFolderMenu(evt, slug) {
-    closeMoveFolderMenu();
-    const a = agentRows.find(x => x.slug === slug);
-    if (!a) return;
-    const menu = document.createElement('div');
-    menu.className = 'move-folder-menu';
-    const target = (id, label, isCurrent) => {
-      const cls = 'move-folder-item' + (isCurrent ? ' current' : '');
-      const onclick = isCurrent ? '' : 'onclick="moveAgentToFolder(\'' + esc(slug) + '\',' + (id === null ? 'null' : '\'' + esc(id) + '\'') + ')"';
-      return '<div class="' + cls + '"' + (onclick ? ' ' + onclick : '') + '>' + label + '</div>';
-    };
-    let html = '';
-    const currentId = a.folder_id || null;
-    html += target(null, 'Unfiled (root)', currentId === null);
-    for (const f of agentFolders.slice().sort((a, b) => a.position - b.position)) {
-      html += target(f._id, esc(f.name), currentId === f._id);
-    }
-    menu.innerHTML = html;
-    document.body.appendChild(menu);
-    // Position next to the click point
-    const rect = evt.currentTarget.getBoundingClientRect();
-    menu.style.top = (rect.bottom + window.scrollY) + 'px';
-    menu.style.left = (rect.left + window.scrollX) + 'px';
-    openMoveMenuEl = menu;
-    setTimeout(() => document.addEventListener('click', closeMoveFolderMenu, { once: true }), 0);
-  }
-  function closeMoveFolderMenu() {
-    if (openMoveMenuEl) {
-      openMoveMenuEl.remove();
-      openMoveMenuEl = null;
-    }
-  }
+  // ── Move-to-folder ──────────────────────────────────────────────────────────
+  // Drag-and-drop is the only entry point; the per-row menu was retired.
 
   async function moveAgentToFolder(slug, folderId) {
-    closeMoveFolderMenu();
     try {
       const res = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/folder', {
         method: 'PATCH',

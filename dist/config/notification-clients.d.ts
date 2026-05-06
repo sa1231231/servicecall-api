@@ -24,7 +24,7 @@ export interface MessageType {
 }
 export interface ClientNotificationConfig {
     name: string;
-    agent_ids: string[];
+    agent_id: string;
     dispatch_text_numbers: string[];
     dispatch_call_number: string | null;
     dispatch_call_overrides?: Record<string, string>;

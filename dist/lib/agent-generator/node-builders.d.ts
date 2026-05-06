@@ -4,6 +4,23 @@ export declare const DEFAULT_CLOSING_REMARKS_PROMPT = "You are about to end the 
 export declare const DEFAULT_CLOSING_STATEMENT_TEXT = "Alright, bye now!";
 export declare const DEFAULT_PRE_TRANSFER_PROMPT = "Thanks for the information. Hold on a moment \u2014 connecting you to our team at {{business_name}} now.";
 export declare const DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT = "Sorry about that. It looks like our staff members are on the floor helping customers. Let us give you a call back. We'll call you back as soon as possible.";
+export declare const WARM_TRANSFER_AGENT_ID = "agent_1d0e26bb0cbe39bc9ea3214984";
+export declare const WARM_TRANSFER_AGENT_VERSION_FALLBACK = 5;
+export declare function buildWarmTransferOption(agentVersion?: number): {
+    agentic_transfer_config: {
+        transfer_agent: {
+            agent_id: string;
+            agent_version: number;
+        };
+        transfer_timeout_ms: number;
+        action_on_timeout: string;
+    };
+    enable_bridge_audio_cue: boolean;
+    type: string;
+    agent_detection_timeout_ms: number;
+    on_hold_music: string;
+    show_transferee_as_caller: boolean;
+};
 export interface IdFactory {
     nextTs(): number;
     nodeId(): string;
@@ -20,6 +37,7 @@ export interface PathIds {
     }>;
     preTransferId?: string;
     transferCallId?: string;
+    closeId?: string;
 }
 export type HumanRequestMode = "live_transfer" | "callback";
 interface Ids {
@@ -71,9 +89,11 @@ export interface AgentConfig {
     introFinetuneExamples: FinetuneExample[];
     humanRequestMode?: HumanRequestMode;
     closePrompt?: string;
+    pathClosePrompts?: Record<string, string>;
     closingRemarksPrompt?: string;
     closingStatementText?: string;
     liveTransferRecoveryPrompt?: string;
+    warmTransferAgentVersion?: number;
 }
 export interface IntroPathConfig {
     name: string;
@@ -89,7 +109,7 @@ export declare function buildEndNode(ids: Ids, pos: Positions): {
     speak_during_execution: boolean;
     display_position: Position;
 };
-export declare function buildTransitionNode(pathIds: PathIds, pathPos: PathPositions, f: IdFactory, pathName?: string): {
+export declare function buildTransitionNode(pathIds: PathIds, pathPos: PathPositions, f: IdFactory, pathName?: string, targetId?: string): {
     instruction: {
         type: string;
         text: string;
@@ -219,7 +239,7 @@ export declare function buildHumanRequestNode(ids: Ids, pos: Positions, f: IdFac
     display_position: Position;
     skip_response_edge?: undefined;
 };
-export declare function buildTransferCallNode(ids: Ids, pos: Positions, f: IdFactory): {
+export declare function buildTransferCallNode(ids: Ids, pos: Positions, f: IdFactory, warmTransferAgentVersion?: number): {
     custom_sip_headers: {};
     transfer_destination: {
         type: string;
@@ -237,10 +257,18 @@ export declare function buildTransferCallNode(ids: Ids, pos: Positions, f: IdFac
     ignore_e164_validation: boolean;
     id: string;
     transfer_option: {
-        cold_transfer_mode: string;
+        agentic_transfer_config: {
+            transfer_agent: {
+                agent_id: string;
+                agent_version: number;
+            };
+            transfer_timeout_ms: number;
+            action_on_timeout: string;
+        };
         enable_bridge_audio_cue: boolean;
         type: string;
         agent_detection_timeout_ms: number;
+        on_hold_music: string;
         show_transferee_as_caller: boolean;
     };
     type: string;
@@ -269,7 +297,7 @@ export declare function buildPreTransferNode(pathIds: PathIds, pathPos: PathPosi
     type: string;
     display_position: Position;
 };
-export declare function buildPerPathTransferCallNode(pathIds: PathIds, pathPos: PathPositions, ids: Ids, resolvedNumber: string, pathLabel: string | undefined, f: IdFactory): {
+export declare function buildPerPathTransferCallNode(pathIds: PathIds, pathPos: PathPositions, ids: Ids, resolvedNumber: string, pathLabel: string | undefined, f: IdFactory, warmTransferAgentVersion?: number): {
     custom_sip_headers: {};
     transfer_destination: {
         type: string;
@@ -287,10 +315,18 @@ export declare function buildPerPathTransferCallNode(pathIds: PathIds, pathPos: 
     ignore_e164_validation: boolean;
     id: string;
     transfer_option: {
-        cold_transfer_mode: string;
+        agentic_transfer_config: {
+            transfer_agent: {
+                agent_id: string;
+                agent_version: number;
+            };
+            transfer_timeout_ms: number;
+            action_on_timeout: string;
+        };
         enable_bridge_audio_cue: boolean;
         type: string;
         agent_detection_timeout_ms: number;
+        on_hold_music: string;
         show_transferee_as_caller: boolean;
     };
     type: string;
@@ -408,7 +444,12 @@ export declare function buildGuardrailEndNode(ids: Ids, pos: Positions): {
     display_position: Position;
 };
 export declare function buildDataChain(resolvedDataPoints: DataPoint[], pathIds: PathIds, pathPos: PathPositions, closeId: string, f: IdFactory, pathName?: string): Record<string, unknown>[];
-export declare function buildCloseNode(agentConfig: AgentConfig, ids: Ids, pos: Positions, f: IdFactory): {
+export declare function buildCloseNode(agentConfig: AgentConfig, ids: Ids, pos: Positions, f: IdFactory, overrides?: {
+    nodeId?: string;
+    pathName?: string;
+    promptText?: string;
+    displayPosition?: Position;
+}): {
     instruction: {
         type: string;
         text: string;
@@ -520,7 +561,6 @@ export declare function buildAgentRoot(businessName: string, conversationFlow: R
     voice_speed: number;
     enable_dynamic_voice_speed: boolean;
     volume: number;
-    voice_emotion: string;
     enable_backchannel: boolean;
     backchannel_frequency: number;
     backchannel_words: string[];
@@ -537,6 +577,11 @@ export declare function buildAgentRoot(businessName: string, conversationFlow: R
         action: {
             type: string;
         };
+    };
+    stt_mode: string;
+    custom_stt_config: {
+        provider: string;
+        endpointing_ms: number;
     };
     allow_user_dtmf: boolean;
     user_dtmf_options: {};

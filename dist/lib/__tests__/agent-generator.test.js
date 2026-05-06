@@ -111,6 +111,21 @@ describe("resolveDataPoints", () => {
         expect(resolved[0].variables[0].variableName).toBe("preferred_day");
         expect(resolved[0].variables[1].variableName).toBe("preferred_time");
     });
+    it("preserves optional label on composite sub-variables", () => {
+        const customDefaults = {
+            ...TEST_DEFAULTS,
+            scheduling: {
+                ...TEST_DEFAULTS.scheduling,
+                variables: [
+                    { variableName: "preferred_day", type: "string", description: "Day", label: "Day" },
+                    { variableName: "preferred_time", type: "string", description: "Time", label: "Time Window" },
+                ],
+            },
+        };
+        const resolved = resolveDataPoints(["scheduling"], customDefaults);
+        expect(resolved[0].variables[0].label).toBe("Day");
+        expect(resolved[0].variables[1].label).toBe("Time Window");
+    });
     it("throws when defaults map is empty", () => {
         expect(() => resolveDataPoints(["full_name"], {})).toThrow(/No data point defaults provided/);
     });
@@ -205,10 +220,39 @@ describe("edge cases", () => {
         expect(flagVar).toBeDefined();
         expect(flagVar.type).toBe("boolean");
     });
-    it("throws on empty data points in a path", () => {
-        expect(() => generateAgent(baseConfig, [], [
+    it("allows empty data points in a callback path (transition skips to Close)", () => {
+        const { agent } = generateAgent(baseConfig, [], [
             { name: "Empty Path", transitionCondition: "test", dataPoints: [] },
-        ], TEST_DEFAULTS)).toThrow(/Path "Empty Path" has no data points/);
+        ], TEST_DEFAULTS);
+        const flow = agent.conversationFlow;
+        const close = flow.nodes.find((n) => n.name === "Close");
+        const transition = flow.nodes.find((n) => n.name === "Conversation");
+        expect(close).toBeDefined();
+        expect(transition).toBeDefined();
+        expect(transition.skip_response_edge.destination_node_id).toBe(close.id);
+        // No Extract / Variables Router nodes generated for this path
+        const extracts = flow.nodes.filter((n) => n.type === "extract_dynamic_variables");
+        expect(extracts).toHaveLength(0);
+    });
+    it("allows empty data points in a transfer path (transition skips to Pre-Transfer)", () => {
+        const { agent } = generateAgent(baseConfig, [], [
+            {
+                name: "Immediate Transfer",
+                transitionCondition: "caller wants live person",
+                dataPoints: [],
+                endMode: "transfer",
+                transferDestination: "+18005551234",
+            },
+        ], TEST_DEFAULTS);
+        const flow = agent.conversationFlow;
+        // Transition node points at the per-path Pre-Transfer node
+        const transition = flow.nodes.find((n) => n.type === "conversation" && n.skip_response_edge);
+        const preTransfer = flow.nodes.find((n) => n.type === "conversation" && /Pre-?Transfer|Hold on a moment/.test(JSON.stringify(n.instruction || "")));
+        expect(preTransfer).toBeDefined();
+        expect(transition.skip_response_edge.destination_node_id).toBe(preTransfer.id);
+        // Per-path transfer call node still generated
+        const perPathTransfer = flow.nodes.find((n) => n.type === "transfer_call");
+        expect(perPathTransfer).toBeDefined();
     });
     it("includes path name in error for bad data point reference", () => {
         expect(() => generateAgent(baseConfig, [], [
@@ -428,18 +472,27 @@ describe("if/else branch support", () => {
 });
 // ── Per-path end mode (callback vs live transfer) ───────────────────────────
 describe("per-path end mode", () => {
-    it("default end mode is callback — variables router else_edge → Close", () => {
+    it("default end mode is callback — each path's router else_edge → its own Close (A/B)", () => {
         const { agent } = generateAgent(baseConfig, [], [
             { name: "A", transitionCondition: "A", dataPoints: ["full_name"] },
             { name: "B", transitionCondition: "B", dataPoints: ["city"] },
         ], TEST_DEFAULTS);
         const flow = agent.conversationFlow;
-        const closeNode = flow.nodes.find((n) => n.name === "Close");
-        expect(closeNode).toBeDefined();
+        const closeA = flow.nodes.find((n) => n.name === "Close (A)");
+        const closeB = flow.nodes.find((n) => n.name === "Close (B)");
+        expect(closeA).toBeDefined();
+        expect(closeB).toBeDefined();
+        expect(closeA.id).not.toBe(closeB.id);
         const routerA = flow.nodes.find((n) => n.name === "Variables Router (A)");
         const routerB = flow.nodes.find((n) => n.name === "Variables Router (B)");
-        expect(routerA.else_edge.destination_node_id).toBe(closeNode.id);
-        expect(routerB.else_edge.destination_node_id).toBe(closeNode.id);
+        expect(routerA.else_edge.destination_node_id).toBe(closeA.id);
+        expect(routerB.else_edge.destination_node_id).toBe(closeB.id);
+        // Both per-path Close nodes share Closing Remarks
+        const closingRemarks = flow.nodes.find((n) => n.name === "Closing Remarks");
+        expect(closeA.always_edge.destination_node_id).toBe(closingRemarks.id);
+        expect(closeB.always_edge.destination_node_id).toBe(closingRemarks.id);
+        // No legacy unsuffixed "Close" node in multi-path agents
+        expect(flow.nodes.find((n) => n.name === "Close")).toBeUndefined();
         expect(flow.nodes.find((n) => n.name?.startsWith("Pre-Transfer"))).toBeUndefined();
         expect(flow.nodes.find((n) => n.type === "transfer_call")).toBeUndefined();
     });
@@ -460,14 +513,45 @@ describe("per-path end mode", () => {
         expect(preTransfer.always_edge.destination_node_id).toBe(transferCall.id);
         expect(transferCall.type).toBe("transfer_call");
         expect(transferCall.transfer_destination.number).toBe(dest);
-        // Callback-mode path stays on Close
-        const close = flow.nodes.find((n) => n.name === "Close");
+        // Callback-mode path stays on its own per-path Close (multi-path agent)
+        const close = flow.nodes.find((n) => n.name === "Close (Quote)");
         const routerQuote = flow.nodes.find((n) => n.name === "Variables Router (Quote)");
         expect(routerQuote.else_edge.destination_node_id).toBe(close.id);
+        // Transfer paths don't have a Close node
+        expect(flow.nodes.find((n) => n.name === "Close (Emergency)")).toBeUndefined();
         // Shared Live Transfer Recovery node exists once
         const recovery = flow.nodes.filter((n) => n.name === "Live Transfer Recovery");
         expect(recovery).toHaveLength(1);
         expect(transferCall.edge.destination_node_id).toBe(recovery[0].id);
+        // transfer_option must use the agentic_warm_transfer shape with the shared
+        // warm-transfer screener agent (not the legacy cold_transfer defaults).
+        expect(transferCall.transfer_option.type).toBe("agentic_warm_transfer");
+        expect(transferCall.transfer_option.agentic_transfer_config.transfer_agent.agent_id).toBe("agent_1d0e26bb0cbe39bc9ea3214984");
+        expect(transferCall.transfer_option.agentic_transfer_config.transfer_agent.agent_version).toBe(5);
+        expect(transferCall.transfer_option.agentic_transfer_config.transfer_timeout_ms).toBe(30000);
+        expect(transferCall.transfer_option.agentic_transfer_config.action_on_timeout).toBe("cancel_transfer");
+        expect(transferCall.transfer_option.enable_bridge_audio_cue).toBe(false);
+        expect(transferCall.transfer_option.agent_detection_timeout_ms).toBe(10000);
+        expect(transferCall.transfer_option.on_hold_music).toBe("relaxing_sound");
+        expect(transferCall.transfer_option.show_transferee_as_caller).toBe(false);
+    });
+    it("uses warmTransferAgentVersion from agent config when provided", () => {
+        const { agent } = generateAgent({ ...baseConfig, warmTransferAgentVersion: 17 }, [], [
+            { name: "Emergency", transitionCondition: "x", dataPoints: ["full_name"], endMode: "transfer", transferDestination: "+18005551234" },
+            { name: "Quote", transitionCondition: "y", dataPoints: ["city"] },
+        ], TEST_DEFAULTS);
+        const flow = agent.conversationFlow;
+        const transferCall = flow.nodes.find((n) => n.type === "transfer_call");
+        expect(transferCall.transfer_option.agentic_transfer_config.transfer_agent.agent_version).toBe(17);
+    });
+    it("global Transfer Call (live_transfer human-request mode) also uses agentic_warm_transfer", () => {
+        const { agent } = generateAgent({ ...baseConfig, humanRequestMode: "live_transfer" }, ["full_name"], undefined, TEST_DEFAULTS);
+        const flow = agent.conversationFlow;
+        const transferCall = flow.nodes.find((n) => n.name === "Transfer Call");
+        expect(transferCall.type).toBe("transfer_call");
+        expect(transferCall.transfer_destination.number).toBe("{{dispatch_number}}");
+        expect(transferCall.transfer_option.type).toBe("agentic_warm_transfer");
+        expect(transferCall.transfer_option.agentic_transfer_config.transfer_agent.agent_id).toBe("agent_1d0e26bb0cbe39bc9ea3214984");
     });
     it("rejects transfer end_mode without a transferDestination", () => {
         expect(() => generateAgent(baseConfig, [], [{ name: "Emergency", transitionCondition: "x", dataPoints: ["full_name"], endMode: "transfer" }], TEST_DEFAULTS)).toThrow(/no dispatch call number/i);

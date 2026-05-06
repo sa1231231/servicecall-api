@@ -3,12 +3,13 @@ import type { Request, Response } from "express";
 
 const {
   mockGetClientDocument, mockUpdateClientField, mockUpdateClientFields,
-  mockGetCallLogsByClient,
+  mockGetCallLogsByClient, mockSyncRetellDisplayLabels,
 } = vi.hoisted(() => ({
   mockGetClientDocument: vi.fn(),
   mockUpdateClientField: vi.fn(),
   mockUpdateClientFields: vi.fn(),
   mockGetCallLogsByClient: vi.fn(),
+  mockSyncRetellDisplayLabels: vi.fn(),
 }));
 
 vi.mock("../../../config/client-store.js", () => ({
@@ -18,6 +19,11 @@ vi.mock("../../../config/client-store.js", () => ({
 }));
 vi.mock("../../../lib/call-log.js", () => ({
   getCallLogsByClient: (...a: any[]) => mockGetCallLogsByClient(...a),
+}));
+vi.mock("../../../config.js", () => ({ config: { RETELL_API_KEY: "test_key" } }));
+vi.mock("retell-sdk", () => ({ default: class { constructor(_opts: any) {} } }));
+vi.mock("../../../lib/retell-display-sync.js", () => ({
+  syncRetellDisplayLabels: (...a: any[]) => mockSyncRetellDisplayLabels(...a),
 }));
 
 const { getAgentHandler } = await import("../get-agent.js");
@@ -37,8 +43,13 @@ function makeReq(opts: { params?: any; body?: any; query?: any }): Request {
 }
 
 beforeEach(() => {
-  for (const m of [mockGetClientDocument, mockUpdateClientField, mockUpdateClientFields, mockGetCallLogsByClient])
-    m.mockReset();
+  for (const m of [
+    mockGetClientDocument, mockUpdateClientField, mockUpdateClientFields,
+    mockGetCallLogsByClient, mockSyncRetellDisplayLabels,
+  ]) m.mockReset();
+  mockSyncRetellDisplayLabels.mockResolvedValue({
+    agentNameUpdated: true, nicknameUpdated: [], nicknameErrors: [],
+  });
 });
 
 describe("getAgentHandler", () => {
@@ -130,6 +141,85 @@ describe("updateAgentHandler", () => {
     const res = makeRes();
     await updateAgentHandler(makeReq({ params: { slug: "x" }, body: { name: "X" } }), res);
     expect(res._status).toBe(400);
+  });
+
+  it("does not call Retell sync when display_name is not in the body", async () => {
+    mockUpdateClientFields.mockResolvedValue(undefined);
+    mockGetClientDocument.mockResolvedValue({ name: "Acme", agent_id: "agent_1" });
+    const res = makeRes();
+    await updateAgentHandler(
+      makeReq({ params: { slug: "acme" }, body: { shadow_mode: true } }),
+      res,
+    );
+    expect(res._status).toBe(200);
+    expect(mockSyncRetellDisplayLabels).not.toHaveBeenCalled();
+  });
+
+  it("pushes display_name to Retell when set, using the new label", async () => {
+    mockUpdateClientFields.mockResolvedValue(undefined);
+    mockGetClientDocument.mockResolvedValue({
+      name: "Acme Plumbing",
+      display_name: "Acme HVAC (demo)",
+      agent_id: "agent_1",
+      outbound_from_number: "+15550000000",
+    });
+    const res = makeRes();
+    await updateAgentHandler(
+      makeReq({ params: { slug: "acme" }, body: { display_name: "Acme HVAC (demo)" } }),
+      res,
+    );
+    expect(res._status).toBe(200);
+    expect(mockSyncRetellDisplayLabels).toHaveBeenCalledTimes(1);
+    const args = mockSyncRetellDisplayLabels.mock.calls[0];
+    expect(args[1]).toBe("agent_1");
+    expect(args[2]).toBe("+15550000000");
+    expect(args[3]).toBe("Acme HVAC (demo)");
+  });
+
+  it("falls back to business name when display_name is cleared", async () => {
+    mockUpdateClientFields.mockResolvedValue(undefined);
+    // After the update, the doc has display_name=null — sync should use `name`.
+    mockGetClientDocument.mockResolvedValue({
+      name: "Acme Plumbing",
+      display_name: null,
+      agent_id: "agent_1",
+      outbound_from_number: null,
+    });
+    const res = makeRes();
+    await updateAgentHandler(
+      makeReq({ params: { slug: "acme" }, body: { display_name: "   " } }),
+      res,
+    );
+    expect(res._status).toBe(200);
+    const args = mockSyncRetellDisplayLabels.mock.calls[0];
+    expect(args[3]).toBe("Acme Plumbing");
+  });
+
+  it("returns 502 when Retell sync fails after the Mongo write", async () => {
+    mockUpdateClientFields.mockResolvedValue(undefined);
+    mockGetClientDocument.mockResolvedValue({
+      name: "Acme",
+      display_name: "Acme (demo)",
+      agent_id: "agent_1",
+    });
+    mockSyncRetellDisplayLabels.mockRejectedValue(new Error("retell down"));
+    const res = makeRes();
+    await updateAgentHandler(
+      makeReq({ params: { slug: "acme" }, body: { display_name: "Acme (demo)" } }),
+      res,
+    );
+    expect(res._status).toBe(502);
+    expect(res._json.error).toMatch(/retell down/);
+  });
+
+  it("rejects non-string non-null display_name with 400", async () => {
+    const res = makeRes();
+    await updateAgentHandler(
+      makeReq({ params: { slug: "acme" }, body: { display_name: 42 } }),
+      res,
+    );
+    expect(res._status).toBe(400);
+    expect(mockUpdateClientFields).not.toHaveBeenCalled();
   });
 });
 

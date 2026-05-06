@@ -67,7 +67,7 @@ describe("toClientConfig", () => {
     function makeEntry(overrides = {}) {
         return {
             name: "Test Co",
-            agent_ids: ["agent_1"],
+            agent_id: "agent_1",
             dispatch_text_numbers: ["+15551234567"],
             dispatch_call_number: null,
             summary_agent_id: null,
@@ -218,7 +218,7 @@ function makeDoc(overrides = {}) {
     return {
         _id: "acme",
         name: "Acme",
-        agent_ids: ["agent_a"],
+        agent_id: "agent_a",
         dispatch_text_numbers: ["+15550001111"],
         dispatch_call_number: null,
         summary_agent_id: null,
@@ -239,17 +239,16 @@ beforeEach(() => {
 describe("loadClientsFromDb", () => {
     it("loads docs and registers in-memory maps", async () => {
         mockFind.mockReturnValue(chainable([
-            makeDoc({ _id: "a", agent_ids: ["agent_a"], outbound_from_number: "+15551111111" }),
-            makeDoc({ _id: "b", agent_ids: ["agent_b1", "agent_b2"] }),
+            makeDoc({ _id: "a", agent_id: "agent_a", outbound_from_number: "+15551111111" }),
+            makeDoc({ _id: "b", agent_id: "agent_b" }),
         ]));
         await loadClientsFromDb();
         expect(mockNotificationClients.a).toBeDefined();
         expect(mockNotificationClients.b).toBeDefined();
         expect(mockAgentIdToClient.agent_a).toBeDefined();
-        expect(mockAgentIdToClient.agent_b1).toBeDefined();
-        expect(mockAgentIdToClient.agent_b2).toBeDefined();
+        expect(mockAgentIdToClient.agent_b).toBeDefined();
         expect(mockAgentIdToSlug.agent_a).toBe("a");
-        expect(mockAgentIdToSlug.agent_b1).toBe("b");
+        expect(mockAgentIdToSlug.agent_b).toBe("b");
         expect(mockPhoneNumberToClient["+15551111111"]?.slug).toBe("a");
     });
     it("excludes soft-deleted docs (filter by deletedAt: $exists: false)", async () => {
@@ -257,14 +256,14 @@ describe("loadClientsFromDb", () => {
         await loadClientsFromDb();
         expect(mockFind).toHaveBeenCalledWith({ deletedAt: { $exists: false } });
     });
-    it("skips docs with missing agent_ids", async () => {
+    it("skips docs with missing agent_id", async () => {
         mockFind.mockReturnValue(chainable([
-            { _id: "broken", name: "Broken" }, // no agent_ids
+            { _id: "broken", name: "Broken" }, // no agent_id
         ]));
         const log = vi.spyOn(console, "log").mockImplementation(() => { });
         await loadClientsFromDb();
         expect(mockNotificationClients.broken).toBeUndefined();
-        expect(log).toHaveBeenCalledWith(expect.stringContaining("missing agent_ids"));
+        expect(log).toHaveBeenCalledWith(expect.stringContaining("missing agent_id"));
         log.mockRestore();
     });
 });
@@ -306,26 +305,29 @@ describe("updateClientFields", () => {
     });
     it("throws when matchedCount is 0", async () => {
         mockUpdateOne.mockResolvedValue({ matchedCount: 0 });
-        await expect(updateClientFields("acme", { name: "X" })).rejects.toThrow(/not found/);
+        await expect(updateClientFields("acme", { dispatch_call_number: "+15551234567" })).rejects.toThrow(/not found/);
     });
-    it("re-registers agent_ids when they change", async () => {
+    it("rejects `name` updates so renames must go through rename-business", async () => {
+        await expect(updateClientFields("acme", { name: "New Name" })).rejects.toThrow(/not editable/);
+        expect(mockUpdateOne).not.toHaveBeenCalled();
+    });
+    it("re-registers agent_id when it changes", async () => {
         mockUpdateOne.mockResolvedValue({ matchedCount: 1 });
-        const existing = { name: "Acme", agent_ids: ["old_id"], outbound_from_number: null };
+        const existing = { name: "Acme", agent_id: "old_id", outbound_from_number: null };
         mockNotificationClients.acme = existing;
         mockAgentIdToClient.old_id = existing;
         mockAgentIdToSlug.old_id = "acme";
-        await updateClientFields("acme", { agent_ids: ["new_id_1", "new_id_2"] });
+        await updateClientFields("acme", { agent_id: "new_id" });
         // Old removed
         expect(mockAgentIdToClient.old_id).toBeUndefined();
         expect(mockAgentIdToSlug.old_id).toBeUndefined();
         // New registered
-        expect(mockAgentIdToClient.new_id_1).toBe(existing);
-        expect(mockAgentIdToClient.new_id_2).toBe(existing);
-        expect(mockAgentIdToSlug.new_id_1).toBe("acme");
+        expect(mockAgentIdToClient.new_id).toBe(existing);
+        expect(mockAgentIdToSlug.new_id).toBe("acme");
     });
     it("re-registers outbound_from_number when changed", async () => {
         mockUpdateOne.mockResolvedValue({ matchedCount: 1 });
-        const existing = { agent_ids: [], outbound_from_number: "+15550000000" };
+        const existing = { agent_id: "", outbound_from_number: "+15550000000" };
         mockNotificationClients.acme = existing;
         mockPhoneNumberToClient["+15550000000"] = { slug: "acme", config: existing };
         await updateClientFields("acme", { outbound_from_number: "+15551111111" });
@@ -334,13 +336,13 @@ describe("updateClientFields", () => {
     });
     it("works when client is not in memory cache (no in-memory side effects)", async () => {
         mockUpdateOne.mockResolvedValue({ matchedCount: 1 });
-        await expect(updateClientFields("not-cached", { name: "X" })).resolves.toBeUndefined();
+        await expect(updateClientFields("not-cached", { dispatch_call_number: "+15551234567" })).resolves.toBeUndefined();
     });
 });
 describe("softDeleteClient", () => {
     it("sets deletedAt and removes from caches", async () => {
         const existing = {
-            agent_ids: ["agent_a"],
+            agent_id: "agent_a",
             outbound_from_number: "+15550001111",
         };
         mockNotificationClients.acme = existing;
@@ -359,7 +361,7 @@ describe("softDeleteClient", () => {
 describe("restoreClient", () => {
     it("unsets deletedAt and re-registers in memory", async () => {
         mockUpdateOne.mockResolvedValue({});
-        mockFindOne.mockResolvedValue(makeDoc({ agent_ids: ["agent_a"] }));
+        mockFindOne.mockResolvedValue(makeDoc({ agent_id: "agent_a" }));
         await restoreClient("acme");
         expect(mockUpdateOne).toHaveBeenCalledWith({ _id: "acme" }, { $unset: { deletedAt: "" } });
         expect(mockNotificationClients.acme).toBeDefined();
@@ -383,7 +385,7 @@ describe("listDeletedClients", () => {
 });
 describe("deleteClient", () => {
     it("unregisters from memory + deletes from db", async () => {
-        const existing = { agent_ids: ["agent_x"], outbound_from_number: null };
+        const existing = { agent_id: "agent_x", outbound_from_number: null };
         mockNotificationClients.acme = existing;
         mockAgentIdToClient.agent_x = existing;
         mockAgentIdToSlug.agent_x = "acme";
@@ -421,12 +423,12 @@ describe("getAllClientSummaries", () => {
     it("returns summaries from in-memory cache", () => {
         mockNotificationClients.acme = {
             name: "Acme",
-            agent_ids: ["agent_a"],
+            agent_id: "agent_a",
             shadow_mode: false,
         };
         mockNotificationClients.beta = {
             name: "Beta",
-            agent_ids: ["agent_b"],
+            agent_id: "agent_b",
             shadow_mode: true,
         };
         const summaries = getAllClientSummaries();
@@ -435,14 +437,14 @@ describe("getAllClientSummaries", () => {
             slug: "acme",
             name: "Acme",
             shadow_mode: false,
-            agent_ids: ["agent_a"],
+            agent_id: "agent_a",
         });
         expect(summaries.find((s) => s.slug === "beta")?.shadow_mode).toBe(true);
     });
     it("defaults shadow_mode to false when undefined", () => {
         mockNotificationClients.acme = {
             name: "Acme",
-            agent_ids: [],
+            agent_id: "",
         };
         expect(getAllClientSummaries()[0].shadow_mode).toBe(false);
     });
@@ -526,7 +528,7 @@ describe("purgeExpiredClients", () => {
         mockFind.mockReturnValue(chainable([
             {
                 _id: "old-1",
-                agent_ids: ["agent_a"],
+                agent_id: "agent_a",
                 retell_agents: {
                     agent_a: {
                         conversationFlow: { conversation_flow_id: "cf_a" },
@@ -545,7 +547,7 @@ describe("purgeExpiredClients", () => {
         mockFind.mockReturnValue(chainable([
             {
                 _id: "old-2",
-                agent_ids: ["agent_b"],
+                agent_id: "agent_b",
                 retell_agents: {
                     agent_b: {
                         response_engine: { conversation_flow_id: "cf_b" },
@@ -561,7 +563,7 @@ describe("purgeExpiredClients", () => {
         mockFind.mockReturnValue(chainable([
             {
                 _id: "no-flow",
-                agent_ids: ["agent_x"],
+                agent_id: "agent_x",
                 retell_agents: { agent_x: {} },
             },
         ]));
@@ -570,11 +572,11 @@ describe("purgeExpiredClients", () => {
         expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_x");
         expect(mockRetellFlowDelete).not.toHaveBeenCalled();
     });
-    it("deletes agent_ids not present in retell_agents map (belt and suspenders)", async () => {
+    it("deletes agent_id not present in retell_agents map (belt and suspenders)", async () => {
         mockFind.mockReturnValue(chainable([
             {
-                _id: "extra-ids",
-                agent_ids: ["agent_in_map", "agent_not_in_map"],
+                _id: "extra-id",
+                agent_id: "agent_not_in_map",
                 retell_agents: {
                     agent_in_map: {},
                 },
@@ -590,7 +592,7 @@ describe("purgeExpiredClients", () => {
         mockFind.mockReturnValue(chainable([
             {
                 _id: "fail-agent",
-                agent_ids: ["agent_x"],
+                agent_id: "agent_x",
                 retell_agents: {
                     agent_x: { conversationFlow: { conversation_flow_id: "cf_x" } },
                 },
@@ -611,7 +613,7 @@ describe("purgeExpiredClients", () => {
         mockFind.mockReturnValue(chainable([
             {
                 _id: "fail-flow",
-                agent_ids: ["agent_y"],
+                agent_id: "agent_y",
                 retell_agents: {
                     agent_y: { conversationFlow: { conversation_flow_id: "cf_y" } },
                 },
@@ -627,8 +629,8 @@ describe("purgeExpiredClients", () => {
     });
     it("processes multiple expired clients independently", async () => {
         mockFind.mockReturnValue(chainable([
-            { _id: "a", agent_ids: ["agent_a"], retell_agents: { agent_a: {} } },
-            { _id: "b", agent_ids: ["agent_b"], retell_agents: { agent_b: {} } },
+            { _id: "a", agent_id: "agent_a", retell_agents: { agent_a: {} } },
+            { _id: "b", agent_id: "agent_b", retell_agents: { agent_b: {} } },
         ]));
         mockDeleteMany.mockResolvedValue({ deletedCount: 2 });
         const count = await purgeExpiredClients();
@@ -638,7 +640,7 @@ describe("purgeExpiredClients", () => {
     });
     it("uses the same cutoff for query and deleteMany", async () => {
         mockFind.mockReturnValue(chainable([
-            { _id: "x", agent_ids: ["agent_x"], retell_agents: { agent_x: {} } },
+            { _id: "x", agent_id: "agent_x", retell_agents: { agent_x: {} } },
         ]));
         mockDeleteMany.mockResolvedValue({ deletedCount: 1 });
         await purgeExpiredClients(15);

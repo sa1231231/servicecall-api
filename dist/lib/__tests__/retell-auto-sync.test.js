@@ -37,7 +37,7 @@ function makeDoc(overrides = {}) {
     return {
         _id: "acme",
         name: "Acme",
-        agent_ids: ["agent_1"],
+        agent_id: "agent_1",
         dispatch_text_numbers: [],
         dispatch_call_number: null,
         dispatch_email: null,
@@ -130,8 +130,8 @@ describe("runAutoSync (via captured interval fn)", () => {
         await run();
         expect(mockFetchRetellAgent).toHaveBeenCalled();
     });
-    it("skips clients with no agent_ids", async () => {
-        mockGetAllClientDocuments.mockResolvedValue([makeDoc({ agent_ids: [] })]);
+    it("skips clients with no agent_id", async () => {
+        mockGetAllClientDocuments.mockResolvedValue([makeDoc({ agent_id: "" })]);
         const run = captureRunFn();
         await run();
         expect(mockFetchRetellAgent).not.toHaveBeenCalled();
@@ -169,8 +169,8 @@ describe("runAutoSync (via captured interval fn)", () => {
     });
     it("logs and continues when a single agent sync fails", async () => {
         mockGetAllClientDocuments.mockResolvedValue([
-            makeDoc({ _id: "a", agent_ids: ["agent_a"] }),
-            makeDoc({ _id: "b", agent_ids: ["agent_b"] }),
+            makeDoc({ _id: "a", agent_id: "agent_a" }),
+            makeDoc({ _id: "b", agent_id: "agent_b" }),
         ]);
         mockFetchRetellAgent
             .mockRejectedValueOnce(new Error("retell-down"))
@@ -217,7 +217,7 @@ describe("runAutoSync (via captured interval fn)", () => {
     });
     it("does not refresh the cache when nothing was synced", async () => {
         mockGetAllClientDocuments.mockResolvedValue([
-            makeDoc({ agent_ids: [] }),
+            makeDoc({ agent_id: "" }),
         ]);
         const run = captureRunFn();
         await run();

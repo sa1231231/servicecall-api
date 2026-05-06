@@ -13,8 +13,10 @@ import { deriveNotificationConfig, } from "../../lib/notification-config.js";
 import { regenerateDataChain, applyRegeneratedChain } from "../../lib/node-regenerator.js";
 import { getDataPointDefaults } from "../../lib/data-point-defaults.js";
 import { resolveDataPoints } from "../../lib/agent-generator/generate-agent.js";
-import { makeIdFactory, buildTransitionNode, buildDataChain, } from "../../lib/agent-generator/node-builders.js";
+import { makeIdFactory, buildTransitionNode, buildDataChain, buildWarmTransferOption, DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT, } from "../../lib/agent-generator/node-builders.js";
+import { getWarmTransferAgentVersion } from "../../lib/agent-generator/warm-transfer-agent-version.js";
 import { renderTemplate } from "../../lib/build-notification.js";
+import { replaceBusinessName } from "../../lib/replace-business-name.js";
 export const nodeEditorRouter = Router({ mergeParams: true });
 function retell() {
     return new Retell({ apiKey: config.RETELL_API_KEY });
@@ -24,8 +26,7 @@ async function resolveAgentId(slug, agentIdParam) {
     const doc = await getClientDocument(slug);
     if (!doc)
         return null;
-    const agentIds = doc.agent_ids ?? [];
-    if (!agentIds.includes(agentIdParam))
+    if (doc.agent_id !== agentIdParam)
         return null;
     return { doc, agentId: agentIdParam };
 }
@@ -197,14 +198,19 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
             const instr = node?.raw.instruction;
             return instr?.text ?? "";
         };
-        const closePrompt = findInstructionText("Close");
+        // closePrompt is the legacy/global value: use the singleton "Close" if it
+        // exists (single-path agents), else fall back to the first per-path Close
+        // (parser already does this resolution). Per-path values are also
+        // returned in paths[].closePrompt below.
+        const closePromptInstr = parsed.closeNode?.raw.instruction;
+        const closePrompt = closePromptInstr?.text ?? "";
         const closingRemarksPrompt = findInstructionText("Closing Remarks");
         const closingStatementText = findInstructionText("Closing Statement");
-        // Live Transfer Recovery — only present on agents created after the feature
-        // shipped. Strict name match; do not fall back to the legacy "Transfer Failed".
-        // Field omitted from the response when the node is absent so the dashboard
-        // can hide the editor section for older agents.
-        const liveTransferRecoveryNode = parsed.allNodes.find((n) => n.name === "Live Transfer Recovery");
+        // Live Transfer Recovery — match either the current name or the legacy
+        // "Transfer Failed" name so older agents also expose the configurable
+        // prompt in the dashboard. Field omitted entirely when no fallback node
+        // exists so the dashboard can hide the editor section.
+        const liveTransferRecoveryNode = parsed.allNodes.find((n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed");
         const liveTransferRecoveryInstr = liveTransferRecoveryNode?.raw.instruction;
         const liveTransferRecoveryPrompt = liveTransferRecoveryNode
             ? (liveTransferRecoveryInstr?.text ?? "")
@@ -239,6 +245,10 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
                 transitionCondition: transitionConditions[p.name] ?? "",
                 endMode: p.endMode,
                 transferDestination: p.transferDestination,
+                // Per-path Close prompt (callback paths only). Empty/absent for
+                // transfer paths since they skip the Close node entirely.
+                closePrompt: p.endMode === "callback" ? (p.closePrompt ?? closePrompt ?? "") : "",
+                closeNodeId: p.closeNode?.id,
                 dataPoints: p.dataChain.map((dp) => ({
                     variableName: dp.variableName,
                     label: dp.label,
@@ -544,6 +554,83 @@ nodeEditorRouter.post("/:agentId/edit-agent-settings", async (req, res) => {
         res.status(500).json({ error: msg });
     }
 });
+// ── POST /:agentId/rename-business — Propagate Business Name Everywhere ─────
+nodeEditorRouter.post("/:agentId/rename-business", async (req, res) => {
+    const p = req.params;
+    const slug = p.slug;
+    const agentId = p.agentId;
+    const newName = typeof req.body.newName === "string" ? req.body.newName.trim() : "";
+    const oldNameOverride = typeof req.body.oldName === "string" ? req.body.oldName.trim() : "";
+    if (!newName) {
+        res.status(400).json({ error: "newName (non-empty string) is required" });
+        return;
+    }
+    const resolved = await resolveAgentId(slug, agentId);
+    if (!resolved) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+    }
+    try {
+        const snapshot = await pullLatest(agentId);
+        const currentName = oldNameOverride || snapshot.agentName || resolved.doc.name;
+        if (!currentName) {
+            res.status(400).json({ error: "Cannot rename: current business name is empty" });
+            return;
+        }
+        if (currentName === newName) {
+            res.json({ success: true, unchanged: true, oldName: currentName, newName });
+            return;
+        }
+        // Snapshot before rewriting so the rename is rollback-able like other edits.
+        await createVersionSnapshot(slug, agentId, snapshot.canonicalJson, "manual_edit", `Rename business: "${currentName}" → "${newName}"`, req.user?.username ?? "unknown");
+        // Find/replace across the canonical JSON. Catches global prompt, welcome
+        // message, closing prompts, transfer prompts, FAQ mentions — anywhere the
+        // old name was baked into prompt text at generation time.
+        const renamedCanonical = replaceBusinessName(snapshot.canonicalJson, currentName, newName);
+        // agent_name is owned by the dashboard `display_name` field (see
+        // update-agent.ts). Only pin it to the new business name when the doc has
+        // no display_name set — otherwise renaming the business would clobber the
+        // user's chosen dashboard label.
+        if (!resolved.doc.display_name) {
+            renamedCanonical.agent_name = newName;
+        }
+        else {
+            renamedCanonical.agent_name = resolved.doc.display_name;
+        }
+        const renamedFlow = renamedCanonical.conversationFlow;
+        // Validate the modified flow before pushing.
+        const errors = validateConversationFlow(renamedFlow);
+        if (errors.length > 0) {
+            res.status(400).json({ error: "Renamed flow failed validation", errors });
+            return;
+        }
+        // Push the rewritten flow to Retell. We deliberately do NOT call
+        // `agent.update({ agent_name })` or update phone-number nicknames here —
+        // those surfaces are driven by `display_name` (PATCH /agents/:slug), so
+        // renaming the business name in scripts leaves the dashboard/console
+        // labels alone.
+        await pushFlowToRetell(retell(), snapshot.conversationFlowId, renamedCanonical);
+        await getDb()
+            .collection("clients")
+            .updateOne({ _id: slug }, { $set: { name: newName } });
+        const fresh = await pullLatest(agentId);
+        await storeCanonical(slug, agentId, fresh.canonicalJson, { ...resolved.doc, name: newName });
+        await logAudit(req, "rename_business", `${slug}/${agentId}`, {
+            oldName: currentName,
+            newName,
+        });
+        res.json({
+            success: true,
+            oldName: currentName,
+            newName,
+        });
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[node-editor] rename-business error:`, msg);
+        res.status(500).json({ error: msg });
+    }
+});
 // ── POST /:agentId/rollback — Restore From Version Snapshot ──────────────────
 nodeEditorRouter.post("/:agentId/rollback", async (req, res) => {
     const p = req.params;
@@ -692,8 +779,10 @@ nodeEditorRouter.post("/:agentId/add-data-point", async (req, res) => {
         currentDataPoints.splice(insertAt, 0, newDp);
         // Snapshot before edit
         await createVersionSnapshot(slug, agentId, canonical, "manual_edit", `Add data point "${newDp.label}" to path "${targetPath.name}" at position ${insertAt}`, req.user?.username ?? "unknown");
-        // Find close node
-        const closeNodeId = parsed.closeNode?.id;
+        // Find close node — multi-path agents have a per-path Close, single-path
+        // agents share the singleton "Close". Falling back to parsed.closeNode keeps
+        // legacy single-path layouts working unchanged.
+        const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
         if (!closeNodeId) {
             res.status(500).json({ error: "Could not find Close node in flow" });
             return;
@@ -770,7 +859,7 @@ nodeEditorRouter.post("/:agentId/remove-data-point", async (req, res) => {
         const filtered = currentDataPoints.filter((dp) => dp.variableName !== variableName);
         // Snapshot
         await createVersionSnapshot(slug, agentId, canonical, "manual_edit", `Remove data point "${variableName}" from path "${targetPath.name}"`, req.user?.username ?? "unknown");
-        const closeNodeId = parsed.closeNode?.id;
+        const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
         if (!closeNodeId) {
             res.status(500).json({ error: "Could not find Close node" });
             return;
@@ -840,7 +929,7 @@ nodeEditorRouter.post("/:agentId/reorder-data-points", async (req, res) => {
         const reordered = variableNames.map((name) => dpMap.get(name));
         // Snapshot
         await createVersionSnapshot(slug, agentId, canonical, "manual_edit", `Reorder data points in path "${targetPath.name}"`, req.user?.username ?? "unknown");
-        const closeNodeId = parsed.closeNode?.id;
+        const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
         if (!closeNodeId) {
             res.status(500).json({ error: "Could not find Close node" });
             return;
@@ -963,7 +1052,7 @@ nodeEditorRouter.post("/:agentId/edit-branch-condition", async (req, res) => {
         await createVersionSnapshot(slug, agentId, canonical, "manual_edit", branchConditions === null
             ? `Remove branch condition from "${variableName}"`
             : `Set branch condition on "${variableName}"`, req.user?.username ?? "unknown");
-        const closeNodeId = parsed.closeNode?.id;
+        const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
         if (!closeNodeId) {
             res.status(500).json({ error: "Could not find Close node" });
             return;
@@ -1159,16 +1248,18 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
         const politeHangupNode = nodes.find((n) => n.name === "Polite Hangup");
         const closingRemarksId = closingRemarksNode?.id;
         const politeHangupId = politeHangupNode?.id;
-        // Remove existing transfer nodes if switching to callback
+        // Remove existing transfer nodes if switching to callback. Check both the
+        // current name ("Live Transfer Recovery") and the legacy name
+        // ("Transfer Failed") so older agents still get cleaned up correctly.
         const transferCallIdx = nodes.findIndex((n) => n.name === "Transfer Call");
-        const transferFailedIdx = nodes.findIndex((n) => n.name === "Transfer Failed");
+        const findRecoveryIdx = () => nodes.findIndex((n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed");
         if (mode === "callback") {
             // Remove transfer nodes if they exist
             if (transferCallIdx >= 0)
                 nodes.splice(transferCallIdx, 1);
-            const newTfIdx = nodes.findIndex((n) => n.name === "Transfer Failed");
-            if (newTfIdx >= 0)
-                nodes.splice(newTfIdx, 1);
+            const recoveryIdx = findRecoveryIdx();
+            if (recoveryIdx >= 0)
+                nodes.splice(recoveryIdx, 1);
             // Update Human Request node to callback mode
             humanReqNode.instruction = {
                 type: "prompt",
@@ -1190,49 +1281,53 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
         }
         else {
             // Switch to live_transfer
-            // Add Transfer Call and Transfer Failed nodes if missing
+            // Add Transfer Call and Live Transfer Recovery nodes if missing
             const humanPos = humanReqNode.display_position ?? { x: -954, y: -1770 };
+            const warmTransferAgentVersion = await getWarmTransferAgentVersion(retell());
             if (transferCallIdx < 0) {
                 const transferCallId = `node-transfer-${Date.now()}`;
-                const transferFailedId = `node-transfer-failed-${Date.now() + 1}`;
+                // Reuse an existing recovery node if one is already present (legacy
+                // "Transfer Failed" or current name); otherwise create a fresh one.
+                const existingRecovery = nodes.find((n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed");
+                const liveTransferRecoveryId = existingRecovery?.id ?? `node-live-transfer-recovery-${Date.now() + 1}`;
                 nodes.push({
                     custom_sip_headers: {},
                     transfer_destination: { type: "predefined", number: "{{dispatch_number}}" },
                     edge: {
-                        destination_node_id: transferFailedId,
+                        destination_node_id: liveTransferRecoveryId,
                         id: `edge-tf-${Date.now()}`,
                         transition_condition: { type: "prompt", prompt: "Transfer failed" },
                     },
                     name: "Transfer Call",
                     ignore_e164_validation: false,
                     id: transferCallId,
-                    transfer_option: {
-                        cold_transfer_mode: "sip_invite",
-                        enable_bridge_audio_cue: true,
-                        type: "cold_transfer",
-                        agent_detection_timeout_ms: 30000,
-                        show_transferee_as_caller: false,
-                    },
+                    transfer_option: buildWarmTransferOption(warmTransferAgentVersion),
                     type: "transfer_call",
                     speak_during_execution: false,
                     display_position: { x: humanPos.x + 360, y: humanPos.y + 96 },
                 });
-                nodes.push({
-                    instruction: {
-                        type: "prompt",
-                        text: "Let the caller know you'll have their supervisor call them back as soon as possible. Do not ask them any more questions.",
-                    },
-                    always_edge: closingRemarksId ? {
-                        destination_node_id: closingRemarksId,
-                        id: `always-edge-tf-${Date.now()}`,
-                        transition_condition: { type: "prompt", prompt: "Always" },
-                    } : undefined,
-                    name: "Transfer Failed",
-                    edges: [],
-                    id: transferFailedId,
-                    type: "conversation",
-                    display_position: { x: humanPos.x + 720, y: humanPos.y - 96 },
-                });
+                if (!existingRecovery) {
+                    nodes.push({
+                        instruction: {
+                            type: "prompt",
+                            text: DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT,
+                        },
+                        always_edge: closingRemarksId ? {
+                            destination_node_id: closingRemarksId,
+                            id: `always-edge-tf-${Date.now()}`,
+                            transition_condition: { type: "prompt", prompt: "Always" },
+                        } : undefined,
+                        name: "Live Transfer Recovery",
+                        edges: [],
+                        id: liveTransferRecoveryId,
+                        type: "conversation",
+                        display_position: { x: humanPos.x + 720, y: humanPos.y - 96 },
+                    });
+                }
+                else if (existingRecovery.name === "Transfer Failed") {
+                    // Migrate legacy name in place so the configurable prompt round-trips.
+                    existingRecovery.name = "Live Transfer Recovery";
+                }
                 // Update Human Request to skip to Transfer Call
                 humanReqNode.instruction = {
                     type: "prompt",
@@ -1324,8 +1419,7 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
             res.status(404).json({ error: `Path "${pathName}" not found in flow` });
             return;
         }
-        const closeNodeId = parsed.closeNode?.id;
-        if (!closeNodeId) {
+        if (!parsed.closeNode?.id) {
             res.status(500).json({ error: "Could not find Close node" });
             return;
         }
@@ -1336,10 +1430,40 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
             return;
         }
         if (mode === "callback") {
-            // Rewire the path's Variables Router else_edge → shared Close node.
+            // Rewire the path's Variables Router else_edge → its Close node.
+            // Multi-path agents: each callback path owns a "Close (pathName)" node;
+            // create one if it doesn't already exist (e.g. path was previously in
+            // transfer mode). Single-path agents share the singleton "Close".
+            const isMultiPath = parsed.paths.length > 1;
+            let closeNodeIdForPath;
+            if (isMultiPath) {
+                const existingPerPathClose = nodes.find((n) => n.name === `Close (${pathName})`);
+                if (existingPerPathClose) {
+                    closeNodeIdForPath = existingPerPathClose.id;
+                }
+                else {
+                    // Build a new per-path Close node, seeded from any existing Close
+                    // (per-path or legacy) so the prompt text + always_edge are sane.
+                    const templateClose = nodes.find((n) => typeof n.name === "string" && n.name.startsWith("Close (")) ?? nodes.find((n) => n.name === "Close");
+                    if (!templateClose) {
+                        res.status(500).json({ error: "No existing Close node to seed from" });
+                        return;
+                    }
+                    const newClose = JSON.parse(JSON.stringify(templateClose));
+                    newClose.id = `node-close-${pathName}-${Date.now()}`;
+                    newClose.name = `Close (${pathName})`;
+                    const ae = newClose.always_edge;
+                    ae.id = `always-edge-close-${pathName}-${Date.now()}`;
+                    nodes.push(newClose);
+                    closeNodeIdForPath = newClose.id;
+                }
+            }
+            else {
+                closeNodeIdForPath = parsed.closeNode.id;
+            }
             const elseEdge = routerNode.else_edge;
             if (elseEdge)
-                elseEdge.destination_node_id = closeNodeId;
+                elseEdge.destination_node_id = closeNodeIdForPath;
             // Remove this path's Pre-Transfer + Transfer Call nodes, if any.
             const removeNames = new Set([
                 `Pre-Transfer (${pathName})`,
@@ -1349,43 +1473,50 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
                 if (removeNames.has(nodes[i].name))
                     nodes.splice(i, 1);
             }
-            // Drop the shared Transfer Failed node if no transfer path or live-transfer
-            // human-request mode remains.
+            // Drop the shared Live Transfer Recovery node if no transfer path or
+            // live-transfer human-request mode remains. Match both current and legacy
+            // names so older agents are cleaned up correctly.
             const stillHasTransferPath = parsed.paths.some((pa) => pa.name !== pathName && pa.endMode === "transfer");
             const liveTransferHumanReq = nodes.some((n) => n.name === "Transfer Call");
             if (!stillHasTransferPath && !liveTransferHumanReq) {
-                const tfIdx = nodes.findIndex((n) => n.name === "Transfer Failed");
-                if (tfIdx >= 0)
-                    nodes.splice(tfIdx, 1);
+                const recoveryIdx = nodes.findIndex((n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed");
+                if (recoveryIdx >= 0)
+                    nodes.splice(recoveryIdx, 1);
             }
         }
         else {
             // mode === "transfer"
-            // Ensure the shared Transfer Failed node exists.
-            let transferFailedNode = nodes.find((n) => n.name === "Transfer Failed");
+            // Ensure the shared Live Transfer Recovery node exists. Reuse a legacy
+            // "Transfer Failed" node in place (renaming it) so the configurable
+            // prompt round-trips correctly for older agents.
+            let liveTransferRecoveryNode = nodes.find((n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed");
             const closingRemarks = nodes.find((n) => n.name === "Closing Remarks");
             const closingRemarksId = closingRemarks?.id;
-            if (!transferFailedNode) {
-                const transferFailedId = `node-transfer-failed-${Date.now()}`;
-                transferFailedNode = {
+            if (!liveTransferRecoveryNode) {
+                const liveTransferRecoveryId = `node-live-transfer-recovery-${Date.now()}`;
+                liveTransferRecoveryNode = {
                     instruction: {
                         type: "prompt",
-                        text: "Let the caller know you'll have their supervisor call them back as soon as possible. Do not ask them any more questions.",
+                        text: DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT,
                     },
                     always_edge: closingRemarksId ? {
                         destination_node_id: closingRemarksId,
                         id: `always-edge-tf-${Date.now()}`,
                         transition_condition: { type: "prompt", prompt: "Always" },
                     } : undefined,
-                    name: "Transfer Failed",
+                    name: "Live Transfer Recovery",
                     edges: [],
-                    id: transferFailedId,
+                    id: liveTransferRecoveryId,
                     type: "conversation",
                     display_position: { x: -200, y: -1700 },
                 };
-                nodes.push(transferFailedNode);
+                nodes.push(liveTransferRecoveryNode);
             }
-            const transferFailedId = transferFailedNode.id;
+            else if (liveTransferRecoveryNode.name === "Transfer Failed") {
+                liveTransferRecoveryNode.name = "Live Transfer Recovery";
+            }
+            const liveTransferRecoveryId = liveTransferRecoveryNode.id;
+            const warmTransferAgentVersion = await getWarmTransferAgentVersion(retell());
             // Find / create this path's Pre-Transfer + Transfer Call nodes.
             let preTransfer = nodes.find((n) => n.name === `Pre-Transfer (${pathName})`);
             let transferCall = nodes.find((n) => n.name === `Transfer Call (${pathName})`);
@@ -1414,20 +1545,14 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
                     custom_sip_headers: {},
                     transfer_destination: { type: "predefined", number: transferDestination },
                     edge: {
-                        destination_node_id: transferFailedId,
+                        destination_node_id: liveTransferRecoveryId,
                         id: `edge-tc-${Date.now()}`,
                         transition_condition: { type: "prompt", prompt: "Transfer failed" },
                     },
                     name: `Transfer Call (${pathName})`,
                     ignore_e164_validation: false,
                     id: transferCallId,
-                    transfer_option: {
-                        cold_transfer_mode: "sip_invite",
-                        enable_bridge_audio_cue: true,
-                        type: "cold_transfer",
-                        agent_detection_timeout_ms: 30000,
-                        show_transferee_as_caller: false,
-                    },
+                    transfer_option: buildWarmTransferOption(warmTransferAgentVersion),
                     type: "transfer_call",
                     speak_during_execution: false,
                     display_position: { x: 540, y: yBase + 1350 },
@@ -1440,7 +1565,7 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
                     transferCall.transfer_destination.number = transferDestination;
                     const edge = transferCall.edge;
                     if (edge)
-                        edge.destination_node_id = transferFailedId;
+                        edge.destination_node_id = liveTransferRecoveryId;
                 }
                 const ae = preTransfer.always_edge;
                 if (ae && transferCall)
@@ -1450,6 +1575,12 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
             const elseEdge = routerNode.else_edge;
             if (elseEdge)
                 elseEdge.destination_node_id = preTransfer.id;
+            // Remove this path's per-path Close node — it's orphaned now that the
+            // router edges to Pre-Transfer instead. Single-path agents and any
+            // shared "Close" node stay (other paths still need them).
+            const orphanCloseIdx = nodes.findIndex((n) => n.name === `Close (${pathName})`);
+            if (orphanCloseIdx >= 0)
+                nodes.splice(orphanCloseIdx, 1);
         }
         const errors = validateConversationFlow(flow);
         if (errors.length > 0) {
@@ -1551,8 +1682,78 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
                 node.instruction.text = renderTemplate(text, tplVars);
             }
         };
-        if (typeof changes.closePrompt === "string") {
-            applyClosingPrompt("Close", changes.closePrompt);
+        // Per-path Close handling. Two input shapes are accepted:
+        //  - changes.pathClosePrompts: { [pathName]: text }   (preferred)
+        //  - changes.closePrompt: string                       (legacy: applies to every callback path)
+        // Single-path agents and unmigrated multi-path agents have a singleton
+        // "Close" node. Per-path multi-path agents have "Close (pathName)" nodes.
+        // When the writer sees distinct prompts for different paths in a legacy
+        // singleton agent, it splits the Close node lazily.
+        let pathClosePromptMap;
+        if (changes.pathClosePrompts && typeof changes.pathClosePrompts === "object") {
+            pathClosePromptMap = changes.pathClosePrompts;
+        }
+        else if (typeof changes.closePrompt === "string") {
+            pathClosePromptMap = {};
+            for (const pp of parsed.paths) {
+                if (pp.endMode === "callback")
+                    pathClosePromptMap[pp.name] = changes.closePrompt;
+            }
+        }
+        if (pathClosePromptMap) {
+            const callbackPaths = parsed.paths.filter((p) => p.endMode === "callback");
+            // Capture the legacy singleton's id before any mutation. After the
+            // first claim renames it, the name no longer ends in just "Close" —
+            // but its id is what subsequent paths' routers still point to, which
+            // is how we know they're sharing the about-to-be-split legacy node.
+            const legacyCloseId = nodes.find((n) => n.name === "Close")?.id;
+            let legacyClaimed = false;
+            callbackPaths.forEach((pp, i) => {
+                const text = pathClosePromptMap[pp.name];
+                if (typeof text !== "string")
+                    return;
+                const renderedText = renderTemplate(text, tplVars);
+                const router = nodes.find((n) => n.id === pp.routerNode.id);
+                const elseEdge = router?.else_edge;
+                const currentTerminalId = elseEdge?.destination_node_id;
+                const currentClose = currentTerminalId
+                    ? nodes.find((n) => n.id === currentTerminalId)
+                    : undefined;
+                if (!currentClose || !currentClose.instruction)
+                    return;
+                const isLegacyShared = !!legacyCloseId && currentClose.id === legacyCloseId;
+                const currentName = String(currentClose.name ?? "");
+                if (!isLegacyShared && currentName.startsWith("Close (")) {
+                    // Path has its own per-path Close already — just update text.
+                    currentClose.instruction.text = renderedText;
+                    return;
+                }
+                // Legacy singleton path: either truly named "Close" (first iteration
+                // before claim) or renamed to "Close (firstPath)" but still shared by
+                // subsequent paths whose routers haven't been rewired yet.
+                if (callbackPaths.length === 1) {
+                    currentClose.instruction.text = renderedText;
+                    return;
+                }
+                if (!legacyClaimed) {
+                    // First-encountered callback path claims the legacy node.
+                    currentClose.name = `Close (${pp.name})`;
+                    currentClose.instruction.text = renderedText;
+                    legacyClaimed = true;
+                    return;
+                }
+                // Later paths get a fresh clone, and their routers are rewired to it.
+                const newClose = JSON.parse(JSON.stringify(currentClose));
+                newClose.id = `node-${Date.now()}-${Math.random().toString(36).slice(2, 9)}-${i}`;
+                newClose.name = `Close (${pp.name})`;
+                newClose.instruction.text = renderedText;
+                const ae = newClose.always_edge;
+                ae.id = `always-edge-${Date.now()}-${Math.random().toString(36).slice(2, 11)}-${i}`;
+                nodes.push(newClose);
+                if (router) {
+                    router.else_edge.destination_node_id = newClose.id;
+                }
+            });
         }
         if (typeof changes.closingRemarksPrompt === "string") {
             applyClosingPrompt("Closing Remarks", changes.closingRemarksPrompt);
@@ -1560,10 +1761,18 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
         if (typeof changes.closingStatementText === "string") {
             applyClosingPrompt("Closing Statement", changes.closingStatementText);
         }
-        // Live Transfer Recovery — strict name match. Older agents with "Transfer Failed"
-        // are intentionally not touched; this only updates agents that have the new node.
+        // Live Transfer Recovery — match current name first, then legacy
+        // "Transfer Failed". When found under the legacy name, rename it to the
+        // current name so subsequent reads/writes round-trip cleanly.
         if (typeof changes.liveTransferRecoveryPrompt === "string") {
-            applyClosingPrompt("Live Transfer Recovery", changes.liveTransferRecoveryPrompt);
+            const recoveryNode = nodes.find((n) => n.name === "Live Transfer Recovery") ??
+                nodes.find((n) => n.name === "Transfer Failed");
+            if (recoveryNode?.instruction) {
+                recoveryNode.instruction.text = renderTemplate(changes.liveTransferRecoveryPrompt, tplVars);
+                if (recoveryNode.name === "Transfer Failed") {
+                    recoveryNode.name = "Live Transfer Recovery";
+                }
+            }
         }
         // Apply individual node prompt changes
         if (changes.nodePrompts && typeof changes.nodePrompts === "object") {
@@ -1589,15 +1798,18 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
         }
         // Apply per-path data point changes (add/remove/reorder/branch)
         if (changes.paths && typeof changes.paths === "object") {
-            const closeNodeId = parsed.closeNode?.id;
-            if (!closeNodeId) {
-                res.status(500).json({ error: "Could not find Close node" });
-                return;
-            }
             for (const [pathName, pathChanges] of Object.entries(changes.paths)) {
                 const targetPath = parsed.paths.find((pa) => pa.name === pathName);
                 if (!targetPath)
                     continue;
+                // Each callback path's chain terminates at its own Close (multi-path)
+                // or the singleton Close (single-path). Resolving per-iteration so a
+                // multi-path agent doesn't cross-wire chains to another path's Close.
+                const closeNodeId = targetPath.closeNode?.id ?? parsed.closeNode?.id;
+                if (!closeNodeId) {
+                    res.status(500).json({ error: "Could not find Close node" });
+                    return;
+                }
                 // pathChanges.dataPointKeys = ordered list of data point keys for this path
                 if (Array.isArray(pathChanges.dataPointKeys)) {
                     const newDataPoints = [];

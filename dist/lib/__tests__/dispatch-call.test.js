@@ -26,7 +26,7 @@ beforeEach(() => {
     mockPhoneList.mockResolvedValue([
         {
             phone_number: "+15550001111",
-            outbound_agent_id: "agent_summary_1",
+            outbound_agents: [{ agent_id: "agent_summary_1" }],
         },
     ]);
     mockCreatePhoneCall.mockResolvedValue({ call_id: "call_abc" });
@@ -53,7 +53,7 @@ describe("triggerDispatchCall", () => {
     });
     it("skips the call when no phone number is bound to the summary agent", async () => {
         mockPhoneList.mockResolvedValue([
-            { phone_number: "+15550009999", outbound_agent_id: "agent_other" },
+            { phone_number: "+15550009999", outbound_agents: [{ agent_id: "agent_other" }] },
         ]);
         const warn = vi.spyOn(console, "warn").mockImplementation(() => { });
         await triggerDispatchCall(makeClient(), {});
@@ -80,13 +80,6 @@ describe("triggerDispatchCall", () => {
         ]);
         await triggerDispatchCall(makeClient(), {});
         expect(mockCreatePhoneCall).toHaveBeenCalledWith(expect.objectContaining({ from_number: "+15553334444" }));
-    });
-    it("resolves phone via inbound_agent_id field", async () => {
-        mockPhoneList.mockResolvedValue([
-            { phone_number: "+15555556666", inbound_agent_id: "agent_summary_1" },
-        ]);
-        await triggerDispatchCall(makeClient(), {});
-        expect(mockCreatePhoneCall).toHaveBeenCalledWith(expect.objectContaining({ from_number: "+15555556666" }));
     });
     it("swallows Retell errors and logs them (does not throw)", async () => {
         mockCreatePhoneCall.mockRejectedValue(new Error("retell-down"));
