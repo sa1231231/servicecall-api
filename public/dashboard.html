@@ -5465,6 +5465,31 @@
       }
       html += '</div>';
     }
+
+    // Version history — always render the dropdown header so the section is
+    // discoverable; collapse to a "no versions yet" line when empty.
+    html += '<details style="margin-top:1rem;">' +
+      '<summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Version History (' + verData.total + ')</summary>' +
+      '<div style="margin-top:0.5rem;">';
+    if (verData.versions.length > 0) {
+      for (const v of verData.versions) {
+        const ago = timeAgo(v.createdAt);
+        html += '<div class="ne-version-row">' +
+          '<span class="ne-v-num">v' + v.version + '</span>' +
+          '<span class="ne-v-source">' + esc(v.source) + '</span>' +
+          '<span class="ne-v-desc">' + esc(v.description) + '</span>' +
+          '<span class="ne-v-time">' + ago + '</span>';
+        html += '<button class="ne-btn" onclick="exportAgentConfig(\'' + esc(currentSlug) + '\')" style="font-size:0.68rem;">Export</button>';
+        if (canEdit) {
+          html += '<button class="ne-btn" onclick="neRollback(\'' + v._id + '\',' + v.version + ')">Rollback</button>';
+        }
+        html += '</div>';
+      }
+    } else {
+      html += '<div style="font-size:0.78rem;color:#888;padding:0.4rem 0;">No versions yet. Snapshots are taken when you save changes from the editor or run "Rename business everywhere".</div>';
+    }
+    html += '</div></details>';
+
     html += '</div>';
 
     // ── Identity & Routing Paths pane ────────────────────────────────────
@@ -5673,27 +5698,6 @@
 
     // Close the Identity & Routing Paths pane.
     html += '</div>';
-
-    // Version history
-    if (verData.versions.length > 0) {
-      html += '<details style="margin-top:1rem;">' +
-        '<summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Version History (' + verData.total + ')</summary>' +
-        '<div style="margin-top:0.5rem;">';
-      for (const v of verData.versions) {
-        const ago = timeAgo(v.createdAt);
-        html += '<div class="ne-version-row">' +
-          '<span class="ne-v-num">v' + v.version + '</span>' +
-          '<span class="ne-v-source">' + esc(v.source) + '</span>' +
-          '<span class="ne-v-desc">' + esc(v.description) + '</span>' +
-          '<span class="ne-v-time">' + ago + '</span>';
-        html += '<button class="ne-btn" onclick="exportAgentConfig(\'' + esc(currentSlug) + '\')" style="font-size:0.68rem;">Export</button>';
-        if (canEdit) {
-          html += '<button class="ne-btn" onclick="neRollback(\'' + v._id + '\',' + v.version + ')">Rollback</button>';
-        }
-        html += '</div>';
-      }
-      html += '</div></details>';
-    }
 
     const scrollY = window.scrollY;
     document.getElementById('nodeEditorContainer').innerHTML = html;
