@@ -152,6 +152,30 @@ describe("applyOverrides", () => {
     });
     expect(base).toEqual(snapshot);
   });
+
+  // Regression: a template's stored client.name was leaking into freshly
+  // created agents (e.g. "Handy Quinn" from-template'd off the
+  // "Second Opinion Services" template ended up with
+  // client.name="Second Opinion Services" because the spread of
+  // exportConfig.client carried it through unchanged).
+  it("pins client.name to the new businessName when no explicit override", () => {
+    const base = makeBaseConfig();
+    expect(base.client.name).toBe("Original Co");
+    const out = applyOverrides(base, {
+      business: { businessName: "Handy Quinn", faqKnowledgeBase: "x" },
+    });
+    expect(out.client.name).toBe("Handy Quinn");
+    expect(out.client.name).not.toBe(base.client.name);
+  });
+
+  it("respects an explicit client.name override over both template and businessName", () => {
+    const base = makeBaseConfig();
+    const out = applyOverrides(base, {
+      business: { businessName: "Handy Quinn", faqKnowledgeBase: "x" },
+      client: { name: "Quinn Heating LLC" },
+    });
+    expect(out.client.name).toBe("Quinn Heating LLC");
+  });
 });
 
 // ── loadTemplate ───────────────────────────────────────────────────────────

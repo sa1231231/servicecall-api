@@ -699,10 +699,6 @@
   <div class="form-subtab-pane" data-form-pane="paths">
     <h2>Identity &amp; Routing Paths</h2>
 
-    <label for="clientName">Display Name (used in outgoing SMS &amp; emails)</label>
-    <input type="text" id="clientName" placeholder="e.g. Acme Plumbing Co.">
-    <div class="field-hint">Used in outgoing SMS and email notifications as the business identity — e.g. "Hi Acme Plumbing Co., you have a new call!" If blank, falls back to Business Name.</div>
-
     <h3 style="font-size:0.95rem;margin:1.25rem 0 0.25rem;">Routing Paths</h3>
     <p style="font-size:0.8rem;color:#666;margin-top:0;">
       Each path represents a caller intent branch. Click a node on the left to edit its details on the right.
@@ -1935,9 +1931,6 @@
     body.paths = pathData.paths;
 
     // Optional client fields
-    const clientName = val('clientName');
-    if (clientName) body.client.name = clientName;
-
     const callNum = val('dispatchCallNumber');
     if (callNum) body.client.dispatch_call_number = callNum;
 
@@ -2139,7 +2132,6 @@
       businessName: val('businessName'),
       faqKnowledgeBase: val('faqKnowledgeBase'),
       routingPaths: [],
-      clientName: val('clientName'),
       dispatchTextNumbers: getFormChipValues('chip-dispatch-text').join(', '),
       dispatchCallNumber: val('dispatchCallNumber'),
       dispatchEmail: getFormChipValues('chip-dispatch-email').join(', '),
@@ -2196,7 +2188,7 @@
       paths,
       client: {
         slug: val('businessName').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-        name: val('clientName') || val('businessName'),
+        name: val('businessName'),
         dispatch_text_numbers: getFormChipValues('chip-dispatch-text'),
         dispatch_call_number: val('dispatchCallNumber') || null,
         dispatch_email: getFormChipValues('chip-dispatch-email'),
@@ -2261,7 +2253,6 @@
           closingRemarksPrompt: config.business?.closingRemarksPrompt || '',
           closingStatementText: config.business?.closingStatementText || '',
           liveTransferRecoveryPrompt: config.business?.liveTransferRecoveryPrompt || '',
-          clientName: config.client?.name || '',
           dispatchTextNumbers: (config.client?.dispatch_text_numbers || []).join(', '),
           dispatchCallNumber: config.client?.dispatch_call_number || '',
           dispatchEmail: (config.client?.dispatch_email || []).join(', '),
@@ -2343,7 +2334,6 @@
   function loadFormState(state) {
     document.getElementById('businessName').value = state.businessName || '';
     document.getElementById('faqKnowledgeBase').value = state.faqKnowledgeBase || '';
-    document.getElementById('clientName').value = state.clientName || '';
     setClosingPrompt('closingRemarksPrompt', state.closingRemarksPrompt || DEFAULT_CLOSING_REMARKS_PROMPT);
     setClosingPrompt('closingStatementText', state.closingStatementText || DEFAULT_CLOSING_STATEMENT_TEXT);
     document.getElementById('liveTransferRecoveryPrompt').value = state.liveTransferRecoveryPrompt || DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
