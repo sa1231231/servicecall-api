@@ -2239,8 +2239,10 @@
     document.getElementById('settingsView').style.display = 'none';
     document.getElementById('detailView').style.display = '';
 
-    // Parse desired tab from URL hash (#agent=slug&tab=settings)
-    const desiredTab = parseTabFromHash() || 'settings';
+    // Parse desired tab from URL hash (#agent=slug&tab=settings). If absent,
+    // carry over the tab from whatever agent the user was just viewing so
+    // jumping between agents (e.g. via Cmd+K) keeps you on the same tab.
+    const desiredTab = parseTabFromHash() || activeTab || 'settings';
     setAgentDetailHash(slug, desiredTab);
 
     document.getElementById('tab-settings').innerHTML = '<div class="loading">Loading...</div>';
