@@ -615,7 +615,7 @@
 <div class="save-bar">
   <div class="save-bar-row">
     <span class="sb-label">Drafts:</span>
-    <select id="draftSelect"><option value="">— Select a draft —</option></select>
+    <select id="draftSelect" onchange="onDraftSelectChange()"><option value="">— Select a draft —</option></select>
     <button type="button" class="sb-btn-load" onclick="loadSelected()">Load</button>
     <button type="button" class="sb-btn-save" onclick="saveDraft()">Save Draft</button>
     <button type="button" class="sb-btn-delete" onclick="deleteSelected()">Delete</button>
@@ -2435,14 +2435,39 @@
 
   // ── Draft CRUD ────────────────────────────────────────────
 
+  // Keep currentDraftId in lock-step with the dropdown so deselecting
+  // doesn't leave a stale draft id around — that bug let Save Draft
+  // silently overwrite the previously-loaded draft after the user
+  // unselected it.
+  function onDraftSelectChange() {
+    const sel = document.getElementById('draftSelect');
+    if (!sel.value) currentDraftId = null;
+  }
+
   async function saveDraft() {
     const formData = collectFormState();
-    const name = formData.businessName || 'Untitled Draft';
 
     // Also persist the canonical /agents/create-shape config so the draft
     // can be instantiated programmatically via POST /agents/from-draft.
     let exportConfig = null;
     try { exportConfig = buildExportConfig(); } catch (_) { /* ignore */ }
+
+    let name;
+    if (currentDraftId) {
+      // Overwriting an existing draft — confirm first so the user can't
+      // clobber a saved draft by accident.
+      const sel = document.getElementById('draftSelect');
+      const selectedLabel = sel.options[sel.selectedIndex]?.textContent || 'this draft';
+      if (!confirm(`Overwrite ${selectedLabel}?`)) return;
+      name = formData.businessName || 'Untitled Draft';
+    } else {
+      // New draft — prompt for a name, defaulting to the businessName so
+      // a one-keystroke save still works.
+      const def = formData.businessName || 'Untitled Draft';
+      const input = prompt('Name this draft:', def);
+      if (input === null) return;        // user cancelled
+      name = input.trim() || def;
+    }
 
     try {
       if (currentDraftId) {
