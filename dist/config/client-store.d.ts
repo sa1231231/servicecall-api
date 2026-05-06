@@ -53,6 +53,10 @@ export interface JsonClientEntry {
     notification_greeting?: string;
     weekly_report_enabled?: boolean;
     trial_start_date?: string;
+    contact_name?: string | null;
+    contact_phone?: string | null;
+    contact_email?: string | null;
+    contact_notes?: string | null;
     phone_fallback_to_caller?: boolean;
     hide_not_mentioned?: boolean;
     shadow_mode?: boolean;

@@ -22,6 +22,19 @@ export async function updateAgentHandler(req, res) {
             return;
         }
     }
+    for (const field of ["contact_name", "contact_phone", "contact_email", "contact_notes"]) {
+        if (!(field in body))
+            continue;
+        const v = body[field];
+        if (typeof v === "string") {
+            const trimmed = v.trim();
+            body[field] = trimmed === "" ? null : trimmed;
+        }
+        else if (v !== null) {
+            res.status(400).json({ error: `${field} must be a string or null` });
+            return;
+        }
+    }
     try {
         await updateClientFields(slug, body);
         const doc = await getClientDocument(slug);

@@ -69,6 +69,12 @@ export interface JsonClientEntry {
   notification_greeting?: string;
   weekly_report_enabled?: boolean;
   trial_start_date?: string;
+  // Admin-only client contact info shown in the Billing tab. Reference data
+  // for the operator; not used by any agent or notification logic.
+  contact_name?: string | null;
+  contact_phone?: string | null;
+  contact_email?: string | null;
+  contact_notes?: string | null;
   phone_fallback_to_caller?: boolean;
   hide_not_mentioned?: boolean;
   shadow_mode?: boolean;
@@ -234,6 +240,10 @@ const EDITABLE_FIELDS = new Set([
   "webhook_url",
   "weekly_report_enabled",
   "trial_start_date",
+  "contact_name",
+  "contact_phone",
+  "contact_email",
+  "contact_notes",
   "message_types",
   "resolve_rules",
   "folder_id",

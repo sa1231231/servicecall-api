@@ -2879,9 +2879,9 @@
     document.getElementById('tab-settings').innerHTML = html;
   }
 
-  // Renders the editable header above the Billing tab's read-only sections.
-  // Currently just the Trial Start Date — auto-saves on change since the
-  // rest of the Billing tab has no Save button.
+  // Renders the editable header above the Billing tab's read-only sections:
+  // Client Contact (admin-only reference info) followed by Trial Start Date.
+  // All fields auto-save on blur since the Billing tab has no Save button.
   function renderTabBillingHeader(doc) {
     const target = document.getElementById('billingTrialStart');
     if (!target) return;
@@ -2889,12 +2889,63 @@
       target.innerHTML = '';
       return;
     }
-    const v = doc.trial_start_date ? doc.trial_start_date.slice(0, 10) : '';
+    const trial = doc.trial_start_date ? doc.trial_start_date.slice(0, 10) : '';
+    const inputStyle = 'width:100%;padding:0.35rem 0.5rem;font-size:0.82rem;';
     target.innerHTML =
+      '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem;margin-bottom:0.75rem;">' +
+        '<div style="font-size:0.82rem;font-weight:600;color:#555;margin-bottom:0.5rem;">Client Contact</div>' +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.5rem;">' +
+          '<div>' +
+            '<label for="edit-contact-name" style="font-size:0.74rem;color:#666;">Name</label>' +
+            '<input type="text" class="edit-input" id="edit-contact-name" value="' + esc(doc.contact_name || '') + '" style="' + inputStyle + '" onchange="saveContactField(this, \'contact_name\')">' +
+          '</div>' +
+          '<div>' +
+            '<label for="edit-contact-phone" style="font-size:0.74rem;color:#666;">Phone</label>' +
+            '<input type="tel" class="edit-input" id="edit-contact-phone" value="' + esc(doc.contact_phone || '') + '" style="' + inputStyle + '" onchange="saveContactField(this, \'contact_phone\')">' +
+          '</div>' +
+          '<div>' +
+            '<label for="edit-contact-email" style="font-size:0.74rem;color:#666;">Email</label>' +
+            '<input type="email" class="edit-input" id="edit-contact-email" value="' + esc(doc.contact_email || '') + '" style="' + inputStyle + '" onchange="saveContactField(this, \'contact_email\')">' +
+          '</div>' +
+        '</div>' +
+        '<div style="margin-top:0.5rem;">' +
+          '<label for="edit-contact-notes" style="font-size:0.74rem;color:#666;">Notes</label>' +
+          '<textarea class="edit-input" id="edit-contact-notes" rows="3" style="' + inputStyle + 'resize:vertical;" onchange="saveContactField(this, \'contact_notes\')">' + esc(doc.contact_notes || '') + '</textarea>' +
+        '</div>' +
+      '</div>' +
       '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">' +
       '<label for="edit-trial-start" style="font-size:0.82rem;font-weight:600;color:#555;" title="When this client\'s free trial started. Trial length is set globally in Settings.">Trial Start Date:</label>' +
-      '<input type="date" class="edit-input" id="edit-trial-start" value="' + esc(v) + '" style="width:auto;padding:0.3rem 0.4rem;font-size:0.78rem;" onchange="saveTrialStartDate(this)">' +
+      '<input type="date" class="edit-input" id="edit-trial-start" value="' + esc(trial) + '" style="width:auto;padding:0.3rem 0.4rem;font-size:0.78rem;" onchange="saveTrialStartDate(this)">' +
       '</div>';
+  }
+
+  // Auto-save handler for the Client Contact inputs in the Billing tab.
+  // Empty string is sent as null so the server clears the field rather than
+  // storing "". Mirrors saveTrialStartDate's revert-on-error pattern.
+  async function saveContactField(input, field) {
+    if (!currentSlug) return;
+    const newVal = input.value.trim() || null;
+    const origVal = (originalDoc && originalDoc[field]) || null;
+    if (newVal === origVal) return;
+    input.disabled = true;
+    try {
+      const res = await fetch('/dashboard/api/agents/' + currentSlug, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: newVal }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed: ' + res.status);
+      }
+      if (originalDoc) originalDoc[field] = newVal;
+      showToast('Saved', 'success');
+    } catch (err) {
+      input.value = origVal || '';
+      showToast('Save failed: ' + err.message, 'error');
+    } finally {
+      input.disabled = false;
+    }
   }
 
   // Auto-save handler for the Trial Start Date input in the Billing tab.
