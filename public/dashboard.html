@@ -1553,6 +1553,7 @@
     const folder = folderById(a.folder_id);
     const folderName = folder ? folder.name : '';
     return (
+      (a.display_name || '').toLowerCase().includes(needle) ||
       (a.name || '').toLowerCase().includes(needle) ||
       (a.slug || '').toLowerCase().includes(needle) ||
       folderName.toLowerCase().includes(needle)
@@ -1574,10 +1575,10 @@
 
   function sortedAgents(rows) {
     if (!agentSortKey || !agentSortDir) {
-      // Default: shadow-mode rows last, then name asc.
+      // Default: shadow-mode rows last, then displayed-name asc.
       return rows.slice().sort((a, b) => {
         if (a.shadow_mode !== b.shadow_mode) return a.shadow_mode ? 1 : -1;
-        return (a.name || '').localeCompare(b.name || '');
+        return (a.display_name || a.name || '').localeCompare(b.display_name || b.name || '');
       });
     }
     const dir = agentSortDir === 'asc' ? 1 : -1;
@@ -1590,7 +1591,7 @@
       let r = 0;
       switch (agentSortKey) {
         case 'name':
-          r = cmpStr(a.name, b.name); break;
+          r = cmpStr(a.display_name || a.name, b.display_name || b.name); break;
         case 'trial': {
           const da = trialRemainingDays(a);
           const db = trialRemainingDays(b);
@@ -1618,8 +1619,8 @@
         default:
           r = 0;
       }
-      // Stable secondary sort by name so equal keys don't reshuffle.
-      if (r === 0) r = cmpStr(a.name, b.name);
+      // Stable secondary sort by displayed name so equal keys don't reshuffle.
+      if (r === 0) r = cmpStr(a.display_name || a.name, b.display_name || b.name);
       return r * dir;
     });
   }
@@ -1667,8 +1668,11 @@
         .filter(c => isColumnVisible(c.key))
         .map(c => headerCell(c.key, c.label, colAttrs[c.key] || ''))
         .join('') +
+      (canEdit ? '<th style="width:1px;"></th>' : '') +
       '</tr></thead>';
-    const visibleColCount = AGENT_COLUMNS.filter(c => isColumnVisible(c.key)).length;
+    const visibleColCount =
+      AGENT_COLUMNS.filter(c => isColumnVisible(c.key)).length +
+      (canEdit ? 1 : 0);
 
     // Decide the order folders are rendered in. Unfiled always first; then
     // user-created folders in their stored position order.
@@ -1765,7 +1769,7 @@
       : '<span style="color:#aaa">—</span>';
 
     const cells = {
-      name: '<td><strong>' + esc(a.name) + '</strong> ' + moveBtn + '</td>',
+      name: '<td><strong>' + esc(a.display_name || a.name) + '</strong></td>',
       trial: '<td>' + trialHtml + '</td>',
       status: '<td><span class="badge ' + sc + '" data-status>' + sl + '</span></td>',
       mtd_cogs: '<td style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>',
@@ -1776,6 +1780,7 @@
       (canEdit ? ' draggable="true" ondragstart="onAgentDragStart(event)" ondragend="onAgentDragEnd(event)"' : '') +
       '>' +
       AGENT_COLUMNS.filter(c => isColumnVisible(c.key)).map(c => cells[c.key]).join('') +
+      (canEdit ? '<td style="width:1px;white-space:nowrap;text-align:right;padding-right:0.5rem;" onclick="event.stopPropagation()">' + moveBtn + '</td>' : '') +
       '</tr>';
   }
 
@@ -2865,7 +2870,7 @@
         ).join(' ')
       : '<span class="badge badge-shadow" style="font-size:0.72rem;vertical-align:middle;">No phone bound</span>';
     document.getElementById('detailHeader').innerHTML =
-      `<h1>${esc(doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
+      `<h1>${esc(doc.display_name || doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
       buildHeaderButtons(doc._id) + `</h1>` +
       `<div class="detail-phone-chips" style="margin:-0.25rem 0 0.6rem 0;display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">` +
         `<span style="font-size:0.72rem;color:#777;">Phone:</span>${phoneChips}` +
@@ -2890,6 +2895,11 @@
     <dl class="config-grid">
       <input type="hidden" id="edit-name" value="${esc(doc.name)}">
       <input type="hidden" id="edit-greeting" value="${esc(doc.notification_greeting || '')}">
+
+      <dt title="Label shown on the Admin Agent Dashboard and in the Retell console — does not change anything the agent says">Dashboard Display Name</dt><dd>
+        <input class="edit-input" id="edit-display-name" value="${esc(doc.display_name || '')}" placeholder="${esc(doc.name)}">
+        <div class="config-hint">Renames the agent only on this dashboard, the Retell console, and Retell phone-number nicknames. <strong>Does not</strong> propagate into prompts, conversation flow text, or post-hook messages — leave blank to fall back to the business name.</div>
+      </dd>
 
       <dt title="Retell agent ID linked to this client — inbound calls from this agent trigger notifications">Agent ID</dt><dd>
         <input class="edit-input" id="input-agent-id" value="${esc(doc.agent_id || '')}" placeholder="agent_..." style="font-family:monospace;font-size:0.78rem;">
@@ -3089,10 +3099,22 @@
       updates.agent_id = newAgentId;
     }
 
-    // Display name (hidden input synced from Node Editor display-name field)
-    const newName = document.getElementById('edit-name').value.trim();
-    if (newName && newName !== originalDoc.name) {
-      updates.name = newName;
+    // Business name (hidden input synced from Node Editor "Business Name" field).
+    // This is the script-text source — only changes via the Node Editor's
+    // "Rename business everywhere" button, which has its own server flow that
+    // rewrites prompts. Don't include it in the generic settings PATCH.
+    // (Field stays hidden + read-only here; left in place for backward
+    //  compatibility with other code that reads originalDoc.name.)
+
+    // Dashboard display name — sent through the generic PATCH; the server
+    // pushes it to Retell agent_name + phone nicknames as a side effect.
+    // Empty string → null so the dashboard fallback (display_name ?? name)
+    // works rather than rendering a blank header.
+    const dispRaw = (document.getElementById('edit-display-name')?.value ?? '').trim();
+    const dispNew = dispRaw === '' ? null : dispRaw;
+    const dispOrig = originalDoc.display_name ?? null;
+    if (dispNew !== dispOrig) {
+      updates.display_name = dispNew;
     }
 
     // Notification greeting (hidden input synced from Node Editor)
@@ -3163,15 +3185,15 @@
       const total = Object.keys(updates).length + (activeChanged ? 1 : 0);
       showToast('Saved ' + total + ' field(s)', 'success');
 
-      // Refresh header badges if shadow_mode or active changed.
-      if ('shadow_mode' in updates || activeChanged) {
+      // Refresh header if shadow_mode, active, or display_name changed.
+      if ('shadow_mode' in updates || 'display_name' in updates || activeChanged) {
         const sc = originalDoc.shadow_mode ? 'badge-shadow' : 'badge-live';
         const sl = originalDoc.shadow_mode ? 'Shadow' : 'Live';
         const inactiveBadge = originalDoc.active === false
           ? ' <span class="badge" style="font-size:0.7rem;vertical-align:middle;background:#fee2e2;color:#991b1b;">Inactive</span>'
           : '';
         document.getElementById('detailHeader').innerHTML =
-          `<h1>${esc(originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
+          `<h1>${esc(originalDoc.display_name || originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
           buildHeaderButtons(currentSlug) + `</h1>`;
         // Header rebuild blew away the portal dropdown contents — repopulate
         // from the cached URL so the user doesn't see "Loading…" forever.
@@ -5340,19 +5362,19 @@
     // ── Identity & Routing Paths pane ────────────────────────────────────
     html += '<div class="ne-subtab-pane' + (activeNeTab === 'paths' ? ' active' : '') + '" data-ne-pane="paths">';
 
-    // Identity sub-section (Display Name + Notification Greeting)
+    // Identity sub-section (Business Name + Notification Greeting)
     html += '<h3>Identity &amp; Notifications</h3>';
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
-      '<span style="font-size:0.82rem;font-weight:600;color:#555;">Display Name</span></div>' +
+      '<span style="font-size:0.82rem;font-weight:600;color:#555;">Business Name</span></div>' +
       '<div style="margin-bottom:0.75rem;">' +
       '<input class="edit-input" id="ne-display-name" value="' + esc(originalDoc?.name || '') + '" placeholder="Business name" style="margin-bottom:0.15rem;">' +
-      '<div class="config-hint">Appears in SMS/email notifications. <strong>Does not</strong> rewrite prompts or the Retell agent name.</div>';
+      '<div class="config-hint">The name the agent says in prompts, welcome line, FAQ, and SMS/email notifications. Edit the dashboard label separately under <em>Settings → Dashboard Display Name</em>.</div>';
     if (canEdit) {
       // No argument passed — handler reads the current name from neData/originalDoc
       // at click time. Inlining the name into the onclick attribute would break
       // for businesses with apostrophes ("Bob's HVAC").
       html += '<button class="ne-btn" onclick="neRenameBusinessEverywhere()" style="margin-top:0.4rem;font-size:0.7rem;background:#fef3c7;border-color:#fde68a;color:#92400e;">Rename business everywhere…</button>' +
-        '<div class="config-hint" style="margin-top:0.25rem;">Find/replace the business name across the system prompt, welcome line, closing prompts, FAQ text, and the Retell agent name. Pushes immediately to Retell. Snapshotted for rollback.</div>';
+        '<div class="config-hint" style="margin-top:0.25rem;">Find/replace the business name across the system prompt, welcome line, closing prompts, and FAQ text. Pushes immediately to Retell. Snapshotted for rollback. <strong>Does not</strong> change the Dashboard Display Name, the Retell console title, or phone-number nicknames.</div>';
     }
     html += '</div>';
     const greetingVal = originalDoc?.notification_greeting || '';
@@ -6208,8 +6230,10 @@
     const newName = prompt(
       'Rename business everywhere.\n\n' +
       'This rewrites every occurrence of "' + currentName + '" across the system prompt, ' +
-      'welcome line, closing prompts, FAQ text, and the Retell agent name. ' +
+      'welcome line, closing prompts, and FAQ text — i.e. words the agent says. ' +
       'Pushes immediately to Retell. Snapshotted for rollback.\n\n' +
+      'Does NOT change the Dashboard Display Name, the Retell console title, or ' +
+      'phone-number nicknames — edit those under Settings → Dashboard Display Name.\n\n' +
       'New business name:',
       currentName,
     );
