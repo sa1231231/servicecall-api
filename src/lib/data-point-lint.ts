@@ -1,3 +1,5 @@
+// CI/test-only utility: validates DataPoint registry definitions.
+// Run via `npm run test:lint`. Not used by production routes.
 import {
   CALLER_DOESNT_KNOW,
   NOT_MENTIONED,

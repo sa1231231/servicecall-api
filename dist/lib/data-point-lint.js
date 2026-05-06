@@ -1,3 +1,5 @@
+// CI/test-only utility: validates DataPoint registry definitions.
+// Run via `npm run test:lint`. Not used by production routes.
 import { CALLER_DOESNT_KNOW, NOT_MENTIONED, } from "./agent-generator/data-point-registry.js";
 const VAR_REF_RE = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
 export function lintDataPoint(dp) {

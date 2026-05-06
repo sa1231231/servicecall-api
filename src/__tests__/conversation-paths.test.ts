@@ -11,11 +11,11 @@ import { AGENT_FIXTURES, type AgentFixture, type PathScenario } from "./_fixture
 
 const BASE_URL = process.env.SYSTEM_TEST_URL ?? process.env.BASE_URL;
 const API_KEY = process.env.API_KEY;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ROOT_PASSWORD = process.env.ROOT_PASSWORD;
 const RETELL_API_KEY = process.env.RETELL_API_KEY;
 
 const hasConfig =
-  !!BASE_URL && BASE_URL.startsWith("http") && !!API_KEY && !!RETELL_API_KEY && !!ADMIN_PASSWORD;
+  !!BASE_URL && BASE_URL.startsWith("http") && !!API_KEY && !!RETELL_API_KEY && !!ROOT_PASSWORD;
 
 const TERMINAL_NODE_RE = /^(Close|Closing\s|Pre-Transfer|Transfer Call)/i;
 
@@ -26,7 +26,7 @@ function url(path: string): string {
 function authHeaders(extras: Record<string, string> = {}): Record<string, string> {
   return {
     "x-api-key": API_KEY!,
-    Authorization: "Basic " + Buffer.from(`sam_admin:${ADMIN_PASSWORD}`).toString("base64"),
+    Authorization: "Basic " + Buffer.from(`sam_admin:${ROOT_PASSWORD}`).toString("base64"),
     "Content-Type": "application/json",
     ...extras,
   };

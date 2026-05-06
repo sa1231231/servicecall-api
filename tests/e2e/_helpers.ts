@@ -19,12 +19,12 @@ export interface E2EEnv {
 export function getEnv(): E2EEnv {
   const baseURL = process.env.SYSTEM_TEST_URL || process.env.BASE_URL;
   const apiKey = process.env.API_KEY;
-  const password = process.env.ROOT_PASSWORD || process.env.ADMIN_PASSWORD;
+  const password = process.env.ROOT_PASSWORD;
   const username = process.env.E2E_USER || "sam_admin";
 
   if (!baseURL || !apiKey || !password) {
     throw new Error(
-      "E2E env missing — need SYSTEM_TEST_URL (or BASE_URL), API_KEY, and ROOT_PASSWORD (or ADMIN_PASSWORD).",
+      "E2E env missing — need SYSTEM_TEST_URL (or BASE_URL), API_KEY, and ROOT_PASSWORD.",
     );
   }
   return { baseURL: baseURL.replace(/\/$/, ""), apiKey, username, password };

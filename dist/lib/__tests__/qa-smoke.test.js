@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+// qa-smoke.ts imports config.js, which calls requireEnv("ROOT_PASSWORD") at
+// module load. Mock it so the import chain doesn't blow up in test workers
+// that don't have the full env set.
+vi.mock("../../config.js", () => ({
+    config: { RETELL_API_KEY: "retell_test" },
+}));
 import { checkGreetingBusinessName, checkDataPointsInFlow, checkNotificationConfigComplete, checkMessageTypeResolves, checkRequiredFieldsSatisfiable, buildSyntheticVariables, runSmokeTest, } from "../qa-smoke.js";
 // ── Fixtures ─────────────────────────────────────────────────────────────────
 function makeSnapshot(overrides = {}) {

@@ -38,5 +38,5 @@ export const config = {
     R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY ?? "",
     R2_BUCKET: process.env.R2_BUCKET ?? "scs-mongo-backup",
     // Root account password (break-glass access)
-    ROOT_PASSWORD: process.env.ROOT_PASSWORD ?? requireEnv("ADMIN_PASSWORD"),
+    ROOT_PASSWORD: requireEnv("ROOT_PASSWORD"),
 };

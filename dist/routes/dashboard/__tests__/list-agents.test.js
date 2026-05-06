@@ -6,6 +6,11 @@ const { mockGetAllClientDocuments } = vi.hoisted(() => ({
 vi.mock("../../../config/client-store.js", () => ({
     getAllClientDocuments: (...args) => mockGetAllClientDocuments(...args),
 }));
+// list-agents.ts imports billing-cogs.js, which transitively pulls in db.js
+// and config.js. Mock billing-cogs to keep that chain out of the test worker.
+vi.mock("../../../lib/billing-cogs.js", () => ({
+    getMtdCogsForAllClients: vi.fn().mockResolvedValue({}),
+}));
 import { listAgentsHandler } from "../list-agents.js";
 // ── Helpers ────────────────────────────────────────────────────────────────
 function mockRes() {

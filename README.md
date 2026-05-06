@@ -1,6 +1,6 @@
 # ServiceCall Saver API
 
-An Express API that dispatches service call notifications (SMS + email) after Retell AI agents handle inbound phone calls. Also integrates with GoHighLevel for calendar scheduling and Stripe for billing (WIP).
+An Express API that dispatches service call notifications (SMS + email) after Retell AI agents handle inbound phone calls. Also integrates with GoHighLevel for calendar scheduling.
 
 **Production URL:** `https://servicecall-api-production.up.railway.app`
 
@@ -49,8 +49,6 @@ src/
     ├── retell/
     │   ├── pre-hook.ts             # POST /retell/pre-hook (call validation)
     │   └── post-hook.ts            # POST /retell/post-hook (notifications)
-    ├── stripe/
-    │   └── webhook.ts              # Stripe webhook (disabled)
     └── deckscience/
         ├── get-slots.ts            # Calendar slot availability
         └── create-appointment.ts   # Create calendar appointment
@@ -60,7 +58,7 @@ src/
 
 ## Notification Clients
 
-Clients are defined in `src/config/notification-clients.ts`. Each client maps a Retell agent to dispatch contacts and message templates.
+Client records live in MongoDB and are loaded into an in-memory cache at startup (`src/config/client-store.ts` → `src/_cache/clients.ts`). Each client maps a Retell agent to dispatch contacts and message templates. The `notification-clients.ts` file holds the TypeScript shapes only; the data itself is DB-backed.
 
 ### Client Config Fields
 
@@ -77,16 +75,6 @@ Clients are defined in `src/config/notification-clients.ts`. Each client maps a 
 | `phone_fallback_to_caller` | boolean | Use caller's number if phone not collected |
 | `hide_not_mentioned` | boolean | Omit fields with value "Not Mentioned" |
 | `shadow_mode` | boolean | Send dry-run preview to owner instead of dispatch |
-
-### Current Clients
-
-| ID | Name | Message Types |
-|----|------|---------------|
-| `pro-v` | Pro V | `emergency`, `service_request` |
-| `j-a` | J&A Fleet Maintenance | `mobile_emergency` |
-| `rapid-care` | Rapid Care Truck Repair | `mobile_emergency` |
-| `test` | Test Client | `emergency`, `service_request` |
-| `test_prod` | Test Client (Prod) | `emergency`, `service_request` |
 
 ### Message Types
 
@@ -106,14 +94,7 @@ Each message type defines a `label`, `subject_template`, optional `additional_te
 
 ### Adding a New Client
 
-1. Add an entry to the `notificationClients` object in `notification-clients.ts`
-2. Set the `agent_ids` to the Retell agent ID(s) for that client
-3. Define `dispatch_numbers` and `dispatch_email` for where notifications go
-4. Define `resolve_type` to determine message type from call variables
-5. Define `message_types` with the fields your Retell agent collects
-6. Deploy
-
-The `agentIdToClient` lookup map is built automatically at startup.
+Clients are created either through the dashboard UI or via `POST /agents/create`, which generates the Retell conversation flow + agent and persists the client record to MongoDB. The in-memory `agentIdToClient` lookup is rebuilt from the DB on every startup.
 
 ---
 
@@ -199,15 +180,20 @@ Creates a 90-minute appointment in GoHighLevel. Auth: `X-API-Key` header.
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `RETELL_SIGNATURE_KEY` | Yes | HMAC key for Retell webhook verification |
+| `RETELL_API_KEY` | Yes | Retell SDK API key (used for agent creation + chat clones) |
 | `API_KEY` | Yes | API key for protected routes (X-API-Key header) |
 | `TWILIO_ACCOUNT_SID` | Yes | Twilio account ID |
 | `TWILIO_AUTH_TOKEN` | Yes | Twilio API token |
 | `TWILIO_PHONE_NUMBER` | Yes | Outbound SMS number |
 | `RESEND_API_KEY` | Yes | Resend email API key |
 | `GHL_API_KEY` | Yes | GoHighLevel API key |
+| `MONGODB_URL` | Yes | MongoDB connection string |
+| `ROOT_PASSWORD` | Yes | Root account password (break-glass dashboard auth) |
 | `PORT` | No | Server port (default: 3000) |
 | `BASE_URL` | No | API base URL |
 | `EMAIL_FROM` | No | Sender email (default: notifications@servicecallsaver.com) |
+| `SYSTEM_TEST_URL` | No | Target URL for `npm run test:system` / `test:paths` (overrides `BASE_URL`) |
+| `CI` | No | Set by CI; toggles Playwright retry/worker behavior in `playwright.config.ts` |
 
 ---
 
@@ -272,7 +258,7 @@ Push to `main` to deploy.
 
 ## Security
 
-- **Webhook signatures**: Retell (HMAC-SHA256) and Stripe verification
+- **Webhook signatures**: Retell (HMAC-SHA256) verification
 - **HTML escaping**: All user-provided values escaped in email HTML
 - **Rate limiting**: Global + per-route limits
 - **API key auth**: Required on protected routes

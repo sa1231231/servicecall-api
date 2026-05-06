@@ -1,3 +1,5 @@
+// Test-only utility: drives Retell chat agents end-to-end for the
+// conversation-paths integration test. Not used by production routes.
 import Retell from "retell-sdk";
 function client() {
     const apiKey = process.env.RETELL_API_KEY;
