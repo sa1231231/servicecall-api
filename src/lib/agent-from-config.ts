@@ -143,6 +143,18 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
   if (!body.client?.slug) {
     return { ok: false, status: 400, error: "Missing required field: client.slug" };
   }
+  // Require an explicit, non-empty client.name. We used to silently fall back
+  // to the lowercased slug here (via `name: clientInfo.name ?? clientInfo.slug`
+  // in buildClientEntry), which produced bugs like a "GMC" form input ending
+  // up as "gmc" in the dashboard. Fail loudly instead.
+  if (typeof body.client.name !== "string" || !body.client.name.trim()) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Missing required field: client.name (no fallback to slug)",
+    };
+  }
+  body.client.name = body.client.name.trim();
   // Fall back to owner phone if dispatch_text_numbers is empty
   if (!Array.isArray(body.client.dispatch_text_numbers) || body.client.dispatch_text_numbers.length === 0) {
     const { getSettings } = await import("./settings.js");

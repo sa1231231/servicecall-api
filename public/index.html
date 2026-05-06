@@ -1904,6 +1904,9 @@
       },
       client: {
         slug: val('businessName').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        // Send the exact-case business name as client.name. Without this the
+        // backend used to silently fall back to the lowercased slug.
+        name: val('businessName'),
         dispatch_text_numbers: dispatchTexts,
       },
     };
