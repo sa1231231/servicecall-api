@@ -30,16 +30,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 300,
+  max: 1000,                // ~67/min — comfortable headroom for normal
+                            // dashboard use and test runs while keeping a
+                            // global brute-force ceiling.
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
 });
 
-// Tighter limiter for login-protected routes — prevent brute-force
+// Tighter limiter for login-protected routes — prevent brute-force.
+// Applied to /form, which sees normal-user save/autosave traffic, so we
+// allow ~24/min: still firm against credential-stuffing but won't punish
+// a user editing the agent form for an extended session.
 const authLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 30,                  // 30 attempts per 5 minutes per IP
+  max: 120,                 // 120 attempts per 5 minutes per IP
   standardHeaders: true,
   legacyHeaders: false,
   message: "Too many login attempts, please try again later.",
