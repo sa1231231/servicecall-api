@@ -21,7 +21,7 @@ import {
 import { regenerateDataChain, applyRegeneratedChain } from "../../lib/node-regenerator.js";
 import { getDataPointDefaults } from "../../lib/data-point-defaults.js";
 import { resolveDataPoints } from "../../lib/agent-generator/generate-agent.js";
-import type { DataPoint } from "../../lib/agent-generator/data-point-registry.js";
+import type { DataPoint, FinetuneExample } from "../../lib/agent-generator/data-point-registry.js";
 import { PATH_TAKEN_VAR } from "../../lib/agent-generator/data-point-registry.js";
 import {
   makeIdFactory,
@@ -2129,6 +2129,78 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
         if (edge) {
           (edge.transition_condition as Record<string, unknown>).prompt = condition;
         }
+      }
+    }
+
+    // Apply per-data-point fine-tune mutations. The body shape is:
+    //   changes.dataPointFinetunes: { [collectNodeId]: FinetuneExample[] }
+    // Each entry replaces that collect node's finetune_transition_examples
+    // wholesale. Positive examples get destination_node_id pointing at the
+    // matching confirm node; negative examples have no destination (the
+    // agent stays in the collect node when it sees one).
+    if (changes.dataPointFinetunes && typeof changes.dataPointFinetunes === "object") {
+      const collectToConfirm: Record<string, string> = {};
+      for (const path of parsed.paths) {
+        for (const dp of path.dataChain) {
+          collectToConfirm[dp.collectNode.id] = dp.confirmNode.id;
+        }
+      }
+      const ftEntries = Object.entries(
+        changes.dataPointFinetunes as Record<string, FinetuneExample[]>,
+      );
+      for (const [collectNodeId, examples] of ftEntries) {
+        if (!Array.isArray(examples)) continue;
+        const collectNode = nodes.find((n) => n.id === collectNodeId);
+        if (!collectNode) continue;
+        const confirmId = collectToConfirm[collectNodeId];
+        collectNode.finetune_transition_examples = examples.map((ex) => {
+          const out: Record<string, unknown> = {
+            transcript: ex.transcript,
+            id: ex.id || `fe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          };
+          if (ex.type === "positive" && confirmId) {
+            out.destination_node_id = confirmId;
+          }
+          return out;
+        });
+      }
+    }
+
+    // Apply per-path transition fine-tune mutations on the intro node. The
+    // body shape is:
+    //   changes.transitionFinetunes: { [pathName]: FinetuneExample[] }
+    // Per-path examples are stored on the intro node's finetune array
+    // distinguished by destination_node_id. We replace only the entries
+    // belonging to mutated paths, preserving agent-level examples and any
+    // path's existing examples that weren't included in this save.
+    if (changes.transitionFinetunes && typeof changes.transitionFinetunes === "object") {
+      const introNode = nodes.find((n) => n.id === parsed.introNode.id);
+      if (introNode) {
+        const existing = (introNode.finetune_transition_examples as Array<Record<string, unknown>>) || [];
+        const mutatedTransitionIds = new Set<string>();
+        const newPathExamples: Array<Record<string, unknown>> = [];
+        const ftEntries = Object.entries(
+          changes.transitionFinetunes as Record<string, FinetuneExample[]>,
+        );
+        for (const [pathName, examples] of ftEntries) {
+          if (!Array.isArray(examples)) continue;
+          const path = parsed.paths.find((pa) => pa.name === pathName);
+          if (!path) continue;
+          const transitionId = path.transitionNode.id;
+          mutatedTransitionIds.add(transitionId);
+          for (const ex of examples) {
+            newPathExamples.push({
+              transcript: ex.transcript,
+              id: ex.id || `fe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              destination_node_id: transitionId,
+            });
+          }
+        }
+        const preserved = existing.filter((ex) => {
+          const dest = ex.destination_node_id as string | undefined;
+          return !dest || !mutatedTransitionIds.has(dest);
+        });
+        introNode.finetune_transition_examples = [...preserved, ...newPathExamples];
       }
     }
 

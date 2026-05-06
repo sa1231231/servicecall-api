@@ -1796,6 +1796,76 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
                 }
             }
         }
+        // Apply per-data-point fine-tune mutations. The body shape is:
+        //   changes.dataPointFinetunes: { [collectNodeId]: FinetuneExample[] }
+        // Each entry replaces that collect node's finetune_transition_examples
+        // wholesale. Positive examples get destination_node_id pointing at the
+        // matching confirm node; negative examples have no destination (the
+        // agent stays in the collect node when it sees one).
+        if (changes.dataPointFinetunes && typeof changes.dataPointFinetunes === "object") {
+            const collectToConfirm = {};
+            for (const path of parsed.paths) {
+                for (const dp of path.dataChain) {
+                    collectToConfirm[dp.collectNode.id] = dp.confirmNode.id;
+                }
+            }
+            const ftEntries = Object.entries(changes.dataPointFinetunes);
+            for (const [collectNodeId, examples] of ftEntries) {
+                if (!Array.isArray(examples))
+                    continue;
+                const collectNode = nodes.find((n) => n.id === collectNodeId);
+                if (!collectNode)
+                    continue;
+                const confirmId = collectToConfirm[collectNodeId];
+                collectNode.finetune_transition_examples = examples.map((ex) => {
+                    const out = {
+                        transcript: ex.transcript,
+                        id: ex.id || `fe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    };
+                    if (ex.type === "positive" && confirmId) {
+                        out.destination_node_id = confirmId;
+                    }
+                    return out;
+                });
+            }
+        }
+        // Apply per-path transition fine-tune mutations on the intro node. The
+        // body shape is:
+        //   changes.transitionFinetunes: { [pathName]: FinetuneExample[] }
+        // Per-path examples are stored on the intro node's finetune array
+        // distinguished by destination_node_id. We replace only the entries
+        // belonging to mutated paths, preserving agent-level examples and any
+        // path's existing examples that weren't included in this save.
+        if (changes.transitionFinetunes && typeof changes.transitionFinetunes === "object") {
+            const introNode = nodes.find((n) => n.id === parsed.introNode.id);
+            if (introNode) {
+                const existing = introNode.finetune_transition_examples || [];
+                const mutatedTransitionIds = new Set();
+                const newPathExamples = [];
+                const ftEntries = Object.entries(changes.transitionFinetunes);
+                for (const [pathName, examples] of ftEntries) {
+                    if (!Array.isArray(examples))
+                        continue;
+                    const path = parsed.paths.find((pa) => pa.name === pathName);
+                    if (!path)
+                        continue;
+                    const transitionId = path.transitionNode.id;
+                    mutatedTransitionIds.add(transitionId);
+                    for (const ex of examples) {
+                        newPathExamples.push({
+                            transcript: ex.transcript,
+                            id: ex.id || `fe-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                            destination_node_id: transitionId,
+                        });
+                    }
+                }
+                const preserved = existing.filter((ex) => {
+                    const dest = ex.destination_node_id;
+                    return !dest || !mutatedTransitionIds.has(dest);
+                });
+                introNode.finetune_transition_examples = [...preserved, ...newPathExamples];
+            }
+        }
         // Apply per-path data point changes (add/remove/reorder/branch)
         if (changes.paths && typeof changes.paths === "object") {
             for (const [pathName, pathChanges] of Object.entries(changes.paths)) {
