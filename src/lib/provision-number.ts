@@ -51,10 +51,15 @@ export async function provisionPhoneNumber(
   const targetNumber = available[0].phoneNumber;
   console.log(`[provision] found available number: ${targetNumber}`);
 
-  // 2. Purchase the number with emergency address
+  // 2. Purchase the number with emergency address.
+  // Set the Twilio friendlyName to the client name so it matches the
+  // Retell phone-number nickname (set below at line 106). Easier to track
+  // numbers in the Twilio console — they show as the business name
+  // instead of the bare phone number.
   const purchased = await twilioClient.incomingPhoneNumbers.create({
     phoneNumber: targetNumber,
     emergencyAddressSid: config.TWILIO_EMERGENCY_ADDRESS_SID || undefined,
+    friendlyName: clientName,
   });
 
   const phoneNumberSid = purchased.sid;

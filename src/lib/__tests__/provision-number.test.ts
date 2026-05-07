@@ -119,6 +119,20 @@ describe("provisionPhoneNumber", () => {
     );
   });
 
+  it("sets Twilio friendlyName to clientName so it matches the Retell nickname", async () => {
+    await provisionPhoneNumber({
+      agentId: "agent_test123",
+      clientName: "Acme Plumbing",
+      dispatchCallNumber: "+13017872841",
+    });
+    expect(mockTwilioCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phoneNumber: "+13015551234",
+        friendlyName: "Acme Plumbing",
+      }),
+    );
+  });
+
   it("adds number to SIP trunk", async () => {
     await provisionPhoneNumber(defaultOptions);
 
