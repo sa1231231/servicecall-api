@@ -2719,11 +2719,15 @@
     let name;
     if (currentDraftId) {
       // Overwriting an existing draft — confirm first so the user can't
-      // clobber a saved draft by accident.
+      // clobber a saved draft by accident. Name is intentionally NOT
+      // recomputed here: previously we set it to formData.businessName,
+      // which silently renamed the draft when the operator changed the
+      // businessName field on the form (e.g. loaded HVAC, typed "GMC",
+      // saved → HVAC got renamed to GMC). Save = update content; rename
+      // is its own action.
       const sel = document.getElementById('draftSelect');
       const selectedLabel = sel.options[sel.selectedIndex]?.textContent || 'this draft';
       if (!confirm(`Overwrite ${selectedLabel}?`)) return;
-      name = formData.businessName || 'Untitled Draft';
     } else {
       // New draft — prompt for a name, defaulting to the businessName so
       // a one-keystroke save still works.
@@ -2735,7 +2739,9 @@
 
     try {
       if (currentDraftId) {
-        const body = { name, formData };
+        // Omit `name` so the server's `if (name) updates.name = name`
+        // leaves the existing draft name untouched.
+        const body = { formData };
         if (exportConfig) body.exportConfig = exportConfig;
         const res = await fetch('/form/drafts/' + currentDraftId, {
           method: 'PUT',
