@@ -2832,11 +2832,86 @@
 
     editorEl.addEventListener('blur', () => { setTimeout(closeAc, 150); });
 
-    // Paste as plain text
+    // ── Clipboard ─────────────────────────────────────────────────────────
+    // Round-trip the canonical template string ({{varname}} form) through
+    // the clipboard so copy/cut/paste between rows works as the user
+    // expects. Without this, copying a chip captures only its visible
+    // label ("business_name") without the braces, and pasting shows raw
+    // text instead of re-rendered chips.
+    function selectionToTemplateText(range) {
+      // cloneContents returns a DocumentFragment we can walk with the same
+      // recursive reader used for the editor itself.
+      const fragment = range.cloneContents();
+      return collectTemplateText(fragment);
+    }
+
+    editorEl.addEventListener('copy', (e) => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      if (!editorEl.contains(range.commonAncestorContainer)) return;
+      e.clipboardData.setData('text/plain', selectionToTemplateText(range));
+      e.preventDefault();
+    });
+
+    editorEl.addEventListener('cut', (e) => {
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      if (!editorEl.contains(range.commonAncestorContainer)) return;
+      e.clipboardData.setData('text/plain', selectionToTemplateText(range));
+      range.deleteContents();
+      syncHidden();
+      e.preventDefault();
+    });
+
+    // Paste re-parses {{validVar}} patterns into chips so a copy from one
+    // editor (or from MongoDB-rendered text) becomes the same chip shape
+    // on paste. Anything that isn't a known variable name comes through
+    // as literal text — including unknown {{...}} sequences, so the
+    // user can fix typos visually instead of getting silent dropouts.
     editorEl.addEventListener('paste', (e) => {
       e.preventDefault();
       const text = e.clipboardData.getData('text/plain');
-      document.execCommand('insertText', false, text);
+      if (!text) return;
+      const sel = window.getSelection();
+      if (!sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+
+      const vars = (typeof validVars === 'function' ? validVars() : validVars);
+      const validSet = new Set(vars);
+      const pattern = /\{\{(\w+)\}\}/g;
+      const frag = document.createDocumentFragment();
+      let lastIdx = 0;
+      let match;
+      while ((match = pattern.exec(text)) !== null) {
+        if (match.index > lastIdx) {
+          frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
+        }
+        if (validSet.has(match[1])) {
+          frag.appendChild(createVarTag(match[1]));
+        } else {
+          frag.appendChild(document.createTextNode(match[0]));
+        }
+        lastIdx = match.index + match[0].length;
+      }
+      if (lastIdx < text.length) {
+        frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+      }
+
+      const insertedNodes = Array.from(frag.childNodes);
+      range.insertNode(frag);
+      // Move cursor to the end of the freshly-inserted content.
+      const last = insertedNodes[insertedNodes.length - 1];
+      if (last) {
+        const after = document.createRange();
+        after.setStartAfter(last);
+        after.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(after);
+      }
+      syncHidden();
     });
 
     // Initial render
