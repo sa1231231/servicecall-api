@@ -120,6 +120,16 @@ vi.mock("../../../lib/blast-sms.js", () => ({
   previewBlast: (...a: any[]) => mockPreviewBlast(...a),
   sendBlast: (...a: any[]) => mockSendBlast(...a),
 }));
+vi.mock("../../../lib/permission-catalog.js", () => ({ PERMISSION_CATALOG: [] }));
+const { mockGetAllRoleDefaults, mockSetRoleDefaults } = vi.hoisted(() => ({
+  mockGetAllRoleDefaults: vi.fn(),
+  mockSetRoleDefaults: vi.fn(),
+}));
+vi.mock("../../../lib/role-defaults.js", () => ({
+  getAllRoleDefaults: (...a: any[]) => mockGetAllRoleDefaults(...a),
+  setRoleDefaults: (...a: any[]) => mockSetRoleDefaults(...a),
+  ROLES: ["super_admin", "admin", "operator", "viewer"],
+}));
 
 // Imported handler stubs
 vi.mock("./list-agents.js", () => ({ listAgentsHandler: mockListAgents }));
@@ -1032,6 +1042,117 @@ describe("DELETE /users/:username", () => {
       makeReq({ params: { username: "alice" }, user: { username: "admin" } }), res);
     expect(res._json.success).toBe(true);
     expect(mockLogAudit).toHaveBeenCalled();
+  });
+});
+
+// ── Role Defaults ──────────────────────────────────────────────────────────
+
+describe("GET /role-defaults", () => {
+  it("returns the all-roles map", async () => {
+    mockGetAllRoleDefaults.mockResolvedValue({
+      super_admin: { create_agents: true },
+      admin: { create_agents: true },
+      operator: { create_agents: true },
+      viewer: { create_agents: false },
+    });
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "get", "/role-defaults", makeReq({}), res);
+    expect(res._status).toBe(200);
+    expect(res._json.viewer.create_agents).toBe(false);
+  });
+
+  it("returns 500 when getAllRoleDefaults throws", async () => {
+    mockGetAllRoleDefaults.mockRejectedValue(new Error("db down"));
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "get", "/role-defaults", makeReq({}), res);
+    expect(res._status).toBe(500);
+  });
+});
+
+describe("PATCH /role-defaults/:role", () => {
+  it("returns 401 when there is no req.user", async () => {
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "patch", "/role-defaults/:role",
+      makeReq({ params: { role: "operator" }, body: { permissions: {} }, user: undefined }), res);
+    expect(res._status).toBe(401);
+  });
+
+  it("returns 403 for an admin (must be super_admin or root)", async () => {
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "patch", "/role-defaults/:role",
+      makeReq({
+        params: { role: "operator" },
+        body: { permissions: { manage_leads: false } },
+        user: { username: "alice", role: "admin", isRoot: false, permissions: {} },
+      }), res);
+    expect(res._status).toBe(403);
+    expect(mockSetRoleDefaults).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for an unknown role", async () => {
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "patch", "/role-defaults/:role",
+      makeReq({
+        params: { role: "ceo" },
+        body: { permissions: {} },
+        user: { username: "root", role: "admin", isRoot: true, permissions: {} },
+      }), res);
+    expect(res._status).toBe(400);
+  });
+
+  it("returns 400 when permissions is missing", async () => {
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "patch", "/role-defaults/:role",
+      makeReq({
+        params: { role: "operator" },
+        body: {},
+        user: { username: "sa", role: "super_admin", isRoot: false, permissions: {} },
+      }), res);
+    expect(res._status).toBe(400);
+  });
+
+  it("super_admin write succeeds, audits with diff, returns changed keys", async () => {
+    mockGetAllRoleDefaults.mockResolvedValue({
+      super_admin: {}, admin: {}, viewer: {},
+      operator: { create_agents: true, manage_leads: true },
+    });
+    mockSetRoleDefaults.mockResolvedValue({ create_agents: true, manage_leads: false });
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "patch", "/role-defaults/:role",
+      makeReq({
+        params: { role: "operator" },
+        body: { permissions: { create_agents: true, manage_leads: false } },
+        user: { username: "sa", role: "super_admin", isRoot: false, permissions: {} },
+      }), res);
+    expect(res._status).toBe(200);
+    expect(res._json.role).toBe("operator");
+    expect(res._json.changed).toEqual(["manage_leads"]);
+    expect(mockSetRoleDefaults).toHaveBeenCalledWith(
+      "operator",
+      expect.objectContaining({ manage_leads: false }),
+      "sa",
+    );
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      "update_role_defaults",
+      "operator",
+      expect.objectContaining({ diff: expect.objectContaining({ manage_leads: { before: true, after: false } }) }),
+    );
+  });
+
+  it("root write also succeeds even with role=admin", async () => {
+    mockGetAllRoleDefaults.mockResolvedValue({
+      super_admin: {}, admin: {}, viewer: {}, operator: {},
+    });
+    mockSetRoleDefaults.mockResolvedValue({ create_agents: true });
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "patch", "/role-defaults/:role",
+      makeReq({
+        params: { role: "viewer" },
+        body: { permissions: { create_agents: true } },
+        user: { username: "root", role: "admin", isRoot: true, permissions: {} },
+      }), res);
+    expect(res._status).toBe(200);
   });
 });
 

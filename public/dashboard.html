@@ -1335,6 +1335,14 @@
 
         <h2>User Management</h2>
         <p class="settings-hint" style="margin-bottom:0.75rem;">Create accounts for team members and control what each user can do with the permissions matrix.</p>
+
+        <details id="permissionReferenceWrap" style="margin-bottom:0.75rem;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 0.85rem;">
+          <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:#374151;">Permission reference — what each role and permission grants</summary>
+          <div id="permissionReferenceBody" style="margin-top:0.6rem;font-size:0.8rem;line-height:1.45;">
+            <div class="loading" style="color:#888;">Loading…</div>
+          </div>
+        </details>
+
         <div id="userManagementContainer"><div class="loading">Loading...</div></div>
         <div style="margin-top:1rem;background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1.5rem;">
           <h3 style="margin:0 0 0.5rem;font-size:0.85rem;color:#555;">Add User</h3>
@@ -1558,6 +1566,7 @@
   let currentUser = null; // { username, role, permissions }
   let permissionDefs = [];
   let defaultPermissions = {};
+  let permissionCatalog = [];
   let currentSlug = '';
   // Portal URL for the currently-viewed agent. Loaded async by loadPortalLink
   // and folded into the header's Portal Link dropdown. Module-level so the
@@ -1830,6 +1839,7 @@
       currentUser = cfgData.user;
       permissionDefs = cfgData.permissionDefs || [];
       defaultPermissions = cfgData.defaultPermissions || {};
+      permissionCatalog = cfgData.permissionCatalog || [];
 
       // Apply permission-based UI visibility
       if (currentUser) {
@@ -5468,9 +5478,194 @@
     return html;
   }
 
+  // Cached server-side role defaults (the source of truth). Distinct from
+  // `defaultPermissions` (which comes from /dashboard/config and is the
+  // hardcoded compile-time seed). When the user is super_admin or root,
+  // we let them edit this.
+  let liveRoleDefaults = null;
+  let liveRoleDefaultsBaseline = null;
+
+  function canEditRoleDefaults() {
+    return !!currentUser && (currentUser.role === 'super_admin' || currentUser.isRoot);
+  }
+
+  // Render the role × permission default matrix + per-permission cards
+  // showing routes/UI gated by each one. Sourced from /dashboard/config so
+  // there's no extra fetch (except role-defaults, which is fetched here
+  // when the user is allowed to edit them).
+  async function renderPermissionReference() {
+    const body = document.getElementById('permissionReferenceBody');
+    if (!body) return;
+    const roles = ['super_admin', 'admin', 'operator', 'viewer'];
+    const roleLabels = {
+      super_admin: 'Super Admin',
+      admin: 'Admin',
+      operator: 'Operator',
+      viewer: 'Viewer',
+    };
+    const editable = canEditRoleDefaults();
+
+    // Pull live defaults from MongoDB so the matrix shows what
+    // requirePermission(...) actually enforces, not just the seed.
+    if (currentUser && currentUser.permissions && currentUser.permissions.manage_users) {
+      try {
+        const r = await fetch('/dashboard/api/role-defaults');
+        if (r.ok) {
+          liveRoleDefaults = await r.json();
+          liveRoleDefaultsBaseline = JSON.parse(JSON.stringify(liveRoleDefaults));
+        }
+      } catch (e) {
+        // Fall back to the compile-time defaults from /dashboard/config.
+      }
+    }
+    const matrixSource = liveRoleDefaults || defaultPermissions;
+
+    let html = '';
+
+    // Root callout — root bypasses all checks.
+    html += '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:0.55rem 0.75rem;margin-bottom:0.75rem;font-size:0.78rem;color:#78350f;">';
+    html += '<strong>Root:</strong> the user signed in with <code>ROOT_PASSWORD</code> bypasses every <code>requirePermission(...)</code> check and is the only account that can hard-delete protected slugs (e.g. <code>demo-meter</code>).';
+    html += '</div>';
+
+    // Editor hint when the matrix is editable.
+    if (editable) {
+      html += '<div style="background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.5rem;font-size:0.76rem;color:#1e40af;">';
+      html += 'You can edit defaults for <strong>Admin</strong>, <strong>Operator</strong>, and <strong>Viewer</strong>. Super Admin always has full access. Changes apply to existing users unless they have an explicit per-user override (operator/viewer only).';
+      html += '</div>';
+    }
+
+    // Role × permission matrix.
+    html += '<div style="overflow-x:auto;margin-bottom:0.75rem;">';
+    html += '<table style="border-collapse:collapse;font-size:0.78rem;width:100%;min-width:520px;">';
+    html += '<thead><tr><th style="text-align:left;padding:0.3rem 0.5rem;border-bottom:1px solid #e5e7eb;">Permission</th>';
+    for (const r of roles) {
+      html += '<th style="text-align:center;padding:0.3rem 0.5rem;border-bottom:1px solid #e5e7eb;font-weight:600;">' + esc(roleLabels[r]) + '</th>';
+    }
+    html += '</tr></thead><tbody>';
+    for (const def of permissionDefs) {
+      html += '<tr>';
+      html += '<td style="padding:0.25rem 0.5rem;border-bottom:1px solid #f3f4f6;" title="' + esc(def.description) + '"><strong>' + esc(def.label) + '</strong> <span style="color:#9ca3af;font-family:monospace;font-size:0.72rem;">' + esc(def.key) + '</span></td>';
+      for (const r of roles) {
+        const granted = !!(matrixSource[r] && matrixSource[r][def.key]);
+        // super_admin column is always fixed to all-true and never editable.
+        // The other columns are editable when the current user can edit.
+        if (editable && r !== 'super_admin') {
+          html += '<td style="text-align:center;padding:0.25rem 0.5rem;border-bottom:1px solid #f3f4f6;">';
+          html += '<input type="checkbox" data-role-default-role="' + r + '" data-role-default-key="' + esc(def.key) + '"' + (granted ? ' checked' : '') + ' style="margin:0;cursor:pointer;">';
+          html += '</td>';
+        } else {
+          const cell = granted
+            ? '<span style="color:#059669;" title="Granted by default">✓</span>'
+            : '<span style="color:#d1d5db;" title="Not granted by default">—</span>';
+          html += '<td style="text-align:center;padding:0.25rem 0.5rem;border-bottom:1px solid #f3f4f6;">' + cell + '</td>';
+        }
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+
+    if (editable) {
+      html += '<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.85rem;">';
+      html += '<button onclick="saveRoleDefaults()" id="btnSaveRoleDefaults" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:0.35rem 0.75rem;font-size:0.78rem;cursor:pointer;font-weight:500;">Save Defaults</button>';
+      html += '<button onclick="renderPermissionReference()" style="background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:6px;padding:0.35rem 0.75rem;font-size:0.78rem;cursor:pointer;">Reset</button>';
+      html += '<span id="roleDefaultsHint" style="color:#6b7280;font-size:0.72rem;"></span>';
+      html += '</div>';
+    }
+
+    // Per-permission cards from the catalog.
+    if (permissionCatalog && permissionCatalog.length > 0) {
+      html += '<div style="font-weight:600;color:#374151;margin:0.5rem 0 0.4rem;">What each permission grants</div>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.5rem;">';
+      // Map permissionDefs (which has labels) to catalog entries.
+      const catalogByKey = {};
+      for (const c of permissionCatalog) catalogByKey[c.key] = c;
+      for (const def of permissionDefs) {
+        const cat = catalogByKey[def.key];
+        if (!cat) continue;
+        html += '<div style="border:1px solid #e5e7eb;border-radius:6px;padding:0.55rem 0.7rem;background:#f9fafb;">';
+        html += '<div style="font-weight:600;font-size:0.82rem;color:#1f2937;">' + esc(def.label) + ' <span style="color:#9ca3af;font-family:monospace;font-size:0.7rem;font-weight:400;">' + esc(def.key) + '</span></div>';
+        html += '<div style="color:#6b7280;font-size:0.75rem;margin:0.15rem 0 0.4rem;">' + esc(def.description) + '</div>';
+        if (cat.routes && cat.routes.length > 0) {
+          html += '<div style="font-size:0.72rem;color:#374151;margin-bottom:0.25rem;"><strong>Routes:</strong></div>';
+          html += '<ul style="margin:0 0 0.4rem 1rem;padding:0;font-size:0.72rem;color:#4b5563;font-family:monospace;">';
+          for (const r of cat.routes) html += '<li>' + esc(r) + '</li>';
+          html += '</ul>';
+        }
+        if (cat.ui && cat.ui.length > 0) {
+          html += '<div style="font-size:0.72rem;color:#374151;margin-bottom:0.25rem;"><strong>UI:</strong></div>';
+          html += '<ul style="margin:0 0 0.4rem 1rem;padding:0;font-size:0.72rem;color:#4b5563;">';
+          for (const u of cat.ui) html += '<li>' + esc(u) + '</li>';
+          html += '</ul>';
+        }
+        if (cat.notes) {
+          html += '<div style="font-size:0.72rem;color:#92400e;background:#fef3c7;border-radius:4px;padding:0.25rem 0.4rem;margin-top:0.25rem;"><strong>Note:</strong> ' + esc(cat.notes) + '</div>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+
+    body.innerHTML = html;
+  }
+
+  async function saveRoleDefaults() {
+    if (!liveRoleDefaultsBaseline) {
+      showToast('Defaults not loaded yet', 'error');
+      return;
+    }
+    const editableRoles = ['admin', 'operator', 'viewer'];
+    const pending = {};
+    document.querySelectorAll('input[data-role-default-role]').forEach((cb) => {
+      const r = cb.getAttribute('data-role-default-role');
+      const k = cb.getAttribute('data-role-default-key');
+      if (!editableRoles.includes(r)) return;
+      if (!pending[r]) pending[r] = {};
+      pending[r][k] = cb.checked;
+    });
+    // Send PATCH per role that actually changed.
+    const changedRoles = [];
+    for (const r of editableRoles) {
+      const before = liveRoleDefaultsBaseline[r] || {};
+      const after = pending[r] || {};
+      let changed = false;
+      for (const k of Object.keys(after)) {
+        if (!!before[k] !== !!after[k]) { changed = true; break; }
+      }
+      if (changed) changedRoles.push(r);
+    }
+    if (changedRoles.length === 0) {
+      showToast('No changes to save', 'success');
+      return;
+    }
+    const btn = document.getElementById('btnSaveRoleDefaults');
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      for (const r of changedRoles) {
+        const res = await fetch('/dashboard/api/role-defaults/' + encodeURIComponent(r), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ permissions: pending[r] }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || ('PATCH ' + r + ' failed: ' + res.status));
+        }
+      }
+      showToast('Saved defaults for: ' + changedRoles.join(', '), 'success');
+      await renderPermissionReference();
+      // Re-render new-user permission defaults so the form reflects the new baseline.
+      updateNewUserPermDefaults();
+    } catch (err) {
+      showToast('Save failed: ' + err.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save Defaults'; }
+    }
+  }
+
   async function loadUsers() {
     const container = document.getElementById('userManagementContainer');
     if (!container) return;
+    await renderPermissionReference();
     try {
       const res = await fetch('/dashboard/api/users');
       if (!res.ok) throw new Error('Failed: ' + res.status);
@@ -5513,7 +5708,10 @@
     const role = document.getElementById('newUserRole')?.value || 'operator';
     const container = document.getElementById('newUserPermsContainer');
     if (!container) return;
-    const perms = defaultPermissions[role] || {};
+    // Prefer the live defaults from MongoDB (editable by super_admin/root)
+    // and fall back to the compile-time seed if they haven't loaded yet.
+    const source = liveRoleDefaults || defaultPermissions;
+    const perms = source[role] || {};
     container.innerHTML = '<p style="font-size:0.75rem;color:#666;margin:0 0 0.25rem;font-weight:600;">Permissions:</p>' + renderPermChecks(perms, 'new-user', false);
   }
 

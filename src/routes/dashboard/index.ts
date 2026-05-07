@@ -49,12 +49,19 @@ import { alertRootIfNeeded } from "../../lib/root-alerts.js";
 import {
   listUsers,
   resolvePermissions,
+  PERMISSION_DEFS,
+  DEFAULT_PERMISSIONS,
   createUser,
   deleteUser,
   updateUserPermissions,
-  PERMISSION_DEFS,
-  DEFAULT_PERMISSIONS,
 } from "../../lib/users.js";
+import { PERMISSION_CATALOG } from "../../lib/permission-catalog.js";
+import {
+  getAllRoleDefaults,
+  setRoleDefaults,
+  ROLES as ROLE_DEFAULT_ROLES,
+  type Role as RoleDefaultsRole,
+} from "../../lib/role-defaults.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -78,6 +85,7 @@ dashboardRouter.get("/config", (req, res) => {
       : null,
     permissionDefs: PERMISSION_DEFS,
     defaultPermissions: DEFAULT_PERMISSIONS,
+    permissionCatalog: PERMISSION_CATALOG,
   });
 });
 
@@ -684,6 +692,65 @@ dashboardApiRouter.delete("/users/:username", requirePermission("manage_users"),
   await logAudit(req, "delete_user", target);
   alertRootIfNeeded(req, "delete_user", target);
   res.json({ success: true });
+});
+
+// ── Role Defaults ───────────────────────────────────────────────────────────
+//
+// Read: anyone with manage_users (so admins can audit but not edit).
+// Write: super_admin or root only — flipping operator/viewer defaults
+// affects every user without an explicit per-user override and is the
+// kind of change that warrants the highest gate.
+
+dashboardApiRouter.get("/role-defaults", requirePermission("manage_users"), async (_req, res) => {
+  try {
+    const all = await getAllRoleDefaults();
+    res.json(all);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
+  }
+});
+
+dashboardApiRouter.patch("/role-defaults/:role", async (req, res) => {
+  // Custom gate: super_admin OR root. Not a single requirePermission(...)
+  // call because no permission key represents "edit role defaults"
+  // (that would be circular — admins could grant themselves the perm).
+  if (!req.user) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  if (req.user.role !== "super_admin" && !req.user.isRoot) {
+    res.status(403).json({ error: "Only super_admin or root can edit role defaults" });
+    return;
+  }
+  const role = String(req.params.role) as RoleDefaultsRole;
+  if (!ROLE_DEFAULT_ROLES.includes(role)) {
+    res.status(400).json({ error: `Unknown role "${role}"` });
+    return;
+  }
+  const perms = (req.body && typeof req.body === "object" ? req.body.permissions : null) as Record<string, boolean> | null;
+  if (!perms || typeof perms !== "object") {
+    res.status(400).json({ error: "Body must include permissions: {key: boolean}" });
+    return;
+  }
+  try {
+    const before = await getAllRoleDefaults();
+    const after = await setRoleDefaults(role, perms, req.user.username);
+    const beforePerms = before[role];
+    // Compute a per-key diff for the audit log so reviews are scannable.
+    const diff: Record<string, { before: boolean; after: boolean }> = {};
+    for (const key of Object.keys(after)) {
+      const beforeVal = !!beforePerms[key];
+      const afterVal = !!after[key];
+      if (beforeVal !== afterVal) diff[key] = { before: beforeVal, after: afterVal };
+    }
+    await logAudit(req, "update_role_defaults", role, { diff });
+    alertRootIfNeeded(req, "update_role_defaults", role, Object.keys(diff).join(", ") || "no changes");
+    res.json({ success: true, role, permissions: after, changed: Object.keys(diff) });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
+  }
 });
 
 // ── Manual Backup ───────────────────────────────────────────────────────────

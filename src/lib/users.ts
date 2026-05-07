@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { getDb } from "./db.js";
+import { getCachedRoleDefaults } from "./role-defaults.js";
 
 export type Role = "super_admin" | "admin" | "operator" | "viewer";
 
@@ -72,14 +73,24 @@ export function verifyPassword(plain: string, stored: string): boolean {
   return crypto.timingSafeEqual(expected, actual);
 }
 
-/** Resolve effective permissions for a user (admins always get everything). */
+/** Resolve effective permissions for a user.
+ *
+ * Reads role defaults from the cached `role_defaults` map (loaded at
+ * boot from MongoDB; falls back to the hard-coded constants until the
+ * cache is filled). For super_admin and admin, the defaults are
+ * authoritative — the stored per-user map is ignored. For operator and
+ * viewer, the stored map can override individual keys.
+ *
+ * Cycle-break: this is imported by the cache loader, so the cache
+ * resolver is loaded lazily (require-on-first-call).
+ */
 export function resolvePermissions(
   role: Role,
   stored?: Record<string, boolean>,
 ): Record<string, boolean> {
-  if (role === "super_admin") return { ...DEFAULT_PERMISSIONS.super_admin };
-  if (role === "admin") return { ...DEFAULT_PERMISSIONS.admin };
-  const base = { ...DEFAULT_PERMISSIONS[role] };
+  const defaults = getCachedRoleDefaults(role);
+  if (role === "super_admin" || role === "admin") return defaults;
+  const base = { ...defaults };
   if (stored) {
     for (const key of PERMISSION_KEYS) {
       if (key in stored) base[key] = stored[key];

@@ -18,6 +18,7 @@ import { startAutoSync } from "./lib/retell-auto-sync.js";
 import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
 import { reportsRouter } from "./routes/reports/index.js";
 import { refreshOwnerConfig } from "./lib/settings.js";
+import { loadRoleDefaultsCache } from "./lib/role-defaults.js";
 import { getDataPointDefaultsWithCategory, CATEGORY_ORDER, CATEGORY_LABELS } from "./lib/data-point-defaults.js";
 import { ObjectId } from "mongodb";
 import { getDb } from "./lib/db.js";
@@ -381,6 +382,7 @@ await ensureVersionIndexes();
 await purgeExpiredClients();
 await loadClientsFromDb();
 await refreshOwnerConfig();
+await loadRoleDefaultsCache();
 
 app.listen(Number(config.PORT), () => {
   console.log(`ServiceCall API listening on port ${config.PORT}`);
