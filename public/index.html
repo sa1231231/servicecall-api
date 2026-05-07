@@ -135,6 +135,11 @@
     background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px;
     padding: 0.15rem 0.5rem; font-size: 0.82rem; color: #333;
   }
+  .chip.invalid {
+    background: #fee2e2; color: #991b1b;
+    box-shadow: inset 0 0 0 1px #f87171; border-color: #f87171;
+  }
+  .chip-input.has-invalid { border-color: #f87171; background: #fef2f2; }
   .chip .remove {
     cursor: pointer; color: #999; font-size: 0.9rem; line-height: 1;
     margin-left: 0.15rem;
@@ -709,11 +714,11 @@
     <h2>Business</h2>
 
     <label for="businessName">Business Name <span style="color:#dc2626">*</span></label>
-    <input type="text" id="businessName" required placeholder="e.g. Acme Plumbing">
+    <input type="text" id="businessName" required maxlength="120" placeholder="e.g. Acme Plumbing">
     <div class="field-hint">The agent will greet callers as a receptionist for this business. Also used as the phone number label in Retell.</div>
 
     <label for="faqKnowledgeBase">FAQ / Knowledge Base <span style="color:#dc2626">*</span></label>
-    <textarea id="faqKnowledgeBase" required placeholder="Paste the business FAQ or knowledge base content here..."></textarea>
+    <textarea id="faqKnowledgeBase" required maxlength="50000" placeholder="Paste the business FAQ or knowledge base content here..."></textarea>
     <div class="field-hint">The agent uses this to answer caller questions (hours, pricing, service areas, etc.). Pasted into a dedicated FAQ node in the conversation flow — if a caller asks something off-topic from data collection, the agent checks here first.</div>
 
     <label>When caller requests a human:</label>
@@ -812,13 +817,13 @@
     <div class="field-hint">If set, an AI-powered outbound call is placed to this number after each caller interaction to deliver the summary by voice. Uses the global default Summary Agent (set in Settings → Agent Defaults).</div>
 
     <label>Dispatch Text <span style="font-weight:400;color:#999;">(defaults to owner phone if empty)</span></label>
-    <div class="chip-input" id="chip-dispatch-text" onclick="this.querySelector('input').focus()">
+    <div class="chip-input" id="chip-dispatch-text" data-validate="phone" onclick="this.querySelector('input').focus()">
       <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
     </div>
     <div class="field-hint">These numbers receive an SMS with the call summary after every call.</div>
 
     <label>Dispatch Email</label>
-    <div class="chip-input" id="chip-dispatch-email" onclick="this.querySelector('input').focus()">
+    <div class="chip-input" id="chip-dispatch-email" data-validate="email" onclick="this.querySelector('input').focus()">
       <input type="text" placeholder="dispatch@acme.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
     </div>
     <div class="field-hint">These addresses receive an email with the full call summary after every call.</div>
@@ -1304,6 +1309,34 @@
   const PHONE_RE = /^\+1\d{10}$/;
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+  const FORM_VALIDATOR_HINTS = {
+    phone: 'Must be E.164 (e.g. +15551234567)',
+    email: 'Must be a valid email (e.g. name@example.com)',
+  };
+  function refreshFormChipValidation(container) {
+    if (!container) return;
+    const kind = container.getAttribute('data-validate');
+    const ok = kind === 'phone' ? (v) => PHONE_RE.test(v)
+             : kind === 'email' ? (v) => EMAIL_RE.test(v)
+             : null;
+    let invalid = 0;
+    container.querySelectorAll('.chip').forEach((chip) => {
+      const txt = (chip.firstChild?.textContent || '').trim();
+      if (ok && txt && !ok(txt)) {
+        chip.classList.add('invalid');
+        chip.title = FORM_VALIDATOR_HINTS[kind] || 'Invalid';
+        invalid++;
+      } else {
+        chip.classList.remove('invalid');
+        if (chip.title === FORM_VALIDATOR_HINTS[kind]) chip.removeAttribute('title');
+      }
+    });
+    container.classList.toggle('has-invalid', invalid > 0);
+  }
+  function refreshAllFormChipValidation(root) {
+    (root || document).querySelectorAll('.chip-input[data-validate]').forEach(refreshFormChipValidation);
+  }
+
   // ── Chip input helpers ───────────────────────────────────────
 
   function formChipKeydown(e, input) {
@@ -1313,12 +1346,16 @@
     }
     if (e.key === 'Backspace' && !input.value) {
       const chips = input.parentElement.querySelectorAll('.chip');
-      if (chips.length > 0) chips[chips.length - 1].remove();
+      if (chips.length > 0) {
+        chips[chips.length - 1].remove();
+        refreshFormChipValidation(input.closest('.chip-input'));
+      }
     }
   }
 
   function formChipBlur(input) {
     if (input.value.trim()) formAddChip(input);
+    refreshFormChipValidation(input.closest('.chip-input'));
   }
 
   function formAddChip(input) {
@@ -1326,9 +1363,15 @@
     if (!val) return;
     const chip = document.createElement('span');
     chip.className = 'chip';
-    chip.innerHTML = escapeHtml(val) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span>';
+    chip.innerHTML = escapeHtml(val) + '<span class="remove" onclick="formRemoveChip(this)">&times;</span>';
     input.parentElement.insertBefore(chip, input);
     input.value = '';
+    refreshFormChipValidation(input.closest('.chip-input'));
+  }
+  function formRemoveChip(el) {
+    const container = el.closest('.chip-input');
+    el.closest('.chip').remove();
+    refreshFormChipValidation(container);
   }
 
   function getFormChipValues(id) {
@@ -1346,9 +1389,10 @@
       if (!v) continue;
       const chip = document.createElement('span');
       chip.className = 'chip';
-      chip.innerHTML = escapeHtml(v) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span>';
+      chip.innerHTML = escapeHtml(v) + '<span class="remove" onclick="formRemoveChip(this)">&times;</span>';
       container.insertBefore(chip, input);
     }
+    refreshFormChipValidation(container);
   }
 
   // Element-based chip helpers (for path-level chip inputs found by class)
@@ -1364,9 +1408,10 @@
       if (!v) continue;
       const chip = document.createElement('span');
       chip.className = 'chip';
-      chip.innerHTML = escapeHtml(v) + '<span class="remove" onclick="this.closest(\'.chip\').remove()">&times;</span>';
+      chip.innerHTML = escapeHtml(v) + '<span class="remove" onclick="formRemoveChip(this)">&times;</span>';
       el.insertBefore(chip, input);
     }
+    refreshFormChipValidation(el);
   }
 
   function validatePhone(num) {
@@ -1813,11 +1858,11 @@
                 <label>Dispatch Call</label>
                 <input type="text" class="path-dispatch-call" placeholder="+15551234567">
                 <label>Dispatch Text</label>
-                <div class="chip-input path-dispatch-sms" onclick="this.querySelector('input').focus()">
+                <div class="chip-input path-dispatch-sms" data-validate="phone" onclick="this.querySelector('input').focus()">
                   <input type="text" placeholder="+15551234567" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
                 </div>
                 <label>Dispatch Email</label>
-                <div class="chip-input path-dispatch-email" onclick="this.querySelector('input').focus()">
+                <div class="chip-input path-dispatch-email" data-validate="email" onclick="this.querySelector('input').focus()">
                   <input type="text" placeholder="auto-team@shop.com" onkeydown="formChipKeydown(event, this)" onblur="formChipBlur(this)">
                 </div>
               </div>
@@ -2031,6 +2076,9 @@
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     clearResult();
+
+    // Light up invalid chips before any text-validation runs.
+    refreshAllFormChipValidation(document);
 
     // Gather routing paths (which now contain all data points)
     const pathData = collectPaths();

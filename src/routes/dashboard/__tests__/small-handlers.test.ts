@@ -17,6 +17,9 @@ vi.mock("../../../config/client-store.js", () => ({
   getClientDocument: (...a: any[]) => mockGetClientDocument(...a),
   updateClientField: (...a: any[]) => mockUpdateClientField(...a),
   updateClientFields: (...a: any[]) => mockUpdateClientFields(...a),
+  ConcurrencyError: class ConcurrencyError extends Error {
+    code = "CONCURRENCY_CONFLICT";
+  },
 }));
 vi.mock("../../../lib/call-log.js", () => ({
   getCallLogsByClient: (...a: any[]) => mockGetCallLogsByClient(...a),
@@ -33,6 +36,8 @@ vi.mock("retell-sdk", () => ({ default: class { constructor(_opts: any) {} } }))
 vi.mock("../../../lib/retell-display-sync.js", () => ({
   syncRetellDisplayLabels: (...a: any[]) => mockSyncRetellDisplayLabels(...a),
 }));
+
+vi.mock("../../../lib/audit.js", () => ({ logAudit: vi.fn() }));
 
 const { getAgentHandler } = await import("../get-agent.js");
 const { getCallsHandler } = await import("../get-calls.js");
@@ -196,6 +201,45 @@ describe("updateAgentHandler", () => {
     expect(res._status).toBe(400);
   });
 
+  it("returns 409 with current_version on a stale _version", async () => {
+    const { ConcurrencyError } = await import("../../../config/client-store.js");
+    mockUpdateClientFields.mockRejectedValue(new ConcurrencyError("acme", 3));
+    mockGetClientDocument.mockResolvedValue({ name: "Acme", _version: 4 });
+    const res = makeRes();
+    await updateAgentHandler(
+      makeReq({ params: { slug: "acme" }, body: { display_name: "X", _version: 3 } }),
+      res,
+    );
+    expect(res._status).toBe(409);
+    expect(res._json.code).toBe("CONCURRENCY_CONFLICT");
+    expect(res._json.current_version).toBe(4);
+  });
+
+  it("rejects a non-integer _version in the body with 400", async () => {
+    const res = makeRes();
+    await updateAgentHandler(
+      makeReq({ params: { slug: "acme" }, body: { display_name: "X", _version: "3" } }),
+      res,
+    );
+    expect(res._status).toBe(400);
+    expect(res._json.error).toMatch(/_version/);
+  });
+
+  it("threads _version into updateClientFields as expectedVersion", async () => {
+    mockUpdateClientFields.mockResolvedValue(undefined);
+    mockGetClientDocument.mockResolvedValue({ name: "Acme" });
+    const res = makeRes();
+    await updateAgentHandler(
+      makeReq({ params: { slug: "acme" }, body: { display_name: "Acme Co", _version: 7 } }),
+      res,
+    );
+    expect(res._status).toBe(200);
+    const lastCall = mockUpdateClientFields.mock.calls.at(-1)!;
+    expect(lastCall[2]).toEqual({ expectedVersion: 7 });
+    // _version must be stripped from the actual updates payload
+    expect(lastCall[1]).not.toHaveProperty("_version");
+  });
+
   it("does not call Retell sync when display_name is not in the body", async () => {
     mockUpdateClientFields.mockResolvedValue(undefined);
     mockGetClientDocument.mockResolvedValue({ name: "Acme", agent_id: "agent_1" });
@@ -291,7 +335,7 @@ describe("updateAgentHandler", () => {
         res,
       );
       expect(res._status).toBe(200);
-      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_name: null });
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_name: null }, { expectedVersion: undefined });
     });
 
     it("trims surrounding whitespace on contact_email and saves", async () => {
@@ -303,7 +347,7 @@ describe("updateAgentHandler", () => {
         res,
       );
       expect(res._status).toBe(200);
-      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_email: "ops@x.com" });
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_email: "ops@x.com" }, { expectedVersion: undefined });
     });
 
     it("rejects non-string non-null contact_phone with 400", async () => {
@@ -326,7 +370,7 @@ describe("updateAgentHandler", () => {
         res,
       );
       expect(res._status).toBe(200);
-      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_timezone: "America/Chicago" });
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_timezone: "America/Chicago" }, { expectedVersion: undefined });
     });
 
     it("converts empty-string contact_notes to null", async () => {
@@ -338,7 +382,7 @@ describe("updateAgentHandler", () => {
         res,
       );
       expect(res._status).toBe(200);
-      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_notes: null });
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_notes: null }, { expectedVersion: undefined });
     });
 
     it("accepts explicit null on any contact_* field", async () => {
@@ -350,7 +394,7 @@ describe("updateAgentHandler", () => {
         res,
       );
       expect(res._status).toBe(200);
-      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_name: null });
+      expect(mockUpdateClientFields).toHaveBeenCalledWith("acme", { contact_name: null }, { expectedVersion: undefined });
     });
   });
 });

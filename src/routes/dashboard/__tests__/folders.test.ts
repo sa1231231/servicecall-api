@@ -59,6 +59,8 @@ vi.mock("../../../config/client-store.js", () => ({
   loadClientsFromDb: (...a: any[]) => mockLoadClientsFromDb(...a),
 }));
 
+vi.mock("../../../lib/audit.js", () => ({ logAudit: vi.fn() }));
+
 const folders = await import("../folders.js");
 const moveAgentFolder = await import("../move-agent-folder.js");
 

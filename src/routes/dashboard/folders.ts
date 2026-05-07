@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import { getDb } from "../../lib/db.js";
 import { loadClientsFromDb } from "../../config/client-store.js";
+import { logAudit } from "../../lib/audit.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,7 @@ export async function createFolderHandler(req: Request, res: Response): Promise<
       res.status(500).json({ error: "Failed to load created folder" });
       return;
     }
+    await logAudit(req, "create_folder", inserted._id.toString(), { name: inserted.name });
     res.status(201).json(serialize(inserted));
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -118,6 +120,7 @@ export async function updateFolderHandler(req: Request, res: Response): Promise<
       res.status(404).json({ error: "Folder not found" });
       return;
     }
+    await logAudit(req, "update_folder", id, updates);
     res.json(serialize(result));
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -149,6 +152,7 @@ export async function deleteFolderHandler(req: Request, res: Response): Promise<
     // Refresh the in-memory client cache so the dashboard reflects the change
     // immediately when it next reads notificationClients.
     await loadClientsFromDb();
+    await logAudit(req, "delete_folder", id, { agents_unfiled: cleared.modifiedCount });
     res.json({ success: true, agents_unfiled: cleared.modifiedCount });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";

@@ -49,13 +49,30 @@ function previewHandler(req: Request, res: Response) {
 }
 
 async function sendHandler(req: Request, res: Response) {
-  const { message } = req.body;
+  const { message, confirm, confirm_recipients } = req.body;
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     res.status(400).json({ error: "message is required" });
     return;
   }
   if (message.length > 1600) {
     res.status(400).json({ error: "message must be 1600 characters or fewer" });
+    return;
+  }
+  if (confirm !== true) {
+    res.status(400).json({ error: "confirm: true is required to send a blast" });
+    return;
+  }
+  const preview = previewBlast(message);
+  if (typeof confirm_recipients !== "number" || !Number.isInteger(confirm_recipients) || confirm_recipients < 0) {
+    res.status(400).json({ error: "confirm_recipients (number) is required" });
+    return;
+  }
+  if (confirm_recipients !== preview.total_recipients) {
+    res.status(409).json({
+      error: `Recipient count changed since preview (preview: ${confirm_recipients}, now: ${preview.total_recipients}). Re-preview and re-send.`,
+      preview_recipient_count: confirm_recipients,
+      current_recipient_count: preview.total_recipients,
+    });
     return;
   }
 
@@ -148,10 +165,11 @@ describe("blast-sms send handler", () => {
       sent: 3,
       failed: [],
     };
+    mockPreviewBlast.mockReturnValue({ total_recipients: 3, total_clients: 2, sample_message: "Hello!" });
     mockSendBlast.mockResolvedValue(blastResult);
 
     const res = mockRes();
-    await sendHandler(mockReq({ message: "Hello!" }), res);
+    await sendHandler(mockReq({ message: "Hello!", confirm: true, confirm_recipients: 3 }), res);
 
     expect(res._status).toBe(200);
     expect(res._json.success).toBe(true);
@@ -166,11 +184,37 @@ describe("blast-sms send handler", () => {
     expect(mockAlertRoot).toHaveBeenCalled();
   });
 
+  it("rejects send without confirm: true", async () => {
+    const res = mockRes();
+    await sendHandler(mockReq({ message: "Hello!", confirm_recipients: 3 }), res);
+    expect(res._status).toBe(400);
+    expect(res._json.error).toMatch(/confirm/);
+    expect(mockSendBlast).not.toHaveBeenCalled();
+  });
+
+  it("rejects send without confirm_recipients", async () => {
+    const res = mockRes();
+    await sendHandler(mockReq({ message: "Hello!", confirm: true }), res);
+    expect(res._status).toBe(400);
+    expect(res._json.error).toMatch(/confirm_recipients/);
+    expect(mockSendBlast).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when confirm_recipients no longer matches the live count", async () => {
+    mockPreviewBlast.mockReturnValue({ total_recipients: 5, total_clients: 2, sample_message: "Hello!" });
+    const res = mockRes();
+    await sendHandler(mockReq({ message: "Hello!", confirm: true, confirm_recipients: 3 }), res);
+    expect(res._status).toBe(409);
+    expect(res._json.current_recipient_count).toBe(5);
+    expect(mockSendBlast).not.toHaveBeenCalled();
+  });
+
   it("returns 500 when sendBlast throws", async () => {
+    mockPreviewBlast.mockReturnValue({ total_recipients: 3, total_clients: 2, sample_message: "Hello!" });
     mockSendBlast.mockRejectedValue(new Error("Twilio outage"));
 
     const res = mockRes();
-    await sendHandler(mockReq({ message: "Hello!" }), res);
+    await sendHandler(mockReq({ message: "Hello!", confirm: true, confirm_recipients: 3 }), res);
 
     expect(res._status).toBe(500);
     expect(res._json.error).toContain("Twilio outage");

@@ -5334,7 +5334,11 @@
       const res = await fetch('/dashboard/api/blast-sms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          confirm: true,
+          confirm_recipients: preview.total_recipients,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');

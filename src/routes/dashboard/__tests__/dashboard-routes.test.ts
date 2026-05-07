@@ -696,12 +696,29 @@ describe("GET / PATCH /settings", () => {
   });
 
   it("updates settings and audits", async () => {
-    mockUpdateSettings.mockResolvedValue({ updated: true });
+    mockGetSettings.mockResolvedValue({ google_review_url: "old" });
+    mockUpdateSettings.mockResolvedValue({ google_review_url: "https://g.page/r/X/review" });
     const res = makeRes();
     await runRoute(dashboardApiRouter, "patch", "/settings",
-      makeReq({ body: { foo: "bar" } }), res);
+      makeReq({ body: { google_review_url: "https://g.page/r/X/review" } }), res);
     expect(res._status).toBe(200);
-    expect(mockLogAudit).toHaveBeenCalledWith(expect.anything(), "update_settings", "global", { fields: ["foo"] });
+    expect(mockLogAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      "update_settings",
+      "global",
+      expect.objectContaining({
+        fields: ["google_review_url"],
+        diff: { google_review_url: { before: "old", after: "https://g.page/r/X/review" } },
+      }),
+    );
+  });
+
+  it("rejects an invalid URL with 400", async () => {
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "patch", "/settings",
+      makeReq({ body: { google_review_url: "not a url" } }), res);
+    expect(res._status).toBe(400);
+    expect(mockUpdateSettings).not.toHaveBeenCalled();
   });
 
   it("returns 500 when updateSettings throws", async () => {
@@ -745,15 +762,34 @@ describe("POST /blast-sms", () => {
     expect(res._status).toBe(400);
   });
 
-  it("sends and audits", async () => {
+  it("sends and audits when confirmed with matching recipient count", async () => {
+    mockPreviewBlast.mockReturnValue({ total_recipients: 5, total_clients: 2, sample_message: "hi" });
     mockSendBlast.mockResolvedValue({ total_recipients: 5, total_clients: 2, sent: 5, failed: [] });
     const res = makeRes();
     await runRoute(dashboardApiRouter, "post", "/blast-sms",
-      makeReq({ body: { message: "hi all" } }), res);
+      makeReq({ body: { message: "hi all", confirm: true, confirm_recipients: 5 } }), res);
     expect(res._status).toBe(200);
     expect(res._json.success).toBe(true);
     expect(res._json.sent).toBe(5);
     expect(mockLogAudit).toHaveBeenCalled();
+  });
+
+  it("rejects without confirm: true", async () => {
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "post", "/blast-sms",
+      makeReq({ body: { message: "hi all", confirm_recipients: 5 } }), res);
+    expect(res._status).toBe(400);
+    expect(mockSendBlast).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when recipient count drifted since preview", async () => {
+    mockPreviewBlast.mockReturnValue({ total_recipients: 7, total_clients: 3, sample_message: "hi" });
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "post", "/blast-sms",
+      makeReq({ body: { message: "hi all", confirm: true, confirm_recipients: 5 } }), res);
+    expect(res._status).toBe(409);
+    expect(res._json.current_recipient_count).toBe(7);
+    expect(mockSendBlast).not.toHaveBeenCalled();
   });
 });
 

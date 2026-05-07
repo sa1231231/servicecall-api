@@ -3,6 +3,7 @@ import Retell from "retell-sdk";
 import { config } from "../../config.js";
 import { updateClientFields } from "../../config/client-store.js";
 import { notificationClients } from "../../_cache/clients.js";
+import { logAudit } from "../../lib/audit.js";
 
 export async function toggleActiveHandler(
   req: Request,
@@ -105,5 +106,6 @@ export async function toggleActiveHandler(
   }
 
   console.log(`[toggle-active] ${slug} is now ${active ? "ACTIVE" : "INACTIVE"} (${updatedNumbers.length} number(s) updated)`);
+  await logAudit(req, "toggle_active", slug, { active, numbers_updated: updatedNumbers });
   res.json({ success: true, slug, active, numbers_updated: updatedNumbers.length });
 }

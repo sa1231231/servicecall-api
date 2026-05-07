@@ -31,6 +31,7 @@ import {
 import { getCallLogById } from "../../lib/call-log.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { getSettings, updateSettings } from "../../lib/settings.js";
+import { validateGlobalSettingsUpdates } from "../../lib/validate-client-fields.js";
 import { runBackup } from "../../lib/backup.js";
 import {
   getDataPointDefaultsWithCategory,
@@ -71,7 +72,6 @@ dashboardRouter.get("/", (_req, res) => {
 
 dashboardRouter.get("/config", (req, res) => {
   res.json({
-    apiKey: config.API_KEY,
     user: req.user
       ? { username: req.user.username, role: req.user.role, permissions: req.user.permissions, isRoot: req.user.isRoot }
       : null,
@@ -446,10 +446,23 @@ dashboardApiRouter.get("/settings", async (_req, res) => {
 });
 
 dashboardApiRouter.patch("/settings", requirePermission("manage_settings"), async (req, res) => {
+  const validationErrors = validateGlobalSettingsUpdates(req.body || {});
+  if (validationErrors.length > 0) {
+    res.status(400).json({ error: validationErrors.join("; "), errors: validationErrors });
+    return;
+  }
   try {
+    const before = (await getSettings()) ?? {};
     const updated = await updateSettings(req.body);
-    await logAudit(req, "update_settings", "global", { fields: Object.keys(req.body) });
-    alertRootIfNeeded(req, "update_settings", "global", Object.keys(req.body).join(", "));
+    const fields = Object.keys(req.body);
+    const beforeRec = before as unknown as Record<string, unknown>;
+    const updatedRec = (updated ?? {}) as unknown as Record<string, unknown>;
+    const diff: Record<string, { before: unknown; after: unknown }> = {};
+    for (const k of fields) {
+      diff[k] = { before: beforeRec[k], after: updatedRec[k] };
+    }
+    await logAudit(req, "update_settings", "global", { fields, diff });
+    alertRootIfNeeded(req, "update_settings", "global", fields.join(", "));
     res.json({ success: true, settings: updated });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -461,7 +474,7 @@ dashboardApiRouter.patch("/settings", requirePermission("manage_settings"), asyn
 
 import { previewBlast, sendBlast } from "../../lib/blast-sms.js";
 
-dashboardApiRouter.post("/blast-sms/preview", requirePermission("manage_settings"), (req, res) => {
+dashboardApiRouter.post("/blast-sms/preview", requirePermission("send_comms"), (req, res) => {
   const { message } = req.body;
   if (!message || typeof message !== "string") {
     res.status(400).json({ error: "message is required" });
@@ -470,14 +483,36 @@ dashboardApiRouter.post("/blast-sms/preview", requirePermission("manage_settings
   res.json(previewBlast(message));
 });
 
-dashboardApiRouter.post("/blast-sms", requirePermission("manage_settings"), async (req, res) => {
-  const { message } = req.body;
+dashboardApiRouter.post("/blast-sms", requirePermission("send_comms"), async (req, res) => {
+  const { message, confirm, confirm_recipients } = req.body;
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     res.status(400).json({ error: "message is required" });
     return;
   }
   if (message.length > 1600) {
     res.status(400).json({ error: "message must be 1600 characters or fewer" });
+    return;
+  }
+
+  // Two-step gate: client must preview first, then send the same message
+  // along with the recipient count and an explicit confirm flag. This
+  // prevents an accidental blast (or a raw HTTP POST) from going out
+  // without the operator having seen the impact.
+  if (confirm !== true) {
+    res.status(400).json({ error: "confirm: true is required to send a blast" });
+    return;
+  }
+  const preview = previewBlast(message);
+  if (typeof confirm_recipients !== "number" || !Number.isInteger(confirm_recipients) || confirm_recipients < 0) {
+    res.status(400).json({ error: "confirm_recipients (number) is required" });
+    return;
+  }
+  if (confirm_recipients !== preview.total_recipients) {
+    res.status(409).json({
+      error: `Recipient count changed since preview (preview: ${confirm_recipients}, now: ${preview.total_recipients}). Re-preview and re-send.`,
+      preview_recipient_count: confirm_recipients,
+      current_recipient_count: preview.total_recipients,
+    });
     return;
   }
 

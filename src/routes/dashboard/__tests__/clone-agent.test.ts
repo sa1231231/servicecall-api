@@ -38,6 +38,7 @@ vi.mock("../../../lib/retell-sync.js", () => ({
   extractAgentParams: (...a: any[]) => mockExtractAgentParams(...a),
 }));
 vi.mock("../../../lib/slug.js", () => ({ generateSlug: (...a: any[]) => mockGenerateSlug(...a) }));
+vi.mock("../../../lib/audit.js", () => ({ logAudit: vi.fn() }));
 
 const { cloneAgentHandler } = await import("../clone-agent.js");
 

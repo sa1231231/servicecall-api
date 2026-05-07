@@ -34,6 +34,8 @@ vi.mock("../../../_cache/clients.js", () => ({
   notificationClients: mockNotificationClients,
 }));
 
+vi.mock("../../../lib/audit.js", () => ({ logAudit: vi.fn() }));
+
 import { toggleActiveHandler } from "../toggle-active.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────

@@ -10,11 +10,15 @@ import { alertRootIfNeeded } from "../../lib/root-alerts.js";
 
 const SOFT_DELETE_DAYS = 30;
 
-/** Build the "[DELETED — expires YYYY-MM-DD]" suffix. */
-function deletedSuffix(): string {
+function expiryDate(): Date {
   const expires = new Date();
   expires.setDate(expires.getDate() + SOFT_DELETE_DAYS);
-  return ` [DELETED — expires ${expires.toISOString().slice(0, 10)}]`;
+  return expires;
+}
+
+/** Build the "[DELETED — expires YYYY-MM-DD]" suffix. */
+function deletedSuffix(): string {
+  return ` [DELETED — expires ${expiryDate().toISOString().slice(0, 10)}]`;
 }
 
 /** Rename a Retell agent to mark it as soft-deleted. */
@@ -64,8 +68,15 @@ export async function deleteAgentHandler(
 
   // Soft-delete: mark as deleted but keep in MongoDB for 30-day recovery
   await softDeleteClient(slug);
-  await logAudit(req, "delete_agent", slug);
+  const expiresAt = expiryDate().toISOString();
+  await logAudit(req, "delete_agent", slug, { expires_at: expiresAt, soft_delete_days: SOFT_DELETE_DAYS });
   alertRootIfNeeded(req, "delete_agent", slug);
 
-  res.json({ success: true, slug, warnings: warnings.length > 0 ? warnings : undefined });
+  res.json({
+    success: true,
+    slug,
+    expires_at: expiresAt,
+    soft_delete_days: SOFT_DELETE_DAYS,
+    warnings: warnings.length > 0 ? warnings : undefined,
+  });
 }

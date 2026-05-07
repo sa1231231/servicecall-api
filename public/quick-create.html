@@ -84,13 +84,13 @@
 
       <div class="field">
         <label for="businessName">Business Name <span class="req">*</span></label>
-        <input type="text" id="businessName" required placeholder="e.g. Acme Plumbing" autocomplete="off">
+        <input type="text" id="businessName" required maxlength="120" placeholder="e.g. Acme Plumbing" autocomplete="off">
         <p class="hint">Used in prompts, welcome line, FAQ text, and notification greetings. Exact case is preserved.</p>
       </div>
 
       <div class="field">
         <label for="faqKnowledgeBase">FAQ / Knowledge Base <span class="req">*</span></label>
-        <textarea id="faqKnowledgeBase" required placeholder="Hours: Mon–Fri 8am–6pm.&#10;Service area: Greater Chicago.&#10;Pricing: free quotes; $89 service-call fee waived if work is performed.&#10;…"></textarea>
+        <textarea id="faqKnowledgeBase" required maxlength="50000" placeholder="Hours: Mon–Fri 8am–6pm.&#10;Service area: Greater Chicago.&#10;Pricing: free quotes; $89 service-call fee waived if work is performed.&#10;…"></textarea>
         <p class="hint">Plain text or markdown. The agent quotes from this when callers ask out-of-flow questions.</p>
       </div>
 

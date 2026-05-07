@@ -19,6 +19,11 @@ vi.mock("../../lib/qa-smoke.js", () => ({
   buildSyntheticVariables: (...a: any[]) => mockBuildSyntheticVariables(...a),
 }));
 
+const { mockMongoPing } = vi.hoisted(() => ({ mockMongoPing: vi.fn() }));
+vi.mock("../../lib/db.js", () => ({
+  getDb: () => ({ command: (...a: any[]) => mockMongoPing(...a) }),
+}));
+
 const { qaRouter } = await import("../qa.js");
 const { healthRouter } = await import("../health.js");
 
@@ -68,11 +73,23 @@ beforeEach(() => {
 // ── healthRouter ──────────────────────────────────────────────────────────
 
 describe("GET /health", () => {
-  it("returns ok with timestamp", async () => {
+  it("returns ok with timestamp when mongo ping succeeds", async () => {
+    mockMongoPing.mockResolvedValue({ ok: 1 });
     const res = makeRes();
     await runRoute(healthRouter, "get", "/", makeReq({}), res);
     expect(res._json.status).toBe("ok");
+    expect(res._json.checks.mongo.ok).toBe(true);
     expect(typeof res._json.timestamp).toBe("string");
+  });
+
+  it("returns 503 degraded when mongo ping throws", async () => {
+    mockMongoPing.mockRejectedValue(new Error("connection refused"));
+    const res = makeRes();
+    await runRoute(healthRouter, "get", "/", makeReq({}), res);
+    expect(res._status).toBe(503);
+    expect(res._json.status).toBe("degraded");
+    expect(res._json.checks.mongo.ok).toBe(false);
+    expect(res._json.checks.mongo.error).toMatch(/connection/);
   });
 });
 

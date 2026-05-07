@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { ObjectId } from "mongodb";
 import { getDb } from "../../lib/db.js";
 import { getClientDocument, updateClientFields } from "../../config/client-store.js";
+import { logAudit } from "../../lib/audit.js";
 
 // PATCH /dashboard/api/agents/:slug/folder
 // Body: { folder_id: string | null }
@@ -40,6 +41,10 @@ export async function moveAgentFolderHandler(req: Request, res: Response): Promi
 
   try {
     await updateClientFields(slug, { folder_id: folderId });
+    await logAudit(req, "move_agent_folder", slug, {
+      from: (client as { folder_id?: string | null }).folder_id ?? null,
+      to: folderId,
+    });
     res.json({ success: true, slug, folder_id: folderId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";

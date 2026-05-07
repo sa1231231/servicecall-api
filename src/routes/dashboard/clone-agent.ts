@@ -14,6 +14,7 @@ import {
 } from "../../lib/retell-sync.js";
 import { generateSlug } from "../../lib/slug.js";
 import { replaceBusinessName } from "../../lib/replace-business-name.js";
+import { logAudit } from "../../lib/audit.js";
 
 // ── FAQ node template (must match agent-generator/node-builders.ts) ──────────
 
@@ -160,6 +161,11 @@ export async function cloneAgentHandler(
     await persistClient(newSlug, entry);
 
     console.log(`[clone-agent] client "${newSlug}" cloned from "${sourceSlug}"`);
+    await logAudit(req, "clone_agent", newSlug, {
+      source_slug: sourceSlug,
+      new_agent_id: newAgentId,
+      new_flow_id: newFlowId,
+    });
 
     res.status(201).json({
       success: true,

@@ -251,10 +251,26 @@ const EDITABLE_FIELDS = new Set([
   "folder_id",
 ]);
 
-/** Update multiple fields on a client in MongoDB and in memory. */
+/** Thrown when an `expectedVersion` guard fails (someone else wrote first). */
+export class ConcurrencyError extends Error {
+  readonly code = "CONCURRENCY_CONFLICT";
+  constructor(slug: string, expected: number) {
+    super(`Client "${slug}" was modified by another request (expected version ${expected})`);
+    this.name = "ConcurrencyError";
+  }
+}
+
+/** Update multiple fields on a client in MongoDB and in memory.
+ *
+ * Pass `opts.expectedVersion` to enable optimistic concurrency: the write
+ * only succeeds if `_version` still matches. On mismatch, throws
+ * `ConcurrencyError` so the route can surface a 409 to the caller.
+ *
+ * Every successful write increments `_version` by 1. */
 export async function updateClientFields(
   slug: string,
   updates: Record<string, unknown>,
+  opts: { expectedVersion?: number } = {},
 ): Promise<void> {
   // Whitelist validation
   const setObj: Record<string, unknown> = {};
@@ -269,12 +285,21 @@ export async function updateClientFields(
     throw new Error("No valid fields to update");
   }
 
+  const filter: Record<string, unknown> = { _id: slug };
+  if (typeof opts.expectedVersion === "number") {
+    filter._version = opts.expectedVersion;
+  }
+
   const result = await clients().updateOne(
-    { _id: slug } as any,
-    { $set: setObj },
+    filter as any,
+    { $set: setObj, $inc: { _version: 1 } },
   );
 
   if (result.matchedCount === 0) {
+    if (typeof opts.expectedVersion === "number") {
+      const exists = await clients().findOne({ _id: slug } as any);
+      if (exists) throw new ConcurrencyError(slug, opts.expectedVersion);
+    }
     throw new Error(`Client "${slug}" not found`);
   }
 

@@ -65,7 +65,8 @@ async function storeCanonical(
   canonicalJson: Record<string, unknown>,
   doc: JsonClientEntry & { _id: string },
 ): Promise<void> {
-  // Update the retell_agents entry and last_deployed_at
+  // Update the retell_agents entry and last_deployed_at.
+  // Bumping _version ensures concurrent dashboard saves see a conflict.
   await getDb()
     .collection<JsonClientEntry & { _id: string }>("clients")
     .updateOne({ _id: slug } as any, {
@@ -73,6 +74,7 @@ async function storeCanonical(
         [`retell_agents.${agentId}`]: canonicalJson,
         last_deployed_at: new Date().toISOString(),
       },
+      $inc: { _version: 1 } as never,
     });
 
   // Re-derive notification config if variables changed
@@ -124,6 +126,7 @@ async function storeCanonical(
           message_types: derived.message_types,
           default_message_type: derived.default_message_type,
         },
+        $inc: { _version: 1 } as never,
       });
   }
 
