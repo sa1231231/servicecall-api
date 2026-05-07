@@ -494,11 +494,16 @@
     padding: 4px 6px; min-height: 34px; cursor: text;
   }
   .chip-input:focus-within { border-color: #93b4f5; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+  .chip-input.has-invalid { border-color: #f87171; background: #fef2f2; }
   .chip {
     display: inline-flex; align-items: center; gap: 4px;
     background: #e5e7eb; color: #1a1a1a; padding: 2px 8px;
     border-radius: 999px; font-size: 0.78rem; font-family: monospace;
     white-space: nowrap;
+  }
+  .chip.invalid {
+    background: #fee2e2; color: #991b1b;
+    box-shadow: inset 0 0 0 1px #f87171;
   }
   .chip .remove {
     cursor: pointer; font-size: 0.85rem; color: #6b7280; line-height: 1;
@@ -509,6 +514,12 @@
     border: none; outline: none; font-size: 0.82rem; flex: 1; min-width: 80px;
     padding: 2px 0; background: transparent; font-family: monospace;
   }
+  .char-counter {
+    font-size: 0.7rem; color: #6b7280; text-align: right;
+    margin-top: 2px; font-variant-numeric: tabular-nums;
+  }
+  .char-counter.warn { color: #b45309; }
+  .char-counter.over { color: #dc2626; font-weight: 600; }
 
   /* Editable text inputs */
   .edit-input {
@@ -901,6 +912,28 @@
     cursor: pointer; margin-right: 0.5rem; text-decoration: none;
   }
   .btn-create:hover { background: #15803d; }
+  .btn-create #leadsBadge {
+    background: #fff; color: #166534; border-radius: 9px;
+    padding: 0.05rem 0.45rem; font-size: 0.7rem; font-weight: 600;
+    margin-left: 0.4rem; line-height: 1;
+  }
+  /* Create-options grid in the unified Create view (under the
+     "+ Create" header button). Two cards: Advanced + Quick. */
+  .create-option-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.85rem; margin: 0.75rem 0 1.5rem;
+  }
+  .create-option-card {
+    display: flex; flex-direction: column; gap: 0.4rem;
+    padding: 1rem 1.1rem; background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    text-decoration: none; color: inherit; cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .create-option-card:hover { border-color: #6366f1; box-shadow: 0 4px 12px rgba(99,102,241,0.15); }
+  .create-option-card .icon { font-size: 1.4rem; line-height: 1; }
+  .create-option-card .title { font-weight: 600; font-size: 0.95rem; color: #111; }
+  .create-option-card .desc { font-size: 0.8rem; color: #6b7280; line-height: 1.45; }
   /* Pending Leads view */
   .lead-status { display:inline-block; padding:0.1rem 0.45rem; border-radius:8px; font-size:0.7rem; font-weight:600; text-transform:uppercase; letter-spacing:0.02em; }
   .lead-status-queued    { background:#e0e7ff; color:#3730a3; }
@@ -1025,7 +1058,7 @@
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
-  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-settings" data-perm="manage_leads" onclick="showPendingLeads()" style="background:#fef3c7;border-color:#fde68a;color:#92400e;" title="Triage incoming Facebook leads, run enrichment, promote to agent">Leads <span id="leadsBadge" style="display:none;background:#dc2626;color:#fff;border-radius:9px;padding:0.05rem 0.4rem;font-size:0.7rem;margin-left:0.25rem;">0</span></button><a class="btn-create" data-perm="create_agents" href="/quick-create" target="_blank" style="background:#7c3aed;" title="Pick a draft, name the business, paste an FAQ — done.">⚡ Quick Create</a><a class="btn-create" data-perm="create_agents" href="/form" target="_blank">+ Create</a><span id="userBadge" class="user-badge"></span></h1>
+  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-create" data-perm="create_agents" onclick="showPendingLeads()" id="btnCreate" title="Build an agent — Advanced, Quick, or pick up a pending lead">+ Create<span id="leadsBadge" style="display:none;">0</span></button><span id="userBadge" class="user-badge"></span></h1>
   <p class="subtitle">Click a client to view details and call history.</p>
   <div id="agentSearchBar" class="agent-search-bar" style="display:none;">
     <div class="agent-search-chips" id="agentSearchChips"></div>
@@ -1047,15 +1080,37 @@
   <div id="agentList"><div class="loading">Loading agents...</div></div>
 </div>
 
-<!-- ── Pending Leads View ─────────────────────────────────────────── -->
+<!-- ── Create / Pending Leads View ─────────────────────────────────
+     Single entry point for everything "new agent" — Advanced builder,
+     Quick Create from a draft, and the pending-leads queue (gated on
+     manage_leads). The view's div id stays `pendingLeadsView` so all
+     existing JS / hash routing works without rename churn. -->
 <div id="pendingLeadsView" style="display:none;">
   <button class="btn-back" onclick="hidePendingLeads()">&larr; Back to all agents</button>
-  <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0 0.25rem;">
-    <h1 style="margin:0;display:flex;align-items:center;gap:0.5rem;">Pending Leads</h1>
-    <button onclick="openAddLeadModal()" class="btn-create" style="float:none;background:#2563eb;border-color:#2563eb;">+ Add Lead</button>
+  <h1 style="margin:0.5rem 0 0.25rem;">Create New Agent</h1>
+  <p class="subtitle">Build from scratch, fast-track from a draft, or pick up a pending lead.</p>
+
+  <div class="create-option-grid">
+    <a href="/form" target="_blank" class="create-option-card">
+      <div class="icon">+</div>
+      <div class="title">Advanced Create</div>
+      <div class="desc">Full builder — define paths, data points, dispatch, prompts. Best when you have a transcript or want fine-grained control.</div>
+    </a>
+    <a href="/quick-create" target="_blank" class="create-option-card">
+      <div class="icon" style="color:#7c3aed;">⚡</div>
+      <div class="title">Quick Create</div>
+      <div class="desc">Pick a saved draft as the template, fill in business name + FAQ, ship. Fastest path for a vertical you've already templated.</div>
+    </a>
   </div>
-  <p class="subtitle">Each row is an incoming lead. Enrichment runs automatically; review the result, pick a draft template, and promote to an agent.</p>
-  <div id="pendingLeadsBody"><div class="loading">Loading leads...</div></div>
+
+  <div data-perm="manage_leads">
+    <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:1rem 0 0.25rem;">
+      <h2 style="margin:0;">Pending Leads</h2>
+      <button onclick="openAddLeadModal()" class="btn-create" style="float:none;background:#2563eb;border-color:#2563eb;font-size:0.78rem;padding:0.3rem 0.7rem;">+ Add Lead</button>
+    </div>
+    <p class="subtitle">Each row is an incoming lead. Enrichment runs automatically; review the result, pick a draft template, and promote to an agent.</p>
+    <div id="pendingLeadsBody"><div class="loading">Loading leads...</div></div>
+  </div>
 </div>
 
 <!-- Add Lead modal -->
@@ -1070,7 +1125,7 @@
     <label style="display:block;font-size:0.78rem;color:#444;margin-bottom:0.15rem;">Website</label>
     <input id="addLeadWebsite" type="text" placeholder="https://…" style="width:100%;padding:0.4rem 0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:5px;margin-bottom:0.5rem;box-sizing:border-box;">
     <label style="display:block;font-size:0.78rem;color:#444;margin-bottom:0.15rem;">Notes</label>
-    <textarea id="addLeadNotes" rows="3" placeholder="Anything else (the original Facebook lead text, etc.)" style="width:100%;padding:0.4rem 0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:5px;box-sizing:border-box;font-family:inherit;"></textarea>
+    <textarea id="addLeadNotes" rows="3" maxlength="10000" placeholder="Anything else (the original Facebook lead text, etc.)" style="width:100%;padding:0.4rem 0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:5px;box-sizing:border-box;font-family:inherit;"></textarea>
     <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.75rem;">
       <button type="button" onclick="closeAddLeadModal()" style="padding:0.4rem 0.9rem;border:1px solid #d1d5db;border-radius:5px;background:#fff;cursor:pointer;">Cancel</button>
       <button type="button" onclick="submitAddLead()" id="addLeadSubmit" style="padding:0.4rem 0.9rem;border:none;border-radius:5px;background:#2563eb;color:#fff;cursor:pointer;">Add &amp; Enrich</button>
@@ -1126,10 +1181,10 @@
           <div class="settings-section">
             <div class="settings-section-title">Google Reviews</div>
             <label for="settings-review-url">Review URL</label>
-            <input type="text" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
+            <input type="text" class="validate-url" id="settings-review-url" placeholder="https://g.page/r/YOUR_ID/review">
             <p class="settings-hint">Your Google Business review link.</p>
             <label>Review SMS Template</label>
-            <div class="tmpl-editor-wrap">
+            <div class="tmpl-editor-wrap" data-counter="sms">
               <div class="tmpl-editor" contenteditable="true" id="settings-review-msg-editor" data-placeholder="Hi! Please leave us a review: {{google_review_url}}"></div>
               <input type="hidden" id="settings-review-msg">
             </div>
@@ -1139,10 +1194,10 @@
           <div class="settings-section">
             <div class="settings-section-title">Payment</div>
             <label for="settings-payment-url">Stripe Payment URL</label>
-            <input type="text" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
+            <input type="text" class="validate-url" id="settings-payment-url" placeholder="https://buy.stripe.com/...">
             <p class="settings-hint">Checkout link sent when a client's trial expires.</p>
             <label>Payment SMS Template</label>
-            <div class="tmpl-editor-wrap">
+            <div class="tmpl-editor-wrap" data-counter="sms">
               <div class="tmpl-editor" contenteditable="true" id="settings-payment-msg-editor" data-placeholder="Hi! Subscribe here: {{stripe_payment_url}}"></div>
               <input type="hidden" id="settings-payment-msg">
             </div>
@@ -1152,7 +1207,7 @@
           <div class="settings-section">
             <div class="settings-section-title">Client Portal</div>
             <label>Portal Link SMS Template</label>
-            <div class="tmpl-editor-wrap">
+            <div class="tmpl-editor-wrap" data-counter="sms">
               <div class="tmpl-editor" contenteditable="true" id="settings-portal-msg-editor" data-placeholder="Hi! Here's your portal: {{portal_url}}"></div>
               <input type="hidden" id="settings-portal-msg">
             </div>
@@ -1257,7 +1312,7 @@
         <p class="settings-hint" style="margin-bottom:0.75rem;">Send a one-time SMS to all active clients. Messages are sent one per second to avoid spam filters. Use <code>{{client_name}}</code> to personalize.</p>
         <div style="background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1.5rem;">
           <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.3rem;">Message</label>
-          <div class="tmpl-editor-wrap">
+          <div class="tmpl-editor-wrap" data-counter="sms">
             <div class="tmpl-editor" contenteditable="true" id="blast-message-editor" data-placeholder="Happy Mother's Day from ServiceCall Saver! We hope {{client_name}} has a wonderful weekend." style="min-height:5rem;"></div>
             <input type="hidden" id="blast-message">
           </div>
@@ -1285,7 +1340,7 @@
             </div>
             <div>
               <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Password</label>
-              <input type="password" id="newUserPass" placeholder="min 6 chars" style="width:140px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+              <input type="password" id="newUserPass" minlength="6" maxlength="200" placeholder="min 6 chars" style="width:140px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
             </div>
             <div>
               <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Role</label>
@@ -1455,7 +1510,7 @@
     </div>
     <div class="modal-field">
       <label class="modal-label">Dispatch Text Numbers</label>
-      <div class="chip-input" id="clone-chip-text" onclick="this.querySelector('input').focus()">
+      <div class="chip-input" id="clone-chip-text" data-validate="phone" onclick="this.querySelector('input').focus()">
         <input type="text" placeholder="+15551234567" onkeydown="chipKeydown(event, this)" onblur="chipBlur(this)">
       </div>
       <div class="config-hint">SMS numbers for the new client. If blank, copies from the original agent.</div>
@@ -1467,7 +1522,7 @@
     </div>
     <div class="modal-field">
       <label class="modal-label">Dispatch Email</label>
-      <div class="chip-input" id="clone-chip-email" onclick="this.querySelector('input').focus()">
+      <div class="chip-input" id="clone-chip-email" data-validate="email" onclick="this.querySelector('input').focus()">
         <input type="text" placeholder="dispatch@example.com" onkeydown="chipKeydown(event, this)" onblur="chipBlur(this)">
       </div>
     </div>
@@ -1613,7 +1668,70 @@
   const PHONE_RE = /^\+1\d{10}$/;
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+  const VALIDATORS = {
+    phone: (v) => PHONE_RE.test(v),
+    email: (v) => EMAIL_RE.test(v),
+    url:   (v) => {
+      try { const u = new URL(v); return u.protocol === 'https:' || u.protocol === 'http:'; }
+      catch { return false; }
+    },
+  };
+  const VALIDATOR_HINTS = {
+    phone: 'Must be E.164 (e.g. +15551234567)',
+    email: 'Must be a valid email (e.g. name@example.com)',
+    url:   'Must start with https:// or http://',
+  };
+
+  // Annotate chips inside a `.chip-input` based on its `data-validate` kind.
+  function refreshChipValidation(container) {
+    if (!container) return;
+    const kind = container.getAttribute('data-validate');
+    const validator = VALIDATORS[kind];
+    let invalidCount = 0;
+    container.querySelectorAll('.chip').forEach((chip) => {
+      const text = (chip.firstChild?.textContent || '').trim();
+      if (validator && text && !validator(text)) {
+        chip.classList.add('invalid');
+        chip.title = VALIDATOR_HINTS[kind] || 'Invalid';
+        invalidCount++;
+      } else {
+        chip.classList.remove('invalid');
+        if (chip.title === VALIDATOR_HINTS[kind]) chip.removeAttribute('title');
+      }
+    });
+    container.classList.toggle('has-invalid', invalidCount > 0);
+  }
+  function refreshAllChipValidation(root) {
+    (root || document).querySelectorAll('.chip-input[data-validate]').forEach(refreshChipValidation);
+  }
+  function validateUrlInput(el) {
+    const v = (el.value || '').trim();
+    const ok = !v || VALIDATORS.url(v);
+    el.classList.toggle('invalid', !ok);
+    let err = el.nextElementSibling;
+    if (!ok) {
+      if (!err || !err.classList?.contains('field-error') || !err.dataset.autoUrl) {
+        err = document.createElement('div');
+        err.className = 'field-error visible';
+        err.dataset.autoUrl = '1';
+        el.insertAdjacentElement('afterend', err);
+      }
+      err.textContent = VALIDATOR_HINTS.url;
+    } else if (err && err.dataset.autoUrl) {
+      err.remove();
+    }
+    return ok;
+  }
+  function wireUrlValidation(root) {
+    (root || document).querySelectorAll('input.validate-url:not([data-url-wired])').forEach((el) => {
+      el.dataset.urlWired = '1';
+      el.addEventListener('blur', () => validateUrlInput(el));
+    });
+  }
+
   function validateDashboardFields() {
+    refreshAllChipValidation(document);
+    document.querySelectorAll('input.validate-url').forEach(validateUrlInput);
     const errors = [];
     // Dispatch text numbers
     const textNums = getChipValues('chip-dispatch-text');
@@ -1659,6 +1777,18 @@
     document.querySelectorAll('.dbt-call').forEach(input => {
       const n = input.value.trim();
       if (n && !PHONE_RE.test(n)) errors.push(`Path dispatch call "${n}" invalid. Format: +1XXXXXXXXXX.`);
+    });
+    const URL_LABELS = {
+      'edit-webhook-url': 'Webhook URL',
+      'settings-review-url': 'Review URL',
+      'settings-payment-url': 'Stripe Payment URL',
+    };
+    document.querySelectorAll('input.validate-url').forEach((el) => {
+      const v = (el.value || '').trim();
+      if (v && !VALIDATORS.url(v)) {
+        const label = URL_LABELS[el.id] || el.id || 'URL';
+        errors.push(`${label}: must start with https:// or http://`);
+      }
     });
     return errors;
   }
@@ -2915,8 +3045,9 @@
     ).join('');
   }
 
-  function chipInputHtml(id, values, placeholder) {
-    return `<div class="chip-input" id="${id}" onclick="this.querySelector('input').focus()">
+  function chipInputHtml(id, values, placeholder, validateAs) {
+    const dv = validateAs ? ` data-validate="${esc(validateAs)}"` : '';
+    return `<div class="chip-input" id="${id}"${dv} onclick="this.querySelector('input').focus()">
       ${chipHtml(values)}
       <input type="text" placeholder="${esc(placeholder)}"
         onkeydown="chipKeydown(event, this)"
@@ -2927,8 +3058,8 @@
   function removeChip(el) {
     const container = el.closest('.chip-input');
     el.closest('.chip').remove();
-    // Bubble a synthetic input event so dirty-tracking listeners (e.g. node editor) react.
     if (container) {
+      refreshChipValidation(container);
       const inp = container.querySelector('input');
       if (inp) inp.dispatchEvent(new Event('input', { bubbles: true }));
     }
@@ -2939,15 +3070,18 @@
       e.preventDefault();
       addChipFromInput(input);
     }
-    // Backspace on empty input removes last chip
     if (e.key === 'Backspace' && !input.value) {
       const chips = input.parentElement.querySelectorAll('.chip');
-      if (chips.length > 0) chips[chips.length - 1].remove();
+      if (chips.length > 0) {
+        chips[chips.length - 1].remove();
+        refreshChipValidation(input.closest('.chip-input'));
+      }
     }
   }
 
   function chipBlur(input) {
     if (input.value.trim()) addChipFromInput(input);
+    refreshChipValidation(input.closest('.chip-input'));
   }
 
   function addChipFromInput(input) {
@@ -2958,7 +3092,7 @@
     chip.innerHTML = esc(val) + '<span class="remove" onclick="removeChip(this)">&times;</span>';
     input.parentElement.insertBefore(chip, input);
     input.value = '';
-    // Bubble a synthetic input event so dirty-tracking listeners (e.g. node editor) react.
+    refreshChipValidation(input.closest('.chip-input'));
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
@@ -2980,6 +3114,25 @@
       wrap.appendChild(acList);
     }
     let acIndex = -1;
+
+    // SMS char counter (opt-in via data-counter="sms" on the wrap).
+    let counterEl = null;
+    if (wrap.getAttribute('data-counter') === 'sms') {
+      counterEl = wrap.querySelector('.char-counter');
+      if (!counterEl) {
+        counterEl = document.createElement('div');
+        counterEl.className = 'char-counter';
+        wrap.appendChild(counterEl);
+      }
+    }
+    function updateCounter(text) {
+      if (!counterEl) return;
+      const len = text.length;
+      const segments = len === 0 ? 0 : Math.ceil(len / 153);
+      counterEl.textContent = `${len} / 1600 chars (${segments} segment${segments === 1 ? '' : 's'})`;
+      counterEl.classList.toggle('warn', len >= 1280 && len <= 1600);
+      counterEl.classList.toggle('over', len > 1600);
+    }
 
     // Render template string → contenteditable HTML with tags
     function renderToEditor(template) {
@@ -3044,7 +3197,9 @@
     }
 
     function syncHidden() {
-      hiddenEl.value = readTemplate();
+      const text = readTemplate();
+      hiddenEl.value = text;
+      updateCounter(text);
       if (onChange) onChange();
     }
 
@@ -3241,6 +3396,7 @@
 
     // Initial render
     renderToEditor(hiddenEl.value);
+    updateCounter(hiddenEl.value || '');
 
     return { readTemplate, renderToEditor, syncHidden };
   }
@@ -3626,7 +3782,7 @@
         '</div>' +
         '<div style="margin-top:0.5rem;">' +
           '<label for="edit-contact-notes" style="font-size:0.74rem;color:#666;">Notes</label>' +
-          '<textarea class="edit-input" id="edit-contact-notes" rows="3" style="' + inputStyle + 'resize:vertical;" onchange="saveContactField(this, \'contact_notes\')">' + esc(doc.contact_notes || '') + '</textarea>' +
+          '<textarea class="edit-input" id="edit-contact-notes" maxlength="4000" rows="3" style="' + inputStyle + 'resize:vertical;" onchange="saveContactField(this, \'contact_notes\')">' + esc(doc.contact_notes || '') + '</textarea>' +
         '</div>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">' +
@@ -3746,13 +3902,13 @@
         </details>
       </dd>
 
-      <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567')}
+      <dt title="Phone numbers that receive SMS notifications when a call completes">Dispatch Text</dt><dd>${chipInputHtml('chip-dispatch-text', doc.dispatch_text_numbers, '+15551234567', 'phone')}
         <div class="config-hint">These numbers receive an SMS with the call summary after every call. Routing path overrides (in Node Editor) take priority when configured.</div></dd>
 
-      <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com')}
+      <dt title="Email addresses that receive dispatch notifications">Dispatch Email</dt><dd>${chipInputHtml('chip-dispatch-email', doc.dispatch_email, 'email@example.com', 'email')}
         <div class="config-hint">These addresses receive an email with the full call summary after every call.</div></dd>
 
-      <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook">
+      <dt title="Optional webhook URL — call data POSTed as JSON after each dispatch">Webhook URL</dt><dd><input class="edit-input validate-url" id="edit-webhook-url" value="${esc(doc.webhook_url || '')}" placeholder="https://example.com/webhook">
         <div class="config-hint">Call data is POSTed as JSON to this URL after each dispatch. Use for CRM integrations, Zapier, etc.</div></dd>
     </dl>`;
 
@@ -3760,7 +3916,10 @@
       html += `<button class="btn-save" id="btnSaveDispatch" onclick="saveDispatch()" style="margin-top:0.75rem;">Save Dispatch</button>`;
     }
 
-    document.getElementById('tab-dispatch').innerHTML = html;
+    const target = document.getElementById('tab-dispatch');
+    target.innerHTML = html;
+    refreshAllChipValidation(target);
+    wireUrlValidation(target);
   }
 
   function buildOverrideRows(overrides) {
@@ -4570,7 +4729,7 @@
           '<input type="text" class="instr-label" value="' + esc(it.label || '') + '" placeholder="e.g. Verizon">' +
           '<button type="button" class="instr-remove" onclick="settingsRemoveInstruction(' + idx + ')">Remove</button>' +
         '</div>' +
-        '<div class="tmpl-editor-wrap">' +
+        '<div class="tmpl-editor-wrap" data-counter="sms">' +
           '<div class="tmpl-editor" contenteditable="true" data-placeholder="Hi {{business_name}}, to forward calls tap *72{{agent_phone_10}} — press call, wait for the chime, hang up. To turn off later, dial *73." style="min-height:5rem;"></div>' +
           '<input type="hidden" class="instr-message-hidden" value="' + esc(it.message || '') + '">' +
         '</div>' +
@@ -5051,6 +5210,17 @@
     if (ownerEmail && !EMAIL_RE.test(ownerEmail)) settingsErrors.push('Owner email is invalid.');
     const ownerPhone = document.getElementById('settings-owner-phone').value.trim();
     if (ownerPhone && !PHONE_RE.test(ownerPhone)) settingsErrors.push('Owner phone invalid. Format: +1XXXXXXXXXX.');
+    document.querySelectorAll('#settingsView input.validate-url').forEach((el) => {
+      validateUrlInput(el);
+      const v = (el.value || '').trim();
+      if (v && !VALIDATORS.url(v)) {
+        const label = ({
+          'settings-review-url': 'Review URL',
+          'settings-payment-url': 'Stripe Payment URL',
+        })[el.id] || el.id;
+        settingsErrors.push(`${label}: must start with https:// or http://`);
+      }
+    });
     if (settingsErrors.length > 0) {
       alert('Please fix the following:\n\n' + settingsErrors.join('\n'));
       return;
@@ -5356,6 +5526,7 @@
     const password = document.getElementById('newUserPass').value;
     const role = document.getElementById('newUserRole').value;
     if (!username || !password) { showToast('Username and password are required', 'error'); return; }
+    if (password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
     const permissions = (role !== 'admin' && role !== 'super_admin') ? collectPermsFromCheckboxes('new-user') : undefined;
     try {
       const res = await fetch('/dashboard/api/users', {
@@ -5575,9 +5746,9 @@
           <button type="button" class="ft-add-example" onclick="addSubVar('${esc(key)}')">+ Add Sub-Variable</button>
         </div>
         <label>Description</label>
-        <textarea class="dp-description">${esc(dp.description || '')}</textarea>
+        <textarea class="dp-description" maxlength="4000">${esc(dp.description || '')}</textarea>
         <label>Conversation Prompt</label>
-        <textarea class="dp-conv-prompt" style="min-height:100px;">${esc(dp.conversationPrompt || '')}</textarea>
+        <textarea class="dp-conv-prompt" maxlength="4000" style="min-height:100px;">${esc(dp.conversationPrompt || '')}</textarea>
         <label>Forward Condition</label>
         <input type="text" class="dp-fwd-condition" value="${esc(dp.forwardCondition || '')}">
         <label>Finetune Examples</label>
@@ -6321,7 +6492,7 @@
     html += '<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
       '<span style="font-size:0.82rem;font-weight:600;color:#555;">Notification Greeting</span></div>' +
       '<div style="margin-bottom:1rem;">' +
-      '<div class="tmpl-editor-wrap">' +
+      '<div class="tmpl-editor-wrap" data-counter="sms">' +
       '<div class="tmpl-editor" contenteditable="true" id="ne-greeting-editor" data-placeholder="Hi {{business_name}}, you have a new call!"></div>' +
       '<input type="hidden" id="ne-greeting-hidden" value="' + esc(greetingVal) + '">' +
       '</div>' +
@@ -6428,9 +6599,9 @@
         '<div style="margin-top:0.5rem;font-size:0.8rem;">' +
         '<div style="color:#888;margin-bottom:0.5rem;">Override who gets notified for this path. Blank = use Default Dispatch.</div>' +
         '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">SMS Numbers</label>' +
-        chipInputHtml('dbt-sms-' + mtKey, dbt.dispatch_text_numbers || [], '+15551234567') + '</div>' +
+        chipInputHtml('dbt-sms-' + mtKey, dbt.dispatch_text_numbers || [], '+15551234567', 'phone') + '</div>' +
         '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Email(s)</label>' +
-        chipInputHtml('dbt-email-' + mtKey, dbt.dispatch_email || [], 'email@example.com') + '</div>' +
+        chipInputHtml('dbt-email-' + mtKey, dbt.dispatch_email || [], 'email@example.com', 'email') + '</div>' +
         '<div style="margin-bottom:0.5rem;"><label style="display:block;font-size:0.78rem;font-weight:600;margin-bottom:0.2rem;">Dispatch Call Number</label>' +
         '<input type="text" class="dbt-call" data-mt-key="' + esc(mtKey) + '" value="' + esc(dbt.dispatch_call_number || '') + '" placeholder="Leave blank for client default" style="width:100%;font-size:0.8rem;padding:0.4rem 0.5rem;"></div>' +
         '</div></details>';
@@ -6506,7 +6677,9 @@
     html += '</div>';
 
     const scrollY = window.scrollY;
-    document.getElementById('nodeEditorContainer').innerHTML = html;
+    const neContainer = document.getElementById('nodeEditorContainer');
+    neContainer.innerHTML = html;
+    refreshAllChipValidation(neContainer);
 
     // Init drag-drop for data point reorder
     if (canEdit) {
@@ -8082,7 +8255,7 @@
         '<span class="field-label">Website</span>' +
         '<input id="leadInputWebsite" type="text" value="' + esc(lead.input?.website || '') + '" placeholder="https://example.com">' +
         '<span class="field-label">Notes</span>' +
-        '<textarea id="leadInputNotes" rows="3" placeholder="Anything else about this lead (vertical hint, prior call notes, etc.)">' + esc(lead.input?.notes || '') + '</textarea>' +
+        '<textarea id="leadInputNotes" rows="3" maxlength="10000" placeholder="Anything else about this lead (vertical hint, prior call notes, etc.)">' + esc(lead.input?.notes || '') + '</textarea>' +
         '<span class="field-label">Source</span><div class="read-field">' + esc(lead.source) + '</div>' +
         '<div class="lead-action-row">' +
           '<button class="lead-btn-save" onclick="saveLeadInput(\'' + esc(lead._id) + '\')">Save lead info</button>' +
@@ -8126,7 +8299,7 @@
         '<span class="field-label">Business Name</span>' +
         '<input id="leadBizName" type="text" value="' + esc(enriched.business_name || '') + '" placeholder="Skill output drops in here">' +
         '<span class="field-label">FAQ / Knowledge Base</span>' +
-        '<textarea id="leadFaq" placeholder="Q. ...\nA. ...">' + esc(enriched.faqKnowledgeBase || '') + '</textarea>' +
+        '<textarea id="leadFaq" maxlength="50000" placeholder="Q. ...\nA. ...">' + esc(enriched.faqKnowledgeBase || '') + '</textarea>' +
         '<div class="lead-action-row">' +
           '<button class="lead-btn-save" onclick="saveLeadEdits(\'' + esc(lead._id) + '\')">Save edits</button>' +
           '<button class="lead-btn-reenrich" onclick="reEnrichLead(\'' + esc(lead._id) + '\')" ' + (isTerminal ? 'disabled' : '') + '>Re-enrich</button>' +
@@ -8582,6 +8755,8 @@
 
   // ── INIT ───────────────────────────────────────────────────────────
   loadAgents().then(renderFromHash);
+  wireUrlValidation(document);
+  refreshAllChipValidation(document);
 </script>
 </body>
 </html>
