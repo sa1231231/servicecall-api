@@ -538,6 +538,10 @@
   /* Nested submenu — used by "Send Instructions" inside Send to Client.
      Positioned to the right of the parent menu so it doesn't push items
      down. Visible only when the wrap has .open. */
+  /* The base .btn-group-menu uses overflow: hidden to keep hover
+     backgrounds inside the rounded corners. That clips the side-flyout
+     submenu, so menus that contain a submenu opt out via :has(). */
+  .btn-group-menu:has(.submenu-wrap) { overflow: visible; }
   .btn-group-menu .submenu-wrap { position: relative; }
   .btn-group-menu .submenu-toggle {
     display: flex !important; align-items: center; justify-content: space-between;
