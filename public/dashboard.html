@@ -6248,26 +6248,38 @@
 
     // Version history — always render the dropdown header so the section is
     // discoverable; collapse to a "no versions yet" line when empty.
-    html += '<details style="margin-top:1rem;">' +
+    // Preserve the open state across re-renders. neSelectDiff() re-renders
+    // the editor on each A/B click, which destroys this <details> element;
+    // capture the prior open state here and re-emit `open` so the panel
+    // doesn't snap shut while the user is mid-pick.
+    const versionHistoryWasOpen = !!document.getElementById('ne-version-history-details')?.open;
+    html += '<details id="ne-version-history-details" style="margin-top:1rem;"' + (versionHistoryWasOpen ? ' open' : '') + '>' +
       '<summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Version History (' + verData.total + ')</summary>' +
       '<div style="margin-top:0.5rem;">';
     if (verData.versions.length > 0) {
       // Compare-A/B toolbar: pick two versions via the A/B pills on each row,
       // then click Compare to see a JSON-line diff.
+      const _aLabelInit = neDiffA && _neDiffVersionLabels[neDiffA] ? _neDiffVersionLabels[neDiffA] : '—';
+      const _bLabelInit = neDiffB && _neDiffVersionLabels[neDiffB] ? _neDiffVersionLabels[neDiffB] : '—';
       html += '<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem;font-size:0.78rem;color:#555;">' +
         '<span>Pick two versions to compare:</span>' +
-        '<span id="ne-diff-a-label" style="color:#888;">A: —</span>' +
-        '<span id="ne-diff-b-label" style="color:#888;">B: —</span>' +
-        '<button class="ne-btn" id="ne-diff-btn" onclick="neOpenVersionDiff()" disabled>Compare A ↔ B</button>' +
+        '<span id="ne-diff-a-label" style="color:#888;">A: ' + esc(_aLabelInit) + '</span>' +
+        '<span id="ne-diff-b-label" style="color:#888;">B: ' + esc(_bLabelInit) + '</span>' +
+        '<button class="ne-btn" id="ne-diff-btn" onclick="neOpenVersionDiff()"' + ((neDiffA && neDiffB && neDiffA !== neDiffB) ? '' : ' disabled') + '>Compare A ↔ B</button>' +
         '</div>';
       for (const v of verData.versions) {
         const ago = timeAgo(v.createdAt);
-        const aActive = neDiffA === v._id ? ' style="background:#dbeafe;border-color:#2563eb;color:#1e40af;font-weight:600;"' : '';
-        const bActive = neDiffB === v._id ? ' style="background:#dcfce7;border-color:#16a34a;color:#166534;font-weight:600;"' : '';
+        // Combine base + active styles into a SINGLE `style=` attribute.
+        // Two separate `style=`s on the same element collapse to only the
+        // last one in the DOM, which is why the active-pill highlight
+        // previously never appeared.
+        const _pillBase = 'font-size:0.68rem;padding:0.1rem 0.4rem;';
+        const aStyle = _pillBase + (neDiffA === v._id ? 'background:#dbeafe;border-color:#2563eb;color:#1e40af;font-weight:600;' : '');
+        const bStyle = _pillBase + (neDiffB === v._id ? 'background:#dcfce7;border-color:#16a34a;color:#166534;font-weight:600;' : '');
         html += '<div class="ne-version-row">' +
           '<span class="ne-v-num">v' + v.version + '</span>' +
-          '<button class="ne-btn"' + aActive + ' onclick="neSelectDiff(\'A\',\'' + v._id + '\',' + v.version + ')" style="font-size:0.68rem;padding:0.1rem 0.4rem;" title="Select as version A">A</button>' +
-          '<button class="ne-btn"' + bActive + ' onclick="neSelectDiff(\'B\',\'' + v._id + '\',' + v.version + ')" style="font-size:0.68rem;padding:0.1rem 0.4rem;" title="Select as version B">B</button>' +
+          '<button class="ne-btn ne-diff-pill" data-slot="A" data-version-id="' + esc(v._id) + '" onclick="neSelectDiff(\'A\',\'' + v._id + '\',' + v.version + ')" style="' + aStyle + '" title="Select as version A">A</button>' +
+          '<button class="ne-btn ne-diff-pill" data-slot="B" data-version-id="' + esc(v._id) + '" onclick="neSelectDiff(\'B\',\'' + v._id + '\',' + v.version + ')" style="' + bStyle + '" title="Select as version B">B</button>' +
           '<span class="ne-v-source">' + esc(v.source) + '</span>' +
           '<span class="ne-v-desc">' + esc(v.description) + '</span>' +
           '<span class="ne-v-time">' + ago + '</span>';
