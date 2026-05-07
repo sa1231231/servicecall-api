@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quick Create Agent — ServiceCall Saver</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 720px; margin: 0 auto; padding: 2rem 1.25rem;
+    color: #1e293b; background: #f8fafc;
+  }
+  h1 { margin: 0 0 0.25rem; font-size: 1.5rem; font-weight: 700; color: #0f172a; }
+  .subtitle { color: #64748b; font-size: 0.9rem; margin: 0 0 1.5rem; }
+  .nav-back {
+    display: inline-block; font-size: 0.82rem; color: #2563eb;
+    text-decoration: none; margin-bottom: 0.75rem;
+  }
+  .nav-back:hover { text-decoration: underline; }
+  .card {
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 8px;
+    padding: 1.5rem; box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  label {
+    display: block; font-weight: 600; font-size: 0.85rem; color: #334155;
+    margin-bottom: 0.3rem;
+  }
+  label .req { color: #dc2626; }
+  .hint {
+    font-size: 0.78rem; color: #64748b; margin: 0.2rem 0 0;
+  }
+  .field { margin-bottom: 1.1rem; }
+  input[type="text"], select, textarea {
+    width: 100%; padding: 0.55rem 0.7rem; font-size: 0.92rem;
+    border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;
+    color: #1e293b; font-family: inherit;
+  }
+  input[type="text"]:focus, select:focus, textarea:focus {
+    outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+  }
+  textarea { min-height: 200px; resize: vertical; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.85rem; line-height: 1.5; }
+  .actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+  .btn-create {
+    padding: 0.6rem 1.4rem; font-size: 0.92rem; font-weight: 600;
+    background: #2563eb; color: #fff; border: none; border-radius: 6px;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .btn-create:hover:not(:disabled) { background: #1d4ed8; }
+  .btn-create:disabled { background: #94a3b8; cursor: not-allowed; }
+  .status {
+    margin-left: 0.5rem; font-size: 0.85rem;
+    transition: opacity 0.15s;
+  }
+  .status.ok { color: #047857; }
+  .status.err { color: #b91c1c; }
+  .status.busy { color: #64748b; }
+  .empty-drafts {
+    background: #fef9c3; border: 1px solid #fde68a; color: #713f12;
+    padding: 0.65rem 0.85rem; border-radius: 6px; font-size: 0.85rem;
+    margin-bottom: 1rem;
+  }
+  .empty-drafts a { color: #1d4ed8; }
+</style>
+</head>
+<body>
+  <a class="nav-back" href="/dashboard">← Back to dashboard</a>
+  <h1>Quick Create Agent</h1>
+  <p class="subtitle">Pick a draft, name the business, paste the FAQ. The new agent is created with everything else inherited from the draft.</p>
+
+  <div id="emptyDraftsBanner" class="empty-drafts" style="display:none;">
+    No drafts found. <a href="/form">Create one in the agent form</a> first — Save Draft after filling in routing paths and dispatch settings.
+  </div>
+
+  <div class="card">
+    <form id="quickCreateForm">
+      <div class="field">
+        <label for="draftSelect">Draft <span class="req">*</span></label>
+        <select id="draftSelect" required>
+          <option value="">— Loading drafts… —</option>
+        </select>
+        <p class="hint">The draft supplies routing paths, data points, dispatch defaults, and prompts. The business name and FAQ below override.</p>
+      </div>
+
+      <div class="field">
+        <label for="businessName">Business Name <span class="req">*</span></label>
+        <input type="text" id="businessName" required placeholder="e.g. Acme Plumbing" autocomplete="off">
+        <p class="hint">Used in prompts, welcome line, FAQ text, and notification greetings. Exact case is preserved.</p>
+      </div>
+
+      <div class="field">
+        <label for="faqKnowledgeBase">FAQ / Knowledge Base <span class="req">*</span></label>
+        <textarea id="faqKnowledgeBase" required placeholder="Hours: Mon–Fri 8am–6pm.&#10;Service area: Greater Chicago.&#10;Pricing: free quotes; $89 service-call fee waived if work is performed.&#10;…"></textarea>
+        <p class="hint">Plain text or markdown. The agent quotes from this when callers ask out-of-flow questions.</p>
+      </div>
+
+      <div class="actions">
+        <button type="submit" id="btnCreate" class="btn-create">Create Agent</button>
+        <span id="status" class="status"></span>
+      </div>
+    </form>
+  </div>
+
+<script>
+  let apiKey = '';
+
+  async function init() {
+    // Fetch the API key (needed for /agents/from-draft) and the drafts list
+    // in parallel. /form/config and /form/drafts both share the same auth
+    // chain as this page (sessionAuth + create_agents permission).
+    try {
+      const [cfgRes, draftsRes] = await Promise.all([
+        fetch('/form/config'),
+        fetch('/form/drafts'),
+      ]);
+      if (!cfgRes.ok) throw new Error('Could not load config');
+      const cfg = await cfgRes.json();
+      apiKey = cfg.apiKey || '';
+
+      const drafts = draftsRes.ok ? await draftsRes.json() : [];
+      const sel = document.getElementById('draftSelect');
+      sel.innerHTML = '';
+      if (!drafts.length) {
+        sel.innerHTML = '<option value="">— No drafts available —</option>';
+        document.getElementById('emptyDraftsBanner').style.display = 'block';
+        document.getElementById('btnCreate').disabled = true;
+        return;
+      }
+      sel.innerHTML = '<option value="">— Select a draft —</option>';
+      for (const d of drafts) {
+        const date = d.updatedAt ? ' (' + new Date(d.updatedAt).toLocaleDateString() + ')' : '';
+        const opt = document.createElement('option');
+        opt.value = d.name;
+        opt.textContent = d.name + date;
+        sel.appendChild(opt);
+      }
+    } catch (err) {
+      setStatus('Failed to load drafts: ' + err.message, 'err');
+    }
+  }
+
+  function setStatus(text, kind) {
+    const el = document.getElementById('status');
+    el.textContent = text;
+    el.className = 'status ' + (kind || '');
+  }
+
+  document.getElementById('quickCreateForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const draft = document.getElementById('draftSelect').value;
+    const businessName = document.getElementById('businessName').value.trim();
+    const faqKnowledgeBase = document.getElementById('faqKnowledgeBase').value.trim();
+
+    if (!draft) { setStatus('Pick a draft first.', 'err'); return; }
+    if (!businessName) { setStatus('Business name is required.', 'err'); return; }
+    if (!faqKnowledgeBase) { setStatus('FAQ is required.', 'err'); return; }
+
+    document.getElementById('btnCreate').disabled = true;
+    setStatus('Creating…', 'busy');
+
+    try {
+      const res = await fetch('/agents/from-draft', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({
+          draft,
+          business: { businessName, faqKnowledgeBase },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || ('HTTP ' + res.status) + (data.details ? ' — ' + data.details : ''));
+      }
+      setStatus('Created! Redirecting…', 'ok');
+      const slug = data.slug;
+      // Land on the new agent's editor for immediate review.
+      setTimeout(() => {
+        window.location.href = '/dashboard#agent=' + encodeURIComponent(slug) + '&tab=settings';
+      }, 600);
+    } catch (err) {
+      setStatus(err.message || 'Create failed', 'err');
+      document.getElementById('btnCreate').disabled = false;
+    }
+  });
+
+  init();
+</script>
+</body>
+</html>

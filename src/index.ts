@@ -329,6 +329,23 @@ formRouter.delete("/drafts/:id", async (req, res) => {
 
 app.use("/form", authLimiter, sessionAuth, requirePermission("create_agents"), formRouter);
 
+// ── Quick Create (one-page agent-from-draft instantiator) ───────────────────
+const quickCreateHtmlPath = path.join(__dirname, "..", "public", "quick-create.html");
+app.get(
+  "/quick-create",
+  authLimiter,
+  sessionAuth,
+  requirePermission("create_agents"),
+  (_req, res) => {
+    try {
+      res.type("html").send(fs.readFileSync(quickCreateHtmlPath, "utf8"));
+    } catch (err) {
+      console.error("[quick-create] failed to read quick-create.html:", err);
+      res.status(500).send("Page not found");
+    }
+  },
+);
+
 // ── Dashboard (Basic Auth protected) ────────────────────────────────────────
 app.use("/dashboard", sessionAuth);
 app.use("/dashboard", dashboardRouter);

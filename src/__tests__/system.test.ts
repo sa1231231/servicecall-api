@@ -570,6 +570,14 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     it("rejects without auth", async () => {
       expect((await fetch(url("/form"))).status).toBe(401);
     });
+    it("serves quick-create HTML with auth", async () => {
+      const resp = await fetch(url("/quick-create"), { headers: { Authorization: basicAuthHeader() } });
+      expect(resp.status).toBe(200);
+      expect(await resp.text()).toContain("Quick Create Agent");
+    });
+    it("/quick-create rejects without auth", async () => {
+      expect((await fetch(url("/quick-create"))).status).toBe(401);
+    });
     it("serves dashboard HTML with auth", async () => {
       const resp = await fetch(url("/dashboard"), { headers: { Authorization: basicAuthHeader() } });
       expect(resp.status).toBe(200);
