@@ -156,12 +156,23 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
   const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
 
   try {
+    // Server-managed web search lets the skill look up the lead by phone
+    // number / business name during the same call and weave the result
+    // into the JSON config. The API runs the tool transparently and
+    // returns the final text — we don't have to handle multi-turn here.
     const result = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
-    });
+      tools: [
+        {
+          type: "web_search_20250305" as any,
+          name: "web_search",
+          max_uses: 5,
+        } as any,
+      ],
+    } as any);
 
     const rawResponse = extractText(result);
     // Length-bounded log so we can correlate parser misses with what the
