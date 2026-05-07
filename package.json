@@ -14,7 +14,10 @@
     "test:paths": "SYSTEM_TEST_URL=$BASE_URL vitest run src/__tests__/conversation-paths.test.ts",
     "test:lint": "vitest run src/lib/__tests__/data-point-lint.test.ts",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "apps-script:push": "cd apps-script && clasp push",
+    "apps-script:pull": "cd apps-script && clasp pull",
+    "apps-script:open": "cd apps-script && clasp open"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.0",
@@ -28,6 +31,7 @@
     "twilio": "^5.13.1"
   },
   "devDependencies": {
+    "@google/clasp": "^3.3.0",
     "@playwright/test": "^1.59.1",
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",

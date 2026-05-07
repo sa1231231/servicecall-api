@@ -1,19 +1,30 @@
 /**
  * ServiceCall Saver — Google Sheets → Pending Leads sync.
  *
- * Setup:
- *  1. Open the Sheet → Extensions → Apps Script. Paste this file in.
- *  2. Project Settings → Script properties. Add:
- *       API_BASE_URL       https://your-api-host          (no trailing slash)
- *       LEAD_INTAKE_TOKEN  <same value as the API env>
- *       SHEET_NAME         Leads                           (optional; first sheet if blank)
- *       NAME_COL           1                               (1-indexed column numbers)
- *       PHONE_COL          2
- *       WEBSITE_COL                                        (optional; leave blank to skip)
- *       NOTES_COL                                          (optional)
- *       STATUS_COL         5                               (we write the lead id / "paused" here)
- *       HEADER_ROWS        1                               (rows to skip at the top)
- *  3. Triggers → Add trigger → syncNewLeads → on change   (or time-based every 5 min).
+ * The repo (apps-script/) is the source of truth. Deploy with clasp,
+ * not copy/paste.
+ *
+ * One-time setup (per developer machine):
+ *   npm i                         # picks up @google/clasp from devDeps
+ *   npx clasp login               # OAuths your Google account once
+ *   cd apps-script && npx clasp clone <scriptId>  # binds to the existing project
+ *     (or: cd apps-script && npx clasp create --type sheets --title 'Lead Sync')
+ *
+ * Per-change deploy:
+ *   npm run apps-script:push      # syncs apps-script/ → the bound project
+ *
+ * One-time Sheet/script configuration:
+ *   1. Project Settings → Script properties:
+ *        API_BASE_URL       https://your-api-host          (no trailing slash)
+ *        LEAD_INTAKE_TOKEN  <same value as the API env>
+ *        SHEET_NAME         Leads                           (optional; first sheet if blank)
+ *        NAME_COL           1                               (1-indexed column numbers)
+ *        PHONE_COL          2
+ *        WEBSITE_COL                                        (optional; leave blank to skip)
+ *        NOTES_COL                                          (optional)
+ *        STATUS_COL         5                               (we write the lead id here)
+ *        HEADER_ROWS        1                               (rows to skip at the top)
+ *   2. Triggers → Add trigger → syncNewLeads → on change   (or time-based every 5 min).
  *
  * Behavior: rows whose STATUS_COL is empty get POSTed. On 201 we write the lead id
  * back so the row never re-syncs. On 423 (paused via dashboard toggle) we stop early

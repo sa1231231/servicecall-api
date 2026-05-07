@@ -8,3 +8,10 @@ coverage/
 *.log
 playwright-report/
 test-results/
+
+# clasp — `.clasp.json` is per-user (holds your scriptId) and `.clasprc.json`
+# is the auth token. Both stay out of the repo; the user runs `clasp clone`
+# or `clasp create` once locally to generate them.
+.clasp.json
+apps-script/.clasp.json
+.clasprc.json
