@@ -114,34 +114,39 @@ const { dashboardApiRouter } = await import("../index.js");
 
 // ── Test harness ──────────────────────────────────────────────────────────
 
+type Level = "none" | "read" | "write" | "manage";
+
 interface UserShape {
   username: string;
   role: "viewer" | "operator" | "admin" | "super_admin";
   permissions: Record<string, boolean>;
+  featurePermissions: Record<string, Level>;
   isRoot: boolean;
 }
 
-function makeUser(role: UserShape["role"], overrides: Partial<UserShape["permissions"]> = {}): UserShape {
-  // Mirror the operator default in src/lib/users.ts: most things on,
-  // destructive things off. Tests then flip the specific perm under test.
-  const operatorBase = {
-    create_agents: true,
-    edit_agents: true,
-    clone_agents: true,
-    delete_agents: false,
-    send_comms: true,
-    manage_settings: false,
-    manage_data_points: false,
-    manage_users: false,
-    manage_deleted: false,
-  };
-  const adminBase = Object.fromEntries(Object.keys(operatorBase).map((k) => [k, true]));
-  const viewerBase = Object.fromEntries(Object.keys(operatorBase).map((k) => [k, false]));
-  const base = role === "viewer" ? viewerBase : role === "operator" ? operatorBase : adminBase;
+const FEATURE_KEYS = [
+  "agents", "agent_config", "agent_lifecycle", "permanent_delete",
+  "node_editor", "call_logs", "billing", "folders", "pending_leads",
+  "global_settings", "sms_templates", "data_point_defaults",
+  "send_comms", "sms_blast", "users", "role_defaults", "audit_log",
+  "backups", "phone_numbers",
+];
+
+/** Build a user with all features at the given level (`featureOverrides`
+ *  flips specific features for the test). */
+function makeUserAt(
+  role: UserShape["role"],
+  baseLevel: Level,
+  featureOverrides: Record<string, Level> = {},
+): UserShape {
+  const fp: Record<string, Level> = {};
+  for (const f of FEATURE_KEYS) fp[f] = baseLevel;
+  for (const [k, v] of Object.entries(featureOverrides)) fp[k] = v;
   return {
     username: `${role}-test`,
     role,
-    permissions: { ...base, ...overrides } as Record<string, boolean>,
+    permissions: {},
+    featurePermissions: fp,
     isRoot: false,
   };
 }
@@ -191,71 +196,92 @@ beforeEach(() => {
 interface GateCase {
   method: "get" | "post" | "patch" | "delete";
   path: string;
-  perm: string;
-  // Body needed to get past the handler's input validation; it's fine to
-  // omit (the test only cares that the response isn't 403).
+  feature: string;
+  level: Level;
   body?: Record<string, unknown>;
   params?: Record<string, string>;
 }
 
 const CASES: GateCase[] = [
-  { method: "patch",  path: "/agents/:slug",                       perm: "edit_agents",      params: { slug: "acme" }, body: { display_name: "X" } },
-  { method: "patch",  path: "/agents/:slug/shadow",                perm: "edit_agents",      params: { slug: "acme" }, body: { shadow_mode: true } },
-  { method: "patch",  path: "/agents/:slug/active",                perm: "edit_agents",      params: { slug: "acme" }, body: { active: true } },
-  { method: "patch",  path: "/agents/:slug/folder",                perm: "edit_agents",      params: { slug: "acme" }, body: { folder_id: null } },
-  { method: "post",   path: "/agents/:slug/clone",                 perm: "clone_agents",     params: { slug: "acme" }, body: { name: "X", faq: "Y" } },
-  { method: "delete", path: "/agents/:slug",                       perm: "delete_agents",    params: { slug: "acme" } },
-  { method: "post",   path: "/folders",                            perm: "edit_agents",      body: { name: "F" } },
-  { method: "patch",  path: "/folders/:id",                        perm: "edit_agents",      params: { id: "x" } },
-  { method: "delete", path: "/folders/:id",                        perm: "edit_agents",      params: { id: "x" } },
-  { method: "get",    path: "/deleted-agents",                     perm: "manage_deleted" },
-  { method: "post",   path: "/deleted-agents/:slug/restore",       perm: "manage_deleted",   params: { slug: "acme" } },
-  { method: "delete", path: "/deleted-agents/:slug",               perm: "manage_deleted",   params: { slug: "acme" } },
-  { method: "patch",  path: "/settings",                           perm: "manage_settings",  body: {} },
-  { method: "post",   path: "/blast-sms/preview",                  perm: "send_comms",       body: { message: "hi" } },
-  { method: "post",   path: "/blast-sms",                          perm: "send_comms",       body: { message: "hi", confirm: true, confirm_recipients: 0 } },
+  { method: "patch",  path: "/agents/:slug",                  feature: "agent_config",     level: "write",  params: { slug: "acme" }, body: { display_name: "X" } },
+  { method: "patch",  path: "/agents/:slug/shadow",           feature: "agent_config",     level: "write",  params: { slug: "acme" }, body: { shadow_mode: true } },
+  { method: "patch",  path: "/agents/:slug/active",           feature: "agent_config",     level: "write",  params: { slug: "acme" }, body: { active: true } },
+  { method: "patch",  path: "/agents/:slug/folder",           feature: "folders",          level: "write",  params: { slug: "acme" }, body: { folder_id: null } },
+  { method: "post",   path: "/agents/:slug/clone",            feature: "agent_lifecycle",  level: "write",  params: { slug: "acme" }, body: { name: "X", faq: "Y" } },
+  { method: "delete", path: "/agents/:slug",                  feature: "agent_lifecycle",  level: "manage", params: { slug: "acme" } },
+  { method: "post",   path: "/folders",                       feature: "folders",          level: "write",  body: { name: "F" } },
+  { method: "patch",  path: "/folders/:id",                   feature: "folders",          level: "write",  params: { id: "x" } },
+  { method: "delete", path: "/folders/:id",                   feature: "folders",          level: "manage", params: { id: "x" } },
+  { method: "get",    path: "/deleted-agents",                feature: "permanent_delete", level: "read" },
+  { method: "post",   path: "/deleted-agents/:slug/restore",  feature: "permanent_delete", level: "write",  params: { slug: "acme" } },
+  { method: "delete", path: "/deleted-agents/:slug",          feature: "permanent_delete", level: "manage", params: { slug: "acme" } },
+  { method: "patch",  path: "/settings",                      feature: "global_settings",  level: "write",  body: {} },
+  { method: "post",   path: "/blast-sms/preview",             feature: "sms_blast",        level: "read",   body: { message: "hi" } },
+  { method: "post",   path: "/blast-sms",                     feature: "sms_blast",        level: "write",  body: { message: "hi", confirm: true, confirm_recipients: 0 } },
 ];
 
-describe("dashboard route permission gates", () => {
+const RANK: Record<Level, number> = { none: 0, read: 1, write: 2, manage: 3 };
+function levelBelow(l: Level): Level {
+  if (l === "manage") return "write";
+  if (l === "write") return "read";
+  if (l === "read") return "none";
+  return "none";
+}
+
+describe("dashboard route permission gates (feature/level)", () => {
   for (const c of CASES) {
-    it(`${c.method.toUpperCase()} ${c.path} requires "${c.perm}"`, async () => {
-      // Without the perm: must 403.
+    it(`${c.method.toUpperCase()} ${c.path} requires ${c.feature}:${c.level}`, async () => {
+      // Without sufficient level → 403.
       const denied = makeRes();
       await runRoute(
         dashboardApiRouter,
         c.method,
         c.path,
-        makeReq(makeUser("operator", { [c.perm]: false }), { params: c.params, body: c.body }),
+        makeReq(
+          makeUserAt("operator", "manage", { [c.feature]: levelBelow(c.level) }),
+          { params: c.params, body: c.body },
+        ),
         denied,
       );
-      expect(denied._status, `${c.method} ${c.path} should 403 without ${c.perm}`).toBe(403);
+      expect(denied._status, `${c.method} ${c.path} should 403 without ${c.feature}:${c.level}`).toBe(403);
 
-      // With the perm: must NOT 403 (the handler is mocked to 200/201/etc).
+      // With exactly the required level → not 403.
       const allowed = makeRes();
       await runRoute(
         dashboardApiRouter,
         c.method,
         c.path,
-        makeReq(makeUser("operator", { [c.perm]: true }), { params: c.params, body: c.body }),
+        makeReq(
+          makeUserAt("operator", "none", { [c.feature]: c.level }),
+          { params: c.params, body: c.body },
+        ),
         allowed,
       );
-      expect(allowed._status, `${c.method} ${c.path} should pass when ${c.perm} is granted`).not.toBe(403);
+      expect(allowed._status, `${c.method} ${c.path} should pass when ${c.feature}:${c.level} is granted`).not.toBe(403);
     });
   }
 
-  it("blast-sms (send) is gated on send_comms, NOT manage_settings", async () => {
-    // A "settings admin" who lacks send_comms must NOT be able to blast.
+  it("/users routes are super_admin-or-root only (admin gets 403)", async () => {
     const res = makeRes();
     await runRoute(
       dashboardApiRouter,
-      "post",
-      "/blast-sms",
-      makeReq(
-        makeUser("operator", { manage_settings: true, send_comms: false }),
-        { body: { message: "hi", confirm: true, confirm_recipients: 0 } },
-      ),
+      "get",
+      "/users",
+      makeReq(makeUserAt("admin", "manage"), {}),
       res,
     );
     expect(res._status).toBe(403);
+  });
+
+  it("/users routes succeed for super_admin", async () => {
+    const res = makeRes();
+    await runRoute(
+      dashboardApiRouter,
+      "get",
+      "/users",
+      makeReq(makeUserAt("super_admin", "manage"), {}),
+      res,
+    );
+    expect(res._status).not.toBe(403);
   });
 });

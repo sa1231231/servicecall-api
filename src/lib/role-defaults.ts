@@ -1,67 +1,38 @@
 // Role-default permission storage.
 //
-// Historically lived as a hard-coded constant in users.ts. Now stored in
-// MongoDB so super_admin / root can edit them without a deploy.
+// Stored as docs in the `role_defaults` collection (`_id: <role>`). Each
+// doc carries the new feature/level shape:
+//   { _id: "operator", feature_permissions: { agent_config: "write", ... } }
+//
+// Backward compat: docs written under the old shape (`permissions:
+// {edit_agents: true, ...}`) are migrated on read via
+// `migrateOldPermissionsToFeatureLevels`.
 //
 // Cache strategy: load all role defaults at boot into a sync map. Every
-// `PATCH /role-defaults/:role` call refreshes the cache after the write.
-// `requirePermission(...)` is sync and per-request hot, so we never await
-// inside it — `resolvePermissions(role, stored)` reads from the cache.
-//
-// Stale-cache window across multiple Node instances: a few seconds (the
-// time between an edit on one instance and the next request on another).
-// Acceptable for a dashboard. If we ever go multi-region, swap the cache
-// for a TTL'd Redis read or a Mongo change stream.
+// `PATCH /role-defaults/:role` call refreshes the cache so the request
+// hot path (`requireFeature`) never awaits.
 
 import { getDb } from "./db.js";
+import {
+  ROLES,
+  type Role,
+  type Level,
+  FEATURE_KEYS,
+  SEED_FEATURE_DEFAULTS,
+  migrateOldPermissionsToFeatureLevels,
+} from "./feature-permissions.js";
 
-// Roles are duplicated here (rather than imported from users.ts) so
-// users.ts can import from this module without a cycle.
-export type Role = "super_admin" | "admin" | "operator" | "viewer";
-export const ROLES: Role[] = ["super_admin", "admin", "operator", "viewer"];
-
-// Permission keys must mirror PERMISSION_DEFS in users.ts. The drift
-// guard in `permission-catalog.test.ts` and `users.test.ts` will fail
-// CI if these get out of sync.
-export const PERMISSION_KEYS_INTERNAL = [
-  "create_agents",
-  "edit_agents",
-  "clone_agents",
-  "delete_agents",
-  "send_comms",
-  "manage_settings",
-  "manage_data_points",
-  "manage_users",
-  "view_billing",
-  "manage_deleted",
-  "manage_leads",
-];
-
-// Hard-coded seed defaults — used until the MongoDB cache is loaded
-// and as a fallback if the DB is unreachable. Mirrors the original
-// SEED_DEFAULTS in users.ts.
-export const SEED_DEFAULTS: Record<Role, Record<string, boolean>> = {
-  super_admin: Object.fromEntries(PERMISSION_KEYS_INTERNAL.map((k) => [k, true])),
-  admin: Object.fromEntries(PERMISSION_KEYS_INTERNAL.map((k) => [k, k !== "view_billing" && k !== "manage_deleted"])),
-  operator: {
-    create_agents: true,
-    edit_agents: true,
-    clone_agents: true,
-    delete_agents: false,
-    send_comms: true,
-    manage_settings: false,
-    manage_data_points: false,
-    manage_users: false,
-    view_billing: false,
-    manage_deleted: false,
-    manage_leads: true,
-  },
-  viewer: Object.fromEntries(PERMISSION_KEYS_INTERNAL.map((k) => [k, false])),
-};
+export type { Role, Level } from "./feature-permissions.js";
+export { ROLES } from "./feature-permissions.js";
+// Re-exported under the historical name for callers that haven't migrated.
+export const SEED_DEFAULTS = SEED_FEATURE_DEFAULTS;
 
 interface RoleDefaultDoc {
   _id: Role;
-  permissions: Record<string, boolean>;
+  // New shape — written by setRoleDefaults().
+  feature_permissions?: Record<string, Level>;
+  // Legacy shape — read transparently via migration.
+  permissions?: Record<string, boolean>;
   updated_at?: Date;
   updated_by?: string;
 }
@@ -70,75 +41,78 @@ function collection() {
   return getDb().collection<RoleDefaultDoc>("role_defaults");
 }
 
-let cache: Record<Role, Record<string, boolean>> = {
-  super_admin: { ...SEED_DEFAULTS.super_admin },
-  admin: { ...SEED_DEFAULTS.admin },
-  operator: { ...SEED_DEFAULTS.operator },
-  viewer: { ...SEED_DEFAULTS.viewer },
+let cache: Record<Role, Record<string, Level>> = {
+  super_admin: { ...SEED_FEATURE_DEFAULTS.super_admin },
+  admin: { ...SEED_FEATURE_DEFAULTS.admin },
+  operator: { ...SEED_FEATURE_DEFAULTS.operator },
+  viewer: { ...SEED_FEATURE_DEFAULTS.viewer },
 };
 let cacheLoaded = false;
 
-/** Load every role-default doc into the in-memory cache, seeding any
- *  missing roles with the hard-coded `SEED_DEFAULTS` constant.
- *  Called at boot from index.ts.
- *
- *  Safe to call repeatedly — each call replaces the cache atomically. */
-export async function loadRoleDefaultsCache(): Promise<void> {
-  const docs = await collection().find({}).toArray();
-  const next: Record<Role, Record<string, boolean>> = {
-    super_admin: { ...SEED_DEFAULTS.super_admin },
-    admin: { ...SEED_DEFAULTS.admin },
-    operator: { ...SEED_DEFAULTS.operator },
-    viewer: { ...SEED_DEFAULTS.viewer },
-  };
-  for (const doc of docs) {
-    if (ROLES.includes(doc._id)) {
-      next[doc._id] = mergeWithKnownKeys(doc.permissions ?? {});
-    }
+/** Read a role-default doc and resolve to the new feature/level shape,
+ *  migrating from the legacy boolean shape if needed. */
+function resolveDoc(doc: RoleDefaultDoc | null, role: Role): Record<string, Level> {
+  if (!doc) return { ...SEED_FEATURE_DEFAULTS[role] };
+  if (doc.feature_permissions && Object.keys(doc.feature_permissions).length > 0) {
+    return mergeWithKnownFeatures(doc.feature_permissions);
   }
-  cache = next;
-  cacheLoaded = true;
-  console.log("[role-defaults] cache loaded:", JSON.stringify({
-    admin_count: Object.values(cache.admin).filter(Boolean).length,
-    operator_count: Object.values(cache.operator).filter(Boolean).length,
-    viewer_count: Object.values(cache.viewer).filter(Boolean).length,
-  }));
+  if (doc.permissions) {
+    return migrateOldPermissionsToFeatureLevels(doc.permissions, role);
+  }
+  return { ...SEED_FEATURE_DEFAULTS[role] };
 }
 
-/** Merge a stored permission map with the full known-key list so any
- *  permissions added since the doc was last written default to the
- *  hardcoded constant rather than `undefined` (which would render as
- *  unchecked in the UI even if the route allows the role). */
-function mergeWithKnownKeys(stored: Record<string, boolean>): Record<string, boolean> {
-  const out: Record<string, boolean> = {};
-  for (const key of PERMISSION_KEYS_INTERNAL) {
-    out[key] = key in stored ? !!stored[key] : false;
+function mergeWithKnownFeatures(stored: Record<string, Level>): Record<string, Level> {
+  const out: Record<string, Level> = {};
+  for (const f of FEATURE_KEYS) {
+    out[f] = (stored[f] ?? "none") as Level;
   }
   return out;
 }
 
-/** Sync read for use in `resolvePermissions(...)` and the request hot
- *  path. Returns the cached defaults; if the cache hasn't been loaded
- *  yet (e.g. during early boot), returns the hardcoded constant. */
-export function getCachedRoleDefaults(role: Role): Record<string, boolean> {
-  if (!cacheLoaded) return { ...SEED_DEFAULTS[role] };
+/** Load every role-default doc into the in-memory cache. Safe to call
+ *  repeatedly — each call replaces the cache atomically. */
+export async function loadRoleDefaultsCache(): Promise<void> {
+  const docs = await collection().find({}).toArray();
+  const docByRole = new Map<Role, RoleDefaultDoc>();
+  for (const d of docs) if (ROLES.includes(d._id)) docByRole.set(d._id, d);
+
+  const next: Record<Role, Record<string, Level>> = {
+    super_admin: resolveDoc(docByRole.get("super_admin") ?? null, "super_admin"),
+    admin: resolveDoc(docByRole.get("admin") ?? null, "admin"),
+    operator: resolveDoc(docByRole.get("operator") ?? null, "operator"),
+    viewer: resolveDoc(docByRole.get("viewer") ?? null, "viewer"),
+  };
+  cache = next;
+  cacheLoaded = true;
+  console.log("[role-defaults] cache loaded (feature shape) — admin/operator/viewer feature counts:",
+    Object.values(cache.admin).filter((l) => l !== "none").length,
+    "/",
+    Object.values(cache.operator).filter((l) => l !== "none").length,
+    "/",
+    Object.values(cache.viewer).filter((l) => l !== "none").length,
+  );
+}
+
+/** Sync read for `requireFeature(...)` / `resolveFeaturePermissions`. */
+export function getCachedRoleDefaults(role: Role): Record<string, Level> {
+  if (!cacheLoaded) return { ...SEED_FEATURE_DEFAULTS[role] };
   return { ...cache[role] };
 }
 
-/** Async read — used by the GET /role-defaults route. */
-export async function getRoleDefaults(role: Role): Promise<Record<string, boolean>> {
+/** Async read — used by GET /role-defaults. */
+export async function getRoleDefaults(role: Role): Promise<Record<string, Level>> {
   const doc = await collection().findOne({ _id: role });
-  if (!doc) return { ...SEED_DEFAULTS[role] };
-  return mergeWithKnownKeys(doc.permissions ?? {});
+  return resolveDoc(doc, role);
 }
 
 /** Read all four role defaults as a {role: perms} map. */
-export async function getAllRoleDefaults(): Promise<Record<Role, Record<string, boolean>>> {
-  const out: Record<Role, Record<string, boolean>> = {
-    super_admin: { ...SEED_DEFAULTS.super_admin },
-    admin: { ...SEED_DEFAULTS.admin },
-    operator: { ...SEED_DEFAULTS.operator },
-    viewer: { ...SEED_DEFAULTS.viewer },
+export async function getAllRoleDefaults(): Promise<Record<Role, Record<string, Level>>> {
+  const out: Record<Role, Record<string, Level>> = {
+    super_admin: { ...SEED_FEATURE_DEFAULTS.super_admin },
+    admin: { ...SEED_FEATURE_DEFAULTS.admin },
+    operator: { ...SEED_FEATURE_DEFAULTS.operator },
+    viewer: { ...SEED_FEATURE_DEFAULTS.viewer },
   };
   for (const role of ROLES) {
     out[role] = await getRoleDefaults(role);
@@ -146,30 +120,34 @@ export async function getAllRoleDefaults(): Promise<Record<Role, Record<string, 
   return out;
 }
 
-/** Write a new permission map for the given role, then refresh the
- *  cache so future requests see the change. Returns the resolved
- *  (post-merge) map that was actually stored. */
+/** Write a feature/level map for the given role, then refresh the cache. */
 export async function setRoleDefaults(
   role: Role,
-  perms: Record<string, boolean>,
+  perms: Record<string, Level>,
   updatedBy: string,
-): Promise<Record<string, boolean>> {
+): Promise<Record<string, Level>> {
   if (!ROLES.includes(role)) {
     throw new Error(`Unknown role "${role}"`);
   }
-  // Strict allow-list: only known permission keys make it into the doc.
-  const clean: Record<string, boolean> = {};
-  for (const key of PERMISSION_KEYS_INTERNAL) {
-    clean[key] = !!perms[key];
+  // Strict allow-list: only known feature keys, only valid levels.
+  const valid: Level[] = ["none", "read", "write", "manage"];
+  const clean: Record<string, Level> = {};
+  for (const f of FEATURE_KEYS) {
+    const incoming = perms[f];
+    clean[f] = (typeof incoming === "string" && valid.includes(incoming as Level))
+      ? (incoming as Level)
+      : "none";
   }
   await collection().updateOne(
     { _id: role },
     {
       $set: {
-        permissions: clean,
+        feature_permissions: clean,
         updated_at: new Date(),
         updated_by: updatedBy,
       },
+      // Drop the legacy field if the doc still has it.
+      $unset: { permissions: "" },
     },
     { upsert: true },
   );

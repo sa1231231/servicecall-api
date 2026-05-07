@@ -98,6 +98,8 @@ vi.mock("../../../middleware/require-role.js", () => ({
   requirePermission: () => (_req: Request, _res: Response, next: NextFunction) => next(),
   requireRoot: (_req: Request, _res: Response, next: NextFunction) => next(),
   requireRootForProtectedSlug: (_req: Request, _res: Response, next: NextFunction) => next(),
+  requireFeature: () => (_req: Request, _res: Response, next: NextFunction) => next(),
+  requireSuperAdminOrRoot: (_req: Request, _res: Response, next: NextFunction) => next(),
 }));
 vi.mock("../../../lib/audit.js", () => ({
   logAudit: (...a: any[]) => mockLogAudit(...a),
@@ -111,6 +113,7 @@ vi.mock("../../../lib/users.js", () => ({
   createUser: (...a: any[]) => mockCreateUser(...a),
   deleteUser: (...a: any[]) => mockDeleteUser(...a),
   updateUserPermissions: (...a: any[]) => mockUpdateUserPermissions(...a),
+  updateUserFeaturePermissions: (...a: any[]) => mockUpdateUserPermissions(...a),
   resolvePermissions: (_role: string, stored?: Record<string, boolean>) => stored ?? {},
   PERMISSION_DEFS: [],
   DEFAULT_PERMISSIONS: {},
@@ -121,6 +124,7 @@ vi.mock("../../../lib/blast-sms.js", () => ({
   sendBlast: (...a: any[]) => mockSendBlast(...a),
 }));
 vi.mock("../../../lib/permission-catalog.js", () => ({ PERMISSION_CATALOG: [] }));
+vi.mock("../../../lib/feature-permissions.js", () => ({ FEATURES: [], SEED_FEATURE_DEFAULTS: {} }));
 const { mockGetAllRoleDefaults, mockSetRoleDefaults } = vi.hoisted(() => ({
   mockGetAllRoleDefaults: vi.fn(),
   mockSetRoleDefaults: vi.fn(),
@@ -974,11 +978,11 @@ describe("POST /users", () => {
     const res = makeRes();
     await runRoute(dashboardApiRouter, "post", "/users",
       makeReq({
-        body: { username: "alice", password: "secret123", role: "operator" },
+        body: { username: "alice", password: "secret-long-password-123", role: "operator" },
         user: { username: "admin" },
       }), res);
     expect(res._json.success).toBe(true);
-    expect(mockCreateUser).toHaveBeenCalledWith("alice", "secret123", "operator", "admin", undefined);
+    expect(mockCreateUser).toHaveBeenCalledWith("alice", "secret-long-password-123", "operator", "admin", undefined);
   });
 
   it("returns 400 when createUser throws (e.g. duplicate)", async () => {
@@ -1111,32 +1115,32 @@ describe("PATCH /role-defaults/:role", () => {
     expect(res._status).toBe(400);
   });
 
-  it("super_admin write succeeds, audits with diff, returns changed keys", async () => {
+  it("super_admin write succeeds, audits with diff, returns changed features", async () => {
     mockGetAllRoleDefaults.mockResolvedValue({
       super_admin: {}, admin: {}, viewer: {},
-      operator: { create_agents: true, manage_leads: true },
+      operator: { agent_config: "write", pending_leads: "write" },
     });
-    mockSetRoleDefaults.mockResolvedValue({ create_agents: true, manage_leads: false });
+    mockSetRoleDefaults.mockResolvedValue({ agent_config: "write", pending_leads: "none" });
     const res = makeRes();
     await runRoute(dashboardApiRouter, "patch", "/role-defaults/:role",
       makeReq({
         params: { role: "operator" },
-        body: { permissions: { create_agents: true, manage_leads: false } },
+        body: { permissions: { agent_config: "write", pending_leads: "none" } },
         user: { username: "sa", role: "super_admin", isRoot: false, permissions: {} },
       }), res);
     expect(res._status).toBe(200);
     expect(res._json.role).toBe("operator");
-    expect(res._json.changed).toEqual(["manage_leads"]);
+    expect(res._json.changed).toEqual(["pending_leads"]);
     expect(mockSetRoleDefaults).toHaveBeenCalledWith(
       "operator",
-      expect.objectContaining({ manage_leads: false }),
+      expect.objectContaining({ pending_leads: "none" }),
       "sa",
     );
     expect(mockLogAudit).toHaveBeenCalledWith(
       expect.anything(),
       "update_role_defaults",
       "operator",
-      expect.objectContaining({ diff: expect.objectContaining({ manage_leads: { before: true, after: false } }) }),
+      expect.objectContaining({ diff: expect.objectContaining({ pending_leads: { before: "write", after: "none" } }) }),
     );
   });
 
@@ -1144,12 +1148,12 @@ describe("PATCH /role-defaults/:role", () => {
     mockGetAllRoleDefaults.mockResolvedValue({
       super_admin: {}, admin: {}, viewer: {}, operator: {},
     });
-    mockSetRoleDefaults.mockResolvedValue({ create_agents: true });
+    mockSetRoleDefaults.mockResolvedValue({ agent_config: "write" });
     const res = makeRes();
     await runRoute(dashboardApiRouter, "patch", "/role-defaults/:role",
       makeReq({
         params: { role: "viewer" },
-        body: { permissions: { create_agents: true } },
+        body: { permissions: { agent_config: "write" } },
         user: { username: "root", role: "admin", isRoot: true, permissions: {} },
       }), res);
     expect(res._status).toBe(200);

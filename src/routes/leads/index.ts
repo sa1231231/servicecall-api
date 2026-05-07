@@ -1,6 +1,6 @@
 import { Router } from "express";
 import express from "express";
-import { requirePermission } from "../../middleware/require-role.js";
+import { requireFeature } from "../../middleware/require-role.js";
 import { requireServiceToken } from "../../middleware/require-service-token.js";
 import {
   createPendingLead,
@@ -22,7 +22,9 @@ import { getSettings } from "../../lib/settings.js";
 
 export const leadsRouter = Router();
 leadsRouter.use(express.json());
-leadsRouter.use(requirePermission("manage_leads"));
+// Router-level gate: anyone in the Pending Leads section needs at least
+// read. Per-route mutation gates below add `write` for changes.
+leadsRouter.use(requireFeature("pending_leads", "read"));
 
 /** Headless intake for the Google Apps Script lead sync. Auth is a shared
  *  bearer token (LEAD_INTAKE_TOKEN), not a session. The operator-facing
@@ -134,7 +136,7 @@ leadsIntakeRouter.post("/", async (req, res) => {
 // ── Routes ──────────────────────────────────────────────────────────────────
 
 /** Intake. Accepts a raw lead, enrichment runs in the background. */
-leadsRouter.post("/", async (req, res) => {
+leadsRouter.post("/", requireFeature("pending_leads", "write"), async (req, res) => {
   const input = sanitizeInput(req.body);
   if (!input) {
     res.status(400).json({ error: "`name` is required" });
@@ -169,7 +171,7 @@ leadsRouter.get("/:id", async (req, res) => {
 });
 
 /** Operator edit — original lead fields, enriched fields, or status. */
-leadsRouter.patch("/:id", async (req, res) => {
+leadsRouter.patch("/:id", requireFeature("pending_leads", "write"), async (req, res) => {
   const id = String(req.params.id);
   const lead = await getPendingLead(id);
   if (!lead) {
@@ -211,7 +213,7 @@ leadsRouter.patch("/:id", async (req, res) => {
 });
 
 /** Re-run enrichment (e.g. after the operator added a website to the input). */
-leadsRouter.post("/:id/re-enrich", async (req, res) => {
+leadsRouter.post("/:id/re-enrich", requireFeature("pending_leads", "write"), async (req, res) => {
   const id = String(req.params.id);
   const lead = await getPendingLead(id);
   if (!lead) {
@@ -225,7 +227,7 @@ leadsRouter.post("/:id/re-enrich", async (req, res) => {
 });
 
 /** Soft-close a lead the operator decided not to convert. */
-leadsRouter.post("/:id/dismiss", async (req, res) => {
+leadsRouter.post("/:id/dismiss", requireFeature("pending_leads", "write"), async (req, res) => {
   const id = String(req.params.id);
   const lead = await getPendingLead(id);
   if (!lead) {
@@ -242,7 +244,7 @@ leadsRouter.post("/:id/dismiss", async (req, res) => {
  * The lead's `enriched.business_name` + `enriched.faqKnowledgeBase` flow
  * into the from-draft business overrides.
  */
-leadsRouter.post("/:id/promote", async (req, res) => {
+leadsRouter.post("/:id/promote", requireFeature("pending_leads", "write"), async (req, res) => {
   const id = String(req.params.id);
   const lead = await getPendingLead(id);
   if (!lead) {

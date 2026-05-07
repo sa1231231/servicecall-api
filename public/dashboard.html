@@ -1058,7 +1058,7 @@
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
-  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-create" data-perm="create_agents" onclick="showPendingLeads()" id="btnCreate" title="Build an agent — Advanced, Quick, or pick up a pending lead">+ Create<span id="leadsBadge" style="display:none;">0</span></button><span id="userBadge" class="user-badge"></span></h1>
+  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-create" data-perm="create_agents" onclick="showPendingLeads()" id="btnCreate" title="Build an agent — Advanced, Quick, or pick up a pending lead">+ Create<span id="leadsBadge" style="display:none;">0</span></button><button class="btn-settings" onclick="logout()" title="Sign out and clear session cookie" style="margin-left:0.4rem;">Logout</button><span id="userBadge" class="user-badge"></span></h1>
   <p class="subtitle">Click a client to view details and call history.</p>
   <div id="agentSearchBar" class="agent-search-bar" style="display:none;">
     <div class="agent-search-chips" id="agentSearchChips"></div>
@@ -1333,8 +1333,9 @@
           <div id="blast-result" style="display:none;margin-top:0.5rem;padding:0.5rem;border-radius:6px;font-size:0.82rem;"></div>
         </div>
 
+        <div id="userManagementSection" data-super-admin-only>
         <h2>User Management</h2>
-        <p class="settings-hint" style="margin-bottom:0.75rem;">Create accounts for team members and control what each user can do with the permissions matrix.</p>
+        <p class="settings-hint" style="margin-bottom:0.75rem;">Create accounts for team members and control what each user can do. Only Super Admins and Root can see this section.</p>
 
         <details id="permissionReferenceWrap" style="margin-bottom:0.75rem;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 0.85rem;">
           <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:#374151;">Permission reference — what each role and permission grants</summary>
@@ -1368,6 +1369,7 @@
           </div>
           <div id="newUserPermsContainer" style="margin-top:0.75rem;"></div>
         </div>
+        </div><!-- /userManagementSection -->
 
         <div id="deletedAgentsSection" style="display:none;" data-perm="manage_deleted">
           <h2>Recently Deleted Agents</h2>
@@ -1840,6 +1842,8 @@
       permissionDefs = cfgData.permissionDefs || [];
       defaultPermissions = cfgData.defaultPermissions || {};
       permissionCatalog = cfgData.permissionCatalog || [];
+      features = cfgData.features || [];
+      window.seedFeatureDefaults = cfgData.seedFeatureDefaults || {};
 
       // Apply permission-based UI visibility
       if (currentUser) {
@@ -1854,6 +1858,24 @@
         document.querySelectorAll('[data-perm]').forEach(el => {
           const perm = el.getAttribute('data-perm');
           if (!currentUser.permissions[perm]) el.style.display = 'none';
+          else el.style.removeProperty('display');
+        });
+        // Super-admin / root only sections — User Management lives behind this.
+        const isSuperOrRoot = currentUser.role === 'super_admin' || currentUser.isRoot;
+        document.querySelectorAll('[data-super-admin-only]').forEach(el => {
+          if (!isSuperOrRoot) el.style.display = 'none';
+          else el.style.removeProperty('display');
+        });
+        // Feature/level visibility (new system): data-feature="agent_config" data-feature-level="write".
+        // Falls back to permissive (visible) when featurePermissions hasn't loaded yet.
+        const fp = currentUser.featurePermissions || {};
+        const RANK = { none: 0, read: 1, write: 2, manage: 3 };
+        document.querySelectorAll('[data-feature]').forEach(el => {
+          const feature = el.getAttribute('data-feature');
+          const required = el.getAttribute('data-feature-level') || 'read';
+          if (currentUser.isRoot) { el.style.removeProperty('display'); return; }
+          const have = fp[feature] || 'none';
+          if ((RANK[have] || 0) < (RANK[required] || 0)) el.style.display = 'none';
           else el.style.removeProperty('display');
         });
       }
@@ -5083,6 +5105,17 @@
     }
   }
 
+  // ── LOGOUT ───────────────────────────────────────────────────────────
+
+  async function logout() {
+    try {
+      await fetch('/dashboard/logout', { method: 'POST' });
+    } catch (_) { /* clear cookie regardless */ }
+    // Reload to /dashboard so the browser re-prompts for Basic Auth on
+    // the next request (now that the session cookie is gone).
+    window.location.href = '/dashboard/';
+  }
+
   // ── SETTINGS ─────────────────────────────────────────────────────────
 
   async function showSettings() {
@@ -5478,21 +5511,46 @@
     return html;
   }
 
-  // Cached server-side role defaults (the source of truth). Distinct from
-  // `defaultPermissions` (which comes from /dashboard/config and is the
-  // hardcoded compile-time seed). When the user is super_admin or root,
-  // we let them edit this.
-  let liveRoleDefaults = null;
-  let liveRoleDefaultsBaseline = null;
+  // ── Feature × level permission system ──────────────────────────────
+  //
+  // Mirrors src/lib/feature-permissions.ts. Each feature has a level
+  // for the current role/user: none / read / write / manage. Role
+  // defaults are fetched live from MongoDB so the matrix shows what
+  // requireFeature(...) actually enforces.
+
+  let liveRoleDefaults = null;          // {role: {feature: level}}
+  let liveRoleDefaultsBaseline = null;  // for diffing on save
+  let features = [];                    // FEATURES from /dashboard/config
+
+  const FEATURE_LEVELS = ['none', 'read', 'write', 'manage'];
+  const LEVEL_RANK = { none: 0, read: 1, write: 2, manage: 3 };
+  const LEVEL_BADGE = {
+    none: { label: '—',      color: '#9ca3af', bg: '#f3f4f6' },
+    read:   { label: 'Read',   color: '#1e40af', bg: '#dbeafe' },
+    write:  { label: 'Write',  color: '#065f46', bg: '#d1fae5' },
+    manage: { label: 'Manage', color: '#92400e', bg: '#fde68a' },
+  };
 
   function canEditRoleDefaults() {
     return !!currentUser && (currentUser.role === 'super_admin' || currentUser.isRoot);
   }
 
-  // Render the role × permission default matrix + per-permission cards
-  // showing routes/UI gated by each one. Sourced from /dashboard/config so
-  // there's no extra fetch (except role-defaults, which is fetched here
-  // when the user is allowed to edit them).
+  function levelDropdown(feature, role, currentLevel) {
+    const opts = (feature.available || ['none', 'read', 'write', 'manage']).map(l => {
+      const sel = currentLevel === l ? ' selected' : '';
+      return '<option value="' + l + '"' + sel + '>' + LEVEL_BADGE[l].label + '</option>';
+    }).join('');
+    return '<select data-role-default-role="' + role + '" data-role-default-feature="' + esc(feature.key) + '" style="font-size:0.72rem;padding:1px 4px;border-radius:4px;border:1px solid #d1d5db;background:#fff;">' + opts + '</select>';
+  }
+
+  function levelBadge(level) {
+    const b = LEVEL_BADGE[level] || LEVEL_BADGE.none;
+    return '<span style="display:inline-block;padding:1px 6px;border-radius:10px;font-size:0.7rem;background:' + b.bg + ';color:' + b.color + ';font-weight:600;">' + b.label + '</span>';
+  }
+
+  // Render the role × feature matrix + per-feature cards. Sourced from
+  // /dashboard/config (features list) and /dashboard/api/role-defaults
+  // (live levels per role).
   async function renderPermissionReference() {
     const body = document.getElementById('permissionReferenceBody');
     if (!body) return;
@@ -5505,9 +5563,10 @@
     };
     const editable = canEditRoleDefaults();
 
-    // Pull live defaults from MongoDB so the matrix shows what
-    // requirePermission(...) actually enforces, not just the seed.
-    if (currentUser && currentUser.permissions && currentUser.permissions.manage_users) {
+    // Pull live defaults so the matrix shows what requireFeature(...)
+    // actually enforces. Only super_admin/root can read this endpoint;
+    // for non-super_admin admins we render from the seed instead.
+    if (canEditRoleDefaults()) {
       try {
         const r = await fetch('/dashboard/api/role-defaults');
         if (r.ok) {
@@ -5515,49 +5574,52 @@
           liveRoleDefaultsBaseline = JSON.parse(JSON.stringify(liveRoleDefaults));
         }
       } catch (e) {
-        // Fall back to the compile-time defaults from /dashboard/config.
+        // Fall back to the compile-time seed.
       }
     }
-    const matrixSource = liveRoleDefaults || defaultPermissions;
+    const matrixSource = liveRoleDefaults || (window.seedFeatureDefaults || {});
+
+    if (!features || features.length === 0) {
+      body.innerHTML = '<p style="color:#888;">Feature catalog unavailable.</p>';
+      return;
+    }
 
     let html = '';
 
-    // Root callout — root bypasses all checks.
+    // Root callout.
     html += '<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:0.55rem 0.75rem;margin-bottom:0.75rem;font-size:0.78rem;color:#78350f;">';
-    html += '<strong>Root:</strong> the user signed in with <code>ROOT_PASSWORD</code> bypasses every <code>requirePermission(...)</code> check and is the only account that can hard-delete protected slugs (e.g. <code>demo-meter</code>).';
+    html += '<strong>Root:</strong> the user signed in with <code>ROOT_PASSWORD</code> bypasses every feature gate and is the only account that can hard-delete protected slugs (e.g. <code>demo-meter</code>).';
     html += '</div>';
 
-    // Editor hint when the matrix is editable.
     if (editable) {
       html += '<div style="background:#dbeafe;border:1px solid #bfdbfe;border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.5rem;font-size:0.76rem;color:#1e40af;">';
-      html += 'You can edit defaults for <strong>Admin</strong>, <strong>Operator</strong>, and <strong>Viewer</strong>. Super Admin always has full access. Changes apply to existing users unless they have an explicit per-user override (operator/viewer only).';
+      html += 'You can edit defaults for every role here. Super Admin defaults are editable too, but Super Admin always retains full access at runtime.';
       html += '</div>';
     }
 
-    // Role × permission matrix.
+    // Role × feature matrix with per-feature level dropdowns / badges.
     html += '<div style="overflow-x:auto;margin-bottom:0.75rem;">';
-    html += '<table style="border-collapse:collapse;font-size:0.78rem;width:100%;min-width:520px;">';
-    html += '<thead><tr><th style="text-align:left;padding:0.3rem 0.5rem;border-bottom:1px solid #e5e7eb;">Permission</th>';
+    html += '<table style="border-collapse:collapse;font-size:0.78rem;width:100%;min-width:560px;">';
+    html += '<thead><tr><th style="text-align:left;padding:0.35rem 0.5rem;border-bottom:1px solid #e5e7eb;">Feature</th>';
     for (const r of roles) {
-      html += '<th style="text-align:center;padding:0.3rem 0.5rem;border-bottom:1px solid #e5e7eb;font-weight:600;">' + esc(roleLabels[r]) + '</th>';
+      html += '<th style="text-align:center;padding:0.35rem 0.5rem;border-bottom:1px solid #e5e7eb;font-weight:600;">' + esc(roleLabels[r]) + '</th>';
     }
     html += '</tr></thead><tbody>';
-    for (const def of permissionDefs) {
+    for (const f of features) {
       html += '<tr>';
-      html += '<td style="padding:0.25rem 0.5rem;border-bottom:1px solid #f3f4f6;" title="' + esc(def.description) + '"><strong>' + esc(def.label) + '</strong> <span style="color:#9ca3af;font-family:monospace;font-size:0.72rem;">' + esc(def.key) + '</span></td>';
+      html += '<td style="padding:0.3rem 0.5rem;border-bottom:1px solid #f3f4f6;" title="' + esc(f.description) + '"><strong>' + esc(f.label) + '</strong>'
+            + (f.superAdminOnly ? ' <span style="color:#b45309;font-size:0.7rem;">(super admin only)</span>' : '')
+            + '<br><span style="color:#9ca3af;font-family:monospace;font-size:0.7rem;font-weight:400;">' + esc(f.key) + '</span></td>';
       for (const r of roles) {
-        const granted = !!(matrixSource[r] && matrixSource[r][def.key]);
-        // super_admin column is always fixed to all-true and never editable.
-        // The other columns are editable when the current user can edit.
-        if (editable && r !== 'super_admin') {
-          html += '<td style="text-align:center;padding:0.25rem 0.5rem;border-bottom:1px solid #f3f4f6;">';
-          html += '<input type="checkbox" data-role-default-role="' + r + '" data-role-default-key="' + esc(def.key) + '"' + (granted ? ' checked' : '') + ' style="margin:0;cursor:pointer;">';
-          html += '</td>';
+        const level = (matrixSource[r] && matrixSource[r][f.key]) || 'none';
+        // Editable for super_admin/root. Even super_admin column is
+        // editable here (unlike the old UI) because super_admin always
+        // has full access at runtime — letting the operator see and
+        // adjust the *seed* is harmless and consistent.
+        if (editable) {
+          html += '<td style="text-align:center;padding:0.3rem 0.5rem;border-bottom:1px solid #f3f4f6;">' + levelDropdown(f, r, level) + '</td>';
         } else {
-          const cell = granted
-            ? '<span style="color:#059669;" title="Granted by default">✓</span>'
-            : '<span style="color:#d1d5db;" title="Not granted by default">—</span>';
-          html += '<td style="text-align:center;padding:0.25rem 0.5rem;border-bottom:1px solid #f3f4f6;">' + cell + '</td>';
+          html += '<td style="text-align:center;padding:0.3rem 0.5rem;border-bottom:1px solid #f3f4f6;">' + levelBadge(level) + '</td>';
         }
       }
       html += '</tr>';
@@ -5568,42 +5630,36 @@
       html += '<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.85rem;">';
       html += '<button onclick="saveRoleDefaults()" id="btnSaveRoleDefaults" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:0.35rem 0.75rem;font-size:0.78rem;cursor:pointer;font-weight:500;">Save Defaults</button>';
       html += '<button onclick="renderPermissionReference()" style="background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:6px;padding:0.35rem 0.75rem;font-size:0.78rem;cursor:pointer;">Reset</button>';
-      html += '<span id="roleDefaultsHint" style="color:#6b7280;font-size:0.72rem;"></span>';
       html += '</div>';
     }
 
-    // Per-permission cards from the catalog.
-    if (permissionCatalog && permissionCatalog.length > 0) {
-      html += '<div style="font-weight:600;color:#374151;margin:0.5rem 0 0.4rem;">What each permission grants</div>';
-      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0.5rem;">';
-      // Map permissionDefs (which has labels) to catalog entries.
-      const catalogByKey = {};
-      for (const c of permissionCatalog) catalogByKey[c.key] = c;
-      for (const def of permissionDefs) {
-        const cat = catalogByKey[def.key];
-        if (!cat) continue;
-        html += '<div style="border:1px solid #e5e7eb;border-radius:6px;padding:0.55rem 0.7rem;background:#f9fafb;">';
-        html += '<div style="font-weight:600;font-size:0.82rem;color:#1f2937;">' + esc(def.label) + ' <span style="color:#9ca3af;font-family:monospace;font-size:0.7rem;font-weight:400;">' + esc(def.key) + '</span></div>';
-        html += '<div style="color:#6b7280;font-size:0.75rem;margin:0.15rem 0 0.4rem;">' + esc(def.description) + '</div>';
-        if (cat.routes && cat.routes.length > 0) {
-          html += '<div style="font-size:0.72rem;color:#374151;margin-bottom:0.25rem;"><strong>Routes:</strong></div>';
-          html += '<ul style="margin:0 0 0.4rem 1rem;padding:0;font-size:0.72rem;color:#4b5563;font-family:monospace;">';
-          for (const r of cat.routes) html += '<li>' + esc(r) + '</li>';
+    // Per-feature cards: what each level unlocks.
+    html += '<div style="font-weight:600;color:#374151;margin:0.5rem 0 0.4rem;">What each level grants per feature</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:0.5rem;">';
+    for (const f of features) {
+      html += '<div style="border:1px solid #e5e7eb;border-radius:6px;padding:0.55rem 0.7rem;background:#f9fafb;">';
+      html += '<div style="font-weight:600;font-size:0.82rem;color:#1f2937;">' + esc(f.label) + ' <span style="color:#9ca3af;font-family:monospace;font-size:0.7rem;font-weight:400;">' + esc(f.key) + '</span></div>';
+      html += '<div style="color:#6b7280;font-size:0.75rem;margin:0.15rem 0 0.4rem;">' + esc(f.description) + '</div>';
+      for (const lvl of ['read', 'write', 'manage']) {
+        const entry = f.levels && f.levels[lvl];
+        if (!entry) continue;
+        html += '<div style="margin-top:0.35rem;">' + levelBadge(lvl) + '</div>';
+        if (entry.ui && entry.ui.length > 0) {
+          html += '<div style="font-size:0.7rem;color:#374151;margin-top:0.15rem;"><strong>UI:</strong></div>';
+          html += '<ul style="margin:0 0 0.25rem 1rem;padding:0;font-size:0.7rem;color:#4b5563;">';
+          for (const u of entry.ui) html += '<li>' + esc(u) + '</li>';
           html += '</ul>';
         }
-        if (cat.ui && cat.ui.length > 0) {
-          html += '<div style="font-size:0.72rem;color:#374151;margin-bottom:0.25rem;"><strong>UI:</strong></div>';
-          html += '<ul style="margin:0 0 0.4rem 1rem;padding:0;font-size:0.72rem;color:#4b5563;">';
-          for (const u of cat.ui) html += '<li>' + esc(u) + '</li>';
+        if (entry.routes && entry.routes.length > 0) {
+          html += '<div style="font-size:0.7rem;color:#374151;"><strong>Routes:</strong></div>';
+          html += '<ul style="margin:0 0 0.25rem 1rem;padding:0;font-size:0.7rem;color:#4b5563;font-family:monospace;">';
+          for (const r of entry.routes) html += '<li>' + esc(r) + '</li>';
           html += '</ul>';
         }
-        if (cat.notes) {
-          html += '<div style="font-size:0.72rem;color:#92400e;background:#fef3c7;border-radius:4px;padding:0.25rem 0.4rem;margin-top:0.25rem;"><strong>Note:</strong> ' + esc(cat.notes) + '</div>';
-        }
-        html += '</div>';
       }
       html += '</div>';
     }
+    html += '</div>';
 
     body.innerHTML = html;
   }
@@ -5613,23 +5669,23 @@
       showToast('Defaults not loaded yet', 'error');
       return;
     }
-    const editableRoles = ['admin', 'operator', 'viewer'];
+    const editableRoles = ['super_admin', 'admin', 'operator', 'viewer'];
     const pending = {};
-    document.querySelectorAll('input[data-role-default-role]').forEach((cb) => {
-      const r = cb.getAttribute('data-role-default-role');
-      const k = cb.getAttribute('data-role-default-key');
+    document.querySelectorAll('select[data-role-default-role]').forEach((sel) => {
+      const r = sel.getAttribute('data-role-default-role');
+      const f = sel.getAttribute('data-role-default-feature');
       if (!editableRoles.includes(r)) return;
       if (!pending[r]) pending[r] = {};
-      pending[r][k] = cb.checked;
+      pending[r][f] = sel.value;
     });
-    // Send PATCH per role that actually changed.
+    // PATCH per role that actually changed.
     const changedRoles = [];
     for (const r of editableRoles) {
       const before = liveRoleDefaultsBaseline[r] || {};
       const after = pending[r] || {};
       let changed = false;
-      for (const k of Object.keys(after)) {
-        if (!!before[k] !== !!after[k]) { changed = true; break; }
+      for (const f of Object.keys(after)) {
+        if ((before[f] || 'none') !== (after[f] || 'none')) { changed = true; break; }
       }
       if (changed) changedRoles.push(r);
     }
@@ -5653,13 +5709,33 @@
       }
       showToast('Saved defaults for: ' + changedRoles.join(', '), 'success');
       await renderPermissionReference();
-      // Re-render new-user permission defaults so the form reflects the new baseline.
       updateNewUserPermDefaults();
     } catch (err) {
       showToast('Save failed: ' + err.message, 'error');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = 'Save Defaults'; }
     }
+  }
+
+  // Per-user feature × level matrix (operator/viewer only — admin and
+  // super_admin always read from the role default).
+  function renderUserFeatureMatrix(user, prefix, disabled) {
+    if (!features || features.length === 0) return '';
+    const stored = user.feature_permissions || {};
+    const fallback = (liveRoleDefaults && liveRoleDefaults[user.role]) || (window.seedFeatureDefaults || {})[user.role] || {};
+    let html = '<div style="margin-top:0.4rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:0.3rem 0.6rem;">';
+    for (const f of features) {
+      const level = stored[f.key] || fallback[f.key] || 'none';
+      const opts = (f.available || ['none', 'read', 'write', 'manage']).map(l => {
+        return '<option value="' + l + '"' + (level === l ? ' selected' : '') + '>' + LEVEL_BADGE[l].label + '</option>';
+      }).join('');
+      html += '<label style="display:flex;align-items:center;gap:0.35rem;font-size:0.74rem;" title="' + esc(f.description) + '">';
+      html += '<span style="flex:1;color:#374151;">' + esc(f.label) + '</span>';
+      html += '<select data-user-feature-prefix="' + esc(prefix) + '" data-user-feature-key="' + esc(f.key) + '"' + (disabled ? ' disabled' : '') + ' style="font-size:0.72rem;padding:1px 4px;border-radius:4px;border:1px solid #d1d5db;background:#fff;">' + opts + '</select>';
+      html += '</label>';
+    }
+    html += '</div>';
+    return html;
   }
 
   async function loadUsers() {
@@ -5671,15 +5747,14 @@
       if (!res.ok) throw new Error('Failed: ' + res.status);
       const users = await res.json();
       if (users.length === 0) {
-        container.innerHTML = '<p style="color:#6b7280;font-size:0.85rem;">No users created yet. Anyone with the admin password has full access.</p>';
+        container.innerHTML = '<p style="color:#6b7280;font-size:0.85rem;">No users created yet. Anyone with the root password has full access.</p>';
         updateNewUserPermDefaults();
         return;
       }
       let html = '';
       for (const u of users) {
         const isSelf = currentUser && u._id === currentUser.username;
-        const isAdmin = u.role === 'admin' || u.role === 'super_admin';
-        const perms = u.permissions || (defaultPermissions[u.role] || {});
+        const fixedByRole = u.role === 'admin' || u.role === 'super_admin';
         html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.75rem 1rem;margin-bottom:0.5rem;">';
         html += '<div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">';
         html += '<strong style="font-size:0.85rem;">' + esc(u._id) + '</strong>';
@@ -5690,10 +5765,11 @@
           html += '<button onclick="deleteUserAccount(\'' + esc(u._id) + '\')" style="background:#dc2626;color:#fff;border:none;border-radius:4px;padding:0.2rem 0.5rem;cursor:pointer;font-size:0.75rem;margin-left:0.25rem;">Remove</button>';
         }
         html += '</div>';
-        // Permission matrix (disabled for admins — they always have everything)
-        html += renderPermChecks(perms, 'user-' + u._id, isAdmin);
-        if (!isAdmin) {
-          html += '<button onclick="saveUserPerms(\'' + esc(u._id) + '\')" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:0.2rem 0.6rem;cursor:pointer;font-size:0.75rem;margin-top:0.4rem;">Save Permissions</button>';
+        if (fixedByRole) {
+          html += '<p style="margin:0.4rem 0 0;font-size:0.72rem;color:#6b7280;">' + esc(u.role) + ' permissions are fixed by the role default. Edit them above in the role × feature matrix.</p>';
+        } else {
+          html += renderUserFeatureMatrix(u, 'user-' + u._id, false);
+          html += '<button onclick="saveUserFeaturePerms(\'' + esc(u._id) + '\')" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:0.2rem 0.6rem;cursor:pointer;font-size:0.75rem;margin-top:0.4rem;">Save Permissions</button>';
         }
         html += '</div>';
       }
@@ -5708,13 +5784,38 @@
     const role = document.getElementById('newUserRole')?.value || 'operator';
     const container = document.getElementById('newUserPermsContainer');
     if (!container) return;
-    // Prefer the live defaults from MongoDB (editable by super_admin/root)
-    // and fall back to the compile-time seed if they haven't loaded yet.
-    const source = liveRoleDefaults || defaultPermissions;
-    const perms = source[role] || {};
-    container.innerHTML = '<p style="font-size:0.75rem;color:#666;margin:0 0 0.25rem;font-weight:600;">Permissions:</p>' + renderPermChecks(perms, 'new-user', false);
+    if (role === 'admin' || role === 'super_admin') {
+      container.innerHTML = '<p style="font-size:0.72rem;color:#6b7280;">Permissions for ' + esc(role) + ' are determined by the role default and cannot be customized per user.</p>';
+      return;
+    }
+    const fakeUser = { role, feature_permissions: {} };
+    container.innerHTML = '<p style="font-size:0.75rem;color:#666;margin:0 0 0.25rem;font-weight:600;">Permissions:</p>' + renderUserFeatureMatrix(fakeUser, 'new-user', false);
   }
 
+  function collectFeaturePermsFromMatrix(prefix) {
+    const perms = {};
+    document.querySelectorAll('select[data-user-feature-prefix="' + prefix + '"]').forEach((sel) => {
+      perms[sel.getAttribute('data-user-feature-key')] = sel.value;
+    });
+    return perms;
+  }
+
+  async function saveUserFeaturePerms(username) {
+    const featurePermissions = collectFeaturePermsFromMatrix('user-' + username);
+    try {
+      const res = await fetch('/dashboard/api/users/' + encodeURIComponent(username) + '/permissions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ feature_permissions: featurePermissions }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
+      showToast('Permissions updated for ' + username, 'success');
+    } catch (err) {
+      showToast('Failed: ' + err.message, 'error');
+    }
+  }
+
+  // Legacy helpers — kept for any caller still using boolean checkboxes.
   function collectPermsFromCheckboxes(prefix) {
     const perms = {};
     document.querySelectorAll('input[data-perm-prefix="' + prefix + '"]').forEach(cb => {
@@ -5744,12 +5845,14 @@
     const role = document.getElementById('newUserRole').value;
     if (!username || !password) { showToast('Username and password are required', 'error'); return; }
     if (password.length < 6) { showToast('Password must be at least 6 characters', 'error'); return; }
-    const permissions = (role !== 'admin' && role !== 'super_admin') ? collectPermsFromCheckboxes('new-user') : undefined;
+    const feature_permissions = (role !== 'admin' && role !== 'super_admin')
+      ? collectFeaturePermsFromMatrix('new-user')
+      : undefined;
     try {
       const res = await fetch('/dashboard/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, role, permissions }),
+        body: JSON.stringify({ username, password, role, feature_permissions }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.status);

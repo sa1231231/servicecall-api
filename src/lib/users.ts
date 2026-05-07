@@ -1,10 +1,22 @@
 import crypto from "crypto";
 import { getDb } from "./db.js";
 import { getCachedRoleDefaults } from "./role-defaults.js";
+import {
+  type Level,
+  FEATURE_KEYS,
+  resolveFeaturePermissions as resolveFeatureLevels,
+  migrateOldPermissionsToFeatureLevels,
+  SEED_FEATURE_DEFAULTS,
+} from "./feature-permissions.js";
 
 export type Role = "super_admin" | "admin" | "operator" | "viewer";
 
-// Granular permission keys
+// ── Legacy permission catalog (kept for migration / API compatibility) ──────
+//
+// The new permission system is feature × level (see feature-permissions.ts).
+// PERMISSION_DEFS and DEFAULT_PERMISSIONS are retained so older code paths
+// and tests keep compiling, but new code should use FEATURES + Level.
+
 export const PERMISSION_DEFS: Array<{
   key: string;
   label: string;
@@ -25,7 +37,8 @@ export const PERMISSION_DEFS: Array<{
 
 export const PERMISSION_KEYS = PERMISSION_DEFS.map((d) => d.key);
 
-// Default permissions per role (used when creating new users)
+// Legacy default-permissions constant. The actual runtime defaults are
+// loaded from MongoDB via role-defaults.ts under the new feature shape.
 export const DEFAULT_PERMISSIONS: Record<Role, Record<string, boolean>> = {
   super_admin: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, true])),
   admin: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, k !== "view_billing" && k !== "manage_deleted"])),
@@ -45,11 +58,16 @@ export const DEFAULT_PERMISSIONS: Record<Role, Record<string, boolean>> = {
   viewer: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, false])),
 };
 
+// ── User docs ───────────────────────────────────────────────────────────────
+
 export interface DashboardUser {
   _id: string;
   password_hash: string;
   role: Role;
-  permissions: Record<string, boolean>;
+  // New shape (preferred). Operator/viewer overrides per feature.
+  feature_permissions?: Record<string, Level>;
+  // Legacy shape — read transparently via migration.
+  permissions?: Record<string, boolean>;
   created_at: Date;
   created_by: string;
 }
@@ -73,24 +91,16 @@ export function verifyPassword(plain: string, stored: string): boolean {
   return crypto.timingSafeEqual(expected, actual);
 }
 
-/** Resolve effective permissions for a user.
- *
- * Reads role defaults from the cached `role_defaults` map (loaded at
- * boot from MongoDB; falls back to the hard-coded constants until the
- * cache is filled). For super_admin and admin, the defaults are
- * authoritative — the stored per-user map is ignored. For operator and
- * viewer, the stored map can override individual keys.
- *
- * Cycle-break: this is imported by the cache loader, so the cache
- * resolver is loaded lazily (require-on-first-call).
- */
+/** Legacy resolver — kept for any caller that still expects the boolean
+ *  shape. New code should use `resolveUserFeaturePermissions` instead. */
 export function resolvePermissions(
   role: Role,
   stored?: Record<string, boolean>,
 ): Record<string, boolean> {
-  const defaults = getCachedRoleDefaults(role);
-  if (role === "super_admin" || role === "admin") return defaults;
-  const base = { ...defaults };
+  // The legacy seeded `DEFAULT_PERMISSIONS` is the authoritative answer
+  // here. (We don't read role-defaults — those are now in the new shape.)
+  if (role === "super_admin" || role === "admin") return { ...DEFAULT_PERMISSIONS[role] };
+  const base = { ...DEFAULT_PERMISSIONS[role] };
   if (stored) {
     for (const key of PERMISSION_KEYS) {
       if (key in stored) base[key] = stored[key];
@@ -99,15 +109,44 @@ export function resolvePermissions(
   return base;
 }
 
+/** Resolve a user doc to feature-level permissions, migrating from the
+ *  legacy boolean shape if needed. Returns the effective map after
+ *  applying role defaults + per-user overrides. */
+export function resolveUserFeaturePermissions(user: {
+  role: Role;
+  feature_permissions?: Record<string, Level>;
+  permissions?: Record<string, boolean>;
+}): Record<string, Level> {
+  const defaults = getCachedRoleDefaults(user.role);
+  // Prefer the new shape if present; otherwise migrate the legacy field.
+  let stored: Record<string, Level> | undefined;
+  if (user.feature_permissions && Object.keys(user.feature_permissions).length > 0) {
+    // Trust the stored map but fill in any missing features with "none".
+    stored = {};
+    for (const f of FEATURE_KEYS) {
+      stored[f] = (user.feature_permissions[f] ?? "none") as Level;
+    }
+  } else if (user.permissions && Object.keys(user.permissions).length > 0) {
+    stored = migrateOldPermissionsToFeatureLevels(user.permissions, user.role);
+  }
+  return resolveFeatureLevels(user.role, defaults, stored);
+}
+
 export async function getUser(username: string): Promise<DashboardUser | null> {
   return usersCollection().findOne({ _id: username });
 }
 
 export async function listUsers(): Promise<
-  Array<{ _id: string; role: Role; permissions: Record<string, boolean>; created_at: Date }>
+  Array<{
+    _id: string;
+    role: Role;
+    permissions?: Record<string, boolean>;
+    feature_permissions?: Record<string, Level>;
+    created_at: Date;
+  }>
 > {
   return usersCollection()
-    .find({}, { projection: { _id: 1, role: 1, permissions: 1, created_at: 1 } })
+    .find({}, { projection: { _id: 1, role: 1, permissions: 1, feature_permissions: 1, created_at: 1 } })
     .toArray();
 }
 
@@ -116,7 +155,7 @@ export async function createUser(
   password: string,
   role: Role,
   createdBy: string,
-  permissions?: Record<string, boolean>,
+  featurePermissions?: Record<string, Level>,
 ): Promise<void> {
   const existing = await getUser(username);
   if (existing) throw new Error(`User "${username}" already exists`);
@@ -124,18 +163,45 @@ export async function createUser(
     _id: username,
     password_hash: hashPassword(password),
     role,
-    permissions: permissions ?? { ...DEFAULT_PERMISSIONS[role] },
+    feature_permissions: featurePermissions ?? { ...SEED_FEATURE_DEFAULTS[role] },
     created_at: new Date(),
     created_by: createdBy,
   });
   console.log(`[users] created user "${username}" with role "${role}"`);
 }
 
+/** Update the per-user feature permission overrides. Only meaningful for
+ *  operator/viewer; for admin/super_admin the resolver ignores the
+ *  stored map. */
+export async function updateUserFeaturePermissions(
+  username: string,
+  featurePermissions: Record<string, Level>,
+): Promise<boolean> {
+  const valid: Level[] = ["none", "read", "write", "manage"];
+  const clean: Record<string, Level> = {};
+  for (const f of FEATURE_KEYS) {
+    const incoming = featurePermissions[f];
+    clean[f] = (typeof incoming === "string" && valid.includes(incoming as Level))
+      ? (incoming as Level)
+      : "none";
+  }
+  const result = await usersCollection().updateOne(
+    { _id: username },
+    { $set: { feature_permissions: clean }, $unset: { permissions: "" } },
+  );
+  if (result.matchedCount > 0) {
+    console.log(`[users] updated feature permissions for "${username}"`);
+    return true;
+  }
+  return false;
+}
+
+/** Deprecated: use `updateUserFeaturePermissions` for the new shape.
+ *  Kept so existing test setups keep compiling. */
 export async function updateUserPermissions(
   username: string,
   permissions: Record<string, boolean>,
 ): Promise<boolean> {
-  // Only allow known permission keys
   const clean: Record<string, boolean> = {};
   for (const key of PERMISSION_KEYS) {
     if (key in permissions) clean[key] = !!permissions[key];
@@ -144,11 +210,7 @@ export async function updateUserPermissions(
     { _id: username },
     { $set: { permissions: clean } },
   );
-  if (result.matchedCount > 0) {
-    console.log(`[users] updated permissions for "${username}"`);
-    return true;
-  }
-  return false;
+  return result.matchedCount > 0;
 }
 
 export async function deleteUser(username: string): Promise<boolean> {

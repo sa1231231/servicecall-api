@@ -23,10 +23,11 @@ import { getDataPointDefaultsWithCategory, CATEGORY_ORDER, CATEGORY_LABELS } fro
 import { ObjectId } from "mongodb";
 import { getDb } from "./lib/db.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
-import { getUser, verifyPassword, resolvePermissions, DEFAULT_PERMISSIONS } from "./lib/users.js";
+import { getUser, verifyPassword, resolvePermissions, resolveUserFeaturePermissions, DEFAULT_PERMISSIONS } from "./lib/users.js";
+import { SEED_FEATURE_DEFAULTS } from "./lib/feature-permissions.js";
 import { ensureAuditIndex } from "./lib/audit.js";
 import { ensureVersionIndexes } from "./lib/agent-versions.js";
-import { requirePermission } from "./middleware/require-role.js";
+import { requireFeature } from "./middleware/require-role.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -65,15 +66,32 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(globalLimiter);
 
+// Query-string keys that may carry secrets (portal magic links use
+// ?token=...). The request logger redacts them before printing so
+// Railway's log retention never holds a usable credential.
+const REDACT_QUERY_KEYS = new Set(["token", "api_key", "key", "password", "secret"]);
+
+function redactQuery(q: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(q)) {
+    out[k] = REDACT_QUERY_KEYS.has(k.toLowerCase()) ? "[REDACTED]" : v;
+  }
+  return out;
+}
+
 app.use((req, res, next) => {
   const start = Date.now();
+  // We deliberately allowlist headers (only content-type + user-agent
+  // make it into logs). Authorization, Cookie, x-api-key, and webhook
+  // signatures stay out by construction. If a future edit broadens this
+  // object, audit it carefully — the allowlist is the security boundary.
   console.log(`--> ${req.method} ${req.originalUrl}`, {
     ip: req.ip,
     headers: {
       "content-type": req.headers["content-type"],
       "user-agent": req.headers["user-agent"],
     },
-    query: Object.keys(req.query).length ? req.query : undefined,
+    query: Object.keys(req.query).length ? redactQuery(req.query as Record<string, unknown>) : undefined,
   });
 
   res.on("finish", () => {
@@ -115,7 +133,47 @@ import crypto from "crypto";
 
 const SESSION_COOKIE = "scs_session";
 const SESSION_MAX_AGE = 14 * 24 * 60 * 60; // 14 days in seconds
-const COOKIE_SECRET = config.ROOT_PASSWORD; // Use root password as HMAC key
+// Cookie HMAC key — SESSION_SECRET, NOT ROOT_PASSWORD. A leaked
+// break-glass password should not let an attacker forge sessions for
+// arbitrary users; the two secrets rotate independently.
+const COOKIE_SECRET = config.SESSION_SECRET;
+
+// ── Login lockout (in-memory) ────────────────────────────────────────────
+// 5 failed logins within LOCKOUT_WINDOW_MS triggers a LOCKOUT_DURATION_MS
+// freeze on that username. State is per-process — a redeploy clears it.
+// Per-username (not per-IP) so an attacker can't DoS a real user by
+// hammering from many IPs; a real user behind the same NAT also won't
+// trip on someone else's typo bursts.
+const LOCKOUT_THRESHOLD = 5;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000;
+type LockoutState = { failures: number[]; lockedUntil: number };
+const lockoutMap = new Map<string, LockoutState>();
+
+function checkLockout(username: string): { locked: boolean; retryAfterSec?: number } {
+  const s = lockoutMap.get(username);
+  if (!s) return { locked: false };
+  const now = Date.now();
+  if (s.lockedUntil > now) return { locked: true, retryAfterSec: Math.ceil((s.lockedUntil - now) / 1000) };
+  return { locked: false };
+}
+
+function recordLoginFailure(username: string): void {
+  const now = Date.now();
+  const s = lockoutMap.get(username) ?? { failures: [], lockedUntil: 0 };
+  s.failures = s.failures.filter((t) => now - t < LOCKOUT_WINDOW_MS);
+  s.failures.push(now);
+  if (s.failures.length >= LOCKOUT_THRESHOLD) {
+    s.lockedUntil = now + LOCKOUT_DURATION_MS;
+    s.failures = [];
+    console.warn(`[auth] locked out ${username} for ${LOCKOUT_DURATION_MS / 60000} minutes after ${LOCKOUT_THRESHOLD} failures`);
+  }
+  lockoutMap.set(username, s);
+}
+
+function recordLoginSuccess(username: string): void {
+  lockoutMap.delete(username);
+}
 
 function signSession(payload: object): string {
   const json = JSON.stringify(payload);
@@ -160,11 +218,13 @@ async function sessionAuth(req: Request, res: Response, next: NextFunction): Pro
       // Refresh permissions from DB to handle stale cookies
       if (user.isRoot) {
         user.permissions = { ...DEFAULT_PERMISSIONS.super_admin };
+        user.featurePermissions = { ...SEED_FEATURE_DEFAULTS.super_admin };
       } else {
         const dbUser = await getUser(user.username);
         if (dbUser) {
           user.role = dbUser.role;
           user.permissions = resolvePermissions(dbUser.role, dbUser.permissions);
+          user.featurePermissions = resolveUserFeaturePermissions(dbUser);
         }
       }
       req.user = user;
@@ -186,6 +246,15 @@ async function sessionAuth(req: Request, res: Response, next: NextFunction): Pro
   const username = decoded.substring(0, colon).toLowerCase();
   const pass = decoded.substring(colon + 1);
 
+  // Reject locked-out usernames before checking the password so an
+  // attacker can't keep verifying password guesses past the threshold.
+  const lock = checkLockout(username);
+  if (lock.locked) {
+    res.set("Retry-After", String(lock.retryAfterSec ?? 60));
+    res.status(429).send("Account temporarily locked. Try again later.");
+    return;
+  }
+
   let user: NonNullable<Request["user"]> | null = null;
 
   // Try DB user first
@@ -195,27 +264,38 @@ async function sessionAuth(req: Request, res: Response, next: NextFunction): Pro
       username,
       role: dbUser.role,
       permissions: resolvePermissions(dbUser.role, dbUser.permissions),
+      featurePermissions: resolveUserFeaturePermissions(dbUser),
       isRoot: false,
     };
   }
 
-  // Fallback: ROOT_PASSWORD (always grants admin — this is root)
-  if (!user && pass === config.ROOT_PASSWORD) {
-    user = {
-      username: username || "admin",
-      role: "admin",
-      permissions: { ...DEFAULT_PERMISSIONS.super_admin },
-      isRoot: true,
-    };
+  // Fallback: ROOT_PASSWORD (always grants admin — this is root). Compare
+  // constant-time so the response time doesn't reveal how many leading
+  // characters of the break-glass password a guess matched.
+  if (!user) {
+    const rootPw = config.ROOT_PASSWORD;
+    const provided = Buffer.from(pass);
+    const expected = Buffer.from(rootPw);
+    if (provided.length === expected.length && crypto.timingSafeEqual(provided, expected)) {
+      user = {
+        username: username || "admin",
+        role: "admin",
+        permissions: { ...DEFAULT_PERMISSIONS.super_admin },
+        featurePermissions: { ...SEED_FEATURE_DEFAULTS.super_admin },
+        isRoot: true,
+      };
+    }
   }
 
   if (user) {
+    recordLoginSuccess(username);
     setSessionCookie(res, user);
     req.user = user;
     next();
     return;
   }
 
+  recordLoginFailure(username);
   res.set("WWW-Authenticate", 'Basic realm="ServiceCall Saver"');
   res.status(401).send("Invalid credentials");
 }
@@ -329,7 +409,7 @@ formRouter.delete("/drafts/:id", async (req, res) => {
   }
 });
 
-app.use("/form", authLimiter, sessionAuth, requirePermission("create_agents"), formRouter);
+app.use("/form", authLimiter, sessionAuth, requireFeature("agent_lifecycle", "write"), formRouter);
 
 // ── Quick Create (one-page agent-from-draft instantiator) ───────────────────
 const quickCreateHtmlPath = path.join(__dirname, "..", "public", "quick-create.html");
@@ -337,7 +417,7 @@ app.get(
   "/quick-create",
   authLimiter,
   sessionAuth,
-  requirePermission("create_agents"),
+  requireFeature("agent_lifecycle", "write"),
   (_req, res) => {
     try {
       res.type("html").send(fs.readFileSync(quickCreateHtmlPath, "utf8"));
@@ -348,11 +428,19 @@ app.get(
   },
 );
 
+// ── Logout (no auth required so a stale/invalid cookie can still be cleared) ─
+// Mounted BEFORE sessionAuth so the user can always reach it, even if their
+// session is no longer valid (e.g., after SESSION_SECRET rotation).
+app.post("/dashboard/logout", (_req, res) => {
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.json({ success: true });
+});
+
 // ── Dashboard (Basic Auth protected) ────────────────────────────────────────
 app.use("/dashboard", sessionAuth);
 app.use("/dashboard", dashboardRouter);
 app.use("/dashboard/api", dashboardApiRouter);
-app.use("/api/backup", sessionAuth, requirePermission("manage_settings"), backupRouter);
+app.use("/api/backup", sessionAuth, requireFeature("backups", "write"), backupRouter);
 app.use("/qa", sessionAuth, qaRouter);
 // Intake mounts BEFORE the session-protected leadsRouter so its bearer-token
 // auth wins over sessionAuth on the more specific path.
@@ -362,8 +450,16 @@ app.use("/api/reports", sessionAuth, reportsRouter);
 
 // ── API Key middleware (external/machine routes only) ────────────────────────
 app.use((req, res, next) => {
-  const key = req.headers["x-api-key"];
-  if (key !== config.API_KEY) {
+  const provided = req.headers["x-api-key"];
+  // Constant-time compare so a remote attacker can't infer leading
+  // characters of API_KEY from response timing. Length must match
+  // before timingSafeEqual or it throws.
+  const expected = config.API_KEY;
+  let ok = false;
+  if (typeof provided === "string" && provided.length === expected.length) {
+    ok = crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+  }
+  if (!ok) {
     console.log(`[auth] rejected request to ${req.originalUrl}`);
     res.status(401).json({ error: "Unauthorized" });
     return;

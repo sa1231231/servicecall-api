@@ -30,39 +30,31 @@ beforeEach(() => {
   mockUpdateOne.mockReset();
 });
 
-describe("role-defaults cache", () => {
+describe("role-defaults cache (feature/level shape)", () => {
   it("falls back to SEED_DEFAULTS when cache is unloaded", () => {
-    // Note: cache state persists across tests. We check that SEED_DEFAULTS
-    // is at least returned (the cache may already be populated from a
-    // previous test's loadRoleDefaultsCache; the structure should match).
     const perms = getCachedRoleDefaults("operator");
-    expect(perms).toHaveProperty("create_agents");
-    expect(perms).toHaveProperty("manage_leads");
+    expect(perms).toHaveProperty("agent_config");
+    expect(perms).toHaveProperty("pending_leads");
   });
 
-  it("loads role defaults from MongoDB into the cache", async () => {
+  it("loads role defaults (feature shape) from MongoDB into the cache", async () => {
     mockFind.mockResolvedValue([
-      { _id: "operator", permissions: { ...SEED_DEFAULTS.operator, manage_leads: false } },
+      { _id: "operator", feature_permissions: { ...SEED_DEFAULTS.operator, pending_leads: "none" } },
     ]);
     await loadRoleDefaultsCache();
-    const operator = getCachedRoleDefaults("operator");
-    expect(operator.manage_leads).toBe(false);
-    // viewer has no doc in this fixture → falls back to SEED_DEFAULTS
-    const viewer = getCachedRoleDefaults("viewer");
-    expect(viewer).toEqual(SEED_DEFAULTS.viewer);
+    expect(getCachedRoleDefaults("operator").pending_leads).toBe("none");
+    expect(getCachedRoleDefaults("viewer")).toEqual(SEED_DEFAULTS.viewer);
   });
 
-  it("merges stored permissions with the full known-key list", async () => {
-    // Stored doc only has SOME keys; missing keys should default to false
-    // (not undefined) so they render correctly in the UI matrix.
+  it("migrates a legacy boolean doc on load", async () => {
+    // Legacy shape: { permissions: { manage_leads: false, ...} }
     mockFind.mockResolvedValue([
-      { _id: "operator", permissions: { create_agents: true } },
+      { _id: "operator", permissions: { manage_leads: false } },
     ]);
     await loadRoleDefaultsCache();
-    const operator = getCachedRoleDefaults("operator");
-    expect(operator.create_agents).toBe(true);
-    expect(operator.manage_users).toBe(false); // not in stored, defaulted to false
-    expect("manage_users" in operator).toBe(true); // key is present, not undefined
+    // The migrator should drop pending_leads to "none" because the
+    // legacy "manage_leads: false" override clamps it.
+    expect(getCachedRoleDefaults("operator").pending_leads).toBe("none");
   });
 });
 
@@ -73,16 +65,16 @@ describe("getRoleDefaults (async DB read)", () => {
     expect(perms).toEqual(SEED_DEFAULTS.admin);
   });
 
-  it("returns the merged stored doc when present", async () => {
+  it("returns the new-shape stored doc unchanged (after merge)", async () => {
     mockFindOne.mockResolvedValue({
       _id: "operator",
-      permissions: { create_agents: false, edit_agents: true },
+      feature_permissions: { agent_config: "read", node_editor: "write" },
     });
     const perms = await getRoleDefaults("operator");
-    expect(perms.create_agents).toBe(false);
-    expect(perms.edit_agents).toBe(true);
-    // Missing keys default to false.
-    expect(perms.manage_users).toBe(false);
+    expect(perms.agent_config).toBe("read");
+    expect(perms.node_editor).toBe("write");
+    // Missing features default to "none".
+    expect(perms.users).toBe("none");
   });
 });
 
@@ -91,27 +83,31 @@ describe("setRoleDefaults", () => {
     await expect(setRoleDefaults("ceo" as never, {}, "alice")).rejects.toThrow(/Unknown role/);
   });
 
-  it("strips unknown keys before writing", async () => {
+  it("strips unknown features and invalid levels before writing", async () => {
     mockFind.mockResolvedValue([]);
     mockUpdateOne.mockResolvedValue({ matchedCount: 1 });
     await setRoleDefaults("operator", {
-      create_agents: true,
-      __evil_key: true as never,
+      agent_config: "write",
+      __evil_feature: "manage" as never,
+      // Invalid level → coerced to "none"
+      node_editor: "BOGUS" as never,
     }, "alice");
     const update = mockUpdateOne.mock.calls[0][1];
-    expect(update.$set.permissions.create_agents).toBe(true);
-    expect("__evil_key" in update.$set.permissions).toBe(false);
+    expect(update.$set.feature_permissions.agent_config).toBe("write");
+    expect("__evil_feature" in update.$set.feature_permissions).toBe(false);
+    expect(update.$set.feature_permissions.node_editor).toBe("none");
     expect(update.$set.updated_by).toBe("alice");
+    // Legacy field should be unset.
+    expect(update.$unset).toEqual({ permissions: "" });
   });
 
   it("upserts and reloads the cache", async () => {
     mockFind.mockResolvedValue([
-      { _id: "viewer", permissions: { ...SEED_DEFAULTS.viewer, view_billing: true } },
+      { _id: "viewer", feature_permissions: { ...SEED_DEFAULTS.viewer, billing: "read" } },
     ]);
     mockUpdateOne.mockResolvedValue({ matchedCount: 0, upsertedCount: 1 });
-    await setRoleDefaults("viewer", { view_billing: true }, "alice");
+    await setRoleDefaults("viewer", { billing: "read" }, "alice");
     expect(mockUpdateOne.mock.calls[0][2]).toEqual({ upsert: true });
-    // Cache reloaded with the new doc.
-    expect(getCachedRoleDefaults("viewer").view_billing).toBe(true);
+    expect(getCachedRoleDefaults("viewer").billing).toBe("read");
   });
 });

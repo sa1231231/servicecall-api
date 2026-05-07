@@ -195,22 +195,21 @@ beforeEach(() => {
 });
 
 describe("createUser", () => {
-  it("creates user with default permissions for role", async () => {
+  it("creates user with seed feature defaults for role", async () => {
     mockDbFindOne.mockResolvedValue(null);
     mockDbInsertOne.mockResolvedValue({});
 
     await createUser("newuser", "pass123", "operator", "admin");
 
-    expect(mockDbInsertOne).toHaveBeenCalledWith(
-      expect.objectContaining({
-        _id: "newuser",
-        role: "operator",
-        permissions: DEFAULT_PERMISSIONS.operator,
-      }),
-    );
+    const inserted = mockDbInsertOne.mock.calls[0][0];
+    expect(inserted._id).toBe("newuser");
+    expect(inserted.role).toBe("operator");
+    // New shape: feature_permissions instead of permissions.
+    expect(inserted.feature_permissions).toBeDefined();
+    expect(typeof inserted.feature_permissions.agent_config).toBe("string");
   });
 
-  it("creates super_admin with all permissions", async () => {
+  it("creates super_admin with full-access feature permissions", async () => {
     mockDbFindOne.mockResolvedValue(null);
     mockDbInsertOne.mockResolvedValue({});
 
@@ -218,19 +217,23 @@ describe("createUser", () => {
 
     const inserted = mockDbInsertOne.mock.calls[0][0];
     expect(inserted.role).toBe("super_admin");
-    for (const key of PERMISSION_KEYS) {
-      expect(inserted.permissions[key]).toBe(true);
+    // super_admin gets the highest available level for every feature.
+    for (const level of Object.values(inserted.feature_permissions)) {
+      expect(["read", "write", "manage"]).toContain(level);
     }
   });
 
-  it("uses custom permissions when provided", async () => {
+  it("uses custom feature_permissions when provided", async () => {
     mockDbFindOne.mockResolvedValue(null);
     mockDbInsertOne.mockResolvedValue({});
 
-    const custom = { create_agents: false, edit_agents: true };
+    const custom: Record<string, "none" | "read" | "write" | "manage"> = {
+      agent_config: "read",
+      node_editor: "write",
+    };
     await createUser("custom", "pass", "operator", "admin", custom);
 
-    expect(mockDbInsertOne.mock.calls[0][0].permissions).toEqual(custom);
+    expect(mockDbInsertOne.mock.calls[0][0].feature_permissions).toEqual(custom);
   });
 
   it("throws when user already exists", async () => {

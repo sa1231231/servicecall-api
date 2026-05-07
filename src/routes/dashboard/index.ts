@@ -42,7 +42,12 @@ import {
   CATEGORY_ORDER,
   CATEGORY_LABELS,
 } from "../../lib/data-point-defaults.js";
-import { requirePermission, requireRoot, requireRootForProtectedSlug } from "../../middleware/require-role.js";
+import {
+  requireRoot,
+  requireRootForProtectedSlug,
+  requireFeature,
+  requireSuperAdminOrRoot,
+} from "../../middleware/require-role.js";
 import { logAudit } from "../../lib/audit.js";
 import { nodeEditorRouter } from "./node-editor.js";
 import { alertRootIfNeeded } from "../../lib/root-alerts.js";
@@ -54,6 +59,7 @@ import {
   createUser,
   deleteUser,
   updateUserPermissions,
+  updateUserFeaturePermissions,
 } from "../../lib/users.js";
 import { PERMISSION_CATALOG } from "../../lib/permission-catalog.js";
 import {
@@ -62,6 +68,7 @@ import {
   ROLES as ROLE_DEFAULT_ROLES,
   type Role as RoleDefaultsRole,
 } from "../../lib/role-defaults.js";
+import { FEATURES, SEED_FEATURE_DEFAULTS } from "../../lib/feature-permissions.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
@@ -81,11 +88,21 @@ dashboardRouter.get("/", (_req, res) => {
 dashboardRouter.get("/config", (req, res) => {
   res.json({
     user: req.user
-      ? { username: req.user.username, role: req.user.role, permissions: req.user.permissions, isRoot: req.user.isRoot }
+      ? {
+          username: req.user.username,
+          role: req.user.role,
+          permissions: req.user.permissions,
+          featurePermissions: req.user.featurePermissions,
+          isRoot: req.user.isRoot,
+        }
       : null,
+    // Legacy maps — kept for any UI still reading them.
     permissionDefs: PERMISSION_DEFS,
     defaultPermissions: DEFAULT_PERMISSIONS,
     permissionCatalog: PERMISSION_CATALOG,
+    // New shape: FEATURES + role-default seed.
+    features: FEATURES,
+    seedFeatureDefaults: SEED_FEATURE_DEFAULTS,
   });
 });
 
@@ -97,36 +114,39 @@ dashboardApiRouter.get("/agents", listAgentsHandler);
 dashboardApiRouter.get("/phone-numbers", listPhoneNumbersHandler);
 dashboardApiRouter.get("/agents/:slug", getAgentHandler);
 dashboardApiRouter.get("/agents/:slug/calls", getCallsHandler);
-dashboardApiRouter.patch("/agents/:slug/shadow", requirePermission("edit_agents"), toggleShadowHandler);
-dashboardApiRouter.patch("/agents/:slug/active", requirePermission("edit_agents"), toggleActiveHandler);
-dashboardApiRouter.patch("/agents/:slug", requirePermission("edit_agents"), updateAgentHandler);
-dashboardApiRouter.post("/agents/:slug/clone", requirePermission("clone_agents"), cloneAgentHandler);
-dashboardApiRouter.delete("/agents/:slug", requireRootForProtectedSlug, requirePermission("delete_agents"), deleteAgentHandler);
-dashboardApiRouter.patch("/agents/:slug/folder", requirePermission("edit_agents"), moveAgentFolderHandler);
+dashboardApiRouter.patch("/agents/:slug/shadow", requireFeature("agent_config", "write"), toggleShadowHandler);
+dashboardApiRouter.patch("/agents/:slug/active", requireFeature("agent_config", "write"), toggleActiveHandler);
+dashboardApiRouter.patch("/agents/:slug", requireFeature("agent_config", "write"), updateAgentHandler);
+dashboardApiRouter.post("/agents/:slug/clone", requireFeature("agent_lifecycle", "write"), cloneAgentHandler);
+dashboardApiRouter.delete("/agents/:slug", requireRootForProtectedSlug, requireFeature("agent_lifecycle", "manage"), deleteAgentHandler);
+dashboardApiRouter.patch("/agents/:slug/folder", requireFeature("folders", "write"), moveAgentFolderHandler);
 
 // ── Folders ─────────────────────────────────────────────────────────────────
-// Read is open to any dashboard viewer; mutations require edit_agents.
-// Deleting a folder moves its agents back to "Unfiled" (root) — never deletes.
+// Read is open to any dashboard viewer; mutations require folders:write.
+// Deleting a folder moves its agents back to "Unfiled" (root) — never deletes
+// the agents themselves, so it's still scoped to folders:manage.
 dashboardApiRouter.get("/folders", listFoldersHandler);
-dashboardApiRouter.post("/folders", requirePermission("edit_agents"), createFolderHandler);
-dashboardApiRouter.patch("/folders/:id", requirePermission("edit_agents"), updateFolderHandler);
-dashboardApiRouter.delete("/folders/:id", requirePermission("edit_agents"), deleteFolderHandler);
+dashboardApiRouter.post("/folders", requireFeature("folders", "write"), createFolderHandler);
+dashboardApiRouter.patch("/folders/:id", requireFeature("folders", "write"), updateFolderHandler);
+dashboardApiRouter.delete("/folders/:id", requireFeature("folders", "manage"), deleteFolderHandler);
 
 // ── Export ───────────────────────────────────────────────────────────────────
 import { exportAgentHandler } from "../agents/export-agent.js";
 dashboardApiRouter.get("/agents/:slug/export", exportAgentHandler);
 
 // ── Node Editor ──────────────────────────────────────────────────────────────
-dashboardApiRouter.use("/agents/:slug/nodes", requirePermission("edit_agents"), nodeEditorRouter);
+// The router itself only requires read; per-route gates inside node-editor.ts
+// add write/manage where needed.
+dashboardApiRouter.use("/agents/:slug/nodes", requireFeature("node_editor", "read"), nodeEditorRouter);
 
 // ── Soft-Deleted Agents (Recovery) ──────────────────────────────────────────
 
-dashboardApiRouter.get("/deleted-agents", requirePermission("manage_deleted"), async (_req, res) => {
+dashboardApiRouter.get("/deleted-agents", requireFeature("permanent_delete", "read"), async (_req, res) => {
   const deleted = await listDeletedClients();
   res.json(deleted);
 });
 
-dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("manage_deleted"), async (req, res) => {
+dashboardApiRouter.post("/deleted-agents/:slug/restore", requireFeature("permanent_delete", "write"), async (req, res) => {
   const slug = String(req.params.slug);
   try {
     // Restore the Retell agent names (strip "[DELETED — expires ...]" suffix)
@@ -162,7 +182,7 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("mana
   }
 });
 
-dashboardApiRouter.delete("/deleted-agents/:slug", requireRootForProtectedSlug, requirePermission("manage_deleted"), async (req, res) => {
+dashboardApiRouter.delete("/deleted-agents/:slug", requireRootForProtectedSlug, requireFeature("permanent_delete", "manage"), async (req, res) => {
   const slug = String(req.params.slug);
   try {
     const doc = await getClientDocument(slug);
@@ -193,12 +213,11 @@ dashboardApiRouter.delete("/deleted-agents/:slug", requireRootForProtectedSlug, 
 dashboardApiRouter.get("/agents/:slug/calls/:callId/transcript", async (req, res) => {
   const { slug, callId } = req.params;
   const callLog = await getCallLogById(callId);
-  if (!callLog || callLog.client_slug !== slug) {
+  // Identical 404 for "doesn't exist", "exists but wrong slug", and
+  // "exists but transcript not ready" so an attacker can't enumerate
+  // call IDs across slugs by inspecting the error message.
+  if (!callLog || callLog.client_slug !== slug || !callLog.transcript) {
     res.status(404).json({ error: "Call not found" });
-    return;
-  }
-  if (!callLog.transcript) {
-    res.status(404).json({ error: "Transcript not available yet" });
     return;
   }
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -206,7 +225,7 @@ dashboardApiRouter.get("/agents/:slug/calls/:callId/transcript", async (req, res
   res.send(callLog.transcript);
 });
 
-dashboardApiRouter.get("/agents/:slug/portal-token", async (req, res) => {
+dashboardApiRouter.get("/agents/:slug/portal-token", requireFeature("global_settings", "write"), async (req, res) => {
   const slug = String(req.params.slug);
   const doc = await getClientDocument(slug);
   if (!doc) {
@@ -221,7 +240,7 @@ dashboardApiRouter.get("/agents/:slug/portal-token", async (req, res) => {
   res.json({ has_token: hasToken, portal_url: portalUrl });
 });
 
-dashboardApiRouter.post("/agents/:slug/portal-token", async (req, res) => {
+dashboardApiRouter.post("/agents/:slug/portal-token", requireFeature("global_settings", "write"), async (req, res) => {
   const slug = String(req.params.slug);
   try {
     const doc = await getClientDocument(slug);
@@ -239,7 +258,7 @@ dashboardApiRouter.post("/agents/:slug/portal-token", async (req, res) => {
   }
 });
 
-dashboardApiRouter.post("/agents/:slug/request-review", requirePermission("send_comms"), async (req, res) => {
+dashboardApiRouter.post("/agents/:slug/request-review", requireFeature("send_comms", "write"), async (req, res) => {
   const slug = String(req.params.slug);
   const doc = await getClientDocument(slug);
   if (!doc) {
@@ -277,7 +296,7 @@ dashboardApiRouter.post("/agents/:slug/request-review", requirePermission("send_
 // to one of the `setup_instructions` entries configured globally. Mirrors
 // the request-review handler — looks up the template, substitutes vars,
 // and SMS-blasts the client's dispatch numbers.
-dashboardApiRouter.post("/agents/:slug/send-instructions", requirePermission("send_comms"), async (req, res) => {
+dashboardApiRouter.post("/agents/:slug/send-instructions", requireFeature("send_comms", "write"), async (req, res) => {
   const slug = String(req.params.slug);
   const id = typeof req.body?.id === "string" ? req.body.id.trim() : "";
   if (!id) {
@@ -361,7 +380,7 @@ dashboardApiRouter.post("/agents/:slug/send-instructions", requirePermission("se
   }
 });
 
-dashboardApiRouter.post("/agents/:slug/send-payment-link", requirePermission("send_comms"), async (req, res) => {
+dashboardApiRouter.post("/agents/:slug/send-payment-link", requireFeature("send_comms", "write"), async (req, res) => {
   const slug = String(req.params.slug);
   const doc = await getClientDocument(slug);
   if (!doc) {
@@ -395,7 +414,7 @@ dashboardApiRouter.post("/agents/:slug/send-payment-link", requirePermission("se
   }
 });
 
-dashboardApiRouter.post("/agents/:slug/send-portal-link", requirePermission("send_comms"), async (req, res) => {
+dashboardApiRouter.post("/agents/:slug/send-portal-link", requireFeature("send_comms", "write"), async (req, res) => {
   const slug = String(req.params.slug);
   const doc = await getClientDocument(slug);
   if (!doc) {
@@ -454,7 +473,7 @@ dashboardApiRouter.get("/settings", async (_req, res) => {
   res.json(await getSettings());
 });
 
-dashboardApiRouter.patch("/settings", requirePermission("manage_settings"), async (req, res) => {
+dashboardApiRouter.patch("/settings", requireFeature("global_settings", "write"), async (req, res) => {
   const validationErrors = validateGlobalSettingsUpdates(req.body || {});
   if (validationErrors.length > 0) {
     res.status(400).json({ error: validationErrors.join("; "), errors: validationErrors });
@@ -483,7 +502,7 @@ dashboardApiRouter.patch("/settings", requirePermission("manage_settings"), asyn
 
 import { previewBlast, sendBlast } from "../../lib/blast-sms.js";
 
-dashboardApiRouter.post("/blast-sms/preview", requirePermission("send_comms"), (req, res) => {
+dashboardApiRouter.post("/blast-sms/preview", requireFeature("sms_blast", "read"), (req, res) => {
   const { message } = req.body;
   if (!message || typeof message !== "string") {
     res.status(400).json({ error: "message is required" });
@@ -492,7 +511,7 @@ dashboardApiRouter.post("/blast-sms/preview", requirePermission("send_comms"), (
   res.json(previewBlast(message));
 });
 
-dashboardApiRouter.post("/blast-sms", requirePermission("send_comms"), async (req, res) => {
+dashboardApiRouter.post("/blast-sms", requireFeature("sms_blast", "write"), async (req, res) => {
   const { message, confirm, confirm_recipients } = req.body;
   if (!message || typeof message !== "string" || message.trim().length === 0) {
     res.status(400).json({ error: "message is required" });
@@ -552,7 +571,7 @@ dashboardApiRouter.get("/data-point-defaults", async (_req, res) => {
   res.json({ defaults, categoryOrder, categoryLabels });
 });
 
-dashboardApiRouter.patch("/data-point-defaults/:key", requirePermission("manage_data_points"), async (req, res) => {
+dashboardApiRouter.patch("/data-point-defaults/:key", requireFeature("data_point_defaults", "write"), async (req, res) => {
   const key = String(req.params.key);
   try {
     const updated = await updateDataPointDefault(key, req.body);
@@ -567,7 +586,7 @@ dashboardApiRouter.patch("/data-point-defaults/:key", requirePermission("manage_
   }
 });
 
-dashboardApiRouter.post("/data-point-defaults", requirePermission("manage_data_points"), async (req, res) => {
+dashboardApiRouter.post("/data-point-defaults", requireFeature("data_point_defaults", "write"), async (req, res) => {
   try {
     const { key, label, category, type, choices, description, conversationPrompt, forwardCondition, composite, variables } = req.body;
     if (!key || !label) {
@@ -586,7 +605,7 @@ dashboardApiRouter.post("/data-point-defaults", requirePermission("manage_data_p
   }
 });
 
-dashboardApiRouter.put("/data-point-defaults/reorder", requirePermission("manage_data_points"), async (req, res) => {
+dashboardApiRouter.put("/data-point-defaults/reorder", requireFeature("data_point_defaults", "write"), async (req, res) => {
   try {
     const { items } = req.body;
     if (!Array.isArray(items)) {
@@ -601,7 +620,7 @@ dashboardApiRouter.put("/data-point-defaults/reorder", requirePermission("manage
   }
 });
 
-dashboardApiRouter.delete("/data-point-defaults/:key", requirePermission("manage_data_points"), async (req, res) => {
+dashboardApiRouter.delete("/data-point-defaults/:key", requireFeature("data_point_defaults", "manage"), async (req, res) => {
   const key = String(req.params.key);
   try {
     const deleted = await deleteDataPointDefault(key);
@@ -620,7 +639,7 @@ dashboardApiRouter.delete("/data-point-defaults/:key", requirePermission("manage
 
 // ── User Management (admin only) ─────────────────────────────────────────────
 
-dashboardApiRouter.get("/users", requirePermission("manage_users"), async (_req, res) => {
+dashboardApiRouter.get("/users", requireSuperAdminOrRoot, async (_req, res) => {
   const users = await listUsers();
   // Return resolved/effective permissions so the UI matches what
   // requirePermission(...) actually enforces. For super_admin and
@@ -632,8 +651,8 @@ dashboardApiRouter.get("/users", requirePermission("manage_users"), async (_req,
   })));
 });
 
-dashboardApiRouter.post("/users", requirePermission("manage_users"), async (req, res) => {
-  const { username, password, role, permissions } = req.body;
+dashboardApiRouter.post("/users", requireSuperAdminOrRoot, async (req, res) => {
+  const { username, password, role, feature_permissions } = req.body;
   if (!username || !password) {
     res.status(400).json({ error: "username and password are required" });
     return;
@@ -642,16 +661,16 @@ dashboardApiRouter.post("/users", requirePermission("manage_users"), async (req,
     res.status(400).json({ error: "Username must be lowercase letters, numbers, and underscores only" });
     return;
   }
-  if (password.length < 6) {
-    res.status(400).json({ error: "Password must be at least 6 characters" });
+  if (password.length < 12) {
+    res.status(400).json({ error: "Password must be at least 12 characters" });
     return;
   }
   if (role !== "super_admin" && role !== "admin" && role !== "operator" && role !== "viewer") {
-    res.status(400).json({ error: "Role must be 'admin', 'operator', or 'viewer'" });
+    res.status(400).json({ error: "Role must be 'super_admin', 'admin', 'operator', or 'viewer'" });
     return;
   }
   try {
-    await createUser(username, password, role, req.user?.username ?? "unknown", permissions);
+    await createUser(username, password, role, req.user?.username ?? "unknown", feature_permissions);
     await logAudit(req, "create_user", username, { role });
     alertRootIfNeeded(req, "create_user", username, `role: ${role}`);
     res.json({ success: true, username, role });
@@ -661,24 +680,36 @@ dashboardApiRouter.post("/users", requirePermission("manage_users"), async (req,
   }
 });
 
-dashboardApiRouter.patch("/users/:username/permissions", requirePermission("manage_users"), async (req, res) => {
+dashboardApiRouter.patch("/users/:username/permissions", requireSuperAdminOrRoot, async (req, res) => {
   const target = String(req.params.username);
-  const { permissions } = req.body;
-  if (!permissions || typeof permissions !== "object") {
-    res.status(400).json({ error: "permissions object is required" });
+  // Accept either the new shape (feature_permissions) or the legacy shape
+  // (permissions: {key: bool}). Prefer the new shape; fall back to the
+  // legacy update for backwards compat with any external caller.
+  const featurePerms = req.body?.feature_permissions;
+  const legacyPerms = req.body?.permissions;
+  if (featurePerms && typeof featurePerms === "object") {
+    const updated = await updateUserFeaturePermissions(target, featurePerms);
+    if (!updated) {
+      res.status(404).json({ error: `User "${target}" not found` });
+      return;
+    }
+    await logAudit(req, "update_user_permissions", target, { feature_permissions: featurePerms });
+  } else if (legacyPerms && typeof legacyPerms === "object") {
+    const updated = await updateUserPermissions(target, legacyPerms);
+    if (!updated) {
+      res.status(404).json({ error: `User "${target}" not found` });
+      return;
+    }
+    await logAudit(req, "update_user_permissions", target, { permissions: legacyPerms });
+  } else {
+    res.status(400).json({ error: "Body must include feature_permissions: {feature: level} or permissions: {key: bool}" });
     return;
   }
-  const updated = await updateUserPermissions(target, permissions);
-  if (!updated) {
-    res.status(404).json({ error: `User "${target}" not found` });
-    return;
-  }
-  await logAudit(req, "update_user_permissions", target, { permissions });
   alertRootIfNeeded(req, "update_user_permissions", target);
   res.json({ success: true });
 });
 
-dashboardApiRouter.delete("/users/:username", requirePermission("manage_users"), async (req, res) => {
+dashboardApiRouter.delete("/users/:username", requireSuperAdminOrRoot, async (req, res) => {
   const target = String(req.params.username);
   if (target === req.user?.username) {
     res.status(400).json({ error: "Cannot delete your own account" });
@@ -701,7 +732,7 @@ dashboardApiRouter.delete("/users/:username", requirePermission("manage_users"),
 // affects every user without an explicit per-user override and is the
 // kind of change that warrants the highest gate.
 
-dashboardApiRouter.get("/role-defaults", requirePermission("manage_users"), async (_req, res) => {
+dashboardApiRouter.get("/role-defaults", requireSuperAdminOrRoot, async (_req, res) => {
   try {
     const all = await getAllRoleDefaults();
     res.json(all);
@@ -728,20 +759,25 @@ dashboardApiRouter.patch("/role-defaults/:role", async (req, res) => {
     res.status(400).json({ error: `Unknown role "${role}"` });
     return;
   }
-  const perms = (req.body && typeof req.body === "object" ? req.body.permissions : null) as Record<string, boolean> | null;
+  const perms = (req.body && typeof req.body === "object" ? req.body.permissions : null) as Record<string, string> | null;
   if (!perms || typeof perms !== "object") {
-    res.status(400).json({ error: "Body must include permissions: {key: boolean}" });
+    res.status(400).json({ error: "Body must include permissions: {feature: level}" });
     return;
   }
   try {
     const before = await getAllRoleDefaults();
-    const after = await setRoleDefaults(role, perms, req.user.username);
+    const after = await setRoleDefaults(
+      role,
+      perms as unknown as Record<string, import("../../lib/feature-permissions.js").Level>,
+      req.user.username,
+    );
     const beforePerms = before[role];
-    // Compute a per-key diff for the audit log so reviews are scannable.
-    const diff: Record<string, { before: boolean; after: boolean }> = {};
+    // Compute a per-feature diff (level before → level after) for the
+    // audit log so reviews are scannable.
+    const diff: Record<string, { before: string; after: string }> = {};
     for (const key of Object.keys(after)) {
-      const beforeVal = !!beforePerms[key];
-      const afterVal = !!after[key];
+      const beforeVal = String(beforePerms[key] ?? "none");
+      const afterVal = String(after[key] ?? "none");
       if (beforeVal !== afterVal) diff[key] = { before: beforeVal, after: afterVal };
     }
     await logAudit(req, "update_role_defaults", role, { diff });
