@@ -7358,6 +7358,7 @@
   let pendingLeadsCache = [];
   let pendingLeadDrafts = [];
   let pendingLeadActiveId = null;
+  let pendingLeadsPollTimer = null;
 
   function fmtLeadTime(iso) {
     if (!iso) return '';
@@ -7386,7 +7387,32 @@
     document.getElementById('pendingLeadsView').style.display = 'none';
     document.getElementById('listView').style.display = '';
     pendingLeadActiveId = null;
+    stopPendingLeadsPoll();
     if (window.location.hash) history.pushState(null, '', '/dashboard/');
+  }
+
+  function stopPendingLeadsPoll() {
+    if (pendingLeadsPollTimer) {
+      clearTimeout(pendingLeadsPollTimer);
+      pendingLeadsPollTimer = null;
+    }
+  }
+
+  // Auto-poll while any lead is mid-enrichment so the UI flips from
+  // queued/enriching → ready/failed without a manual refresh. Cancels
+  // when the view is hidden or all leads land in terminal states.
+  function maybeSchedulePendingLeadsPoll() {
+    stopPendingLeadsPoll();
+    const pending = (pendingLeadsCache || []).some(
+      (l) => l.status === 'queued' || l.status === 'enriching',
+    );
+    if (!pending) return;
+    pendingLeadsPollTimer = setTimeout(() => {
+      // Only poll if the view is still visible — defensive against
+      // hash-based navigation that could leave the timer dangling.
+      if (document.getElementById('pendingLeadsView').style.display === 'none') return;
+      loadPendingLeads();
+    }, 3500);
   }
 
   async function loadPendingLeads() {
@@ -7402,6 +7428,7 @@
       pendingLeadDrafts = draftsRes.ok ? await draftsRes.json() : [];
       updateLeadsBadge();
       renderPendingLeadsBody();
+      maybeSchedulePendingLeadsPoll();
     } catch (err) {
       body.innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
     }
@@ -7479,8 +7506,16 @@
         (matched ? '' : ' — no matching draft yet, pick another or create the template') +
         '</div>'
       : '';
+    const rawResponse = enriched.extra?._rawResponse;
     const errorBlock = lead.enrichmentError
-      ? '<div class="lead-error-box"><strong>Enrichment error:</strong> ' + esc(lead.enrichmentError) + '</div>'
+      ? '<div class="lead-error-box"><strong>Enrichment error:</strong> ' + esc(lead.enrichmentError) +
+        (rawResponse
+          ? '<details style="margin-top:0.4rem;"><summary style="cursor:pointer;font-size:0.74rem;">View what the skill said</summary>' +
+            '<pre style="white-space:pre-wrap;background:#fff;border:1px solid #fecaca;padding:0.5rem;margin-top:0.35rem;border-radius:5px;font-size:0.78rem;color:#374151;font-family:inherit;">' + esc(rawResponse) + '</pre>' +
+            '<button onclick="copyRawToFaq()" style="margin-top:0.35rem;font-size:0.72rem;padding:0.2rem 0.5rem;background:#fff;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Copy into FAQ field</button>' +
+            '</details>'
+          : '') +
+        '</div>'
       : '';
     const promotedSlug = lead.promotedSlug
       ? '<div style="margin-top:0.5rem;padding:0.5rem;background:#dbeafe;border-radius:5px;font-size:0.82rem;">Promoted → <a href="/dashboard/#agent=' + esc(lead.promotedSlug) + '">' + esc(lead.promotedSlug) + '</a></div>'
@@ -7582,6 +7617,15 @@
   }
 
   // ── Lead actions ───────────────────────────────────────────────
+  function copyRawToFaq() {
+    const lead = pendingLeadsCache.find((l) => l._id === pendingLeadActiveId);
+    const raw = lead?.enriched?.extra?._rawResponse;
+    if (!raw) return;
+    const faqEl = document.getElementById('leadFaq');
+    if (faqEl) faqEl.value = raw;
+    showToast('Pasted into FAQ — edit, then Save', 'success');
+  }
+
   async function saveLeadEdits(id) {
     const business_name = document.getElementById('leadBizName').value.trim();
     const faqKnowledgeBase = document.getElementById('leadFaq').value;

@@ -2051,4 +2051,195 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             expect(typeof body.byAgent).toBe("object");
         });
     });
+    // ── 30. Folder rename + reposition ───────────────────────────────────────
+    // Mutation tests on a temp folder. afterAll deletes the folder. The
+    // existing Section 28 beforeAll sweep also picks up `_systest_*` orphans
+    // on the next run as a second line of defence.
+    describe("Folder rename + reposition", { timeout: 30_000 }, () => {
+        let testFolderId;
+        it("creates a temp folder for the rename/reposition tests", async () => {
+            const resp = await fetch(url("/dashboard/api/folders"), {
+                method: "POST", headers: authHeaders(),
+                body: JSON.stringify({ name: `_systest_rename_${Date.now()}` }),
+            });
+            // Capture id before asserting status so afterAll can clean up even if
+            // the assertion throws.
+            if (resp.ok)
+                testFolderId = (await json(resp))._id;
+            expect(resp.status).toBe(201);
+            expect(testFolderId).toBeTruthy();
+        });
+        it("PATCH /folders/:id renames", async () => {
+            if (!testFolderId)
+                return;
+            const newName = `_systest_renamed_${Date.now()}`;
+            const resp = await fetch(url(`/dashboard/api/folders/${testFolderId}`), {
+                method: "PATCH", headers: authHeaders(),
+                body: JSON.stringify({ name: newName }),
+            });
+            expect(resp.status).toBe(200);
+            expect((await json(resp)).name).toBe(newName);
+        });
+        it("PATCH /folders/:id repositions", async () => {
+            if (!testFolderId)
+                return;
+            const resp = await fetch(url(`/dashboard/api/folders/${testFolderId}`), {
+                method: "PATCH", headers: authHeaders(),
+                body: JSON.stringify({ position: 99999 }),
+            });
+            expect(resp.status).toBe(200);
+            expect((await json(resp)).position).toBe(99999);
+        });
+        it("PATCH /folders/:id rejects whitespace-only name", async () => {
+            if (!testFolderId)
+                return;
+            const resp = await fetch(url(`/dashboard/api/folders/${testFolderId}`), {
+                method: "PATCH", headers: authHeaders(),
+                body: JSON.stringify({ name: "   " }),
+            });
+            expect(resp.status).toBe(400);
+        });
+        it("PATCH /folders/:id rejects body with no supported fields", async () => {
+            if (!testFolderId)
+                return;
+            const resp = await fetch(url(`/dashboard/api/folders/${testFolderId}`), {
+                method: "PATCH", headers: authHeaders(),
+                body: JSON.stringify({ unsupported: "x" }),
+            });
+            expect(resp.status).toBe(400);
+        });
+        it("PATCH /folders/:id rejects malformed ObjectId", async () => {
+            const resp = await fetch(url("/dashboard/api/folders/notanobjectid"), {
+                method: "PATCH", headers: authHeaders(),
+                body: JSON.stringify({ name: "x" }),
+            });
+            expect(resp.status).toBe(400);
+        });
+        afterAll(async () => {
+            if (testFolderId) {
+                await fetch(url(`/dashboard/api/folders/${testFolderId}`), {
+                    method: "DELETE", headers: authHeaders(),
+                });
+            }
+        });
+    });
+    // ── 31. Calls list — pagination + filters ────────────────────────────────
+    // Read-only against an existing slug; no cleanup needed.
+    describe("Calls list — pagination + filters", () => {
+        it("clamps limit > 100 down to 100", async () => {
+            const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/calls?limit=999`), { headers: authHeaders() });
+            expect(resp.status).toBe(200);
+            const calls = await json(resp);
+            expect(Array.isArray(calls)).toBe(true);
+            expect(calls.length).toBeLessThanOrEqual(100);
+        });
+        it("respects offset (page1 and page2 differ when there are enough calls)", async () => {
+            const [page1, page2] = await Promise.all([
+                fetch(url(`/dashboard/api/agents/${SLUG}/calls?limit=2&offset=0`), { headers: authHeaders() }).then(json),
+                fetch(url(`/dashboard/api/agents/${SLUG}/calls?limit=2&offset=2`), { headers: authHeaders() }).then(json),
+            ]);
+            // Only assert difference if Demo Meter has at least 4 calls in the log.
+            if (page1.length === 2 && page2.length > 0) {
+                expect(page2[0].call_id).not.toBe(page1[0].call_id);
+            }
+        });
+        it("include_tests=1 never returns fewer rows than the default", async () => {
+            const without = await fetch(url(`/dashboard/api/agents/${SLUG}/calls?limit=50`), { headers: authHeaders() }).then(json);
+            const withTests = await fetch(url(`/dashboard/api/agents/${SLUG}/calls?limit=50&include_tests=1`), { headers: authHeaders() }).then(json);
+            expect(withTests.length).toBeGreaterThanOrEqual(without.length);
+        });
+        it("garbage limit falls back to default (≤ 50)", async () => {
+            const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/calls?limit=abc`), { headers: authHeaders() });
+            expect(resp.status).toBe(200);
+            const calls = await json(resp);
+            expect(calls.length).toBeLessThanOrEqual(50);
+        });
+    });
+    // ── 32. Billing COGS ─────────────────────────────────────────────────────
+    // Read-only.
+    describe("Billing COGS", () => {
+        it("GET /billing/cogs/:slug returns the ClientCogsResponse shape", async () => {
+            const resp = await fetch(url(`/dashboard/api/billing/cogs/${SLUG}`), { headers: authHeaders() });
+            expect(resp.status).toBe(200);
+            const body = await json(resp);
+            // Shape pinned to ClientCogsResponse in src/lib/billing-cogs.ts.
+            expect(body.client_slug).toBe(SLUG);
+            expect(body.rates).toBeDefined();
+            expect(body.current).toBeDefined();
+            expect(typeof body.current.month).toBe("string");
+            expect(typeof body.current.total_cents).toBe("number");
+            expect(Array.isArray(body.history)).toBe(true);
+        });
+        it("respects months query param (clamped to [1, 24])", async () => {
+            const resp = await fetch(url(`/dashboard/api/billing/cogs/${SLUG}?months=999`), { headers: authHeaders() });
+            expect(resp.status).toBe(200);
+            const body = await json(resp);
+            // history length is bounded by months requested (≤ 24).
+            expect(body.history.length).toBeLessThanOrEqual(24);
+        });
+    });
+    // ── 33. Settings PATCH — type-mismatch rejection paths ──────────────────
+    // The handler delegates validation to updateSettings(), so the rejection
+    // surfaces from the lib. Capture the value we touch and restore in afterAll
+    // so a non-200 response can never leave the global setting in a bad state.
+    describe("Settings PATCH — rejections", () => {
+        let origPortalMsg;
+        let origCaptured = false;
+        it("captures current portal_sms_message", async () => {
+            const settings = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
+            origPortalMsg = settings.portal_sms_message;
+            origCaptured = true;
+        });
+        it("rejects non-string for portal_sms_message", async () => {
+            const resp = await fetch(url("/dashboard/api/settings"), {
+                method: "PATCH", headers: authHeaders(),
+                body: JSON.stringify({ portal_sms_message: 42 }),
+            });
+            // updateSettings() type-checks; status is 400 or 500 depending on impl.
+            expect([400, 500]).toContain(resp.status);
+        });
+        it("rejects unknown field shape that updateSettings rejects", async () => {
+            const resp = await fetch(url("/dashboard/api/settings"), {
+                method: "PATCH", headers: authHeaders(),
+                body: JSON.stringify({ category_order: "not-an-array" }),
+            });
+            expect([400, 500]).toContain(resp.status);
+        });
+        afterAll(async () => {
+            if (origCaptured && origPortalMsg !== undefined) {
+                await fetch(url("/dashboard/api/settings"), {
+                    method: "PATCH", headers: authHeaders(),
+                    body: JSON.stringify({ portal_sms_message: origPortalMsg }),
+                });
+            }
+        });
+    });
+    // ── 35. Send-instructions endpoint ───────────────────────────────────────
+    // Validation-only; we don't drive the actual SMS send because that requires
+    // a configured `setup_instructions` template + costs Twilio dollars.
+    describe("Send instructions — validation paths", () => {
+        it("POST without `id` returns 400", async () => {
+            const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/send-instructions`), {
+                method: "POST", headers: authHeaders(),
+                body: JSON.stringify({}),
+            });
+            expect(resp.status).toBe(400);
+            expect((await json(resp)).error).toMatch(/id/);
+        });
+        it("POST with id but nonexistent slug returns 404", async () => {
+            const resp = await fetch(url("/dashboard/api/agents/nonexistent-xyz/send-instructions"), {
+                method: "POST", headers: authHeaders(),
+                body: JSON.stringify({ id: "any-template-id" }),
+            });
+            expect(resp.status).toBe(404);
+        });
+        it("POST with id pointing at a nonexistent template returns 404", async () => {
+            const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/send-instructions`), {
+                method: "POST", headers: authHeaders(),
+                body: JSON.stringify({ id: "_systest_no_such_template_" + Date.now() }),
+            });
+            expect(resp.status).toBe(404);
+            expect((await json(resp)).error).toMatch(/instruction template/i);
+        });
+    });
 });

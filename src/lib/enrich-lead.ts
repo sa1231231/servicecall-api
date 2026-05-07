@@ -26,6 +26,11 @@ export interface EnrichmentSuccess {
 export interface EnrichmentFailure {
   ok: false;
   error: string;
+  /** Whatever text the model produced before parsing fell over. Surfacing
+   *  this in the UI lets the operator salvage partial output (e.g. when the
+   *  skill responds in prose because the input was too sparse) instead of
+   *  starting from a blank form. */
+  rawResponse?: string;
 }
 
 export type EnrichmentResult = EnrichmentSuccess | EnrichmentFailure;
@@ -164,6 +169,8 @@ export function formatLeadAsUserMessage(input: EnrichmentInput): string {
   if (input.notes) lines.push(`- Notes: ${input.notes}`);
   lines.push(
     "",
+    "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Produce a best-effort JSON now, even if you have to infer the vertical from the name (e.g., \"Mario's HVAC\" → hvac template). If you genuinely cannot determine the templateName, leave it as an empty string — but still emit the JSON.",
+    "",
     "Return ONLY the JSON config (businessName, faqKnowledgeBase, templateName) — no prose, no markdown fencing.",
   );
   return lines.join("\n");
@@ -183,7 +190,8 @@ export function extractText(result: unknown): string {
 /** Parse the skill's JSON envelope. Tolerates leading/trailing whitespace,
  *  accidental ```json fences, and either snake_case or camelCase field
  *  names — the skill emits `businessName` but we accept `business_name`
- *  too for symmetry with other internal call sites. */
+ *  too for symmetry with other internal call sites. On any failure path
+ *  the raw text is preserved on `rawResponse` so the UI can surface it. */
 export function parseEnrichmentResponse(text: string): EnrichmentResult {
   const stripped = text
     .replace(/^\s*```(?:json)?\s*/i, "")
@@ -201,10 +209,15 @@ export function parseEnrichmentResponse(text: string): EnrichmentResult {
       error:
         "could not parse JSON from skill response: " +
         (err instanceof Error ? err.message : String(err)),
+      rawResponse: text,
     };
   }
   if (!obj || typeof obj !== "object") {
-    return { ok: false, error: "skill response was not a JSON object" };
+    return {
+      ok: false,
+      error: "skill response was not a JSON object",
+      rawResponse: text,
+    };
   }
   const o = obj as Record<string, unknown>;
   const business_name =
@@ -217,6 +230,7 @@ export function parseEnrichmentResponse(text: string): EnrichmentResult {
     return {
       ok: false,
       error: "skill response missing businessName and faqKnowledgeBase",
+      rawResponse: text,
     };
   }
   // Pass-through bag for keys we didn't extract above.

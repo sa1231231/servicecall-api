@@ -29,7 +29,9 @@ leadsRouter.use(requirePermission("manage_leads"));
  * the operator via the lead's `enrichmentError` field, not thrown.
  */
 async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<void> {
-  await updatePendingLead(leadId, { status: "enriching" });
+  // Clear the prior error when we restart so the UI doesn't show a stale
+  // failure while the new attempt is in flight.
+  await updatePendingLead(leadId, { status: "enriching", enrichmentError: undefined });
   const result = await enrichLead(input);
   if (result.ok) {
     await updatePendingLead(leadId, {
@@ -43,9 +45,23 @@ async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<v
       enrichmentError: undefined,
     });
   } else {
+    // Even on failure, salvage what we can: stash the raw model response
+    // on the lead so the operator can see what the skill said and copy
+    // anything useful into the editable fields without re-running. Prior
+    // enrichment data (from a previous successful run) is preserved so a
+    // failed re-enrich doesn't wipe edits the operator is iterating on.
+    const prior = await getPendingLead(leadId);
+    const merged = {
+      ...(prior?.enriched ?? {}),
+      extra: {
+        ...(prior?.enriched?.extra ?? {}),
+        ...(result.rawResponse ? { _rawResponse: result.rawResponse } : {}),
+      },
+    };
     await updatePendingLead(leadId, {
       status: "failed",
       enrichmentError: result.error,
+      enriched: merged,
     });
   }
 }
