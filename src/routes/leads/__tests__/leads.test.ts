@@ -126,6 +126,10 @@ beforeEach(() => {
     faqKnowledgeBase: "Q?\nA.",
     extra: {},
   });
+  // Default: when runEnrichment re-checks the lead post-LLM, return a
+  // non-terminal status so the dismissed/promoted guard doesn't trip.
+  // Tests that exercise the race override this with status: 'dismissed'.
+  mockGetPendingLead.mockResolvedValue({ _id: "default", status: "enriching" });
 });
 
 // ── POST / (intake) ────────────────────────────────────────────────────────
@@ -169,6 +173,30 @@ describe("POST /api/leads — intake", () => {
       expect.objectContaining({ source: "sheet" }),
     );
     expect(res._status).toBe(201);
+  });
+
+  it("does not overwrite a dismissed lead's status when fire-and-forget enrichment finishes (race fix)", async () => {
+    // Operator (or test cleanup) dismisses the lead while enrichLead is
+    // mid-flight. By the time enrichment returns, getPendingLead reports
+    // status='dismissed', and runEnrichment must skip the final patch.
+    mockCreatePendingLead.mockResolvedValue({ _id: "lead-race", status: "queued" });
+    mockGetPendingLead.mockResolvedValue({ _id: "lead-race", status: "dismissed" });
+    // Default mockEnrichLead in beforeEach already resolves with ok:true,
+    // which is the case we care about — success path must still skip.
+    const res = makeRes();
+    await runRoute("post", "/", makeReq({
+      body: { name: "Acme" },
+    }), res);
+    expect(res._status).toBe(201);
+
+    // Drain microtasks so the fire-and-forget runEnrichment runs to
+    // completion. updatePendingLead is invoked exactly once — for the
+    // initial "enriching" flip — and the post-enrichment ready/failed
+    // patch is skipped because the dismissed-status guard kicks in.
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    expect(mockUpdatePendingLead).toHaveBeenCalledTimes(1);
+    expect(mockUpdatePendingLead.mock.calls[0][1]).toMatchObject({ status: "enriching" });
   });
 });
 

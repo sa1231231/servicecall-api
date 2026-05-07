@@ -45,6 +45,16 @@ async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<v
   // failure while the new attempt is in flight.
   await updatePendingLead(leadId, { status: "enriching", enrichmentError: undefined });
   const result = await enrichLead(input);
+  // Re-check the lead's status before patching back: enrichLead is a
+  // multi-second LLM round-trip, and the operator (or an automated
+  // teardown) may have dismissed or promoted the lead while we were
+  // waiting. Overwriting a dismissed/promoted status with `ready`/`failed`
+  // would resurrect a closed lead.
+  const current = await getPendingLead(leadId);
+  if (!current || current.status === "dismissed" || current.status === "promoted") {
+    console.log(`[leads] enrichment finished for ${leadId} but lead is ${current?.status ?? "missing"}; skipping patch.`);
+    return;
+  }
   // Both branches stash the AI conversation under enriched.extra so the
   // dashboard's AI Feed panel can render what we sent and what came back,
   // regardless of parse outcome. The success branch overwrites with fresh
@@ -68,11 +78,10 @@ async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<v
       enrichmentError: undefined,
     });
   } else {
-    const prior = await getPendingLead(leadId);
     const merged = {
-      ...(prior?.enriched ?? {}),
+      ...(current.enriched ?? {}),
       extra: {
-        ...(prior?.enriched?.extra ?? {}),
+        ...(current.enriched?.extra ?? {}),
         ...aiTrace,
       },
     };
