@@ -230,6 +230,30 @@
   .folder-header-actions button.danger:hover { color: #991b1b; border-color: #fca5a5; }
   .clickable-row[draggable="true"] { cursor: pointer; }
   .clickable-row.dragging { opacity: 0.4; }
+  /* Visual focus from j/k keyboard navigation. Higher specificity than
+     :hover so the focused row stays distinct even while the mouse moves. */
+  .clickable-row.focused-row td { background: #dbeafe !important; box-shadow: inset 2px 0 0 0 #2563eb; }
+  /* Help overlay listing keyboard shortcuts (toggled via ?). */
+  .kbd-help-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.55); z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .kbd-help-panel {
+    background: #fff; border-radius: 8px; padding: 1.25rem 1.5rem;
+    min-width: 22rem; max-width: 26rem;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+    font-size: 0.88rem;
+  }
+  .kbd-help-panel h2 { margin: 0 0 0.75rem 0; font-size: 1rem; }
+  .kbd-help-panel dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 1rem; }
+  .kbd-help-panel dt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #1e293b; }
+  .kbd-help-panel dd { margin: 0; color: #475569; }
+  .kbd-help-panel .kbd-help-close {
+    margin-top: 0.9rem; display: block; width: 100%;
+    padding: 0.45rem; border: 1px solid #cbd5e1; background: #f8fafc;
+    border-radius: 4px; cursor: pointer; font-size: 0.82rem;
+  }
   .badge {
     display: inline-block;
     padding: 0.15rem 0.5rem;
@@ -245,6 +269,11 @@
   .badge-shadow_dry_run { background: #fef3c7; color: #92400e; }
   .badge-skipped_required_field, .badge-skipped_empty_call { background: #e5e7eb; color: #6b7280; }
   .badge-dispatch_error { background: #fee2e2; color: #991b1b; }
+  .badge-drift { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; margin-left: 0.25rem; }
+  /* Version-diff modal line types */
+  .ne-diff-eq  { color: #4b5563; white-space: pre; }
+  .ne-diff-add { color: #166534; background: #dcfce7; white-space: pre; }
+  .ne-diff-rem { color: #991b1b; background: #fee2e2; white-space: pre; }
   .sentiment-positive { color: #166534; }
   .sentiment-negative { color: #991b1b; }
   .sentiment-unknown { color: #6b7280; }
@@ -1013,6 +1042,7 @@
   </div>
   <div id="folderToolbar" class="folder-toolbar" style="display:none;" data-perm="edit_agents">
     <button type="button" class="btn-new-folder" onclick="createFolderPrompt()">+ New Folder</button>
+    <button type="button" class="btn-new-folder" id="bulkSelectToggleBtn" onclick="toggleBulkSelectMode()" style="margin-left:0.4rem;">Select</button>
   </div>
   <div id="agentList"><div class="loading">Loading agents...</div></div>
 </div>
@@ -1496,6 +1526,14 @@
   let agentSearchChips = [];
   let agentSortKey = null;
   let agentSortDir = null;
+  // Slug of the row currently highlighted via j/k keyboard navigation.
+  // null when no row is highlighted. Persists across renderAgentList()
+  // re-runs so search-then-arrow doesn't lose the position.
+  let focusedAgentSlug = null;
+  // Bulk-select mode: when true, rows render checkboxes and the row click
+  // toggles selection instead of navigating to the agent detail.
+  let bulkSelectMode = false;
+  const bulkSelectedSlugs = new Set();
   // Map of agent_id → array of bound phone-number entries from Retell.
   // Refreshed every time loadAgents() runs (live source of truth).
   let agentPhoneByAgent = {};
@@ -1848,6 +1886,7 @@
       mtd_cogs: ' title="Month-to-date cost of goods sold"',
     };
     let html = '<table><thead><tr>' +
+      (bulkSelectMode ? '<th style="width:1px;"></th>' : '') +
       AGENT_COLUMNS
         .filter(c => isColumnVisible(c.key))
         .map(c => headerCell(c.key, c.label, colAttrs[c.key] || ''))
@@ -1856,7 +1895,8 @@
       '</tr></thead>';
     const visibleColCount =
       AGENT_COLUMNS.filter(c => isColumnVisible(c.key)).length +
-      (canEdit ? 1 : 0);
+      (canEdit ? 1 : 0) +
+      (bulkSelectMode ? 1 : 0);
 
     // Decide the order folders are rendered in. Unfiled always first; then
     // user-created folders in their stored position order.
@@ -1928,6 +1968,8 @@
 
     html += '</table>';
     listEl.innerHTML = html;
+    // Reapply the j/k focus class — innerHTML wipes it from prior renders.
+    applyFocusedRowClass();
   }
 
   function renderAgentRow(a, canEdit) {
@@ -1958,18 +2000,39 @@
       ? phones.map(p => '<span title="' + esc(p.title) + '">' + esc(p.label) + '</span>').join(', ')
       : '<span style="color:#aaa">—</span>';
 
+    // Drift badge: shown when retell-auto-sync detected canonical-JSON drift
+    // for this agent within the last 24h. The aggregation lives in
+    // src/routes/dashboard/list-agents.ts (drift_detected_at field).
+    const driftHtml = a.drift_detected_at
+      ? ' <span class="badge badge-drift" title="Mongo ↔ Retell drift detected at ' +
+          esc(new Date(a.drift_detected_at).toLocaleString()) +
+          ' — a snapshot was taken in version history.">drift</span>'
+      : '';
+
     const cells = {
       name: '<td><strong>' + esc(a.display_name || a.name) + '</strong></td>',
       trial: '<td>' + trialHtml + '</td>',
-      status: '<td><span class="badge ' + sc + '" data-status>' + sl + '</span></td>',
+      status: '<td><span class="badge ' + sc + '" data-status>' + sl + '</span>' + driftHtml + '</td>',
       mtd_cogs: '<td style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>',
       phone: '<td style="font-variant-numeric:tabular-nums;color:#444">' + phoneHtml + '</td>',
     };
+    const checkboxCell = bulkSelectMode
+      ? '<td style="width:1px;padding-right:0.4rem;" onclick="event.stopPropagation()">' +
+          '<input type="checkbox" class="bulk-select-cb" data-slug="' + esc(a.slug) + '"' +
+          (bulkSelectedSlugs.has(a.slug) ? ' checked' : '') +
+          ' onchange="onBulkCheckboxChange(this)">' +
+        '</td>'
+      : '';
+
     return '<tr class="clickable-row" onclick="agentRowClick(event, \'' + esc(a.slug) + '\')"' +
       ' onauxclick="agentRowClick(event, \'' + esc(a.slug) + '\')"' +
       ' data-slug="' + esc(a.slug) + '"' +
-      (canEdit ? ' draggable="true" ondragstart="onAgentDragStart(event)" ondragend="onAgentDragEnd(event)"' : '') +
+      // Drag-to-folder is disabled while in bulk select mode — the checkbox
+      // gesture and drag-start gesture conflict and the user is in a different
+      // task anyway.
+      (canEdit && !bulkSelectMode ? ' draggable="true" ondragstart="onAgentDragStart(event)" ondragend="onAgentDragEnd(event)"' : '') +
       '>' +
+      checkboxCell +
       AGENT_COLUMNS.filter(c => isColumnVisible(c.key)).map(c => cells[c.key]).join('') +
       '</tr>';
   }
@@ -2560,14 +2623,152 @@
   // the editor in a new tab; plain click navigates in place via showDetail.
   // Right-click (button 2) is left alone so the native context menu works.
   function agentRowClick(event, slug) {
+    if (event.button === 2) return;
+    // In bulk-select mode, the row toggles selection instead of navigating.
+    // The checkbox itself has its own change handler; this branch covers
+    // clicks elsewhere on the row so the whole row is clickable.
+    if (bulkSelectMode) {
+      // Don't double-toggle when the click landed on the checkbox itself.
+      const tgt = event.target;
+      if (tgt && tgt.tagName === 'INPUT' && tgt.type === 'checkbox') return;
+      if (bulkSelectedSlugs.has(slug)) bulkSelectedSlugs.delete(slug);
+      else bulkSelectedSlugs.add(slug);
+      const cb = document.querySelector('input.bulk-select-cb[data-slug="' + CSS.escape(slug) + '"]');
+      if (cb) cb.checked = bulkSelectedSlugs.has(slug);
+      renderBulkActionBar();
+      return;
+    }
     const newTab = event.metaKey || event.ctrlKey || event.button === 1;
     if (newTab) {
       event.preventDefault();
       window.open('#agent=' + encodeURIComponent(slug), '_blank');
       return;
     }
-    if (event.button === 2) return;
     showDetail(slug);
+  }
+
+  // ── Bulk-select mode (multi-select on the agent list) ─────────────────
+  // Toggled by the "Select" button in the folder toolbar. While active:
+  //   - Each row gets a leading checkbox column.
+  //   - Clicking a row toggles selection (does NOT navigate to the agent).
+  //   - A floating action bar at the bottom shows N selected and bulk actions.
+  function toggleBulkSelectMode() {
+    bulkSelectMode = !bulkSelectMode;
+    bulkSelectedSlugs.clear();
+    const btn = document.getElementById('bulkSelectToggleBtn');
+    if (btn) btn.textContent = bulkSelectMode ? 'Cancel select' : 'Select';
+    renderAgentList();
+    renderBulkActionBar();
+  }
+
+  function onBulkCheckboxChange(input) {
+    const slug = input.dataset.slug;
+    if (!slug) return;
+    if (input.checked) bulkSelectedSlugs.add(slug);
+    else bulkSelectedSlugs.delete(slug);
+    renderBulkActionBar();
+  }
+
+  function renderBulkActionBar() {
+    const existing = document.getElementById('bulkActionBar');
+    if (!bulkSelectMode) { if (existing) existing.remove(); return; }
+    const count = bulkSelectedSlugs.size;
+    const orderedFolders = [
+      { _id: '__null__', name: 'Unfiled (root)' },
+      ...agentFolders.slice().sort((a, b) => a.position - b.position),
+    ];
+    const folderOpts = orderedFolders
+      .map((f) => '<option value="' + esc(f._id) + '">' + esc(f.name) + '</option>')
+      .join('');
+
+    const html =
+      '<div style="font-weight:600;">' + count + ' selected</div>' +
+      '<div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">' +
+        '<select id="bulkMoveFolderSel" style="padding:0.3rem 0.4rem;font-size:0.78rem;">' +
+          '<option value="">Move to…</option>' + folderOpts +
+        '</select>' +
+        '<button onclick="bulkMoveToFolder()" ' + (count === 0 ? 'disabled' : '') + '>Move</button>' +
+        '<button onclick="bulkSetShadow(true)"  ' + (count === 0 ? 'disabled' : '') + '>Shadow ON</button>' +
+        '<button onclick="bulkSetShadow(false)" ' + (count === 0 ? 'disabled' : '') + '>Shadow OFF</button>' +
+        '<button onclick="bulkSetActive(true)"  ' + (count === 0 ? 'disabled' : '') + '>Activate</button>' +
+        '<button onclick="bulkSetActive(false)" ' + (count === 0 ? 'disabled' : '') + '>Deactivate</button>' +
+        '<button onclick="toggleBulkSelectMode()">Cancel</button>' +
+      '</div>';
+
+    if (existing) {
+      existing.innerHTML = html;
+      return;
+    }
+    const bar = document.createElement('div');
+    bar.id = 'bulkActionBar';
+    bar.innerHTML = html;
+    bar.style.cssText =
+      'position:fixed;bottom:1rem;left:50%;transform:translateX(-50%);' +
+      'background:#fff;border:1px solid #cbd5e1;border-radius:8px;' +
+      'box-shadow:0 8px 24px rgba(0,0,0,0.12);' +
+      'padding:0.6rem 0.9rem;display:flex;gap:0.9rem;align-items:center;' +
+      'z-index:60;font-size:0.85rem;';
+    document.body.appendChild(bar);
+  }
+
+  // Bulk action helpers. Each fires the existing per-agent endpoint in a loop
+  // and reports a `done / failed` toast at the end. After completion we
+  // re-fetch the list once so the UI reflects the new state.
+  async function runBulkOp(label, perAgent) {
+    if (bulkSelectedSlugs.size === 0) return;
+    const slugs = Array.from(bulkSelectedSlugs);
+    let done = 0, failed = 0;
+    await Promise.all(slugs.map(async (slug) => {
+      try { await perAgent(slug); done++; }
+      catch (err) {
+        console.error('[bulk] ' + label + ' failed for ' + slug + ':', err);
+        failed++;
+      }
+    }));
+    showToast(label + ': ' + done + ' done' + (failed ? ' · ' + failed + ' failed' : ''),
+      failed === 0 ? 'success' : 'error');
+    bulkSelectedSlugs.clear();
+    await loadAgents();
+    renderBulkActionBar();
+  }
+
+  function bulkMoveToFolder() {
+    const sel = document.getElementById('bulkMoveFolderSel');
+    if (!sel || !sel.value) {
+      showToast('Pick a destination folder first', 'error');
+      return;
+    }
+    const folderId = sel.value === '__null__' ? null : sel.value;
+    runBulkOp('Move', async (slug) => {
+      const r = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/folder', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder_id: folderId }),
+      });
+      if (!r.ok) throw new Error(String(r.status));
+    });
+  }
+
+  function bulkSetShadow(value) {
+    runBulkOp(value ? 'Shadow ON' : 'Shadow OFF', async (slug) => {
+      const r = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/shadow', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shadow_mode: value }),
+      });
+      if (!r.ok) throw new Error(String(r.status));
+    });
+  }
+
+  function bulkSetActive(value) {
+    runBulkOp(value ? 'Activate' : 'Deactivate', async (slug) => {
+      const r = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/active', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: value }),
+      });
+      if (!r.ok) throw new Error(String(r.status));
+    });
   }
 
   // Switch to a tab. Prompts before discarding unsaved changes in the
@@ -5941,6 +6142,11 @@
   // ── Node Editor ──────────────────────────────────────────────────
 
   let neSlug = '', neAgentId = '', neData = null, neDirty = false, neVersionData = null;
+  // Version-diff selection state. _id of the version chosen for slot A / B
+  // via the A/B pills in the version-history list. neOpenVersionDiff() reads
+  // both, fetches each version's canonical JSON, and renders a JSON-line diff.
+  let neDiffA = null, neDiffB = null;
+  let _neDiffVersionLabels = {}; // { _id → "v23" } for the diff modal header.
   let neScopeCounter = 0;
   const neScopeConditions = {};
 
@@ -6046,10 +6252,22 @@
       '<summary style="font-size:0.85rem;font-weight:600;color:#555;cursor:pointer;">Version History (' + verData.total + ')</summary>' +
       '<div style="margin-top:0.5rem;">';
     if (verData.versions.length > 0) {
+      // Compare-A/B toolbar: pick two versions via the A/B pills on each row,
+      // then click Compare to see a JSON-line diff.
+      html += '<div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem;font-size:0.78rem;color:#555;">' +
+        '<span>Pick two versions to compare:</span>' +
+        '<span id="ne-diff-a-label" style="color:#888;">A: —</span>' +
+        '<span id="ne-diff-b-label" style="color:#888;">B: —</span>' +
+        '<button class="ne-btn" id="ne-diff-btn" onclick="neOpenVersionDiff()" disabled>Compare A ↔ B</button>' +
+        '</div>';
       for (const v of verData.versions) {
         const ago = timeAgo(v.createdAt);
+        const aActive = neDiffA === v._id ? ' style="background:#dbeafe;border-color:#2563eb;color:#1e40af;font-weight:600;"' : '';
+        const bActive = neDiffB === v._id ? ' style="background:#dcfce7;border-color:#16a34a;color:#166534;font-weight:600;"' : '';
         html += '<div class="ne-version-row">' +
           '<span class="ne-v-num">v' + v.version + '</span>' +
+          '<button class="ne-btn"' + aActive + ' onclick="neSelectDiff(\'A\',\'' + v._id + '\',' + v.version + ')" style="font-size:0.68rem;padding:0.1rem 0.4rem;" title="Select as version A">A</button>' +
+          '<button class="ne-btn"' + bActive + ' onclick="neSelectDiff(\'B\',\'' + v._id + '\',' + v.version + ')" style="font-size:0.68rem;padding:0.1rem 0.4rem;" title="Select as version B">B</button>' +
           '<span class="ne-v-source">' + esc(v.source) + '</span>' +
           '<span class="ne-v-desc">' + esc(v.description) + '</span>' +
           '<span class="ne-v-time">' + ago + '</span>';
@@ -7395,6 +7613,38 @@
     }
 
     try {
+      // 0. Dry-run validation. The `/validate` route runs the same apply-and-
+      //    validate path as save-and-publish but returns before pushing or
+      //    snapshotting, so we can surface validation errors to the user
+      //    BEFORE committing them to Retell.
+      const validateRes = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ changes }),
+      });
+      if (!validateRes.ok) {
+        const validateData = await validateRes.json();
+        if (validateRes.status === 400 && Array.isArray(validateData.errors) && validateData.errors.length > 0) {
+          renderNeValidationErrors(validateData.errors);
+          const proceed = confirm(
+            'Validation found ' + validateData.errors.length + ' issue(s) with these changes:\n\n' +
+            validateData.errors.map((e) => '• ' + (e.message || e.code || JSON.stringify(e))).join('\n') +
+            '\n\nSave anyway? The server will reject the push if it still fails.',
+          );
+          if (!proceed) {
+            btn.disabled = false;
+            btn.textContent = 'Save & Publish to Retell';
+            return;
+          }
+        } else {
+          // Non-validation failure (5xx, auth, etc.) — fall through to the
+          // save-and-publish call which will surface the same error.
+        }
+      } else {
+        // Validation clean — clear any prior error panel.
+        clearNeValidationErrors();
+      }
+
       // 1. Push the flow + per-node changes to Retell (and refresh canonical).
       const res = await fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/save-and-publish', {
         method: 'POST',
@@ -7424,6 +7674,7 @@
       }
 
       neDirty = false;
+      clearNeValidationErrors();
       showToast('Published to Retell', 'success');
       loadNodeEditor(neSlug, neAgentId);
     } catch (err) {
@@ -7432,6 +7683,32 @@
       btn.disabled = false;
       btn.textContent = 'Save & Publish to Retell';
     }
+  }
+
+  // ── Save-time validation panel helpers ──────────────────────────
+  // Renders / clears a small red panel above the Save & Publish button when
+  // the /validate dry-run reports issues.
+  function renderNeValidationErrors(errors) {
+    const btn = document.getElementById('ne-publish-btn');
+    if (!btn) return;
+    let panel = document.getElementById('ne-validation-panel');
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = 'ne-validation-panel';
+      panel.style.cssText =
+        'background:#fef2f2;border:1px solid #fecaca;color:#991b1b;' +
+        'padding:0.5rem 0.75rem;border-radius:4px;margin-bottom:0.5rem;' +
+        'font-size:0.82rem;';
+      btn.parentNode.insertBefore(panel, btn);
+    }
+    panel.innerHTML =
+      '<strong>Validation found ' + errors.length + ' issue(s):</strong><ul style="margin:0.3rem 0 0 1rem;padding:0;">' +
+      errors.map((e) => '<li>' + esc(e.message || e.code || JSON.stringify(e)) + '</li>').join('') +
+      '</ul>';
+  }
+  function clearNeValidationErrors() {
+    const panel = document.getElementById('ne-validation-panel');
+    if (panel) panel.remove();
   }
 
   // ── Rollback ───────────────────────────────────────────────────
@@ -7453,6 +7730,126 @@
     } catch (err) {
       showToast('Error: ' + err.message, 'error');
     }
+  }
+
+  // ── Version diff (A ↔ B) ───────────────────────────────────────
+  // Pick two versions in the version-history list (A/B pills), then click
+  // Compare to see a JSON-line diff. The fetch hits the existing
+  // GET /:agentId/versions/:versionId route. The diff is rendered with a tiny
+  // LCS-based line-diff routine — no external dependencies.
+
+  function neSelectDiff(slot, versionId, versionNum) {
+    if (slot === 'A') {
+      neDiffA = neDiffA === versionId ? null : versionId;
+    } else if (slot === 'B') {
+      neDiffB = neDiffB === versionId ? null : versionId;
+    }
+    if (versionId) _neDiffVersionLabels[versionId] = 'v' + versionNum;
+    // Update labels + button state in place; no need to re-render the whole editor.
+    const labA = document.getElementById('ne-diff-a-label');
+    const labB = document.getElementById('ne-diff-b-label');
+    const btn = document.getElementById('ne-diff-btn');
+    if (labA) labA.textContent = 'A: ' + (neDiffA ? (_neDiffVersionLabels[neDiffA] || '?') : '—');
+    if (labB) labB.textContent = 'B: ' + (neDiffB ? (_neDiffVersionLabels[neDiffB] || '?') : '—');
+    if (btn) btn.disabled = !(neDiffA && neDiffB && neDiffA !== neDiffB);
+    // Re-render to repaint the pill highlighting.
+    renderNodeEditor(neData, neVersionData);
+  }
+
+  async function neOpenVersionDiff() {
+    if (!neDiffA || !neDiffB || neDiffA === neDiffB) return;
+    showToast('Loading diff...', 'success');
+    try {
+      const [resA, resB] = await Promise.all([
+        fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/versions/' + neDiffA),
+        fetch('/dashboard/api/agents/' + neSlug + '/nodes/' + neAgentId + '/versions/' + neDiffB),
+      ]);
+      if (!resA.ok || !resB.ok) throw new Error('Failed to fetch versions');
+      const [verA, verB] = await Promise.all([resA.json(), resB.json()]);
+      const aLines = _neStringifyForDiff(verA.canonicalJson || verA).split('\n');
+      const bLines = _neStringifyForDiff(verB.canonicalJson || verB).split('\n');
+      _renderVersionDiffModal({
+        aLabel: _neDiffVersionLabels[neDiffA] || 'A',
+        bLabel: _neDiffVersionLabels[neDiffB] || 'B',
+        aLines, bLines,
+      });
+    } catch (err) {
+      showToast('Diff failed: ' + err.message, 'error');
+    }
+  }
+
+  // Pretty-print a canonical JSON with sorted keys so unrelated key-order
+  // differences don't show up as "changes" in the diff.
+  function _neStringifyForDiff(obj) {
+    const sortKeys = (v) => {
+      if (Array.isArray(v)) return v.map(sortKeys);
+      if (v && typeof v === 'object') {
+        const out = {};
+        for (const k of Object.keys(v).sort()) out[k] = sortKeys(v[k]);
+        return out;
+      }
+      return v;
+    };
+    return JSON.stringify(sortKeys(obj), null, 2);
+  }
+
+  // Compute an LCS-based line diff. Returns an array of { type, text } where
+  // type ∈ {'eq','add','rem'}. Standard dynamic-programming LCS — fine for a
+  // few thousand lines, which is well above any realistic agent JSON size.
+  function _neLineDiff(aLines, bLines) {
+    const m = aLines.length, n = bLines.length;
+    const dp = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1));
+    for (let i = m - 1; i >= 0; i--) {
+      for (let j = n - 1; j >= 0; j--) {
+        dp[i][j] = aLines[i] === bLines[j]
+          ? dp[i + 1][j + 1] + 1
+          : Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const out = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (aLines[i] === bLines[j]) { out.push({ type: 'eq', text: aLines[i] }); i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { out.push({ type: 'rem', text: aLines[i] }); i++; }
+      else { out.push({ type: 'add', text: bLines[j] }); j++; }
+    }
+    while (i < m) out.push({ type: 'rem', text: aLines[i++] });
+    while (j < n) out.push({ type: 'add', text: bLines[j++] });
+    return out;
+  }
+
+  function _renderVersionDiffModal({ aLabel, bLabel, aLines, bLines }) {
+    const existing = document.getElementById('ne-diff-modal');
+    if (existing) existing.remove();
+
+    const lines = _neLineDiff(aLines, bLines);
+    const lineHtml = lines.map((ln) => {
+      const cls = ln.type === 'add' ? 'ne-diff-add'
+                : ln.type === 'rem' ? 'ne-diff-rem'
+                : 'ne-diff-eq';
+      const prefix = ln.type === 'add' ? '+ ' : ln.type === 'rem' ? '- ' : '  ';
+      return '<div class="' + cls + '">' + esc(prefix + ln.text) + '</div>';
+    }).join('');
+
+    const overlay = document.createElement('div');
+    overlay.id = 'ne-diff-modal';
+    overlay.style.cssText =
+      'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.55);' +
+      'z-index:80;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML =
+      '<div style="background:#fff;border-radius:8px;width:min(94vw,1100px);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 12px 32px rgba(0,0,0,0.18);">' +
+        '<div style="padding:0.7rem 1rem;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;">' +
+          '<div style="font-weight:600;">Version diff — <span style="color:#1e40af;">' + esc(aLabel) + '</span> ↔ <span style="color:#166534;">' + esc(bLabel) + '</span></div>' +
+          '<button class="ne-btn" onclick="document.getElementById(\'ne-diff-modal\').remove()">Close</button>' +
+        '</div>' +
+        '<div style="overflow:auto;padding:0.4rem 0.6rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:0.74rem;line-height:1.45;background:#f9fafb;flex:1;min-height:200px;">' +
+          lineHtml +
+        '</div>' +
+      '</div>';
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
   }
 
   // Render the right view based on the current URL hash. Used both at
@@ -7988,9 +8385,69 @@
     }
   }
 
+  // ── j/k arrow navigation through the agent list ──────────────────────
+  // Returns the array of currently-rendered, visible agent rows (in DOM order).
+  // Excludes rows hidden by the search-chip filter or collapsed folder.
+  function visibleAgentRows() {
+    const rows = Array.from(document.querySelectorAll('#agentList tr.clickable-row[data-slug]'));
+    return rows.filter((tr) => tr.offsetParent !== null);
+  }
+
+  function applyFocusedRowClass() {
+    document.querySelectorAll('#agentList tr.clickable-row.focused-row').forEach((tr) => tr.classList.remove('focused-row'));
+    if (!focusedAgentSlug) return;
+    const tr = document.querySelector(`#agentList tr.clickable-row[data-slug="${CSS.escape(focusedAgentSlug)}"]`);
+    if (tr && tr.offsetParent !== null) {
+      tr.classList.add('focused-row');
+      tr.scrollIntoView({ block: 'nearest' });
+    } else {
+      // The row got filtered out — drop the focus rather than leave a stale slug.
+      focusedAgentSlug = null;
+    }
+  }
+
+  function moveFocusedAgent(delta) {
+    const rows = visibleAgentRows();
+    if (rows.length === 0) return;
+    let idx = focusedAgentSlug ? rows.findIndex((r) => r.dataset.slug === focusedAgentSlug) : -1;
+    if (idx < 0) idx = delta > 0 ? -1 : rows.length;
+    const next = Math.max(0, Math.min(rows.length - 1, idx + delta));
+    focusedAgentSlug = rows[next].dataset.slug;
+    applyFocusedRowClass();
+  }
+
+  // ── ? help overlay ─────────────────────────────────────────────────
+  function toggleKbdHelpOverlay() {
+    const existing = document.getElementById('kbdHelpOverlay');
+    if (existing) { existing.remove(); return; }
+    const overlay = document.createElement('div');
+    overlay.id = 'kbdHelpOverlay';
+    overlay.className = 'kbd-help-overlay';
+    overlay.innerHTML =
+      '<div class="kbd-help-panel">' +
+        '<h2>Keyboard shortcuts</h2>' +
+        '<dl>' +
+          '<dt>⌘K / Ctrl+K</dt><dd>Open agent quick-switcher</dd>' +
+          '<dt>/</dt><dd>Focus the agent search</dd>' +
+          '<dt>j / k</dt><dd>Move focus down / up the agent list</dd>' +
+          '<dt>Enter</dt><dd>Open the focused agent</dd>' +
+          '<dt>Esc</dt><dd>Back out (close palette, blur input, or return to list)</dd>' +
+          '<dt>?</dt><dd>Show / hide this help</dd>' +
+        '</dl>' +
+        '<button class="kbd-help-close">Close</button>' +
+      '</div>';
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay || ev.target.classList.contains('kbd-help-close')) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+  }
+
   // Global keyboard shortcuts:
   //   Cmd/Ctrl+K   open the agent quick-switcher palette
   //   /            focus the agent-list search (when on the list view)
+  //   j / k        move focus down/up the agent list (list view only)
+  //   Enter        open the focused agent (list view only, when focused)
+  //   ?            show/hide the keyboard shortcuts help overlay
   //   Esc          back to list from editor / settings (or close palette / blur input)
   window.addEventListener('keydown', (e) => {
     const tag = (e.target.tagName || '').toLowerCase();
@@ -8013,10 +8470,40 @@
       return;
     }
 
+    if (e.key === '?' && !isEditable && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      toggleKbdHelpOverlay();
+      return;
+    }
+
+    // List-view-only navigation. Skip when an input is focused or when the
+    // command palette / detail / settings view is showing.
+    const listVisible = document.getElementById('listView').style.display !== 'none';
+    if (listVisible && !isEditable && !e.metaKey && !e.ctrlKey && !e.altKey && !isCommandPaletteOpen()) {
+      if (e.key === 'j' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        moveFocusedAgent(1);
+        return;
+      }
+      if (e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        moveFocusedAgent(-1);
+        return;
+      }
+      if (e.key === 'Enter' && focusedAgentSlug) {
+        e.preventDefault();
+        showDetail(focusedAgentSlug);
+        return;
+      }
+    }
+
     if (e.key === 'Escape') {
       // Palette has its own Esc handler attached to the input; this branch
       // only fires when palette isn't focused. Close it if open.
       if (isCommandPaletteOpen()) { closeCommandPalette(); return; }
+      // If the help overlay is open, close it first.
+      const helpOverlay = document.getElementById('kbdHelpOverlay');
+      if (helpOverlay) { helpOverlay.remove(); return; }
       // If a field is focused, just blur it — don't yank the user out of the
       // editor mid-edit.
       if (isEditable) { e.target.blur(); return; }

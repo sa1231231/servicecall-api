@@ -3,8 +3,9 @@ import type { Request, Response } from "express";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────
 
-const { mockGetAllClientDocuments } = vi.hoisted(() => ({
+const { mockGetAllClientDocuments, mockDriftAggregate } = vi.hoisted(() => ({
   mockGetAllClientDocuments: vi.fn(),
+  mockDriftAggregate: vi.fn(),
 }));
 
 vi.mock("../../../config/client-store.js", () => ({
@@ -15,6 +16,18 @@ vi.mock("../../../config/client-store.js", () => ({
 // and config.js. Mock billing-cogs to keep that chain out of the test worker.
 vi.mock("../../../lib/billing-cogs.js", () => ({
   getMtdCogsForAllClients: vi.fn().mockResolvedValue({}),
+}));
+
+// list-agents.ts also imports db.js directly for the drift aggregation
+// (`agent_versions` collection).
+vi.mock("../../../lib/db.js", () => ({
+  getDb: () => ({
+    collection: (_name: string) => ({
+      aggregate: (pipeline: any) => ({
+        toArray: () => mockDriftAggregate(pipeline),
+      }),
+    }),
+  }),
 }));
 
 import { listAgentsHandler } from "../list-agents.js";
@@ -42,6 +55,8 @@ function makeDoc(overrides: Record<string, any> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: no drift detected. Tests that need drift override per-case.
+  mockDriftAggregate.mockResolvedValue([]);
 });
 
 describe("listAgentsHandler", () => {
@@ -88,5 +103,47 @@ describe("listAgentsHandler", () => {
     await listAgentsHandler({} as Request, res);
 
     expect(res._json[0].trial_start_date).toBeNull();
+  });
+
+  it("attaches drift_detected_at when agent_versions has a recent auto_sync entry", async () => {
+    const driftAt = new Date("2026-04-01T12:00:00Z");
+    mockGetAllClientDocuments.mockResolvedValue([makeDoc()]);
+    mockDriftAggregate.mockResolvedValue([
+      { _id: "test-co", lastDriftAt: driftAt },
+    ]);
+
+    const res = mockRes();
+    await listAgentsHandler({} as Request, res);
+
+    expect(res._json[0].drift_detected_at).toBe(driftAt.toISOString());
+    // Pipeline must filter on source + description + a 24h cutoff.
+    const pipeline = mockDriftAggregate.mock.calls[0][0];
+    const match = pipeline.find((s: any) => s.$match)?.$match;
+    expect(match.source).toBe("auto_sync");
+    expect(match.description).toBe("Auto-sync drift detected");
+    expect(match.createdAt.$gte).toBeInstanceOf(Date);
+  });
+
+  it("returns drift_detected_at: null when no drift entry exists", async () => {
+    mockGetAllClientDocuments.mockResolvedValue([makeDoc()]);
+    mockDriftAggregate.mockResolvedValue([]);
+
+    const res = mockRes();
+    await listAgentsHandler({} as Request, res);
+
+    expect(res._json[0].drift_detected_at).toBeNull();
+  });
+
+  it("falls through with empty drift map when the aggregation throws", async () => {
+    mockGetAllClientDocuments.mockResolvedValue([makeDoc()]);
+    mockDriftAggregate.mockRejectedValue(new Error("agent_versions unreachable"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = mockRes();
+    await listAgentsHandler({} as Request, res);
+
+    expect(res._status).toBe(200);
+    expect(res._json[0].drift_detected_at).toBeNull();
+    spy.mockRestore();
   });
 });

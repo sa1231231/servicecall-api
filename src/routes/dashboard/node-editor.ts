@@ -1969,8 +1969,21 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
 });
 
 // ── POST /:agentId/save-and-publish — Apply All Changes & Push to Retell ─────
+// ── POST /:agentId/validate         — Same body shape, dry-run only ──────────
+//
+// `validate` and `save-and-publish` share the same handler. When `dryRun` is
+// true (the `validate` route always passes true), the handler:
+//   - skips `createVersionSnapshot` (no Mongo write)
+//   - returns `{ ok: true, errors: [] }` immediately after validation
+//   - skips the Retell push, the Mongo `storeCanonical`, and the audit log
+// On validation failure the response is identical for both routes:
+// `400 { error: "Validation failed", errors: [...] }`.
 
-nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
+async function saveAndPublishHandler(
+  req: Parameters<Parameters<typeof nodeEditorRouter.post>[1]>[0],
+  res: Parameters<Parameters<typeof nodeEditorRouter.post>[1]>[1],
+  dryRun: boolean,
+): Promise<void> {
   const p = req.params as Record<string, string>;
   const slug = p.slug;
   const agentId = p.agentId;
@@ -1995,12 +2008,15 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
     const nodes = flow.nodes as Array<Record<string, unknown>>;
     const parsed = parseConversationFlow(canonical);
 
-    // Snapshot before changes
-    await createVersionSnapshot(
-      slug, agentId, canonical, "manual_edit",
-      changes.description || "Save & Publish",
-      req.user?.username ?? "unknown",
-    );
+    // Snapshot before changes — skipped on dry-run so /validate stays
+    // non-mutating and can be called repeatedly.
+    if (!dryRun) {
+      await createVersionSnapshot(
+        slug, agentId, canonical, "manual_edit",
+        changes.description || "Save & Publish",
+        req.user?.username ?? "unknown",
+      );
+    }
 
     // Apply global prompt change
     if (typeof changes.globalPrompt === "string") {
@@ -2354,6 +2370,14 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
       return;
     }
 
+    // Dry-run short-circuit: validation passed, but we don't touch Retell or
+    // Mongo. Used by the `/validate` route so the dashboard can surface
+    // pre-publish errors without committing.
+    if (dryRun) {
+      res.json({ ok: true, errors: [] });
+      return;
+    }
+
     // Push to Retell
     await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
@@ -2367,7 +2391,10 @@ nodeEditorRouter.post("/:agentId/save-and-publish", async (req, res) => {
     console.error(`[node-editor] save-and-publish error:`, msg);
     res.status(500).json({ error: msg });
   }
-});
+}
+
+nodeEditorRouter.post("/:agentId/save-and-publish", (req, res) => saveAndPublishHandler(req, res, false));
+nodeEditorRouter.post("/:agentId/validate", (req, res) => saveAndPublishHandler(req, res, true));
 
 // ── POST /:agentId/push — Raw JSON Push (admin/root only) ───────────────────
 

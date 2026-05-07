@@ -390,3 +390,70 @@ describe("POST /:agentId/save-and-publish — fine-tune mutations", () => {
     expect(collect.finetune_transition_examples).toHaveLength(1);
   });
 });
+
+// ── POST /:agentId/validate — dry-run path ───────────────────────────────────
+//
+// /validate is implemented as a thin alias over the same handler with
+// dryRun=true. These tests assert that the side effects (Retell push, Mongo
+// snapshot, audit log) DO NOT fire on the dry-run path, regardless of whether
+// validation succeeds or fails.
+
+describe("POST /:agentId/validate", () => {
+  it("returns { ok: true, errors: [] } and skips push + snapshot when validation passes", async () => {
+    const fix = buildFlow();
+    mockGetClientDocument.mockResolvedValue(makeDoc());
+    mockFetchRetellAgent.mockResolvedValue({
+      canonicalJson: fix.canonicalJson, conversationFlowId: "f1", agentName: "Acme",
+    });
+    mockParseConversationFlow.mockReturnValue(fix.parsed);
+    mockValidateConversationFlow.mockReturnValue([]);
+
+    const res = makeRes();
+    await runRoute("post", "/:agentId/validate", makeReq({
+      params: { slug: "acme", agentId: "agent_1" },
+      body: { changes: { description: "cleanup" } },
+    }), res);
+
+    expect(res._status).toBe(200);
+    expect(res._json).toEqual({ ok: true, errors: [] });
+    expect(mockPushFlowToRetell).not.toHaveBeenCalled();
+    expect(mockCreateVersionSnapshot).not.toHaveBeenCalled();
+    expect(mockLogAudit).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 with the validator's errors and still skips push/snapshot", async () => {
+    const fix = buildFlow();
+    mockGetClientDocument.mockResolvedValue(makeDoc());
+    mockFetchRetellAgent.mockResolvedValue({
+      canonicalJson: fix.canonicalJson, conversationFlowId: "f1", agentName: "Acme",
+    });
+    mockParseConversationFlow.mockReturnValue(fix.parsed);
+    mockValidateConversationFlow.mockReturnValue([
+      { code: "ORPHAN", message: "node X has no incoming edge" },
+    ]);
+
+    const res = makeRes();
+    await runRoute("post", "/:agentId/validate", makeReq({
+      params: { slug: "acme", agentId: "agent_1" },
+      body: { changes: { description: "broken" } },
+    }), res);
+
+    expect(res._status).toBe(400);
+    expect(res._json.error).toBe("Validation failed");
+    expect(res._json.errors).toEqual([
+      { code: "ORPHAN", message: "node X has no incoming edge" },
+    ]);
+    expect(mockPushFlowToRetell).not.toHaveBeenCalled();
+    expect(mockCreateVersionSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("rejects missing changes object with 400 (same shape as save-and-publish)", async () => {
+    const res = makeRes();
+    await runRoute("post", "/:agentId/validate", makeReq({
+      params: { slug: "acme", agentId: "agent_1" },
+      body: {},
+    }), res);
+    expect(res._status).toBe(400);
+    expect(res._json.error).toMatch(/changes/);
+  });
+});
