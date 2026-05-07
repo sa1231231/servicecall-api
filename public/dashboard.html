@@ -1058,7 +1058,7 @@
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
-  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-create" data-perm="create_agents" onclick="showPendingLeads()" id="btnCreate" title="Build an agent — Advanced, Quick, or pick up a pending lead">+ Create<span id="leadsBadge" style="display:none;">0</span></button><button class="btn-settings" onclick="logout()" title="Sign out and clear session cookie" style="margin-left:0.4rem;">Logout</button><span id="userBadge" class="user-badge"></span></h1>
+  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-create" data-feature="agent_lifecycle" data-feature-level="write" onclick="showPendingLeads()" id="btnCreate" title="Build an agent — Advanced, Quick, or pick up a pending lead">+ Create<span id="leadsBadge" style="display:none;">0</span></button><button class="btn-settings" onclick="logout()" title="Sign out and clear session cookie" style="margin-left:0.4rem;">Logout</button><span id="userBadge" class="user-badge"></span></h1>
   <p class="subtitle">Click a client to view details and call history.</p>
   <div id="agentSearchBar" class="agent-search-bar" style="display:none;">
     <div class="agent-search-chips" id="agentSearchChips"></div>
@@ -1073,7 +1073,7 @@
       <div class="column-picker-menu" id="columnPickerMenu" style="display:none;"></div>
     </div>
   </div>
-  <div id="folderToolbar" class="folder-toolbar" style="display:none;" data-perm="edit_agents">
+  <div id="folderToolbar" class="folder-toolbar" style="display:none;" data-feature="folders" data-feature-level="write">
     <button type="button" class="btn-new-folder" onclick="createFolderPrompt()">+ New Folder</button>
     <button type="button" class="btn-new-folder" id="bulkSelectToggleBtn" onclick="toggleBulkSelectMode()" style="margin-left:0.4rem;">Select</button>
   </div>
@@ -1103,10 +1103,10 @@
     </a>
   </div>
 
-  <div data-perm="manage_leads">
+  <div data-feature="pending_leads" data-feature-level="read">
     <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:1rem 0 0.25rem;">
       <h2 style="margin:0;">Pending Leads</h2>
-      <label data-perm="manage_settings" id="leadIntakeToggleWrap" title="When off, the API rejects POST /api/leads/intake from the Apps Script (423). The toggle does not pause manual + Add Lead." style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#444;cursor:pointer;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:5px;padding:0.25rem 0.55rem;">
+      <label data-feature="global_settings" data-feature-level="write" id="leadIntakeToggleWrap" title="When off, the API rejects POST /api/leads/intake from the Apps Script (423). The toggle does not pause manual + Add Lead." style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#444;cursor:pointer;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:5px;padding:0.25rem 0.55rem;">
         <input type="checkbox" id="leadIntakeToggle" onchange="toggleLeadIntake(this)" style="margin:0;cursor:pointer;">
         <span>Auto-intake from Sheets</span>
         <span id="leadIntakeStatus" style="font-weight:600;color:#16a34a;">ON</span>
@@ -1371,7 +1371,7 @@
         </div>
         </div><!-- /userManagementSection -->
 
-        <div id="deletedAgentsSection" style="display:none;" data-perm="manage_deleted">
+        <div id="deletedAgentsSection" style="display:none;" data-feature="permanent_delete" data-feature-level="read">
           <h2>Recently Deleted Agents</h2>
           <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them. Permanently deleting also releases the Twilio number and stops billing for it.</p>
           <div id="deletedAgentsContainer"><div class="loading">Loading...</div></div>
@@ -1394,7 +1394,7 @@
       <button class="agent-tab active" data-tab="settings" role="tab" onclick="switchAgentTab('settings')">Agent Settings</button>
       <button class="agent-tab" data-tab="dispatch" role="tab" onclick="switchAgentTab('dispatch')">Dispatch</button>
       <button class="agent-tab" data-tab="nodes"    role="tab" onclick="switchAgentTab('nodes')">Node Editor</button>
-      <button class="agent-tab" data-tab="billing"  role="tab" data-perm="view_billing" onclick="switchAgentTab('billing')">Billing</button>
+      <button class="agent-tab" data-tab="billing"  role="tab" data-feature="billing" data-feature-level="read" onclick="switchAgentTab('billing')">Billing</button>
       <button class="agent-tab" data-tab="calls"    role="tab" onclick="switchAgentTab('calls')">Call Log</button>
     </nav>
     <section class="agent-tab-content">
@@ -1403,7 +1403,7 @@
       <div id="tab-nodes"    class="agent-tab-pane">
         <div id="nodeEditorContainer"></div>
       </div>
-      <div id="tab-billing" class="agent-tab-pane" data-perm="view_billing">
+      <div id="tab-billing" class="agent-tab-pane" data-feature="billing" data-feature-level="read">
         <div id="billingTrialStart" style="margin-bottom:0.75rem;"></div>
         <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem;">
           <span style="font-size:0.82rem;font-weight:600;color:#555;">Cost Range:</span>
@@ -1854,12 +1854,6 @@
         if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin' && !currentUser.isRoot) {
           document.body.classList.add('role-operator');
         }
-        // Per-permission visibility: elements with data-perm="xxx" hidden if user lacks that permission
-        document.querySelectorAll('[data-perm]').forEach(el => {
-          const perm = el.getAttribute('data-perm');
-          if (!currentUser.permissions[perm]) el.style.display = 'none';
-          else el.style.removeProperty('display');
-        });
         // Super-admin / root only sections — User Management lives behind this.
         const isSuperOrRoot = currentUser.role === 'super_admin' || currentUser.isRoot;
         document.querySelectorAll('[data-super-admin-only]').forEach(el => {
@@ -1906,8 +1900,10 @@
 
       document.getElementById('agentSearchBar').style.display = 'flex';
       const tb = document.getElementById('folderToolbar');
-      // Show toolbar respecting the data-perm gate that the global startup pass applied.
-      if (tb && tb.style.display !== 'none' || (currentUser?.permissions?.edit_agents)) {
+      // Show the toolbar when the user has folder write access.
+      // The data-feature gate at startup handles initial visibility;
+      // this just re-asserts on view-state changes.
+      if (tb && hasFeature('folders', 'write')) {
         tb.style.display = 'flex';
       }
       // Restore previously persisted sort + chip + expanded-folder state.
@@ -3560,12 +3556,21 @@
     });
   }
 
-  function hasPerm(key) {
-    return currentUser && currentUser.permissions && currentUser.permissions[key];
+  // Feature × level check. Root bypasses every gate. Falls back to
+  // "none" when the feature isn't present in the user's map.
+  function hasFeature(feature, level) {
+    if (!currentUser) return false;
+    if (currentUser.isRoot) return true;
+    const RANK = { none: 0, read: 1, write: 2, manage: 3 };
+    const have = (currentUser.featurePermissions || {})[feature] || 'none';
+    return (RANK[have] || 0) >= (RANK[level] || 0);
   }
 
   function buildHeaderButtons(slug) {
-    const p = currentUser ? currentUser.permissions : {};
+    // Header dropdowns gated by feature × level checks (mirror the route gates).
+    const canSendComms = hasFeature('send_comms', 'write');
+    const canClone = hasFeature('agent_lifecycle', 'write');
+    const canDelete = hasFeature('agent_lifecycle', 'manage');
 
     const testMenu = `<div class="btn-group">` +
       `<button class="btn-group-toggle test" onclick="toggleDropdown(this)">Test &#9662;</button>` +
@@ -3595,14 +3600,14 @@
       `<button onclick="sendPaymentLink('${esc(slug)}')" id="btnPayment">Send Payment Link</button>` +
       `<button onclick="sendPortalLink('${esc(slug)}')" id="btnPortal">Send Portal Link</button>` +
       instructionsSubmenu;
-    const sendMenu = p.send_comms
+    const sendMenu = canSendComms
       ? `<div class="btn-group"><button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send to Client &#9662;</button><div class="btn-group-menu">${sendItems}</div></div>`
       : '';
 
     const manageItems =
       `<button onclick="exportAgentConfig('${esc(slug)}')">Export Config</button>` +
-      (p.clone_agents ? `<button onclick="showCloneModal()">Clone Agent</button>` : '') +
-      (p.delete_agents ? `<button class="danger" onclick="showDeleteModal()">Delete Agent</button>` : '');
+      (canClone ? `<button onclick="showCloneModal()">Clone Agent</button>` : '') +
+      (canDelete ? `<button class="danger" onclick="showDeleteModal()">Delete Agent</button>` : '');
     const manageMenu = manageItems
       ? `<div class="btn-group"><button class="btn-group-toggle manage" onclick="toggleDropdown(this)">Manage &#9662;</button><div class="btn-group-menu">${manageItems}</div></div>`
       : '';
@@ -3766,7 +3771,7 @@
       </dd>
     </dl>`;
 
-    if (hasPerm('edit_agents')) {
+    if (hasFeature('agent_config', 'write')) {
       html += `<button class="btn-save" id="btnSaveSettings" onclick="saveAgentSettings()" style="margin-top:0.75rem;">Save Settings</button>`;
     }
 
@@ -3779,7 +3784,7 @@
   function renderTabBillingHeader(doc) {
     const target = document.getElementById('billingTrialStart');
     if (!target) return;
-    if (!hasPerm('edit_agents')) {
+    if (!hasFeature('agent_config', 'write')) {
       target.innerHTML = '';
       return;
     }
@@ -3947,7 +3952,7 @@
         <div class="config-hint">Call data is POSTed as JSON to this URL after each dispatch. Use for CRM integrations, Zapier, etc.</div></dd>
     </dl>`;
 
-    if (hasPerm('edit_agents')) {
+    if (hasFeature('agent_config', 'write')) {
       html += `<button class="btn-save" id="btnSaveDispatch" onclick="saveDispatch()" style="margin-top:0.75rem;">Save Dispatch</button>`;
     }
 
@@ -4375,9 +4380,9 @@
       : (c.user_sentiment || '').toLowerCase().includes('negative') ? 'sentiment-negative'
       : 'sentiment-unknown';
     const summary = c.call_summary ? esc(c.call_summary) : '<span style="color:#aaa">pending</span>';
-    const costCell = hasPerm('view_billing') && c.call_cost_cents != null
+    const costCell = hasFeature('billing', 'read') && c.call_cost_cents != null
       ? '<td data-label="Cost" style="font-size:0.78rem;">$' + (c.call_cost_cents / 100).toFixed(2) + '</td>'
-      : hasPerm('view_billing') ? '<td data-label="Cost" style="font-size:0.78rem;">—</td>' : '';
+      : hasFeature('billing', 'read') ? '<td data-label="Cost" style="font-size:0.78rem;">—</td>' : '';
     const links = [];
     if (c.recording_url) links.push('<a class="icon-link" href="' + esc(c.recording_url) + '" target="_blank">Recording</a>');
     if (c.public_log_url) links.push('<a class="icon-link" href="' + esc(c.public_log_url) + '" target="_blank">Logs</a>');
@@ -4411,7 +4416,7 @@
       // Reset to normal view
       const container = document.getElementById('callLogContent');
       let html = `<table id="callTable"><thead><tr>
-        <th>Date</th><th>From</th><th>Duration</th>${hasPerm('view_billing') ? '<th>Cost</th>' : ''}<th>Outcome</th>
+        <th>Date</th><th>From</th><th>Duration</th>${hasFeature('billing', 'read') ? '<th>Cost</th>' : ''}<th>Outcome</th>
         <th>Sentiment</th><th>Summary</th><th>Links</th><th class="mobile-collected-data"></th>
       </tr></thead><tbody id="callBody">`;
       for (const c of dashAllCalls) html += dashBuildCallRow(c);
@@ -4436,7 +4441,7 @@
       return;
     }
     let html = `<table id="callTable"><thead><tr>
-      <th>Date</th><th>From</th><th>Duration</th>${hasPerm('view_billing') ? '<th>Cost</th>' : ''}<th>Outcome</th>
+      <th>Date</th><th>From</th><th>Duration</th>${hasFeature('billing', 'read') ? '<th>Cost</th>' : ''}<th>Outcome</th>
       <th>Sentiment</th><th>Summary</th><th>Links</th><th class="mobile-collected-data"></th>
     </tr></thead><tbody id="callBody">`;
     for (const c of filtered) html += dashBuildCallRow(c);
@@ -4585,7 +4590,7 @@
       let html = '';
       if (fresh) {
         html = `<table id="callTable"><thead><tr>
-          <th>Date</th><th>From</th><th>Duration</th>${hasPerm('view_billing') ? '<th>Cost</th>' : ''}<th>Outcome</th>
+          <th>Date</th><th>From</th><th>Duration</th>${hasFeature('billing', 'read') ? '<th>Cost</th>' : ''}<th>Outcome</th>
           <th>Sentiment</th><th>Summary</th><th>Links</th><th class="mobile-collected-data"></th>
         </tr></thead><tbody id="callBody">`;
       }
@@ -5175,11 +5180,11 @@
     }
 
     loadDpDefaults();
-    // Recently Deleted Agents: visible to anyone with manage_deleted permission
-    // (super_admin role gets it via DEFAULT_PERMISSIONS, root has it
-    // implicitly). Visibility itself is handled by the data-perm pass at
-    // startup; here we only need to load the data when the user can see it.
-    if (currentUser && currentUser.permissions?.manage_deleted) {
+    // Recently Deleted Agents: visible to anyone with permanent_delete:read
+    // (root has it implicitly). Visibility itself is handled by the
+    // data-feature pass at startup; here we only need to load the data
+    // when the user can see it.
+    if (hasFeature('permanent_delete', 'read')) {
       loadDeletedAgents();
     }
     // The "Super Admin" role option in user-creation stays root-only — only
@@ -6679,7 +6684,7 @@
   }
 
   function renderNodeEditor(data, verData) {
-    const canEdit = hasPerm('edit_agents');
+    const canEdit = hasFeature('node_editor', 'write');
 
     // Capture which routing-path collapsibles are currently expanded so we
     // can restore the same open set after innerHTML wipes the DOM. Keyed by
