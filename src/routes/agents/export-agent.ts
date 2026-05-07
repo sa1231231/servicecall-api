@@ -77,10 +77,8 @@ export async function exportAgentHandler(
     const closingStatementText = findInstructionText("Closing Statement");
     // Live Transfer Recovery — only present on agents that have at least one
     // transfer-mode path (or live-transfer human-request mode). Spoken when
-    // a transfer fails to bridge. Falls back to the legacy "Transfer Failed"
-    // name for agents created before the rename.
-    const liveTransferRecoveryPrompt =
-      findInstructionText("Live Transfer Recovery") ?? findInstructionText("Transfer Failed");
+    // a transfer fails to bridge.
+    const liveTransferRecoveryPrompt = findInstructionText("Live Transfer Recovery");
 
     // Extract transition conditions from intro edges
     const introEdges = parsed.introNode.raw.edges as Array<Record<string, unknown>> | undefined;

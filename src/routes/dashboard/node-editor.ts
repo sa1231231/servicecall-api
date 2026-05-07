@@ -275,12 +275,11 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
     const closingRemarksPrompt = findInstructionText("Closing Remarks");
     const closingStatementText = findInstructionText("Closing Statement");
 
-    // Live Transfer Recovery — match either the current name or the legacy
-    // "Transfer Failed" name so older agents also expose the configurable
-    // prompt in the dashboard. Field omitted entirely when no fallback node
-    // exists so the dashboard can hide the editor section.
+    // Live Transfer Recovery — only present on transfer-mode agents.
+    // Field omitted entirely when no node exists so the dashboard can
+    // hide the editor section.
     const liveTransferRecoveryNode = parsed.allNodes.find(
-      (n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed",
+      (n) => n.name === "Live Transfer Recovery",
     );
     const liveTransferRecoveryInstr = liveTransferRecoveryNode?.raw.instruction as Record<string, unknown> | undefined;
     const liveTransferRecoveryPrompt = liveTransferRecoveryNode
@@ -1563,12 +1562,10 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
     const closingRemarksId = closingRemarksNode?.id as string;
     const politeHangupId = politeHangupNode?.id as string;
 
-    // Remove existing transfer nodes if switching to callback. Check both the
-    // current name ("Live Transfer Recovery") and the legacy name
-    // ("Transfer Failed") so older agents still get cleaned up correctly.
+    // Remove existing transfer nodes if switching to callback.
     const transferCallIdx = nodes.findIndex((n) => n.name === "Transfer Call");
     const findRecoveryIdx = () =>
-      nodes.findIndex((n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed");
+      nodes.findIndex((n) => n.name === "Live Transfer Recovery");
 
     if (mode === "callback") {
       // Remove transfer nodes if they exist
@@ -1602,10 +1599,10 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
 
       if (transferCallIdx < 0) {
         const transferCallId = `node-transfer-${Date.now()}`;
-        // Reuse an existing recovery node if one is already present (legacy
-        // "Transfer Failed" or current name); otherwise create a fresh one.
+        // Reuse an existing recovery node if one is already present;
+        // otherwise create a fresh one.
         const existingRecovery = nodes.find(
-          (n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed",
+          (n) => n.name === "Live Transfer Recovery",
         );
         const liveTransferRecoveryId =
           (existingRecovery?.id as string | undefined) ?? `node-live-transfer-recovery-${Date.now() + 1}`;
@@ -1644,9 +1641,6 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
             type: "conversation",
             display_position: { x: humanPos.x + 720, y: humanPos.y - 96 },
           });
-        } else if (existingRecovery.name === "Transfer Failed") {
-          // Migrate legacy name in place so the configurable prompt round-trips.
-          existingRecovery.name = "Live Transfer Recovery";
         }
 
         // Update Human Request to skip to Transfer Call
@@ -1822,17 +1816,15 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
       const liveTransferHumanReq = nodes.some((n) => n.name === "Transfer Call");
       if (!stillHasTransferPath && !liveTransferHumanReq) {
         const recoveryIdx = nodes.findIndex(
-          (n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed",
+          (n) => n.name === "Live Transfer Recovery",
         );
         if (recoveryIdx >= 0) nodes.splice(recoveryIdx, 1);
       }
     } else {
       // mode === "transfer"
-      // Ensure the shared Live Transfer Recovery node exists. Reuse a legacy
-      // "Transfer Failed" node in place (renaming it) so the configurable
-      // prompt round-trips correctly for older agents.
+      // Ensure the shared Live Transfer Recovery node exists.
       let liveTransferRecoveryNode = nodes.find(
-        (n) => n.name === "Live Transfer Recovery" || n.name === "Transfer Failed",
+        (n) => n.name === "Live Transfer Recovery",
       );
       const closingRemarks = nodes.find((n) => n.name === "Closing Remarks");
       const closingRemarksId = closingRemarks?.id as string | undefined;
@@ -1855,8 +1847,6 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
           display_position: { x: -200, y: -1700 },
         };
         nodes.push(liveTransferRecoveryNode);
-      } else if (liveTransferRecoveryNode.name === "Transfer Failed") {
-        liveTransferRecoveryNode.name = "Live Transfer Recovery";
       }
       const liveTransferRecoveryId = liveTransferRecoveryNode.id as string;
       const warmTransferAgentVersion = await getWarmTransferAgentVersion(retell());
@@ -2144,21 +2134,14 @@ async function saveAndPublishHandler(
     if (typeof changes.closingStatementText === "string") {
       applyClosingPrompt("Closing Statement", changes.closingStatementText);
     }
-    // Live Transfer Recovery — match current name first, then legacy
-    // "Transfer Failed". When found under the legacy name, rename it to the
-    // current name so subsequent reads/writes round-trip cleanly.
+    // Live Transfer Recovery — only present on transfer-mode agents.
     if (typeof changes.liveTransferRecoveryPrompt === "string") {
-      const recoveryNode =
-        nodes.find((n) => n.name === "Live Transfer Recovery") ??
-        nodes.find((n) => n.name === "Transfer Failed");
+      const recoveryNode = nodes.find((n) => n.name === "Live Transfer Recovery");
       if (recoveryNode?.instruction) {
         (recoveryNode.instruction as Record<string, unknown>).text = renderTemplate(
           changes.liveTransferRecoveryPrompt,
           tplVars,
         );
-        if (recoveryNode.name === "Transfer Failed") {
-          recoveryNode.name = "Live Transfer Recovery";
-        }
       }
     }
 

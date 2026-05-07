@@ -355,24 +355,6 @@ describe("POST /:agentId/edit-human-request-mode", () => {
     expect(mockBuildWarmTransferOption).toHaveBeenCalledWith("v1");
   });
 
-  it("migrates legacy 'Transfer Failed' name to 'Live Transfer Recovery'", async () => {
-    mockGetClientDocument.mockResolvedValue(makeDoc());
-    const nodes: any[] = [
-      { id: "hr", name: "Human Request", display_position: { x: 0, y: 0 } },
-      { id: "tf", name: "Transfer Failed" },
-    ];
-    mockFetchRetellAgent.mockResolvedValue({
-      canonicalJson: { conversationFlow: { nodes } }, conversationFlowId: "f1", agentName: "A",
-    });
-    mockParseConversationFlow.mockReturnValue({ paths: [] });
-    const res = makeRes();
-    await runRoute("post", "/:agentId/edit-human-request-mode",
-      makeReq({ params: { slug: "acme", agentId: "agent_1" }, body: { mode: "live_transfer" } }), res);
-    expect(res._status).toBe(200);
-    // Legacy node should be migrated
-    expect(nodes.find((n: any) => n.name === "Transfer Failed")).toBeUndefined();
-    expect(nodes.find((n: any) => n.name === "Live Transfer Recovery")).toBeDefined();
-  });
 });
 
 // ── edit-path-end-mode ─────────────────────────────────────────────────────
