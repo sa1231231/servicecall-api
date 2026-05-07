@@ -34,6 +34,23 @@
 const REQUIRED_PROPS = ['API_BASE_URL', 'LEAD_INTAKE_TOKEN', 'NAME_COL', 'STATUS_COL'];
 
 function syncNewLeads() {
+  // Serialize concurrent executions. With both an `on change` trigger and
+  // a time-driven trigger enabled, two runs can overlap and POST the same
+  // empty-STATUS_COL row twice before either has written the lead id back.
+  // A short wait covers Zapier-style batched inserts that bunch up triggers.
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30 * 1000)) {
+    Logger.log('Another syncNewLeads run is in flight; skipping.');
+    return;
+  }
+  try {
+    syncNewLeadsImpl();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function syncNewLeadsImpl() {
   const props = PropertiesService.getScriptProperties().getProperties();
   for (const k of REQUIRED_PROPS) {
     if (!props[k]) {
