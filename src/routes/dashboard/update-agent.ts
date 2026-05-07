@@ -57,6 +57,7 @@ export async function updateAgentHandler(
       try {
         displaySync = await syncRetellDisplayLabels(
           retell,
+          slug,
           doc.agent_id,
           doc.outbound_from_number ?? null,
           label,

@@ -170,10 +170,12 @@ describe("updateAgentHandler", () => {
     );
     expect(res._status).toBe(200);
     expect(mockSyncRetellDisplayLabels).toHaveBeenCalledTimes(1);
+    // Signature: (retell, slug, agentId, outboundFromNumber, label)
     const args = mockSyncRetellDisplayLabels.mock.calls[0];
-    expect(args[1]).toBe("agent_1");
-    expect(args[2]).toBe("+15550000000");
-    expect(args[3]).toBe("Acme HVAC (demo)");
+    expect(args[1]).toBe("acme");
+    expect(args[2]).toBe("agent_1");
+    expect(args[3]).toBe("+15550000000");
+    expect(args[4]).toBe("Acme HVAC (demo)");
   });
 
   it("falls back to business name when display_name is cleared", async () => {
@@ -191,8 +193,9 @@ describe("updateAgentHandler", () => {
       res,
     );
     expect(res._status).toBe(200);
+    // Signature: (retell, slug, agentId, outboundFromNumber, label)
     const args = mockSyncRetellDisplayLabels.mock.calls[0];
-    expect(args[3]).toBe("Acme Plumbing");
+    expect(args[4]).toBe("Acme Plumbing");
   });
 
   it("returns 502 when Retell sync fails after the Mongo write", async () => {

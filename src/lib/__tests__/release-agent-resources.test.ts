@@ -70,20 +70,14 @@ vi.mock("twilio", () => ({
 
 vi.mock("../phone-number-history.js", () => ({
   logPhoneEvent: (...a: any[]) => mockLogPhoneEvent(...a),
-}));
-
-// db.collection("phone_number_history").find(...).sort(...).limit(...).toArray()
-vi.mock("../db.js", () => ({
-  getDb: () => ({
-    collection: () => ({
-      find: () => ({
-        sort: () => ({
-          limit: () => ({ toArray: () => mockHistoryFindArray() }),
-          toArray: () => mockHistoryFindArray(),
-        }),
-      }),
-    }),
-  }),
+  // History → SID lookup is mocked directly now (the helper used to query
+  // db.js inline; it's been factored into phone-number-history.js).
+  // mockHistoryFindArray returns an array of provisioned events; pull the
+  // first one's sid to mimic the new lookupSidFromHistory shape.
+  lookupSidFromHistory: async (..._a: any[]) => {
+    const events = await mockHistoryFindArray();
+    return events[0]?.phone_number_sid || null;
+  },
 }));
 
 const { releaseAgentResources } = await import("../release-agent-resources.js");

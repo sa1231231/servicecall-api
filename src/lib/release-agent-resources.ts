@@ -1,8 +1,7 @@
 import Retell from "retell-sdk";
 import Twilio from "twilio";
 import { config } from "../config.js";
-import { logPhoneEvent } from "./phone-number-history.js";
-import { getDb } from "./db.js";
+import { logPhoneEvent, lookupSidFromHistory } from "./phone-number-history.js";
 
 // Per-number released info returned to callers (and used in audit logs).
 export interface ReleasedPhoneNumber {
@@ -241,20 +240,3 @@ async function currentlyBoundNumbers(
   return matches;
 }
 
-/**
- * Look up the Twilio SID for a slug+phone_number from phone_number_history
- * (most-recent provisioned event). Retell doesn't track Twilio SIDs, so
- * this is the only place to recover one when releasing the Twilio number.
- */
-async function lookupSidFromHistory(
-  slug: string,
-  phone_number: string,
-): Promise<string | null> {
-  const events = (await getDb()
-    .collection("phone_number_history")
-    .find({ client_slug: slug, phone_number, event: "provisioned" })
-    .sort({ at: -1 })
-    .limit(1)
-    .toArray()) as unknown as Array<{ phone_number_sid?: string }>;
-  return events[0]?.phone_number_sid || null;
-}
