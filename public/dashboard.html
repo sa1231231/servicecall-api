@@ -1176,9 +1176,9 @@
           <div id="newUserPermsContainer" style="margin-top:0.75rem;"></div>
         </div>
 
-        <div id="deletedAgentsSection" style="display:none;">
+        <div id="deletedAgentsSection" style="display:none;" data-perm="manage_deleted">
           <h2>Recently Deleted Agents</h2>
-          <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them.</p>
+          <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them. Permanently deleting also releases the Twilio number and stops billing for it.</p>
           <div id="deletedAgentsContainer"><div class="loading">Loading...</div></div>
         </div>
       </div>
@@ -4390,9 +4390,16 @@
     }
 
     loadDpDefaults();
-    if (currentUser && currentUser.isRoot) {
-      document.getElementById('deletedAgentsSection').style.display = '';
+    // Recently Deleted Agents: visible to anyone with manage_deleted permission
+    // (super_admin role gets it via DEFAULT_PERMISSIONS, root has it
+    // implicitly). Visibility itself is handled by the data-perm pass at
+    // startup; here we only need to load the data when the user can see it.
+    if (currentUser && currentUser.permissions?.manage_deleted) {
       loadDeletedAgents();
+    }
+    // The "Super Admin" role option in user-creation stays root-only — only
+    // root should be able to mint a new super_admin.
+    if (currentUser && currentUser.isRoot) {
       const saOpt = document.getElementById('optSuperAdmin');
       if (saOpt) saOpt.style.display = '';
     }
@@ -4649,14 +4656,33 @@
   }
 
   async function permanentlyDeleteAgent(slug) {
-    if (!confirm('Permanently delete this agent? This cannot be undone.')) return;
+    if (!confirm(
+      'Permanently delete "' + slug + '"?\n\n' +
+      'This will:\n' +
+      '  • Delete the Retell agent and conversation flow\n' +
+      '  • Release the Twilio phone number(s) and stop billing for them\n' +
+      '  • Remove all client data from MongoDB\n\n' +
+      'This cannot be undone.'
+    )) return;
     try {
       const res = await fetch('/dashboard/api/deleted-agents/' + encodeURIComponent(slug), {
         method: 'DELETE',
-
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || res.status); }
-      showToast('Agent permanently deleted', 'success');
+      const data = await res.json();
+      const released = (data.released_numbers || []).map(n => n.phone_number);
+      const releasedNote = released.length > 0
+        ? ' Released ' + released.length + ' phone number(s): ' + released.join(', ')
+        : '';
+      showToast('Agent permanently deleted.' + releasedNote, 'success');
+      if (Array.isArray(data.cleanup_errors) && data.cleanup_errors.length > 0) {
+        // Show cleanup failures separately so they don't get lost in the success toast.
+        console.warn('[permanent-delete] cleanup errors:', data.cleanup_errors);
+        showToast(
+          'Some external resources failed to release — check console: ' + data.cleanup_errors.join('; '),
+          'error',
+        );
+      }
       loadDeletedAgents();
     } catch (err) {
       showToast('Delete failed: ' + err.message, 'error');
