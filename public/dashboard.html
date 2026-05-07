@@ -2679,17 +2679,43 @@
       return tag;
     }
 
-    // Read back from contenteditable → template string
-    function readTemplate() {
+    // Read back from contenteditable → template string. Walks the full
+    // node tree so multi-line content survives the round-trip:
+    //   • Text nodes contribute their textContent verbatim.
+    //   • Var-tag spans (data-var) contribute "{{varName}}".
+    //   • <br> contributes "\n".
+    //   • Block-level elements (div, p, h1-h6, li, blockquote, pre) act
+    //     as newline separators — when a block follows content that
+    //     doesn't already end in "\n", we insert one before recursing
+    //     into the block's children. Browsers wrap each line of typed
+    //     content in <div> on Enter (Chrome) or insert a <br> (Firefox);
+    //     this handles both.
+    const TMPL_BLOCK_TAGS = new Set([
+      'DIV', 'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+      'LI', 'UL', 'OL', 'BLOCKQUOTE', 'PRE',
+    ]);
+    function collectTemplateText(parent) {
       let result = '';
-      for (const node of editorEl.childNodes) {
-        if (node.nodeType === 3) { // text
-          result += node.textContent;
-        } else if (node.dataset && node.dataset.var) {
-          result += '{{' + node.dataset.var + '}}';
+      for (const child of parent.childNodes) {
+        if (child.nodeType === 3) {
+          result += child.textContent;
+        } else if (child.nodeType === 1) {
+          if (child.dataset && child.dataset.var) {
+            result += '{{' + child.dataset.var + '}}';
+          } else if (child.tagName === 'BR') {
+            result += '\n';
+          } else {
+            if (TMPL_BLOCK_TAGS.has(child.tagName) && result && !result.endsWith('\n')) {
+              result += '\n';
+            }
+            result += collectTemplateText(child);
+          }
         }
       }
       return result;
+    }
+    function readTemplate() {
+      return collectTemplateText(editorEl);
     }
 
     function syncHidden() {
