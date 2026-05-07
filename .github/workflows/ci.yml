@@ -37,6 +37,7 @@ jobs:
       RESEND_API_KEY: ci-stub-resend
       MONGODB_URL: mongodb://localhost:27017/ci-stub
       ROOT_PASSWORD: ci-stub-root-pw
+      SESSION_SECRET: ci-stub-session-secret
       BRAVE_API_KEY: ci-stub-brave
       GOOGLE_PLACES_API_KEY: ci-stub-places
 

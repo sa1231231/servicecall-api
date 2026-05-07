@@ -51,6 +51,13 @@ export const config = {
   // Root account password (break-glass access)
   ROOT_PASSWORD: requireEnv("ROOT_PASSWORD"),
 
+  // HMAC key for signing session cookies. Kept SEPARATE from ROOT_PASSWORD
+  // so a leaked break-glass password can't be used to forge sessions for
+  // arbitrary users, and so rotating one doesn't auto-invalidate the
+  // other. Adding/changing this env logs every active user out exactly
+  // once — they re-login, the new key signs going forward.
+  SESSION_SECRET: requireEnv("SESSION_SECRET"),
+
   // Anthropic API — used to enrich incoming leads via the local
   // `skills/onboarding-to-config/` bundle, which is loaded from disk on
   // every call (so editing SKILL.md tunes behavior without a redeploy).
