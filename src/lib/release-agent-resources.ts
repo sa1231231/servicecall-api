@@ -26,9 +26,18 @@ export interface AgentResourceReleaseResult {
  * messages are returned in `errors` for the caller to surface in the response
  * or audit log. The Mongo delete itself is the caller's responsibility.
  *
- * Source of truth for "which numbers does this slug own": the
- * `phone_number_history` collection (provisioned events without a matching
- * released event). Falls back to nothing if the collection is empty.
+ * Source of truth for "which numbers does this agent currently have":
+ * `retell.phoneNumber.list()` filtered to numbers whose inbound_agents or
+ * outbound_agents include any agent_id this slug owns (doc.agent_id +
+ * keys of doc.retell_agents). The Twilio SID needed to release the
+ * incoming-number is looked up from `phone_number_history` for that
+ * phone — Retell doesn't know about Twilio SIDs.
+ *
+ * Trade-off: if a number was manually unbound from this agent in Retell
+ * before hard-delete, this helper will NOT release the Twilio number for
+ * it. That matches the user's stated model: "what's bound at delete-time
+ * is what gets cleaned up." Numbers we provisioned but later detached
+ * are the operator's to clean up manually.
  */
 export async function releaseAgentResources(
   slug: string,
@@ -44,142 +53,208 @@ export async function releaseAgentResources(
   const retell = new Retell({ apiKey: config.RETELL_API_KEY });
   const twilioClient = Twilio(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN);
 
-  // ── 1. Phone numbers (Retell binding + Twilio resources) ──────────────────
-  const numbers = await activePhoneNumbersFor(slug);
-  for (const n of numbers) {
+  // ── 1. Phone numbers — Retell-live source of truth ────────────────────────
+  const agentIds = new Set<string>(
+    [
+      ...(doc.agent_id ? [doc.agent_id] : []),
+      ...Object.keys(doc.retell_agents ?? {}),
+    ].filter(Boolean),
+  );
+
+  const numbers = await currentlyBoundNumbers(retell, agentIds, errors, logTag);
+  for (const phone_number of numbers) {
     // Retell binding — once deleted, calls won't route through Retell to
     // this (now-deleted) agent. Safe to call even if Retell already
-    // unbound it; we collect 404s as informational rather than fatal.
+    // unbound it; 404s are silenced (already gone).
     try {
-      await retell.phoneNumber.delete(n.phone_number);
-      console.log(`[${logTag}] removed Retell phone-number binding for ${n.phone_number}`);
+      await retell.phoneNumber.delete(phone_number);
+      console.log(`[${logTag}] removed Retell phone-number binding for ${phone_number}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[${logTag}] retell.phoneNumber.delete(${n.phone_number}): ${msg}`);
-      errors.push(`retell.phoneNumber.delete(${n.phone_number}): ${msg}`);
+      if (!/404/.test(msg)) {
+        console.warn(`[${logTag}] retell.phoneNumber.delete(${phone_number}): ${msg}`);
+        errors.push(`retell.phoneNumber.delete(${phone_number}): ${msg}`);
+      }
+    }
+
+    // SID is needed for every Twilio call — Retell doesn't surface it, so
+    // we pull it from phone_number_history (the most-recent provisioned
+    // event for this slug + number).
+    const phone_number_sid = await lookupSidFromHistory(slug, phone_number);
+    if (!phone_number_sid) {
+      const note = `no Twilio SID on file for ${phone_number} — number not released from Twilio, may still incur charges`;
+      console.warn(`[${logTag}] ${note}`);
+      errors.push(note);
+      continue;
     }
 
     // Twilio messaging-service detach (must happen before Twilio release).
-    if (config.TWILIO_MESSAGING_SERVICE_SID && n.phone_number_sid) {
+    if (config.TWILIO_MESSAGING_SERVICE_SID) {
       try {
         await twilioClient.messaging.v1
           .services(config.TWILIO_MESSAGING_SERVICE_SID)
-          .phoneNumbers(n.phone_number_sid)
+          .phoneNumbers(phone_number_sid)
           .remove();
-        console.log(`[${logTag}] detached ${n.phone_number} from messaging service`);
+        console.log(`[${logTag}] detached ${phone_number} from messaging service`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         // 20404: not found — already detached. Treat as informational.
         if (!/20404|404/.test(msg)) {
-          console.warn(`[${logTag}] twilio messaging-service detach (${n.phone_number}): ${msg}`);
-          errors.push(`twilio messaging-service detach (${n.phone_number}): ${msg}`);
+          console.warn(`[${logTag}] twilio messaging-service detach (${phone_number}): ${msg}`);
+          errors.push(`twilio messaging-service detach (${phone_number}): ${msg}`);
         }
       }
     }
 
     // Twilio trunk detach (must happen before Twilio release).
-    if (config.TWILIO_TRUNK_SID && n.phone_number_sid) {
+    if (config.TWILIO_TRUNK_SID) {
       try {
         await twilioClient.trunking.v1
           .trunks(config.TWILIO_TRUNK_SID)
-          .phoneNumbers(n.phone_number_sid)
+          .phoneNumbers(phone_number_sid)
           .remove();
-        console.log(`[${logTag}] detached ${n.phone_number} from trunk`);
+        console.log(`[${logTag}] detached ${phone_number} from trunk`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!/20404|404/.test(msg)) {
-          console.warn(`[${logTag}] twilio trunk detach (${n.phone_number}): ${msg}`);
-          errors.push(`twilio trunk detach (${n.phone_number}): ${msg}`);
+          console.warn(`[${logTag}] twilio trunk detach (${phone_number}): ${msg}`);
+          errors.push(`twilio trunk detach (${phone_number}): ${msg}`);
         }
       }
     }
 
     // Twilio incoming-number release — STOPS THE RECURRING CHARGE.
-    if (n.phone_number_sid) {
-      try {
-        await twilioClient.incomingPhoneNumbers(n.phone_number_sid).remove();
-        console.log(`[${logTag}] released Twilio number ${n.phone_number} (sid=${n.phone_number_sid})`);
-        released.push(n);
-        // Audit-log the release so getNumberDaysInRange (billing) sees it.
-        await logPhoneEvent(slug, n.phone_number, n.phone_number_sid, "released");
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[${logTag}] twilio release (${n.phone_number}): ${msg}`);
-        errors.push(`twilio release (${n.phone_number}): ${msg}`);
+    // 404 here means the number was already released; silence it.
+    try {
+      await twilioClient.incomingPhoneNumbers(phone_number_sid).remove();
+      console.log(`[${logTag}] released Twilio number ${phone_number} (sid=${phone_number_sid})`);
+      released.push({ phone_number, phone_number_sid });
+      // Audit-log the release so getNumberDaysInRange (billing) sees it.
+      await logPhoneEvent(slug, phone_number, phone_number_sid, "released");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/20404|404/.test(msg)) {
+        console.warn(`[${logTag}] twilio release (${phone_number}): ${msg}`);
+        errors.push(`twilio release (${phone_number}): ${msg}`);
+      } else {
+        // Already released — log the audit event so billing windows close.
+        await logPhoneEvent(slug, phone_number, phone_number_sid, "released");
       }
-    } else {
-      // No SID on file — we can't release Twilio. Log a release event with
-      // an empty sid so billing reflects the cutoff, but flag it as a gap.
-      const note = `no Twilio SID on file for ${n.phone_number} — number not released, may still incur charges`;
-      console.warn(`[${logTag}] ${note}`);
-      errors.push(note);
     }
   }
 
   // ── 2. Retell agents + conversation flows ─────────────────────────────────
+  // 404s here are silenced — the operator may have already deleted the
+  // agent manually in the Retell console, and that's fine; we just want to
+  // converge on "gone" without filling cleanup_errors with not-found noise.
   const retellAgents = doc.retell_agents ?? {};
   for (const [agentId, agentJson] of Object.entries(retellAgents)) {
-    try {
-      await retell.agent.delete(agentId);
-      console.log(`[${logTag}] deleted Retell agent ${agentId}`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[${logTag}] retell.agent.delete(${agentId}): ${msg}`);
-      errors.push(`retell.agent.delete(${agentId}): ${msg}`);
-    }
+    await tryDeleteRetellAgent(retell, agentId, errors, logTag);
     const flowId =
       (agentJson as Record<string, any>)?.conversationFlow?.conversation_flow_id ??
       (agentJson as Record<string, any>)?.response_engine?.conversation_flow_id;
-    if (flowId) {
-      try {
-        await retell.conversationFlow.delete(flowId);
-        console.log(`[${logTag}] deleted Retell flow ${flowId}`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[${logTag}] retell.conversationFlow.delete(${flowId}): ${msg}`);
-        errors.push(`retell.conversationFlow.delete(${flowId}): ${msg}`);
-      }
-    }
+    if (flowId) await tryDeleteRetellFlow(retell, flowId, errors, logTag);
   }
   // Belt-and-suspenders: also delete the doc.agent_id if it isn't already
   // covered by the retell_agents map (legacy single-agent shape).
   if (doc.agent_id && !retellAgents[doc.agent_id]) {
-    try {
-      await retell.agent.delete(doc.agent_id);
-      console.log(`[${logTag}] deleted Retell agent ${doc.agent_id} (from doc.agent_id)`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[${logTag}] retell.agent.delete(${doc.agent_id}): ${msg}`);
-      errors.push(`retell.agent.delete(${doc.agent_id}): ${msg}`);
-    }
+    await tryDeleteRetellAgent(retell, doc.agent_id, errors, logTag);
   }
 
   return { released, errors };
 }
 
-/**
- * Returns the phone numbers currently active for a slug, derived from the
- * phone_number_history collection: every `provisioned` event without a
- * subsequent `released` event for the same number.
- */
-async function activePhoneNumbersFor(slug: string): Promise<ReleasedPhoneNumber[]> {
-  const coll = getDb().collection("phone_number_history");
-  const events = await coll
-    .find({ client_slug: slug })
-    .sort({ phone_number: 1, at: 1 })
-    .toArray();
-
-  // Walk each number's timeline; we want the latest state per number.
-  const lastEventByNumber = new Map<string, { event: string; sid: string }>();
-  for (const ev of events as unknown as Array<{ phone_number: string; phone_number_sid: string; event: string }>) {
-    lastEventByNumber.set(ev.phone_number, { event: ev.event, sid: ev.phone_number_sid });
-  }
-
-  const active: ReleasedPhoneNumber[] = [];
-  for (const [phone_number, state] of lastEventByNumber) {
-    if (state.event === "provisioned") {
-      active.push({ phone_number, phone_number_sid: state.sid });
+async function tryDeleteRetellAgent(
+  retell: Retell, agentId: string, errors: string[], logTag: string,
+): Promise<void> {
+  try {
+    await retell.agent.delete(agentId);
+    console.log(`[${logTag}] deleted Retell agent ${agentId}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/404/.test(msg)) {
+      console.warn(`[${logTag}] retell.agent.delete(${agentId}): ${msg}`);
+      errors.push(`retell.agent.delete(${agentId}): ${msg}`);
     }
   }
-  return active;
+}
+
+async function tryDeleteRetellFlow(
+  retell: Retell, flowId: string, errors: string[], logTag: string,
+): Promise<void> {
+  try {
+    await retell.conversationFlow.delete(flowId);
+    console.log(`[${logTag}] deleted Retell flow ${flowId}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/404/.test(msg)) {
+      console.warn(`[${logTag}] retell.conversationFlow.delete(${flowId}): ${msg}`);
+      errors.push(`retell.conversationFlow.delete(${flowId}): ${msg}`);
+    }
+  }
+}
+
+/**
+ * Source of truth at delete-time: query Retell for every phone number whose
+ * inbound_agents OR outbound_agents include any agent_id this slug owns.
+ * Returns just the phone numbers — the Twilio SID needed for billing-side
+ * cleanup is looked up separately via `lookupSidFromHistory`.
+ *
+ * If `retell.phoneNumber.list()` itself throws (network outage, auth
+ * mis-config, etc.) we record the error and return an empty list. The
+ * caller still proceeds with Retell-agent + flow cleanup.
+ */
+async function currentlyBoundNumbers(
+  retell: Retell,
+  agentIds: Set<string>,
+  errors: string[],
+  logTag: string,
+): Promise<string[]> {
+  if (agentIds.size === 0) return [];
+  let allNumbers: Array<{
+    phone_number: string;
+    inbound_agents?: Array<{ agent_id?: string }>;
+  }>;
+  try {
+    allNumbers = (await retell.phoneNumber.list()) as any;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[${logTag}] retell.phoneNumber.list: ${msg}`);
+    errors.push(`retell.phoneNumber.list: ${msg}`);
+    return [];
+  }
+
+  const matches: string[] = [];
+  for (const n of allNumbers) {
+    const inboundHit = (n.inbound_agents ?? []).some(
+      (a) => a.agent_id && agentIds.has(a.agent_id),
+    );
+    // Some Retell SDK shapes also have outbound_agents on phone numbers;
+    // include both so a number used only as outbound-from is still cleaned
+    // up when its agent gets hard-deleted.
+    const outboundHit = ((n as { outbound_agents?: Array<{ agent_id?: string }> })
+      .outbound_agents ?? []).some(
+      (a) => a.agent_id && agentIds.has(a.agent_id),
+    );
+    if (inboundHit || outboundHit) matches.push(n.phone_number);
+  }
+  return matches;
+}
+
+/**
+ * Look up the Twilio SID for a slug+phone_number from phone_number_history
+ * (most-recent provisioned event). Retell doesn't track Twilio SIDs, so
+ * this is the only place to recover one when releasing the Twilio number.
+ */
+async function lookupSidFromHistory(
+  slug: string,
+  phone_number: string,
+): Promise<string | null> {
+  const events = (await getDb()
+    .collection("phone_number_history")
+    .find({ client_slug: slug, phone_number, event: "provisioned" })
+    .sort({ at: -1 })
+    .limit(1)
+    .toArray()) as unknown as Array<{ phone_number_sid?: string }>;
+  return events[0]?.phone_number_sid || null;
 }

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ── Hoisted mocks ──────────────────────────────────────────────────────────
 
 const {
+  mockRetellPhoneList,
   mockRetellPhoneDelete,
   mockRetellAgentDelete,
   mockRetellFlowDelete,
@@ -12,6 +13,7 @@ const {
   mockLogPhoneEvent,
   mockHistoryFindArray,
 } = vi.hoisted(() => ({
+  mockRetellPhoneList: vi.fn(),
   mockRetellPhoneDelete: vi.fn(),
   mockRetellAgentDelete: vi.fn(),
   mockRetellFlowDelete: vi.fn(),
@@ -34,7 +36,7 @@ vi.mock("../../config.js", () => ({
 
 vi.mock("retell-sdk", () => ({
   default: class {
-    phoneNumber = { delete: mockRetellPhoneDelete };
+    phoneNumber = { list: mockRetellPhoneList, delete: mockRetellPhoneDelete };
     agent = { delete: mockRetellAgentDelete };
     conversationFlow = { delete: mockRetellFlowDelete };
   },
@@ -70,11 +72,15 @@ vi.mock("../phone-number-history.js", () => ({
   logPhoneEvent: (...a: any[]) => mockLogPhoneEvent(...a),
 }));
 
+// db.collection("phone_number_history").find(...).sort(...).limit(...).toArray()
 vi.mock("../db.js", () => ({
   getDb: () => ({
     collection: () => ({
       find: () => ({
-        sort: () => ({ toArray: () => mockHistoryFindArray() }),
+        sort: () => ({
+          limit: () => ({ toArray: () => mockHistoryFindArray() }),
+          toArray: () => mockHistoryFindArray(),
+        }),
       }),
     }),
   }),
@@ -86,11 +92,13 @@ const { releaseAgentResources } = await import("../release-agent-resources.js");
 
 beforeEach(() => {
   for (const m of [
-    mockRetellPhoneDelete, mockRetellAgentDelete, mockRetellFlowDelete,
-    mockTwilioMsgRemove, mockTwilioTrunkRemove, mockTwilioIncomingRemove,
-    mockLogPhoneEvent, mockHistoryFindArray,
+    mockRetellPhoneList, mockRetellPhoneDelete, mockRetellAgentDelete,
+    mockRetellFlowDelete, mockTwilioMsgRemove, mockTwilioTrunkRemove,
+    mockTwilioIncomingRemove, mockLogPhoneEvent, mockHistoryFindArray,
   ]) m.mockReset();
-  // Sensible defaults: every external call resolves OK; no phone history.
+  // Sensible defaults: every external call resolves OK; no Retell numbers,
+  // no SID history.
+  mockRetellPhoneList.mockResolvedValue([]);
   mockRetellPhoneDelete.mockResolvedValue(undefined);
   mockRetellAgentDelete.mockResolvedValue(undefined);
   mockRetellFlowDelete.mockResolvedValue(undefined);
@@ -101,37 +109,36 @@ beforeEach(() => {
   mockHistoryFindArray.mockResolvedValue([]);
 });
 
-function provisionedEvent(phone: string, sid: string, at = new Date()) {
-  return { client_slug: "acme", phone_number: phone, phone_number_sid: sid, event: "provisioned", at };
+function inboundBinding(phone: string, agentId: string) {
+  return { phone_number: phone, inbound_agents: [{ agent_id: agentId }] };
 }
-function releasedEvent(phone: string, sid: string, at = new Date()) {
-  return { client_slug: "acme", phone_number: phone, phone_number_sid: sid, event: "released", at };
+function outboundBinding(phone: string, agentId: string) {
+  return { phone_number: phone, inbound_agents: [], outbound_agents: [{ agent_id: agentId }] };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
-describe("releaseAgentResources — phone-number cleanup", () => {
-  it("releases each currently-active phone number across Retell and Twilio", async () => {
-    mockHistoryFindArray.mockResolvedValue([
-      provisionedEvent("+15550001111", "PN_a"),
-      provisionedEvent("+15550002222", "PN_b"),
+describe("releaseAgentResources — Retell-live source of truth", () => {
+  it("releases each currently-bound phone number across Retell and Twilio", async () => {
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
+      inboundBinding("+15550002222", "agent_x"),
     ]);
+    // SID lookup returns the matching SID for each phone in turn.
+    mockHistoryFindArray
+      .mockResolvedValueOnce([{ phone_number_sid: "PN_a" }])
+      .mockResolvedValueOnce([{ phone_number_sid: "PN_b" }]);
 
     const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
 
-    // Retell phone-number bindings deleted for both numbers
     expect(mockRetellPhoneDelete).toHaveBeenCalledWith("+15550001111");
     expect(mockRetellPhoneDelete).toHaveBeenCalledWith("+15550002222");
-    // Twilio messaging-service detach (per-SID)
     expect(mockTwilioMsgRemove).toHaveBeenCalledWith("PN_a");
     expect(mockTwilioMsgRemove).toHaveBeenCalledWith("PN_b");
-    // Twilio trunk detach (per-SID)
     expect(mockTwilioTrunkRemove).toHaveBeenCalledWith("PN_a");
     expect(mockTwilioTrunkRemove).toHaveBeenCalledWith("PN_b");
-    // Twilio incoming-number release (the actual billing cutoff)
     expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_a");
     expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_b");
-    // History event logged for each
     expect(mockLogPhoneEvent).toHaveBeenCalledWith("acme", "+15550001111", "PN_a", "released");
     expect(mockLogPhoneEvent).toHaveBeenCalledWith("acme", "+15550002222", "PN_b", "released");
 
@@ -142,89 +149,165 @@ describe("releaseAgentResources — phone-number cleanup", () => {
     expect(result.errors).toEqual([]);
   });
 
-  it("skips numbers that already have a `released` event after their last `provisioned`", async () => {
-    mockHistoryFindArray.mockResolvedValue([
-      provisionedEvent("+15550001111", "PN_a", new Date("2026-01-01")),
-      releasedEvent("+15550001111", "PN_a", new Date("2026-02-01")),
-      provisionedEvent("+15550002222", "PN_b", new Date("2026-03-01")),
+  it("releases outbound-only bindings too", async () => {
+    mockRetellPhoneList.mockResolvedValue([
+      outboundBinding("+15553334444", "agent_x"),
     ]);
+    mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_o" }]);
 
-    const result = await releaseAgentResources("acme", {});
+    const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
 
-    // Only the still-active number gets touched
-    expect(mockTwilioIncomingRemove).toHaveBeenCalledTimes(1);
-    expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_b");
+    expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_o");
     expect(result.released).toEqual([
-      { phone_number: "+15550002222", phone_number_sid: "PN_b" },
+      { phone_number: "+15553334444", phone_number_sid: "PN_o" },
     ]);
   });
 
-  it("captures per-step failures into errors but keeps releasing the rest", async () => {
-    mockHistoryFindArray.mockResolvedValue([
-      provisionedEvent("+15550001111", "PN_a"),
-      provisionedEvent("+15550002222", "PN_b"),
+  it("does NOT release numbers that are no longer bound in Retell at delete-time", async () => {
+    // Retell shows no bindings for our agent (manually unbound earlier).
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15559999999", "agent_other"), // someone else's number
     ]);
-    // First number: trunk detach fails. Second number: clean.
+    // History still has us as the prior owner — should be ignored.
+    mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_old" }]);
+
+    const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
+
+    expect(mockRetellPhoneDelete).not.toHaveBeenCalled();
+    expect(mockTwilioIncomingRemove).not.toHaveBeenCalled();
+    expect(result.released).toEqual([]);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("filters by every agent_id the slug owns (doc.agent_id + retell_agents map)", async () => {
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_a"),
+      inboundBinding("+15550002222", "agent_b"),
+      inboundBinding("+15559999999", "agent_unrelated"),
+    ]);
+    mockHistoryFindArray
+      .mockResolvedValueOnce([{ phone_number_sid: "PN_a" }])
+      .mockResolvedValueOnce([{ phone_number_sid: "PN_b" }]);
+
+    const result = await releaseAgentResources("acme", {
+      agent_id: "agent_a",
+      retell_agents: { agent_b: {} },
+    });
+
+    expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_a");
+    expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_b");
+    // The unrelated number is left alone.
+    expect(mockTwilioIncomingRemove).not.toHaveBeenCalledWith("PN_x");
+    expect(result.released).toHaveLength(2);
+  });
+
+  it("captures per-step Twilio failures and keeps releasing the rest", async () => {
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
+      inboundBinding("+15550002222", "agent_x"),
+    ]);
+    mockHistoryFindArray
+      .mockResolvedValueOnce([{ phone_number_sid: "PN_a" }])
+      .mockResolvedValueOnce([{ phone_number_sid: "PN_b" }]);
+    // Trunk detach fails for the first SID.
     mockTwilioTrunkRemove.mockImplementation((sid: string) => {
       if (sid === "PN_a") return Promise.reject(new Error("trunk error"));
       return Promise.resolve(true);
     });
 
-    const result = await releaseAgentResources("acme", {});
+    const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
 
-    // Both still get the incoming-number release (the billing cutoff),
-    // because trunk-detach failure shouldn't block the rest.
+    // Both still get the incoming-number release (the billing cutoff).
     expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_a");
     expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_b");
     expect(result.released).toHaveLength(2);
     expect(result.errors.some((e) => /trunk detach \(\+15550001111\)/.test(e))).toBe(true);
   });
 
-  it("treats Twilio 20404 not-found errors on detach as informational (no error)", async () => {
-    mockHistoryFindArray.mockResolvedValue([
-      provisionedEvent("+15550001111", "PN_a"),
+  it("silences Twilio 20404/404 on detach (already detached)", async () => {
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
     ]);
+    mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_a" }]);
     mockTwilioMsgRemove.mockRejectedValue(new Error("HTTP 404 — code 20404 — not found"));
 
-    const result = await releaseAgentResources("acme", {});
+    const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
 
     expect(mockTwilioIncomingRemove).toHaveBeenCalled();
     expect(result.released).toHaveLength(1);
     expect(result.errors).toEqual([]); // 20404 not surfaced
   });
 
-  it("when phone_number_sid is missing on file, skips Twilio release and flags it", async () => {
-    mockHistoryFindArray.mockResolvedValue([
-      provisionedEvent("+15550001111", "" /* no SID */),
+  it("silences Twilio 404 on incoming release and still logs the released event", async () => {
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
     ]);
+    mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_a" }]);
+    mockTwilioIncomingRemove.mockRejectedValue(new Error("HTTP 404 — not found"));
 
-    const result = await releaseAgentResources("acme", {});
+    const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
 
+    // No surface error for already-released number.
+    expect(result.errors).toEqual([]);
+    // Audit-log still fires so getNumberDaysInRange closes the billing window.
+    expect(mockLogPhoneEvent).toHaveBeenCalledWith("acme", "+15550001111", "PN_a", "released");
+    // Not added to `released` array because the actual remove() call rejected.
+    expect(result.released).toEqual([]);
+  });
+
+  it("when Retell-bound number has no SID in history, flags the gap and skips Twilio", async () => {
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
+    ]);
+    mockHistoryFindArray.mockResolvedValue([]); // no provisioned event recorded
+
+    const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
+
+    // Retell binding still cleared.
+    expect(mockRetellPhoneDelete).toHaveBeenCalledWith("+15550001111");
+    // Twilio side skipped.
     expect(mockTwilioIncomingRemove).not.toHaveBeenCalled();
     expect(mockTwilioMsgRemove).not.toHaveBeenCalled();
     expect(mockTwilioTrunkRemove).not.toHaveBeenCalled();
-    // Retell binding still tried
-    expect(mockRetellPhoneDelete).toHaveBeenCalledWith("+15550001111");
     expect(result.released).toEqual([]);
     expect(result.errors.some((e) => /no Twilio SID/.test(e))).toBe(true);
   });
 
-  it("works when there are no phone numbers to release", async () => {
-    mockHistoryFindArray.mockResolvedValue([]);
+  it("when retell.phoneNumber.list itself fails, captures the error and continues with agent cleanup", async () => {
+    mockRetellPhoneList.mockRejectedValue(new Error("retell list down"));
+
+    const result = await releaseAgentResources("acme", {
+      agent_id: "agent_x",
+      retell_agents: { agent_x: {} },
+    });
+
+    // No phone-side cleanup attempted.
+    expect(mockRetellPhoneDelete).not.toHaveBeenCalled();
+    expect(mockTwilioIncomingRemove).not.toHaveBeenCalled();
+    // Agent still gets cleaned up.
+    expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_x");
+    expect(result.errors.some((e) => /retell\.phoneNumber\.list/.test(e))).toBe(true);
+  });
+
+  it("silences 404 on retell.phoneNumber.delete (binding already gone)", async () => {
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
+    ]);
+    mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_a" }]);
+    mockRetellPhoneDelete.mockRejectedValue(new Error("HTTP 404 — not found"));
 
     const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
 
-    expect(mockTwilioIncomingRemove).not.toHaveBeenCalled();
-    // But Retell agent cleanup still runs
-    expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_x");
-    expect(result.released).toEqual([]);
+    // Twilio side still proceeds despite the binding being absent.
+    expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_a");
+    expect(result.released).toHaveLength(1);
     expect(result.errors).toEqual([]);
   });
 });
 
 describe("releaseAgentResources — Retell agent + flow cleanup", () => {
   it("deletes every agent in retell_agents and their conversation flows", async () => {
-    mockHistoryFindArray.mockResolvedValue([]);
+    mockRetellPhoneList.mockResolvedValue([]);
     const doc = {
       retell_agents: {
         agent_a: { conversationFlow: { conversation_flow_id: "flow_a" } },
@@ -241,27 +324,29 @@ describe("releaseAgentResources — Retell agent + flow cleanup", () => {
   });
 
   it("falls back to doc.agent_id when not present in retell_agents", async () => {
-    mockHistoryFindArray.mockResolvedValue([]);
-
     await releaseAgentResources("acme", { agent_id: "agent_legacy" });
-
     expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_legacy");
   });
 
   it("does not double-delete when doc.agent_id is already in retell_agents map", async () => {
-    mockHistoryFindArray.mockResolvedValue([]);
-
     await releaseAgentResources("acme", {
       agent_id: "agent_a",
       retell_agents: { agent_a: {} },
     });
-
     expect(mockRetellAgentDelete).toHaveBeenCalledTimes(1);
     expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_a");
   });
 
-  it("collects retell delete failures into errors", async () => {
-    mockHistoryFindArray.mockResolvedValue([]);
+  it("silences 404 on agent.delete (operator already removed it manually)", async () => {
+    mockRetellAgentDelete.mockRejectedValue(new Error("HTTP 404 — not found"));
+
+    const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
+
+    expect(mockRetellAgentDelete).toHaveBeenCalledWith("agent_x");
+    expect(result.errors).toEqual([]); // 404 silenced
+  });
+
+  it("surfaces non-404 retell.agent.delete failures into errors", async () => {
     mockRetellAgentDelete.mockRejectedValue(new Error("retell down"));
 
     const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
