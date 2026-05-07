@@ -1038,7 +1038,10 @@
             <div class="settings-section-title">Setup Instructions</div>
             <p class="settings-hint" style="margin-bottom:0.6rem;">Carrier-specific call-forwarding instructions. Each entry shows up in the agent editor's "Send Instructions" dropdown. Use <code>{{business_name}}</code> and <code>{{agent_phone}}</code> in the message.</p>
             <div id="settings-instructions-list"></div>
-            <button type="button" onclick="settingsAddInstruction()" style="margin-top:0.4rem;font-size:0.78rem;padding:0.35rem 0.7rem;background:#fff;border:1px dashed #2563eb;border-radius:5px;color:#2563eb;cursor:pointer;">+ Add Carrier</button>
+            <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;">
+              <button type="button" onclick="settingsAddInstruction()" style="font-size:0.78rem;padding:0.35rem 0.7rem;background:#fff;border:1px dashed #2563eb;border-radius:5px;color:#2563eb;cursor:pointer;">+ Add Carrier</button>
+              <button type="button" id="btnSaveInstructions" onclick="saveSettingsInstructions()" style="font-size:0.78rem;padding:0.35rem 0.9rem;background:#059669;color:#fff;border:none;border-radius:5px;cursor:pointer;margin-left:auto;">Save Setup Instructions</button>
+            </div>
           </div>
         </div>
       </div>
@@ -4431,6 +4434,39 @@
     panes.forEach(p => p.classList.toggle('active', p.id === 'settings-tab-' + tabId));
     const saveBtn = document.getElementById('btnSaveSettings');
     if (saveBtn) saveBtn.style.display = SETTINGS_TABS_WITH_SAVE.has(tabId) ? '' : 'none';
+  }
+
+  // Section-scoped save for the Setup Instructions editor. PATCHes only the
+  // setup_instructions field so the user can persist changes here without
+  // also writing the rest of the settings form. Refreshes the cached
+  // globalSetupInstructions so the agent editor's "Send Instructions"
+  // dropdown reflects the saved list immediately.
+  async function saveSettingsInstructions() {
+    const btn = document.getElementById('btnSaveInstructions');
+    const originalText = btn?.textContent ?? 'Save Setup Instructions';
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    try {
+      const list = collectSettingsInstructions();
+      const res = await fetch('/dashboard/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ setup_instructions: list }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed: ' + res.status);
+      // Refresh the working copy from the server's response so any newly
+      // generated ids land back in `_settingsInstructions` and the agent
+      // editor's dropdown sees the live list without a hard refresh.
+      const saved = Array.isArray(data.setup_instructions) ? data.setup_instructions : list;
+      _settingsInstructions = saved.map((it) => ({ ...it }));
+      globalSetupInstructions = saved;
+      settingsRenderInstructions();
+      showToast('Setup instructions saved', 'success');
+    } catch (err) {
+      showToast('Save failed: ' + err.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    }
   }
 
   async function saveSettings() {
