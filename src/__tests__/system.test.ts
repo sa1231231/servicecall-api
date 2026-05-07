@@ -2568,4 +2568,132 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect((await json(resp)).error).toMatch(/instruction template/i);
     });
   });
+
+  // ── Lead intake (Apps Script bearer-token endpoint) ─────────────────────
+  // Skipped unless LEAD_INTAKE_TOKEN is set in the test env, since these
+  // tests can't fake-auth past the timing-safe token check.
+  //
+  // The happy-path test asserts on `status === 'queued'` only ("Created
+  // Only" — the lead's initial state). Background enrichment will flip the
+  // status to enriching → ready/failed asynchronously, but we don't wait
+  // on it; afterAll dismisses anything we created so the queue stays clean.
+
+  const LEAD_INTAKE_TOKEN = process.env.LEAD_INTAKE_TOKEN;
+  const hasIntakeToken = !!LEAD_INTAKE_TOKEN;
+
+  describe.skipIf(!hasIntakeToken)("Lead intake — POST /api/leads/intake", () => {
+    const TEST_NAME_PREFIX = "[SYSTEM TEST] ";
+    const createdLeadIds: string[] = [];
+    let origIntakeEnabled: boolean | undefined;
+
+    beforeAll(async () => {
+      const r = await fetch(url("/dashboard/api/settings"), { headers: authHeaders() });
+      const s = await json(r);
+      origIntakeEnabled = s.lead_intake_enabled;
+    });
+
+    afterAll(async () => {
+      // Best-effort cleanup: dismiss every lead the test created so they
+      // drop out of the active queue, then restore the toggle.
+      for (const id of createdLeadIds) {
+        try {
+          await fetch(url(`/api/leads/${id}/dismiss`), {
+            method: "POST", headers: authHeaders(),
+          });
+        } catch (_) { /* ignore — best effort */ }
+      }
+      if (origIntakeEnabled !== undefined) {
+        await fetch(url("/dashboard/api/settings"), {
+          method: "PATCH", headers: authHeaders(),
+          body: JSON.stringify({ lead_intake_enabled: origIntakeEnabled }),
+        });
+      }
+    });
+
+    it("rejects requests with no Authorization header (401)", async () => {
+      const resp = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: TEST_NAME_PREFIX + "no-auth" }),
+      });
+      expect(resp.status).toBe(401);
+    });
+
+    it("rejects requests with the wrong bearer token (401)", async () => {
+      const resp = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer not-the-real-token",
+        },
+        body: JSON.stringify({ name: TEST_NAME_PREFIX + "wrong-token" }),
+      });
+      expect(resp.status).toBe(401);
+    });
+
+    it("returns 400 when name is missing or whitespace-only", async () => {
+      const resp = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${LEAD_INTAKE_TOKEN}`,
+        },
+        body: JSON.stringify({ phone: "+15551112222" }),
+      });
+      expect(resp.status).toBe(400);
+    });
+
+    it("returns 423 when the dashboard pause toggle is off — and never creates the lead", async () => {
+      // Flip the toggle off, post, expect 423, restore.
+      await fetch(url("/dashboard/api/settings"), {
+        method: "PATCH", headers: authHeaders(),
+        body: JSON.stringify({ lead_intake_enabled: false }),
+      });
+      try {
+        const resp = await fetch(url("/api/leads/intake"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${LEAD_INTAKE_TOKEN}`,
+          },
+          body: JSON.stringify({ name: TEST_NAME_PREFIX + "paused-" + Date.now() }),
+        });
+        expect(resp.status).toBe(423);
+        const body = await json(resp);
+        expect(body.error).toMatch(/paused/i);
+      } finally {
+        // Re-enable so the next test can run; afterAll restores the
+        // *original* value at the end of the suite.
+        await fetch(url("/dashboard/api/settings"), {
+          method: "PATCH", headers: authHeaders(),
+          body: JSON.stringify({ lead_intake_enabled: true }),
+        });
+      }
+    });
+
+    it("creates a lead with status='queued' on the happy path (Created Only)", async () => {
+      const testName = TEST_NAME_PREFIX + "happy-" + Date.now();
+      const resp = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${LEAD_INTAKE_TOKEN}`,
+        },
+        body: JSON.stringify({ name: testName, source: "system_test" }),
+      });
+      expect(resp.status).toBe(201);
+      const body = await json(resp);
+      expect(typeof body._id).toBe("string");
+      expect(body.status).toBe("queued");
+      createdLeadIds.push(body._id);
+
+      // Verify it landed by reading back via the admin-authed list endpoint.
+      // Don't wait for enrichment — assert only on the initial Created state.
+      const lookup = await fetch(url(`/api/leads/${body._id}`), { headers: authHeaders() });
+      expect(lookup.status).toBe(200);
+      const lead = await json(lookup);
+      expect(lead.input.name).toBe(testName);
+      expect(lead.source).toBe("system_test");
+    });
+  });
 });
