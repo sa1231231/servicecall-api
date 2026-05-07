@@ -17,7 +17,7 @@ const {
   mockAgentRetrieve, mockAgentUpdate, mockAgentDelete, mockFlowDelete,
   mockListAgents, mockGetAgent, mockGetCalls, mockToggleShadow, mockToggleActive,
   mockUpdateAgent, mockCloneAgent, mockDeleteAgent, mockExportAgent,
-  mockNodeEditorRouter,
+  mockNodeEditorRouter, mockReleaseAgentResources,
 } = vi.hoisted(() => ({
   mockGetClientDocument: vi.fn(),
   mockGeneratePortalToken: vi.fn(),
@@ -57,6 +57,7 @@ const {
   mockDeleteAgent: vi.fn(),
   mockExportAgent: vi.fn(),
   mockNodeEditorRouter: { stack: [] },
+  mockReleaseAgentResources: vi.fn(),
 }));
 
 vi.mock("../../../config.js", () => ({ config: { RETELL_API_KEY: "test_key", API_KEY: "internal_key" } }));
@@ -126,6 +127,9 @@ vi.mock("./update-agent.js", () => ({ updateAgentHandler: mockUpdateAgent }));
 vi.mock("./clone-agent.js", () => ({ cloneAgentHandler: mockCloneAgent }));
 vi.mock("./delete-agent.js", () => ({ deleteAgentHandler: mockDeleteAgent }));
 vi.mock("../agents/export-agent.js", () => ({ exportAgentHandler: mockExportAgent }));
+vi.mock("../../../lib/release-agent-resources.js", () => ({
+  releaseAgentResources: (...a: any[]) => mockReleaseAgentResources(...a),
+}));
 
 const { dashboardApiRouter, backupRouter } = await import("../index.js");
 
@@ -258,40 +262,55 @@ describe("POST /deleted-agents/:slug/restore", () => {
 });
 
 describe("DELETE /deleted-agents/:slug", () => {
-  it("deletes Retell agents and flows then permanent-deletes client", async () => {
-    mockGetClientDocument.mockResolvedValue({
+  it("delegates external cleanup to releaseAgentResources, then permanent-deletes client", async () => {
+    const doc = {
       agent_id: "agent_1",
       retell_agents: {
         agent_1: { conversationFlow: { conversation_flow_id: "flow_1" } },
         agent_2: { response_engine: { conversation_flow_id: "flow_2" } },
       },
+    };
+    mockGetClientDocument.mockResolvedValue(doc);
+    mockReleaseAgentResources.mockResolvedValue({
+      released: [{ phone_number: "+15550001111", phone_number_sid: "PN_a" }],
+      errors: [],
     });
-    mockAgentDelete.mockResolvedValue(undefined);
-    mockFlowDelete.mockResolvedValue(undefined);
     mockDeleteClient.mockResolvedValue(undefined);
+
     const res = makeRes();
     await runRoute(dashboardApiRouter, "delete", "/deleted-agents/:slug",
       makeReq({ params: { slug: "acme" } }), res);
+
     expect(res._status).toBe(200);
-    expect(mockAgentDelete).toHaveBeenCalledWith("agent_1");
-    expect(mockAgentDelete).toHaveBeenCalledWith("agent_2");
-    expect(mockFlowDelete).toHaveBeenCalledWith("flow_1");
-    expect(mockFlowDelete).toHaveBeenCalledWith("flow_2");
+    expect(mockReleaseAgentResources).toHaveBeenCalledWith("acme", doc, "permanent-delete");
     expect(mockDeleteClient).toHaveBeenCalledWith("acme");
+    expect(res._json.released_numbers).toEqual([
+      { phone_number: "+15550001111", phone_number_sid: "PN_a" },
+    ]);
+    // No cleanup_errors when the helper had none.
+    expect(res._json.cleanup_errors).toBeUndefined();
   });
 
-  it("tolerates Retell delete failures and still deletes client", async () => {
+  it("surfaces cleanup errors in the response and still deletes the client", async () => {
     mockGetClientDocument.mockResolvedValue({
       agent_id: "agent_1",
       retell_agents: { agent_1: {} },
     });
-    mockAgentDelete.mockRejectedValue(new Error("not found"));
+    mockReleaseAgentResources.mockResolvedValue({
+      released: [],
+      errors: ["twilio release (+15550001111): not found"],
+    });
     mockDeleteClient.mockResolvedValue(undefined);
+
     const res = makeRes();
     await runRoute(dashboardApiRouter, "delete", "/deleted-agents/:slug",
       makeReq({ params: { slug: "acme" } }), res);
+
     expect(res._status).toBe(200);
     expect(mockDeleteClient).toHaveBeenCalled();
+    expect(res._json.cleanup_errors).toEqual([
+      "twilio release (+15550001111): not found",
+    ]);
   });
 });
 

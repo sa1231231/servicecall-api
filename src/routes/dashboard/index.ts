@@ -156,45 +156,25 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("mana
 dashboardApiRouter.delete("/deleted-agents/:slug", requireRootForProtectedSlug, requirePermission("manage_deleted"), async (req, res) => {
   const slug = String(req.params.slug);
   try {
-    // Actually delete from Retell now (permanent delete)
     const doc = await getClientDocument(slug);
+    let release: { released: Array<{ phone_number: string; phone_number_sid: string }>; errors: string[] } | undefined;
     if (doc) {
-      const retell = new Retell({ apiKey: config.RETELL_API_KEY });
-      const retellAgents = doc.retell_agents ?? {};
-      for (const [agentId, agentJson] of Object.entries(retellAgents)) {
-        try {
-          await retell.agent.delete(agentId);
-          console.log(`[permanent-delete] deleted Retell agent ${agentId}`);
-        } catch (err) {
-          console.warn(`[permanent-delete] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
-        }
-        const flowId =
-          (agentJson as Record<string, any>)?.conversationFlow?.conversation_flow_id ??
-          (agentJson as Record<string, any>)?.response_engine?.conversation_flow_id;
-        if (flowId) {
-          try {
-            await retell.conversationFlow.delete(flowId);
-            console.log(`[permanent-delete] deleted Retell flow ${flowId}`);
-          } catch (err) {
-            console.warn(`[permanent-delete] could not delete Retell flow ${flowId}: ${err instanceof Error ? err.message : err}`);
-          }
-        }
-      }
-      // Belt-and-suspenders: also delete the agent_id if not already in retell_agents map
-      if (doc.agent_id && !retellAgents[doc.agent_id]) {
-        try {
-          await retell.agent.delete(doc.agent_id);
-          console.log(`[permanent-delete] deleted Retell agent ${doc.agent_id} (from agent_id)`);
-        } catch (err) {
-          console.warn(`[permanent-delete] could not delete Retell agent ${doc.agent_id}: ${err instanceof Error ? err.message : err}`);
-        }
-      }
+      const { releaseAgentResources } = await import("../../lib/release-agent-resources.js");
+      release = await releaseAgentResources(slug, doc, "permanent-delete");
     }
 
     await deleteClient(slug);
-    await logAudit(req, "permanent_delete_agent", slug);
+    await logAudit(req, "permanent_delete_agent", slug, release ? {
+      released_numbers: release.released,
+      cleanup_errors: release.errors,
+    } : undefined);
     alertRootIfNeeded(req, "permanent_delete_agent", slug);
-    res.json({ success: true, slug });
+    const response: Record<string, unknown> = { success: true, slug };
+    if (release) {
+      response.released_numbers = release.released;
+      if (release.errors.length > 0) response.cleanup_errors = release.errors;
+    }
+    res.json(response);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     res.status(500).json({ error: msg });
