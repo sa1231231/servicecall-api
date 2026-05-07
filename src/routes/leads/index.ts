@@ -1,6 +1,7 @@
 import { Router } from "express";
 import express from "express";
 import { requirePermission } from "../../middleware/require-role.js";
+import { requireServiceToken } from "../../middleware/require-service-token.js";
 import {
   createPendingLead,
   listPendingLeads,
@@ -17,10 +18,19 @@ import { loadDraft, applyOverrides } from "../../lib/agent-from-draft.js";
 import { createAgentFromConfig, type CreateAgentBody } from "../../lib/agent-from-config.js";
 import { extractAreaCode } from "../../lib/provision-number.js";
 import { areaCodeToTimezone } from "../../lib/area-code-timezone.js";
+import { getSettings } from "../../lib/settings.js";
 
 export const leadsRouter = Router();
 leadsRouter.use(express.json());
 leadsRouter.use(requirePermission("manage_leads"));
+
+/** Headless intake for the Google Apps Script lead sync. Auth is a shared
+ *  bearer token (LEAD_INTAKE_TOKEN), not a session. The operator-facing
+ *  pause toggle (settings.lead_intake_enabled) gates this endpoint only —
+ *  the manual `+ Add Lead` POST on `leadsRouter` is always live. */
+export const leadsIntakeRouter = Router();
+leadsIntakeRouter.use(express.json());
+leadsIntakeRouter.use(requireServiceToken);
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -85,6 +95,32 @@ function sanitizeInput(body: unknown): PendingLeadInput | null {
   if (typeof b.notes === "string" && b.notes.trim()) input.notes = b.notes.trim();
   return input;
 }
+
+// ── Headless intake (Apps Script) ───────────────────────────────────────────
+
+/** Token-authed intake for the Google Apps Script sync. Returns 423 when
+ *  the operator has flipped the dashboard toggle off — Apps Script logs
+ *  and skips on 423 instead of marking the row synced. */
+leadsIntakeRouter.post("/", async (req, res) => {
+  const settings = await getSettings();
+  if (settings.lead_intake_enabled === false) {
+    res.status(423).json({ error: "Lead intake paused" });
+    return;
+  }
+  const input = sanitizeInput(req.body);
+  if (!input) {
+    res.status(400).json({ error: "`name` is required" });
+    return;
+  }
+  const source = typeof req.body?.source === "string" && req.body.source.trim()
+    ? req.body.source.trim()
+    : "google_sheet";
+  const lead = await createPendingLead({ source, input });
+  runEnrichment(lead._id, input).catch((err) => {
+    console.error(`[leads] enrichment crashed for ${lead._id}:`, err);
+  });
+  res.status(201).json({ _id: lead._id, status: lead.status });
+});
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 

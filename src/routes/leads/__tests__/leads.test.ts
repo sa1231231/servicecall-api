@@ -13,6 +13,7 @@ const {
   mockApplyOverrides,
   mockCreateAgentFromConfig,
   mockRequirePermission,
+  mockGetSettings,
 } = vi.hoisted(() => ({
   mockCreatePendingLead: vi.fn(),
   mockListPendingLeads: vi.fn(),
@@ -25,6 +26,7 @@ const {
   mockApplyOverrides: vi.fn(),
   mockCreateAgentFromConfig: vi.fn(),
   mockRequirePermission: vi.fn(),
+  mockGetSettings: vi.fn(),
 }));
 
 vi.mock("../../../lib/pending-leads.js", () => ({
@@ -51,8 +53,16 @@ vi.mock("../../../middleware/require-role.js", () => ({
     next();
   },
 }));
+// Token check is exercised in its own unit test; here we always allow so the
+// route handler logic (toggle, sanitize, source default) is what's tested.
+vi.mock("../../../middleware/require-service-token.js", () => ({
+  requireServiceToken: (_req: Request, _res: Response, next: NextFunction) => next(),
+}));
+vi.mock("../../../lib/settings.js", () => ({
+  getSettings: (...a: any[]) => mockGetSettings(...a),
+}));
 
-const { leadsRouter } = await import("../index.js");
+const { leadsRouter, leadsIntakeRouter } = await import("../index.js");
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -71,8 +81,8 @@ function makeReq(opts: { params?: any; body?: any; query?: any }): Request {
   } as any;
 }
 
-function findRoute(method: string, path: string) {
-  for (const layer of (leadsRouter as any).stack as any[]) {
+function findRoute(method: string, path: string, router: any = leadsRouter) {
+  for (const layer of (router as any).stack as any[]) {
     if (!layer.route) continue;
     if (layer.route.path === path && layer.route.methods[method]) {
       return layer.route.stack;
@@ -81,8 +91,8 @@ function findRoute(method: string, path: string) {
   throw new Error(`Route not found: ${method} ${path}`);
 }
 
-async function runRoute(method: string, path: string, req: Request, res: Response) {
-  const stack = findRoute(method, path);
+async function runRoute(method: string, path: string, req: Request, res: Response, router: any = leadsRouter) {
+  const stack = findRoute(method, path, router);
   for (const layer of stack) {
     let advance = false;
     let nextErr: any = null;
@@ -101,11 +111,13 @@ beforeEach(() => {
     mockCreatePendingLead, mockListPendingLeads, mockGetPendingLead,
     mockUpdatePendingLead, mockMarkPromoted, mockMarkDismissed,
     mockEnrichLead, mockLoadDraft, mockApplyOverrides, mockCreateAgentFromConfig,
-    mockRequirePermission,
+    mockRequirePermission, mockGetSettings,
   ]) m.mockReset();
   mockUpdatePendingLead.mockResolvedValue({});
   mockMarkPromoted.mockResolvedValue(undefined);
   mockMarkDismissed.mockResolvedValue(undefined);
+  // Default: intake enabled (fail-open) so most tests don't need to set it.
+  mockGetSettings.mockResolvedValue({ lead_intake_enabled: undefined });
   // Default enrichment result so background tasks resolve cleanly even
   // when a test forgets to override.
   mockEnrichLead.mockResolvedValue({
@@ -409,5 +421,63 @@ describe("POST /api/leads/:id/promote", () => {
     }), res);
     expect(res._status).toBe(502);
     expect(mockMarkPromoted).not.toHaveBeenCalled();
+  });
+});
+
+// ── POST /api/leads/intake (Apps Script) ───────────────────────────────────
+
+describe("POST /api/leads/intake", () => {
+  it("returns 423 when lead_intake_enabled is false", async () => {
+    mockGetSettings.mockResolvedValue({ lead_intake_enabled: false });
+    const res = makeRes();
+    await runRoute("post", "/", makeReq({
+      body: { name: "Acme" },
+    }), res, leadsIntakeRouter);
+    expect(res._status).toBe(423);
+    expect(mockCreatePendingLead).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when name is missing even though intake is enabled", async () => {
+    const res = makeRes();
+    await runRoute("post", "/", makeReq({
+      body: { phone: "+15551112222" },
+    }), res, leadsIntakeRouter);
+    expect(res._status).toBe(400);
+    expect(mockCreatePendingLead).not.toHaveBeenCalled();
+  });
+
+  it("creates the lead with source defaulting to google_sheet and returns 201 with id+status", async () => {
+    mockCreatePendingLead.mockResolvedValue({ _id: "abc", source: "google_sheet", status: "queued" });
+    const res = makeRes();
+    await runRoute("post", "/", makeReq({
+      body: { name: "Acme Plumbing", phone: "+15551112222" },
+    }), res, leadsIntakeRouter);
+    expect(res._status).toBe(201);
+    expect(res._json).toEqual({ _id: "abc", status: "queued" });
+    expect(mockCreatePendingLead).toHaveBeenCalledWith({
+      source: "google_sheet",
+      input: { name: "Acme Plumbing", phone: "+15551112222" },
+    });
+  });
+
+  it("respects an explicit source from the body (e.g. a different sheet name)", async () => {
+    mockCreatePendingLead.mockResolvedValue({ _id: "x", status: "queued" });
+    const res = makeRes();
+    await runRoute("post", "/", makeReq({
+      body: { name: "Acme", source: "facebook_csv" },
+    }), res, leadsIntakeRouter);
+    expect(mockCreatePendingLead).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "facebook_csv" }),
+    );
+  });
+
+  it("treats undefined lead_intake_enabled as enabled (fail-open default)", async () => {
+    mockGetSettings.mockResolvedValue({}); // no lead_intake_enabled key at all
+    mockCreatePendingLead.mockResolvedValue({ _id: "y", status: "queued" });
+    const res = makeRes();
+    await runRoute("post", "/", makeReq({
+      body: { name: "Acme" },
+    }), res, leadsIntakeRouter);
+    expect(res._status).toBe(201);
   });
 });

@@ -1106,6 +1106,11 @@
   <div data-perm="manage_leads">
     <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:1rem 0 0.25rem;">
       <h2 style="margin:0;">Pending Leads</h2>
+      <label data-perm="manage_settings" id="leadIntakeToggleWrap" title="When off, the API rejects POST /api/leads/intake from the Apps Script (423). The toggle does not pause manual + Add Lead." style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:#444;cursor:pointer;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:5px;padding:0.25rem 0.55rem;">
+        <input type="checkbox" id="leadIntakeToggle" onchange="toggleLeadIntake(this)" style="margin:0;cursor:pointer;">
+        <span>Auto-intake from Sheets</span>
+        <span id="leadIntakeStatus" style="font-weight:600;color:#16a34a;">ON</span>
+      </label>
       <button onclick="openAddLeadModal()" class="btn-create" style="float:none;background:#2563eb;border-color:#2563eb;font-size:0.78rem;padding:0.3rem 0.7rem;">+ Add Lead</button>
     </div>
     <p class="subtitle">Each row is an incoming lead. Enrichment runs automatically; review the result, pick a draft template, and promote to an agent.</p>
@@ -1550,7 +1555,6 @@
 </div>
 
 <script>
-  let apiKey = '';
   let currentUser = null; // { username, role, permissions }
   let permissionDefs = [];
   let defaultPermissions = {};
@@ -1823,7 +1827,6 @@
     try {
       const cfgRes = await fetch('/dashboard/config');
       const cfgData = await cfgRes.json();
-      apiKey = cfgData.apiKey;
       currentUser = cfgData.user;
       permissionDefs = cfgData.permissionDefs || [];
       defaultPermissions = cfgData.defaultPermissions || {};
@@ -4071,11 +4074,17 @@
       }
 
       if (Object.keys(updates).length > 0) {
+        const payload = { ...updates };
+        if (typeof originalDoc?._version === 'number') payload._version = originalDoc._version;
         const res = await fetch('/dashboard/api/agents/' + currentSlug, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updates),
+          body: JSON.stringify(payload),
         });
+        if (res.status === 409) {
+          const data = await res.json();
+          throw new Error('This agent was modified by another admin — refresh and try again. (' + (data.error || 'conflict') + ')');
+        }
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || 'Failed: ' + res.status);
@@ -4168,11 +4177,17 @@
     }
 
     try {
+      const payload = { ...updates };
+      if (typeof originalDoc?._version === 'number') payload._version = originalDoc._version;
       const res = await fetch('/dashboard/api/agents/' + currentSlug, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates),
+        body: JSON.stringify(payload),
       });
+      if (res.status === 409) {
+        const data = await res.json();
+        throw new Error('This agent was modified by another admin — refresh and try again. (' + (data.error || 'conflict') + ')');
+      }
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed: ' + res.status);
@@ -8153,6 +8168,51 @@
       maybeSchedulePendingLeadsPoll();
     } catch (err) {
       body.innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+    }
+    // Refresh the auto-intake toggle alongside the leads list. Cheap and
+    // keeps the UI honest when another operator flips it from elsewhere.
+    refreshLeadIntakeToggle();
+  }
+
+  async function refreshLeadIntakeToggle() {
+    const cb = document.getElementById('leadIntakeToggle');
+    if (!cb) return;
+    try {
+      const res = await fetch('/dashboard/api/settings');
+      if (!res.ok) return;
+      const s = await res.json();
+      // undefined or true → ON (fail-open default)
+      const enabled = s.lead_intake_enabled !== false;
+      cb.checked = enabled;
+      const label = document.getElementById('leadIntakeStatus');
+      if (label) {
+        label.textContent = enabled ? 'ON' : 'OFF';
+        label.style.color = enabled ? '#16a34a' : '#dc2626';
+      }
+    } catch (_) { /* best-effort */ }
+  }
+
+  async function toggleLeadIntake(cb) {
+    const next = cb.checked;
+    cb.disabled = true;
+    try {
+      const res = await fetch('/dashboard/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_intake_enabled: next }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      const label = document.getElementById('leadIntakeStatus');
+      if (label) {
+        label.textContent = next ? 'ON' : 'OFF';
+        label.style.color = next ? '#16a34a' : '#dc2626';
+      }
+      showToast('Auto-intake ' + (next ? 'enabled' : 'paused'), 'success');
+    } catch (err) {
+      cb.checked = !next;
+      showToast('Failed: ' + err.message, 'error');
+    } finally {
+      cb.disabled = false;
     }
   }
 

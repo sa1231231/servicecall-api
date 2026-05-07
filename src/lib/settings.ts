@@ -38,6 +38,10 @@ export interface GlobalSettings {
   category_order?: string[];
   category_labels?: Record<string, string>;
   cost_rates?: CostRates;
+  /** Pause toggle for the Apps Script lead sync. `undefined` is treated as
+   *  enabled (fail-open) so the integration starts working as soon as the
+   *  operator pastes the script — they have to deliberately turn it off. */
+  lead_intake_enabled?: boolean;
 }
 
 function collection() {
@@ -66,6 +70,7 @@ export async function getSettings(): Promise<GlobalSettings> {
       resend_email_cents: (doc as any)?.cost_rates?.resend_email_cents ?? DEFAULT_COST_RATES.resend_email_cents,
       twilio_number_monthly_cents: (doc as any)?.cost_rates?.twilio_number_monthly_cents ?? DEFAULT_COST_RATES.twilio_number_monthly_cents,
     },
+    lead_intake_enabled: (doc as any)?.lead_intake_enabled,
   };
 }
 
@@ -85,6 +90,7 @@ export async function updateSettings(
   if (updates.setup_instructions !== undefined) setObj.setup_instructions = updates.setup_instructions;
   if (updates.category_order !== undefined) setObj.category_order = updates.category_order;
   if (updates.category_labels !== undefined) setObj.category_labels = updates.category_labels;
+  if (updates.lead_intake_enabled !== undefined) setObj.lead_intake_enabled = updates.lead_intake_enabled;
   if (updates.cost_rates !== undefined) {
     // Merge into a complete CostRates object so nested writes don't drop sibling keys
     const current = await getSettings();

@@ -69,4 +69,10 @@ export const config = {
   // alongside Brave; both pre-searches are baked into the user
   // message before the skill is called. Required at boot.
   GOOGLE_PLACES_API_KEY: requireEnv("GOOGLE_PLACES_API_KEY"),
+
+  // Shared secret for the Google Apps Script lead sync. Optional —
+  // when unset, POST /api/leads/intake returns 401 for everyone, so
+  // the integration is effectively off. Rotate by changing this and
+  // the matching Script Property in the Sheet's Apps Script project.
+  LEAD_INTAKE_TOKEN: process.env.LEAD_INTAKE_TOKEN ?? "",
 };
