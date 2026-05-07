@@ -7464,10 +7464,21 @@
 
   function renderPendingLeadDetail(lead) {
     const body = document.getElementById('pendingLeadsBody');
-    const draftOptions = ['<option value="">— Pick a draft template —</option>']
-      .concat(pendingLeadDrafts.map((d) => '<option value="' + esc(d.name || d._id) + '">' + esc(d.name || d._id) + '</option>'))
-      .join('');
     const enriched = lead.enriched || {};
+    const suggestedTemplate = (enriched.templateName || '').trim();
+    const draftOptions = ['<option value="">— Pick a draft template —</option>']
+      .concat(pendingLeadDrafts.map((d) => {
+        const value = d.name || d._id;
+        const selected = suggestedTemplate && value === suggestedTemplate ? ' selected' : '';
+        return '<option value="' + esc(value) + '"' + selected + '>' + esc(value) + '</option>';
+      }))
+      .join('');
+    const matched = pendingLeadDrafts.some((d) => (d.name || d._id) === suggestedTemplate);
+    const suggestedHint = suggestedTemplate
+      ? '<div style="font-size:0.74rem;color:' + (matched ? '#065f46' : '#92400e') + ';margin-top:0.25rem;">Skill suggests <strong>' + esc(suggestedTemplate) + '</strong>' +
+        (matched ? '' : ' — no matching draft yet, pick another or create the template') +
+        '</div>'
+      : '';
     const errorBlock = lead.enrichmentError
       ? '<div class="lead-error-box"><strong>Enrichment error:</strong> ' + esc(lead.enrichmentError) + '</div>'
       : '';
@@ -7509,6 +7520,7 @@
         '<h3>Promote to Agent</h3>' +
         '<p style="font-size:0.78rem;color:#6b7280;margin:0 0 0.4rem;">Pick one of your saved drafts as the template. Business name + FAQ above flow into the new agent.</p>' +
         '<select id="leadDraftPicker">' + draftOptions + '</select>' +
+        suggestedHint +
         '<div class="lead-action-row">' +
           '<button class="lead-btn-promote" onclick="promoteLead(\'' + esc(lead._id) + '\')" ' + promoteDisabled + '>Promote to Agent</button>' +
           '<button class="lead-btn-dismiss" onclick="dismissLead(\'' + esc(lead._id) + '\')" ' + (isTerminal ? 'disabled' : '') + '>Dismiss</button>' +

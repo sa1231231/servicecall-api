@@ -37,6 +37,7 @@ async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<v
       enriched: {
         business_name: result.business_name,
         faqKnowledgeBase: result.faqKnowledgeBase,
+        templateName: result.templateName,
         extra: Object.keys(result.extra).length > 0 ? result.extra : undefined,
       },
       enrichmentError: undefined,
@@ -168,9 +169,17 @@ leadsRouter.post("/:id/promote", async (req, res) => {
     res.status(404).json({ error: "Lead not found" });
     return;
   }
-  const draftName = typeof req.body?.draft === "string" ? req.body.draft.trim() : "";
+  // Body's `draft` wins; otherwise fall back to the skill-suggested
+  // template stored on the lead. Either way the operator can override
+  // by sending an explicit `draft` in the request.
+  const explicit = typeof req.body?.draft === "string" ? req.body.draft.trim() : "";
+  const suggested = lead.enriched?.templateName?.trim() ?? "";
+  const draftName = explicit || suggested;
   if (!draftName) {
-    res.status(400).json({ error: "Missing required field: draft (draft name)" });
+    res.status(400).json({
+      error:
+        "Missing required field: draft (draft name). The lead has no skill-suggested template either — pass `draft` explicitly.",
+    });
     return;
   }
   const businessName = lead.enriched?.business_name?.trim();

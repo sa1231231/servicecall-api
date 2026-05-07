@@ -23,6 +23,9 @@ export interface PendingLeadInput {
 export interface PendingLeadEnriched {
   business_name?: string;
   faqKnowledgeBase?: string;
+  /** Suggested draft/template name from the skill (e.g. "hvac"). When set,
+   *  the dashboard pre-selects the matching draft on the promote step. */
+  templateName?: string;
   /** Forward-compat bag for fields the skill might add later
    *  (business_type, services, location, etc.). v0 doesn't surface these. */
   extra?: Record<string, unknown>;

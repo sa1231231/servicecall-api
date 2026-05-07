@@ -250,8 +250,36 @@ dashboardApiRouter.post("/agents/:slug/send-instructions", requirePermission("se
     //   inside carrier star/MMI codes (`*72{{agent_phone_10}}`,
     //   `**21*{{agent_phone_10}}#`) where the `+1` country prefix can break
     //   tap-to-dial activation on some carriers/dialers.
-    const e164 = doc.outbound_from_number ?? "";
+    //
+    // Source-of-truth chain: doc.outbound_from_number (fast path) → Retell
+    // live (fallback for legacy agents whose outbound_from_number was
+    // never persisted because of a bug in the older create flow). Falling
+    // back to Retell live also catches manual rebinds done in the Retell
+    // console without re-running our provision flow.
+    let e164 = doc.outbound_from_number ?? "";
+    if (!e164 && doc.agent_id) {
+        try {
+            const Retell = (await import("retell-sdk")).default;
+            const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+            const allNumbers = await retell.phoneNumber.list();
+            const bound = allNumbers.find((n) => (n.inbound_agents ?? []).some((a) => a.agent_id === doc.agent_id));
+            if (bound) {
+                e164 = bound.phone_number;
+                console.log(`[send-instructions] resolved {{agent_phone}} for "${slug}" via Retell-live fallback: ${e164}`);
+            }
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn(`[send-instructions] Retell phoneNumber.list failed for "${slug}": ${msg}`);
+        }
+    }
     const tenDigit = e164.replace(/^\+1/, "").replace(/^\+/, "").replace(/\D/g, "").slice(-10);
+    if (!tenDigit) {
+        res.status(400).json({
+            error: "No phone number resolved for this agent (outbound_from_number is empty and Retell has no inbound binding). Provision a number for this agent first.",
+        });
+        return;
+    }
     const message = template.message
         .replace(/\{\{business_name\}\}/g, doc.name ?? "")
         .replace(/\{\{agent_phone_10\}\}/g, tenDigit)

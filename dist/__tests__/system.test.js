@@ -675,6 +675,31 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
                 method: "DELETE", headers: authHeaders(),
             })).status).toBe(404);
         });
+        // Bad-body validation paths added in the system-test gap-fill sweep.
+        // These don't create state, so they don't need their own cleanup.
+        it("POST rejects missing key", async () => {
+            const resp = await fetch(url("/dashboard/api/data-point-defaults"), {
+                method: "POST", headers: authHeaders(),
+                body: JSON.stringify({ label: "no key" }),
+            });
+            expect(resp.status).toBe(400);
+            expect((await json(resp)).error).toMatch(/key/);
+        });
+        it("POST rejects missing label", async () => {
+            const resp = await fetch(url("/dashboard/api/data-point-defaults"), {
+                method: "POST", headers: authHeaders(),
+                body: JSON.stringify({ key: "_systest_no_label_" + Date.now() }),
+            });
+            expect(resp.status).toBe(400);
+            expect((await json(resp)).error).toMatch(/label/);
+        });
+        it("PUT reorder rejects non-array items", async () => {
+            const resp = await fetch(url("/dashboard/api/data-point-defaults/reorder"), {
+                method: "PUT", headers: authHeaders(),
+                body: JSON.stringify({ items: "not-an-array" }),
+            });
+            expect(resp.status).toBe(400);
+        });
         // Belt-and-suspenders: the explicit DELETE `it` may not run if an earlier
         // test threw. Always try to remove the captured key.
         afterAll(async () => {

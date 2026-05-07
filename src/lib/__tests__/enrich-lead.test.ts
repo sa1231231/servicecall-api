@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parseEnrichmentResponse, extractText } from "../enrich-lead.js";
+import {
+  parseEnrichmentResponse,
+  extractText,
+  formatLeadAsUserMessage,
+  buildSystemPrompt,
+} from "../enrich-lead.js";
 
 describe("parseEnrichmentResponse", () => {
   it("parses a clean JSON envelope", () => {
@@ -43,6 +48,31 @@ describe("parseEnrichmentResponse", () => {
     }
   });
 
+  it("accepts the skill's camelCase shape (businessName + templateName)", () => {
+    const r = parseEnrichmentResponse(
+      JSON.stringify({
+        businessName: "Cairo HVAC",
+        faqKnowledgeBase: "Q. Hours?\nA. 7-7 weekdays.",
+        templateName: "hvac",
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.business_name).toBe("Cairo HVAC");
+      expect(r.faqKnowledgeBase).toBe("Q. Hours?\nA. 7-7 weekdays.");
+      expect(r.templateName).toBe("hvac");
+      expect(r.extra).toEqual({});
+    }
+  });
+
+  it("templateName is omitted when the skill doesn't return one", () => {
+    const r = parseEnrichmentResponse(
+      JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "Q?" }),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.templateName).toBeUndefined();
+  });
+
   it("fails when JSON is malformed", () => {
     const r = parseEnrichmentResponse("not json at all");
     expect(r.ok).toBe(false);
@@ -65,6 +95,41 @@ describe("parseEnrichmentResponse", () => {
       JSON.stringify({ business_name: "Acme", faqKnowledgeBase: "" }),
     );
     expect(r.ok).toBe(true);
+  });
+});
+
+describe("formatLeadAsUserMessage", () => {
+  it("includes only the fields that are set", () => {
+    const msg = formatLeadAsUserMessage({ name: "Acme" });
+    expect(msg).toContain("Name / Business: Acme");
+    expect(msg).not.toContain("Phone:");
+    expect(msg).not.toContain("Website:");
+    expect(msg).toContain("templateName");
+  });
+
+  it("includes phone, website, notes when provided", () => {
+    const msg = formatLeadAsUserMessage({
+      name: "Acme", phone: "+1", website: "x.com", notes: "vip",
+    });
+    expect(msg).toContain("Phone: +1");
+    expect(msg).toContain("Website: x.com");
+    expect(msg).toContain("Notes: vip");
+  });
+});
+
+describe("buildSystemPrompt", () => {
+  it("starts with the skill body and appends references with their relative paths", () => {
+    const out = buildSystemPrompt({
+      name: "x",
+      body: "INSTRUCTION\nDo the thing.",
+      referenceFiles: [
+        { path: "references/a.md", content: "AAA" },
+        { path: "references/b.md", content: "BBB" },
+      ],
+    });
+    expect(out).toMatch(/^INSTRUCTION/);
+    expect(out).toContain("# references/a.md\n\nAAA");
+    expect(out).toContain("# references/b.md\n\nBBB");
   });
 });
 

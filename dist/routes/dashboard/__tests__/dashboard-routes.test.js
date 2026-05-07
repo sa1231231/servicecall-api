@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-const { mockGetClientDocument, mockGeneratePortalToken, mockListDeletedClients, mockRestoreClient, mockDeleteClient, mockGetCallLogById, mockSendSmsToAll, mockGetSettings, mockUpdateSettings, mockRunBackup, mockGetDataPointDefaultsWithCategory, mockUpdateDataPointDefault, mockCreateDataPointDefault, mockDeleteDataPointDefault, mockReorderDataPointDefaults, mockLogAudit, mockAlertRootIfNeeded, mockListUsers, mockCreateUser, mockDeleteUser, mockUpdateUserPermissions, mockGetClientCogs, mockPreviewBlast, mockSendBlast, mockAgentRetrieve, mockAgentUpdate, mockAgentDelete, mockFlowDelete, mockListAgents, mockGetAgent, mockGetCalls, mockToggleShadow, mockToggleActive, mockUpdateAgent, mockCloneAgent, mockDeleteAgent, mockExportAgent, mockNodeEditorRouter, mockReleaseAgentResources, } = vi.hoisted(() => ({
+const { mockGetClientDocument, mockGeneratePortalToken, mockListDeletedClients, mockRestoreClient, mockDeleteClient, mockGetCallLogById, mockSendSmsToAll, mockGetSettings, mockUpdateSettings, mockRunBackup, mockGetDataPointDefaultsWithCategory, mockUpdateDataPointDefault, mockCreateDataPointDefault, mockDeleteDataPointDefault, mockReorderDataPointDefaults, mockLogAudit, mockAlertRootIfNeeded, mockListUsers, mockCreateUser, mockDeleteUser, mockUpdateUserPermissions, mockGetClientCogs, mockPreviewBlast, mockSendBlast, mockAgentRetrieve, mockAgentUpdate, mockAgentDelete, mockFlowDelete, mockPhoneNumberList, mockListAgents, mockGetAgent, mockGetCalls, mockToggleShadow, mockToggleActive, mockUpdateAgent, mockCloneAgent, mockDeleteAgent, mockExportAgent, mockNodeEditorRouter, mockReleaseAgentResources, } = vi.hoisted(() => ({
     mockGetClientDocument: vi.fn(),
     mockGeneratePortalToken: vi.fn(),
     mockListDeletedClients: vi.fn(),
@@ -28,6 +28,7 @@ const { mockGetClientDocument, mockGeneratePortalToken, mockListDeletedClients, 
     mockAgentUpdate: vi.fn(),
     mockAgentDelete: vi.fn(),
     mockFlowDelete: vi.fn(),
+    mockPhoneNumberList: vi.fn(),
     mockListAgents: vi.fn(),
     mockGetAgent: vi.fn(),
     mockGetCalls: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock("retell-sdk", () => ({
     default: class {
         agent = { retrieve: mockAgentRetrieve, update: mockAgentUpdate, delete: mockAgentDelete };
         conversationFlow = { delete: mockFlowDelete };
+        phoneNumber = { list: mockPhoneNumberList };
     },
 }));
 vi.mock("../../../config/client-store.js", () => ({
@@ -426,6 +428,49 @@ describe("POST /agents/:slug/send-instructions", () => {
         const res = makeRes();
         await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
         expect(res._status).toBe(502);
+    });
+    it("falls back to Retell-live when outbound_from_number is missing on the doc", async () => {
+        // Regression: legacy agents created via /agents/create or /agents/from-draft
+        // before the provisioning-write fix shipped have outbound_from_number=null.
+        // The handler now queries Retell for the agent's bound number as a
+        // fallback so the SMS still goes out with the right phone embedded.
+        const star = {
+            id: "verizon",
+            label: "Verizon",
+            message: "Tap to dial: *72{{agent_phone_10}} ({{agent_phone}})",
+        };
+        mockGetClientDocument.mockResolvedValue({
+            dispatch_text_numbers: ["+15551111111"],
+            name: "Acme",
+            agent_id: "agent_x",
+            outbound_from_number: null,
+        });
+        mockGetSettings.mockResolvedValue({ setup_instructions: [star] });
+        // Retell list returns one number bound to agent_x
+        mockPhoneNumberList.mockResolvedValue([
+            { phone_number: "+18158804070", inbound_agents: [{ agent_id: "agent_x", weight: 1 }] },
+        ]);
+        mockSendSmsToAll.mockResolvedValue(undefined);
+        const res = makeRes();
+        await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
+        expect(res._status).toBe(200);
+        expect(mockSendSmsToAll).toHaveBeenCalledWith(["+15551111111"], "Tap to dial: *728158804070 (+18158804070)");
+    });
+    it("returns 400 when neither outbound_from_number nor a Retell binding can resolve the agent's phone", async () => {
+        const star = { id: "verizon", label: "Verizon", message: "*72{{agent_phone_10}}" };
+        mockGetClientDocument.mockResolvedValue({
+            dispatch_text_numbers: ["+15551111111"],
+            name: "Acme",
+            agent_id: "agent_x",
+            outbound_from_number: null,
+        });
+        mockGetSettings.mockResolvedValue({ setup_instructions: [star] });
+        mockPhoneNumberList.mockResolvedValue([]); // no Retell bindings
+        const res = makeRes();
+        await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
+        expect(res._status).toBe(400);
+        expect(res._json.error).toMatch(/No phone number resolved/);
+        expect(mockSendSmsToAll).not.toHaveBeenCalled();
     });
     it("substitutes {{agent_phone_10}} with the 10-digit form (no +1) for star-code dial-strings", async () => {
         const star = {

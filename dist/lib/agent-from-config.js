@@ -231,6 +231,13 @@ export async function createAgentFromConfig(body) {
             provisionedNumber = result.phoneNumber;
             const { logPhoneEvent } = await import("./phone-number-history.js");
             await logPhoneEvent(slug, result.phoneNumber, result.phoneNumberSid, "provisioned");
+            // Persist the freshly-provisioned number on the client doc so
+            // downstream flows (Send Instructions {{agent_phone}}, dispatch
+            // routing, billing) can read it without a Retell round-trip. The
+            // standalone /agents/provision-number route already does this; the
+            // create + from-draft paths used to drop the value on the floor.
+            const { updateClientField } = await import("../config/client-store.js");
+            await updateClientField(slug, "outbound_from_number", result.phoneNumber);
             console.log(`[create-agent] provisioned number ${provisionedNumber} for "${slug}"`);
         }
         catch (provErr) {

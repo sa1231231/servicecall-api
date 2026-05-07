@@ -317,6 +317,22 @@ describe("createAgentHandler — success path", () => {
         await createAgentHandler(mockReq(makeBody()), mockRes());
         expect(mockLogPhoneEvent).toHaveBeenCalledWith("test-co", "+15559998888", "PN_test", "provisioned");
     });
+    it("writes the provisioned number to outbound_from_number on the client doc", async () => {
+        // Regression: the create + from-draft paths used to drop the
+        // provisioned number on the floor (returned in the response only).
+        // Send Instructions and other downstream flows that read
+        // outbound_from_number got an empty string.
+        await createAgentHandler(mockReq(makeBody()), mockRes());
+        expect(mockUpdateClientField).toHaveBeenCalledWith("test-co", "outbound_from_number", "+15559998888");
+    });
+    it("does NOT write outbound_from_number when provisioning fails", async () => {
+        mockProvisionPhoneNumber.mockRejectedValue(new Error("twilio out of stock"));
+        await createAgentHandler(mockReq(makeBody()), mockRes());
+        // Persist still fires (the agent itself was created), but no
+        // outbound_from_number write.
+        const calls = mockUpdateClientField.mock.calls.filter((c) => c[1] === "outbound_from_number");
+        expect(calls).toEqual([]);
+    });
     it("provision failure does not fail the request — provision_error is reported", async () => {
         mockProvisionPhoneNumber.mockRejectedValue(new Error("no numbers available"));
         const res = mockRes();
