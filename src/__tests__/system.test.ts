@@ -1306,6 +1306,25 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       it("returns 404 for nonexistent version", async () => {
         expect((await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/versions/000000000000000000000000`), { headers: authHeaders() })).status).toBe(404);
       });
+
+      it("returns the parsed snapshot shape for a real versionId", async () => {
+        if (!preEditSnapshotId) return; // list endpoint returned empty — nothing to fetch
+        const resp = await fetch(
+          url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/versions/${preEditSnapshotId}`),
+          { headers: authHeaders() },
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        // The endpoint returns a derived/parsed view, not the raw
+        // canonicalJson — assert the fields the rollback UI actually
+        // displays (paths, prompts, counts) so a regression here surfaces.
+        expect(body._id).toBe(preEditSnapshotId);
+        expect(typeof body.nodeCount).toBe("number");
+        expect(body.source).toBeDefined();
+        expect(typeof body.globalPrompt).toBe("string");
+        expect(Array.isArray(body.paths)).toBe(true);
+        expect(body.paths.length).toBeGreaterThan(0);
+      });
     });
 
     // ── edit-prompt ────────────────────────────────────────────────
@@ -1415,6 +1434,40 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
           method: "POST", headers: authHeaders(),
           body: JSON.stringify({ response_engine: "hacked" }),
         })).status).toBe(400);
+      });
+
+      it("persists an allowlisted field round-trip and restores it", { timeout: 30_000 }, async () => {
+        // Capture original voice_speed from the Mongo-cached canonical
+        // (the node-editor GET writes the freshest Retell snapshot to
+        // doc.retell_agents[agentId] on every read, so this is current).
+        const docResp = await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() });
+        const doc = await json(docResp);
+        const original = doc.retell_agents?.[AGENT_ID]?.voice_speed as number | undefined;
+        // Pick a probe value that's definitely different and within
+        // Retell's accepted range (0.5–2.0).
+        const probe = original === 1.05 ? 1.10 : 1.05;
+        try {
+          const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-agent-settings`), {
+            method: "POST", headers: authHeaders(),
+            body: JSON.stringify({ voice_speed: probe }),
+          });
+          expect(resp.status).toBe(200);
+          const respBody = await json(resp);
+          expect(respBody.success).toBe(true);
+          expect(respBody.updated).toContain("voice_speed");
+
+          // The route calls retell.agent.update + storeCanonical, so the
+          // Mongo doc reflects the new value.
+          const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+          expect(after.retell_agents?.[AGENT_ID]?.voice_speed).toBe(probe);
+        } finally {
+          if (original !== undefined) {
+            await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-agent-settings`), {
+              method: "POST", headers: authHeaders(),
+              body: JSON.stringify({ voice_speed: original }),
+            });
+          }
+        }
       });
     });
 
@@ -1529,18 +1582,48 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     // ── edit-branch-condition ──────────────────────────────────────
 
     describe("edit-branch-condition", () => {
-      it("sets condition on truck_number in dont_measure_me", { timeout: 30_000 }, async () => {
-        // This is a test — we'll revert via rollback
-        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
-          method: "POST", headers: authHeaders(),
-          body: JSON.stringify({
-            variableName: "truck_number", pathName: "dont_measure_me",
-            branchConditions: [{ variable: "full_name", operator: "!=", value: "Not Mentioned" }],
-          }),
-        });
-        // This might fail validation since full_name is string not enum
-        // but the endpoint should at least accept the request format
-        expect([200, 400]).toContain(resp.status);
+      it("clears the branch condition on truck_number end-to-end and restores", { timeout: 30_000 }, async () => {
+        // Capture the live branch state on truck_number — don't assume
+        // a specific shape (operator changes the matrix over time).
+        // Then clear it (branchConditions: null), verify, restore.
+        // Clearing is the cleanest round-trip because it's a no-op when
+        // already null AND when not, so the restore is safe to retry.
+        const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const dm = before.paths.find((p: any) => p.name === "dont_measure_me");
+        const truck = dm?.dataPoints.find((d: any) => d.variableName === "truck_number");
+        expect(truck).toBeDefined();
+        const original = truck.branchConditions ?? null;
+
+        let mutated = false;
+        try {
+          const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
+            method: "POST", headers: authHeaders(),
+            body: JSON.stringify({
+              variableName: "truck_number", pathName: "dont_measure_me",
+              branchConditions: null,
+            }),
+          });
+          expect(resp.status).toBe(200);
+          expect((await json(resp)).success).toBe(true);
+          mutated = true;
+
+          const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+          const dm2 = after.paths.find((p: any) => p.name === "dont_measure_me");
+          const truck2 = dm2.dataPoints.find((d: any) => d.variableName === "truck_number");
+          // After clearing, the variable should still exist but have no
+          // branch attached.
+          expect(truck2.branchConditions ?? null).toBeNull();
+        } finally {
+          if (mutated && original !== null) {
+            await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
+              method: "POST", headers: authHeaders(),
+              body: JSON.stringify({
+                variableName: "truck_number", pathName: "dont_measure_me",
+                branchConditions: original,
+              }),
+            });
+          }
+        }
       });
 
       it("rejects nonexistent variable", async () => {
@@ -1574,6 +1657,54 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
           body: JSON.stringify({ oldName: "dont_measure_me" }),
         })).status).toBe(400);
       });
+
+      it("renames a path end-to-end and restores it", { timeout: 30_000 }, async () => {
+        // edit-path-name updates Mongo only (message_types,
+        // dispatch_by_type, path_end_modes, and the cached canonical) —
+        // it does NOT push to Retell, so we verify against the Mongo
+        // doc rather than the node-editor's GET (which pulls from
+        // Retell). This catches regressions where one of the doc
+        // fields fails to update while the others do.
+        const probeName = `dont_measure_me_systest_${Date.now()}`;
+        let renamed = false;
+        try {
+          const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-path-name`), {
+            method: "POST", headers: authHeaders(),
+            body: JSON.stringify({ oldName: "dont_measure_me", newName: probeName }),
+          });
+          expect(resp.status).toBe(200);
+          expect((await json(resp)).success).toBe(true);
+          renamed = true;
+
+          // Read the Mongo-side state via the dashboard's main agent
+          // endpoint (returns the client doc directly without re-pulling
+          // from Retell, which would clobber the rename).
+          // The handler always updates the cached canonical
+          // (retell_agents.<id>) — message_types/dispatch_by_type are
+          // only touched if those fields already existed on the doc, so
+          // we verify against the canonical's renamed node names which
+          // are the unconditional side-effect.
+          const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+          const cachedCanonical = after.retell_agents?.[AGENT_ID];
+          expect(cachedCanonical).toBeDefined();
+          const cachedNodes = (cachedCanonical?.conversationFlow?.nodes ?? []) as Array<{ name?: string }>;
+          // At least one node's display name encodes the path suffix
+          // (e.g. "Close (probeName)"). The handler rewrites every
+          // " (oldName)" suffix to " (newName)".
+          const renamedNode = cachedNodes.find((n) => typeof n.name === "string" && n.name.includes(`(${probeName})`));
+          expect(renamedNode).toBeDefined();
+          // And no node still bears the old suffix.
+          const stragglerNode = cachedNodes.find((n) => typeof n.name === "string" && n.name.includes("(dont_measure_me)"));
+          expect(stragglerNode).toBeUndefined();
+        } finally {
+          if (renamed) {
+            await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-path-name`), {
+              method: "POST", headers: authHeaders(),
+              body: JSON.stringify({ oldName: probeName, newName: "dont_measure_me" }),
+            });
+          }
+        }
+      });
     });
 
     // ── edit-human-request-mode ────────────────────────────────────
@@ -1590,6 +1721,38 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
           method: "POST", headers: authHeaders(),
           body: JSON.stringify({ mode: "invalid" }),
         })).status).toBe(400);
+      });
+
+      it("flips the mode end-to-end and verifies via response body", { timeout: 30_000 }, async () => {
+        // edit-human-request-mode writes the modified canonical to Mongo
+        // via storeCanonical, but does NOT push to Retell. The
+        // node-editor GET pulls fresh from Retell, so it won't reflect
+        // the change. The most reliable verification is the route's
+        // own response body — assert there and trust the audit-log
+        // entry as the persistence record.
+        const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const original = before.humanRequestMode as "callback" | "live_transfer";
+        const probe: "callback" | "live_transfer" = original === "callback" ? "live_transfer" : "callback";
+
+        let flipped = false;
+        try {
+          const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-human-request-mode`), {
+            method: "POST", headers: authHeaders(),
+            body: JSON.stringify({ mode: probe }),
+          });
+          expect(resp.status).toBe(200);
+          const body = await json(resp);
+          expect(body.success).toBe(true);
+          expect(body.mode).toBe(probe);
+          flipped = true;
+        } finally {
+          if (flipped) {
+            await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-human-request-mode`), {
+              method: "POST", headers: authHeaders(),
+              body: JSON.stringify({ mode: original }),
+            });
+          }
+        }
       });
     });
 
@@ -1634,6 +1797,52 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
           body: JSON.stringify({ pathName: "measure_me", mode: "callback" }),
         });
         expect(resp.status).toBe(404);
+      });
+
+      it("flips mode for measure_me end-to-end and restores", { timeout: 45_000 }, async () => {
+        // path-end-mode is the riskiest mutation in this suite — flipping
+        // it adds/removes Pre-Transfer + Transfer Call nodes. The route
+        // DOES push to Retell (unlike edit-path-name), so a fresh GET
+        // reflects the change. Try/finally restores; the suite-level
+        // rollback at the end is the second safety net.
+        //
+        // Note: this route uses "callback"/"transfer", whereas the
+        // node-parser exposes endMode as "callback"/"transfer" (same
+        // strings). Different from edit-human-request-mode which uses
+        // "callback"/"live_transfer".
+        const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+        const measureMe = before.paths.find((p: any) => p.name === "measure_me");
+        expect(measureMe).toBeDefined();
+        const original = measureMe.endMode as "callback" | "transfer";
+        const probe: "callback" | "transfer" = original === "callback" ? "transfer" : "callback";
+        const beforeNodeCount = before.nodes.length;
+
+        let flipped = false;
+        try {
+          const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-path-end-mode`), {
+            method: "POST", headers: authHeaders(),
+            body: JSON.stringify({ pathName: "measure_me", mode: probe }),
+          });
+          expect(resp.status).toBe(200);
+          expect((await json(resp)).success).toBe(true);
+          flipped = true;
+
+          const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+          const afterPath = after.paths.find((p: any) => p.name === "measure_me");
+          expect(afterPath.endMode).toBe(probe);
+          // Node count should change because Transfer Call + Pre-Transfer
+          // nodes are added/removed depending on direction. Don't assert
+          // a specific delta (skill flow may evolve) — just that something
+          // moved structurally.
+          expect(after.nodes.length).not.toBe(beforeNodeCount);
+        } finally {
+          if (flipped) {
+            await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-path-end-mode`), {
+              method: "POST", headers: authHeaders(),
+              body: JSON.stringify({ pathName: "measure_me", mode: original }),
+            });
+          }
+        }
       });
     });
 
