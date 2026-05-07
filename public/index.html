@@ -674,6 +674,7 @@
     <select id="draftSelect" onchange="onDraftSelectChange()"><option value="">— Select a draft —</option></select>
     <button type="button" class="sb-btn-load" onclick="loadSelected()">Load</button>
     <button type="button" class="sb-btn-save" onclick="saveDraft()">Save Draft</button>
+    <button type="button" class="sb-btn-load" onclick="renameSelected()">Rename</button>
     <button type="button" class="sb-btn-delete" onclick="deleteSelected()">Delete</button>
   </div>
   <div class="save-bar-row">
@@ -2796,6 +2797,38 @@
       showSaveStatus('Draft loaded');
     } catch (err) {
       showSaveStatus('Load failed');
+    }
+  }
+
+  async function renameSelected() {
+    const sel = document.getElementById('draftSelect');
+    const id = sel.value;
+    if (!id) {
+      showSaveStatus('Select a draft to rename');
+      return;
+    }
+    const currentLabel = sel.options[sel.selectedIndex]?.textContent || '';
+    const input = prompt('Rename this draft to:', currentLabel);
+    if (input === null) return;             // user cancelled
+    const newName = input.trim();
+    if (!newName) {
+      showSaveStatus('Rename cancelled — name is required');
+      return;
+    }
+    if (newName === currentLabel) return;   // no-op
+    try {
+      // PUT with only `name` — leaves formData and exportConfig untouched.
+      const res = await fetch('/form/drafts/' + id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      await loadList();
+      sel.value = id;                       // restore selection
+      showSaveStatus('Draft renamed');
+    } catch (err) {
+      showSaveStatus('Rename failed');
     }
   }
 
