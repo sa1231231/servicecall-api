@@ -22,6 +22,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
+    # Dummy env vars so `src/config.ts`'s requireEnv() checks pass at module
+    # load. Unit tests mock the modules they actually need to talk to —
+    # nothing here ever reaches a live service. If config.ts gains a new
+    # required var, add it here too (otherwise CI breaks at import time).
+    env:
+      RETELL_SIGNATURE_KEY: ci-stub-retell-sig
+      RETELL_API_KEY: ci-stub-retell-key
+      GHL_API_KEY: ci-stub-ghl
+      API_KEY: ci-stub-api-key
+      TWILIO_ACCOUNT_SID: ACci_stub_account_sid
+      TWILIO_AUTH_TOKEN: ci-stub-twilio-auth
+      TWILIO_PHONE_NUMBER: "+10000000000"
+      RESEND_API_KEY: ci-stub-resend
+      MONGODB_URL: mongodb://localhost:27017/ci-stub
+      ROOT_PASSWORD: ci-stub-root-pw
+      BRAVE_API_KEY: ci-stub-brave
+      GOOGLE_PLACES_API_KEY: ci-stub-places
+
     steps:
       - uses: actions/checkout@v4
 
