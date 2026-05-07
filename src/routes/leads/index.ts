@@ -33,6 +33,15 @@ async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<v
   // failure while the new attempt is in flight.
   await updatePendingLead(leadId, { status: "enriching", enrichmentError: undefined });
   const result = await enrichLead(input);
+  // Both branches stash the AI conversation under enriched.extra so the
+  // dashboard's AI Feed panel can render what we sent and what came back,
+  // regardless of parse outcome. The success branch overwrites with fresh
+  // structured data; the failure branch merges into prior enriched fields
+  // so a failed re-enrich doesn't wipe operator edits.
+  const aiTrace = {
+    _userMessage: result.userMessage,
+    _rawResponse: result.rawResponse,
+  };
   if (result.ok) {
     await updatePendingLead(leadId, {
       status: "ready",
@@ -40,22 +49,17 @@ async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<v
         business_name: result.business_name,
         faqKnowledgeBase: result.faqKnowledgeBase,
         templateName: result.templateName,
-        extra: Object.keys(result.extra).length > 0 ? result.extra : undefined,
+        extra: { ...result.extra, ...aiTrace },
       },
       enrichmentError: undefined,
     });
   } else {
-    // Even on failure, salvage what we can: stash the raw model response
-    // on the lead so the operator can see what the skill said and copy
-    // anything useful into the editable fields without re-running. Prior
-    // enrichment data (from a previous successful run) is preserved so a
-    // failed re-enrich doesn't wipe edits the operator is iterating on.
     const prior = await getPendingLead(leadId);
     const merged = {
       ...(prior?.enriched ?? {}),
       extra: {
         ...(prior?.enriched?.extra ?? {}),
-        ...(result.rawResponse ? { _rawResponse: result.rawResponse } : {}),
+        ...aiTrace,
       },
     };
     await updatePendingLead(leadId, {

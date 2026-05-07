@@ -7506,22 +7506,73 @@
         (matched ? '' : ' — no matching draft yet, pick another or create the template') +
         '</div>'
       : '';
-    const rawResponse = enriched.extra?._rawResponse;
+    const userMessage = enriched.extra?._userMessage || '';
+    const rawResponse = enriched.extra?._rawResponse || '';
+    const hasFeed = userMessage || rawResponse;
     const errorBlock = lead.enrichmentError
-      ? '<div class="lead-error-box"><strong>Enrichment error:</strong> ' + esc(lead.enrichmentError) +
-        (rawResponse
-          ? '<details style="margin-top:0.4rem;"><summary style="cursor:pointer;font-size:0.74rem;">View what the skill said</summary>' +
-            '<pre style="white-space:pre-wrap;background:#fff;border:1px solid #fecaca;padding:0.5rem;margin-top:0.35rem;border-radius:5px;font-size:0.78rem;color:#374151;font-family:inherit;">' + esc(rawResponse) + '</pre>' +
-            '<button onclick="copyRawToFaq()" style="margin-top:0.35rem;font-size:0.72rem;padding:0.2rem 0.5rem;background:#fff;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Copy into FAQ field</button>' +
-            '</details>'
-          : '') +
-        '</div>'
+      ? '<div class="lead-error-box"><strong>Enrichment error:</strong> ' + esc(lead.enrichmentError) + '</div>'
       : '';
     const promotedSlug = lead.promotedSlug
       ? '<div style="margin-top:0.5rem;padding:0.5rem;background:#dbeafe;border-radius:5px;font-size:0.82rem;">Promoted → <a href="/dashboard/#agent=' + esc(lead.promotedSlug) + '">' + esc(lead.promotedSlug) + '</a></div>'
       : '';
     const isTerminal = lead.status === 'promoted' || lead.status === 'dismissed';
     const promoteDisabled = isTerminal || !enriched.business_name || !enriched.faqKnowledgeBase ? 'disabled' : '';
+
+    // Panel 1 — Original Lead (read-only)
+    const originalPanel =
+      '<div class="lead-detail-section">' +
+        '<h3>1. Original Lead</h3>' +
+        '<span class="field-label">Name</span><div class="read-field">' + esc(lead.input?.name || '') + '</div>' +
+        '<span class="field-label">Phone</span><div class="read-field">' + esc(lead.input?.phone || '—') + '</div>' +
+        '<span class="field-label">Website</span><div class="read-field">' + esc(lead.input?.website || '—') + '</div>' +
+        '<span class="field-label">Notes</span><div class="read-field" style="white-space:pre-wrap;">' + esc(lead.input?.notes || '—') + '</div>' +
+        '<span class="field-label">Source</span><div class="read-field">' + esc(lead.source) + '</div>' +
+      '</div>';
+
+    // Panel 2 — AI Feed (sent + received). Hidden until enrichment has run.
+    const feedPre = (text) => '<pre style="white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:0.65rem;margin:0;border-radius:5px;font-size:0.76rem;line-height:1.45;font-family:ui-monospace,Menlo,Consolas,monospace;max-height:340px;overflow:auto;">' + esc(text) + '</pre>';
+    const aiFeedPanel = hasFeed
+      ? '<div class="lead-detail-section">' +
+          '<h3>2. AI Feed</h3>' +
+          (userMessage
+            ? '<span class="field-label">Sent to AI</span>' + feedPre(userMessage)
+            : '') +
+          (rawResponse
+            ? '<span class="field-label" style="margin-top:0.6rem;">Received from AI</span>' + feedPre(rawResponse) +
+              '<button onclick="copyRawToFaq()" style="margin-top:0.4rem;font-size:0.72rem;padding:0.25rem 0.6rem;background:#fff;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Copy response into FAQ field below</button>'
+            : (lead.status === 'enriching'
+              ? '<div style="font-size:0.78rem;color:#92400e;margin-top:0.4rem;">Waiting for the model…</div>'
+              : '')) +
+        '</div>'
+      : '';
+
+    // Panel 3 — Enriched (editable)
+    const enrichedPanel =
+      '<div class="lead-detail-section">' +
+        '<h3>' + (hasFeed ? '3' : '2') + '. Enriched (editable)</h3>' +
+        '<span class="field-label">Business Name</span>' +
+        '<input id="leadBizName" type="text" value="' + esc(enriched.business_name || '') + '" placeholder="Skill output drops in here">' +
+        '<span class="field-label">FAQ / Knowledge Base</span>' +
+        '<textarea id="leadFaq" placeholder="Q. ...\nA. ...">' + esc(enriched.faqKnowledgeBase || '') + '</textarea>' +
+        '<div class="lead-action-row">' +
+          '<button class="lead-btn-save" onclick="saveLeadEdits(\'' + esc(lead._id) + '\')">Save edits</button>' +
+          '<button class="lead-btn-reenrich" onclick="reEnrichLead(\'' + esc(lead._id) + '\')" ' + (isTerminal ? 'disabled' : '') + '>Re-enrich</button>' +
+        '</div>' +
+      '</div>';
+
+    // Panel 4 — Promote to Agent
+    const promotePanel =
+      '<div class="lead-detail-section">' +
+        '<h3>' + (hasFeed ? '4' : '3') + '. Promote to Agent</h3>' +
+        '<p style="font-size:0.78rem;color:#6b7280;margin:0 0 0.4rem;">Pick one of your saved drafts as the template. Business name + FAQ above flow into the new agent.</p>' +
+        '<select id="leadDraftPicker">' + draftOptions + '</select>' +
+        suggestedHint +
+        '<div class="lead-action-row">' +
+          '<button class="lead-btn-promote" onclick="promoteLead(\'' + esc(lead._id) + '\')" ' + promoteDisabled + '>Promote to Agent</button>' +
+          '<button class="lead-btn-dismiss" onclick="dismissLead(\'' + esc(lead._id) + '\')" ' + (isTerminal ? 'disabled' : '') + '>Dismiss</button>' +
+        '</div>' +
+      '</div>';
+
     body.innerHTML =
       '<div style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem;">' +
         '<button onclick="backToLeadsList()" class="btn-back" style="margin:0;">&larr; Back to leads</button>' +
@@ -7530,36 +7581,11 @@
       '</div>' +
       errorBlock +
       promotedSlug +
-      '<div class="lead-detail-grid" style="margin-top:0.75rem;">' +
-        '<div class="lead-detail-section">' +
-          '<h3>Original Lead</h3>' +
-          '<span class="field-label">Name</span><div class="read-field">' + esc(lead.input?.name || '') + '</div>' +
-          '<span class="field-label">Phone</span><div class="read-field">' + esc(lead.input?.phone || '—') + '</div>' +
-          '<span class="field-label">Website</span><div class="read-field">' + esc(lead.input?.website || '—') + '</div>' +
-          '<span class="field-label">Notes</span><div class="read-field" style="white-space:pre-wrap;">' + esc(lead.input?.notes || '—') + '</div>' +
-          '<span class="field-label">Source</span><div class="read-field">' + esc(lead.source) + '</div>' +
-        '</div>' +
-        '<div class="lead-detail-section">' +
-          '<h3>Enriched (editable)</h3>' +
-          '<span class="field-label">Business Name</span>' +
-          '<input id="leadBizName" type="text" value="' + esc(enriched.business_name || '') + '" placeholder="Skill output drops in here">' +
-          '<span class="field-label">FAQ / Knowledge Base</span>' +
-          '<textarea id="leadFaq" placeholder="Q. ...\nA. ...">' + esc(enriched.faqKnowledgeBase || '') + '</textarea>' +
-          '<div class="lead-action-row">' +
-            '<button class="lead-btn-save" onclick="saveLeadEdits(\'' + esc(lead._id) + '\')">Save edits</button>' +
-            '<button class="lead-btn-reenrich" onclick="reEnrichLead(\'' + esc(lead._id) + '\')" ' + (isTerminal ? 'disabled' : '') + '>Re-enrich</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="lead-detail-section" style="margin-top:1rem;">' +
-        '<h3>Promote to Agent</h3>' +
-        '<p style="font-size:0.78rem;color:#6b7280;margin:0 0 0.4rem;">Pick one of your saved drafts as the template. Business name + FAQ above flow into the new agent.</p>' +
-        '<select id="leadDraftPicker">' + draftOptions + '</select>' +
-        suggestedHint +
-        '<div class="lead-action-row">' +
-          '<button class="lead-btn-promote" onclick="promoteLead(\'' + esc(lead._id) + '\')" ' + promoteDisabled + '>Promote to Agent</button>' +
-          '<button class="lead-btn-dismiss" onclick="dismissLead(\'' + esc(lead._id) + '\')" ' + (isTerminal ? 'disabled' : '') + '>Dismiss</button>' +
-        '</div>' +
+      '<div style="display:flex;flex-direction:column;gap:0.85rem;margin-top:0.75rem;">' +
+        originalPanel +
+        aiFeedPanel +
+        enrichedPanel +
+        promotePanel +
       '</div>';
   }
 

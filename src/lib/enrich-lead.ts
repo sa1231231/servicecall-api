@@ -13,7 +13,17 @@ export interface EnrichmentInput {
   notes?: string;
 }
 
-export interface EnrichmentSuccess {
+/** Conversation transcript captured for every call. Surfaced in the
+ *  dashboard's AI Feed panel so the operator can see exactly what was
+ *  sent and what came back, regardless of parse outcome. */
+export interface EnrichmentTranscript {
+  /** The user message we POSTed (output of `formatLeadAsUserMessage`). */
+  userMessage: string;
+  /** The text content of the model's reply (concatenated text blocks). */
+  rawResponse: string;
+}
+
+export interface EnrichmentSuccess extends EnrichmentTranscript {
   ok: true;
   business_name: string;
   faqKnowledgeBase: string;
@@ -23,14 +33,9 @@ export interface EnrichmentSuccess {
   extra: Record<string, unknown>;
 }
 
-export interface EnrichmentFailure {
+export interface EnrichmentFailure extends EnrichmentTranscript {
   ok: false;
   error: string;
-  /** Whatever text the model produced before parsing fell over. Surfacing
-   *  this in the UI lets the operator salvage partial output (e.g. when the
-   *  skill responds in prose because the input was too sparse) instead of
-   *  starting from a blank form. */
-  rawResponse?: string;
 }
 
 export type EnrichmentResult = EnrichmentSuccess | EnrichmentFailure;
@@ -116,10 +121,14 @@ const SKILL_NAME = "onboarding-to-config";
  * error so the caller can park the lead in `failed` status.
  */
 export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResult> {
+  const userMessage = formatLeadAsUserMessage(input);
+
   if (!config.ANTHROPIC_API_KEY) {
     return {
       ok: false,
       error: "Anthropic enrichment not configured — set ANTHROPIC_API_KEY.",
+      userMessage,
+      rawResponse: "",
     };
   }
 
@@ -132,26 +141,34 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
       error:
         "Could not load skill from disk: " +
         (err instanceof Error ? err.message : String(err)),
+      userMessage,
+      rawResponse: "",
     };
   }
 
   const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
-  const userText = formatLeadAsUserMessage(input);
 
   try {
     const result = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: buildSystemPrompt(skill),
-      messages: [{ role: "user", content: userText }],
+      messages: [{ role: "user", content: userMessage }],
     });
 
-    const text = extractText(result);
-    return parseEnrichmentResponse(text);
+    const rawResponse = extractText(result);
+    // Length-bounded log so we can correlate parser misses with what the
+    // model actually said in production without dumping full FAQs.
+    console.log(
+      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b: ${rawResponse.slice(0, 240)}`,
+    );
+    return parseEnrichmentResponse(rawResponse, userMessage);
   } catch (err) {
     return {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
+      userMessage,
+      rawResponse: "",
     };
   }
 }
@@ -190,15 +207,19 @@ export function extractText(result: unknown): string {
 /** Parse the skill's JSON envelope. Tolerates leading/trailing whitespace,
  *  accidental ```json fences, and either snake_case or camelCase field
  *  names — the skill emits `businessName` but we accept `business_name`
- *  too for symmetry with other internal call sites. On any failure path
- *  the raw text is preserved on `rawResponse` so the UI can surface it. */
-export function parseEnrichmentResponse(text: string): EnrichmentResult {
+ *  too for symmetry with other internal call sites. The raw model text
+ *  and the user message we sent are returned on every result so the UI
+ *  can render an AI Feed regardless of parse outcome. */
+export function parseEnrichmentResponse(
+  text: string,
+  userMessage = "",
+): EnrichmentResult {
   const stripped = text
     .replace(/^\s*```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/i, "")
     .trim();
   if (!stripped) {
-    return { ok: false, error: "skill response was empty" };
+    return { ok: false, error: "skill response was empty", userMessage, rawResponse: text };
   }
   let obj: unknown;
   try {
@@ -209,6 +230,7 @@ export function parseEnrichmentResponse(text: string): EnrichmentResult {
       error:
         "could not parse JSON from skill response: " +
         (err instanceof Error ? err.message : String(err)),
+      userMessage,
       rawResponse: text,
     };
   }
@@ -216,6 +238,7 @@ export function parseEnrichmentResponse(text: string): EnrichmentResult {
     return {
       ok: false,
       error: "skill response was not a JSON object",
+      userMessage,
       rawResponse: text,
     };
   }
@@ -230,6 +253,7 @@ export function parseEnrichmentResponse(text: string): EnrichmentResult {
     return {
       ok: false,
       error: "skill response missing businessName and faqKnowledgeBase",
+      userMessage,
       rawResponse: text,
     };
   }
@@ -246,7 +270,15 @@ export function parseEnrichmentResponse(text: string): EnrichmentResult {
   for (const [k, v] of Object.entries(o)) {
     if (!known.has(k)) extra[k] = v;
   }
-  return { ok: true, business_name, faqKnowledgeBase, templateName, extra };
+  return {
+    ok: true,
+    business_name,
+    faqKnowledgeBase,
+    templateName,
+    extra,
+    userMessage,
+    rawResponse: text,
+  };
 }
 
 function pickString(o: Record<string, unknown>, key: string): string {
