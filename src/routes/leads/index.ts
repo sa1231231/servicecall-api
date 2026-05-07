@@ -121,7 +121,7 @@ leadsRouter.get("/:id", async (req, res) => {
   res.json(lead);
 });
 
-/** Operator edit — typically the enriched fields after a QA pass. */
+/** Operator edit — original lead fields, enriched fields, or status. */
 leadsRouter.patch("/:id", async (req, res) => {
   const id = String(req.params.id);
   const lead = await getPendingLead(id);
@@ -135,6 +135,17 @@ leadsRouter.patch("/:id", async (req, res) => {
     return;
   }
   const updates: Parameters<typeof updatePendingLead>[1] = {};
+  // Editable original lead — sanitize so we don't store empty strings or
+  // unexpected fields. Name remains required (non-empty after trim) so
+  // the lead always has *something* to identify it by.
+  if (body.input && typeof body.input === "object") {
+    const sanitized = sanitizeInput(body.input);
+    if (!sanitized) {
+      res.status(400).json({ error: "Lead `input.name` cannot be empty" });
+      return;
+    }
+    updates.input = sanitized;
+  }
   if (body.enriched && typeof body.enriched === "object") {
     updates.enriched = {
       ...lead.enriched,

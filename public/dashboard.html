@@ -8057,15 +8057,24 @@
     const isTerminal = lead.status === 'promoted' || lead.status === 'dismissed';
     const promoteDisabled = isTerminal || !enriched.business_name || !enriched.faqKnowledgeBase ? 'disabled' : '';
 
-    // Panel 1 — Original Lead (read-only)
+    // Panel 1 — Original Lead (editable). Save persists; Re-enrich auto-
+    // saves these before re-running so the operator can edit + click
+    // Re-enrich without thinking about it.
     const originalPanel =
       '<div class="lead-detail-section">' +
-        '<h3>1. Original Lead</h3>' +
-        '<span class="field-label">Name</span><div class="read-field">' + esc(lead.input?.name || '') + '</div>' +
-        '<span class="field-label">Phone</span><div class="read-field">' + esc(lead.input?.phone || '—') + '</div>' +
-        '<span class="field-label">Website</span><div class="read-field">' + esc(lead.input?.website || '—') + '</div>' +
-        '<span class="field-label">Notes</span><div class="read-field" style="white-space:pre-wrap;">' + esc(lead.input?.notes || '—') + '</div>' +
+        '<h3>1. Original Lead <span style="font-weight:400;font-size:0.7rem;color:#777;text-transform:none;letter-spacing:0;">(editable — Re-enrich uses the saved values)</span></h3>' +
+        '<span class="field-label">Name</span>' +
+        '<input id="leadInputName" type="text" value="' + esc(lead.input?.name || '') + '" placeholder="Business or owner name (required)">' +
+        '<span class="field-label">Phone</span>' +
+        '<input id="leadInputPhone" type="text" value="' + esc(lead.input?.phone || '') + '" placeholder="+15551234567">' +
+        '<span class="field-label">Website</span>' +
+        '<input id="leadInputWebsite" type="text" value="' + esc(lead.input?.website || '') + '" placeholder="https://example.com">' +
+        '<span class="field-label">Notes</span>' +
+        '<textarea id="leadInputNotes" rows="3" placeholder="Anything else about this lead (vertical hint, prior call notes, etc.)">' + esc(lead.input?.notes || '') + '</textarea>' +
         '<span class="field-label">Source</span><div class="read-field">' + esc(lead.source) + '</div>' +
+        '<div class="lead-action-row">' +
+          '<button class="lead-btn-save" onclick="saveLeadInput(\'' + esc(lead._id) + '\')">Save lead info</button>' +
+        '</div>' +
       '</div>';
 
     // Panel 2 — AI Feed (system prompt + user message + response). Each
@@ -8205,8 +8214,8 @@
   }
 
   async function saveLeadEdits(id) {
-    const business_name = document.getElementById('leadBizName').value.trim();
-    const faqKnowledgeBase = document.getElementById('leadFaq').value;
+    const business_name = document.getElementById('leadBizName')?.value.trim() ?? '';
+    const faqKnowledgeBase = document.getElementById('leadFaq')?.value ?? '';
     try {
       const res = await fetch('/api/leads/' + encodeURIComponent(id), {
         method: 'PATCH',
@@ -8221,7 +8230,52 @@
     }
   }
 
+  // Persist edits to the Original Lead inputs (name/phone/website/notes).
+  // Called explicitly via the section's Save button AND silently from
+  // reEnrichLead so the operator can edit + click Re-enrich without an
+  // extra Save click.
+  async function saveLeadInput(id, opts) {
+    const nameEl = document.getElementById('leadInputName');
+    if (!nameEl) return; // detail panel isn't rendered (shouldn't happen)
+    const name = nameEl.value.trim();
+    if (!name) {
+      if (!opts?.silent) showToast('Lead name is required', 'error');
+      throw new Error('name required');
+    }
+    const input = {
+      name,
+      phone:   document.getElementById('leadInputPhone')?.value.trim() || undefined,
+      website: document.getElementById('leadInputWebsite')?.value.trim() || undefined,
+      notes:   document.getElementById('leadInputNotes')?.value.trim() || undefined,
+    };
+    try {
+      const res = await fetch('/api/leads/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      if (!opts?.silent) {
+        showToast('Lead info saved', 'success');
+        await loadPendingLeads();
+      }
+    } catch (err) {
+      if (!opts?.silent) showToast('Save failed: ' + err.message, 'error');
+      throw err;
+    }
+  }
+
   async function reEnrichLead(id) {
+    // Silently save any pending edits to BOTH the Original Lead and the
+    // Enriched panel before re-running so the new enrichment uses the
+    // operator's latest values. Failures bubble up as a toast and abort
+    // the re-enrich (no point running with stale input).
+    try {
+      await saveLeadInput(id, { silent: true });
+    } catch (err) {
+      showToast('Cannot re-enrich: ' + err.message, 'error');
+      return;
+    }
     try {
       const res = await fetch('/api/leads/' + encodeURIComponent(id) + '/re-enrich', { method: 'POST' });
       if (!res.ok) throw new Error((await res.json()).error || 'Failed');
