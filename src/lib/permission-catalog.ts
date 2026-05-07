@@ -1,11 +1,25 @@
-// Human-readable map of every permission to the routes and UI it gates.
-// Surfaced in the dashboard's "Permission Reference" panel so admins can
-// see exactly what each role's checkbox controls before delegating.
+// Human-readable map of every legacy `requirePermission(...)` permission
+// to the routes and UI it gates. Surfaced in the dashboard's "Permission
+// Reference" panel.
 //
-// The companion test in `__tests__/permission-catalog.test.ts` walks the
-// dashboardApiRouter at runtime and asserts every `requirePermission(...)`
-// key is present in this catalog (and vice versa) — so a future refactor
-// that adds a new gated route without updating the catalog fails CI.
+// IMPORTANT — SCOPE: this catalog documents the **legacy** flat-permission
+// model only (`PERMISSION_DEFS` in `users.ts`). The codebase has largely
+// migrated to the feature/level model in `feature-permissions.ts` + the
+// `requireFeature(feature, level)` middleware. New routes should be gated
+// with `requireFeature(...)`, not `requirePermission(...)`, and the
+// dashboard's role-management matrix is now driven by FEATURES /
+// SEED_FEATURE_DEFAULTS — not by this catalog.
+//
+// What this catalog still gates: a few legacy `requirePermission("...")`
+// call sites that haven't been migrated to the new model.
+//
+// What checks this against drift:
+//   - `__tests__/permission-catalog.test.ts` — verifies every key in
+//     `PERMISSION_DEFS` (the legacy enum in `users.ts`) appears here and
+//     vice versa. It walks the static array, NOT the live router.
+//   - `__tests__/feature-permission-drift.test.ts` — separate test that
+//     guards the NEW model: every `requireFeature(...)` call site uses a
+//     known FEATURE_KEY and a valid Level.
 
 export interface PermissionEntry {
   key: string;

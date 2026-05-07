@@ -1,4 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  FEATURE_KEYS,
+  FEATURE_BY_KEY,
+  ROLES,
+  type Role,
+  hasFeatureLevel,
+  SEED_FEATURE_DEFAULTS,
+} from "../feature-permissions.js";
 
 const { mockFind, mockFindOne, mockUpdateOne } = vi.hoisted(() => ({
   mockFind: vi.fn(),
@@ -109,5 +117,127 @@ describe("setRoleDefaults", () => {
     await setRoleDefaults("viewer", { billing: "read" }, "alice");
     expect(mockUpdateOne.mock.calls[0][2]).toEqual({ upsert: true });
     expect(getCachedRoleDefaults("viewer").billing).toBe("read");
+  });
+});
+
+// ── Round-trip: SEED defaults ↔ requireFeature middleware ──────────────────
+//
+// The role-management matrix the dashboard renders is derived from
+// SEED_FEATURE_DEFAULTS (the per-role baseline, used until an admin
+// stores a custom map). These tests pin the promises that matrix
+// makes — that the seed for each role actually translates into the
+// allow/deny behavior `requireFeature(...)` will produce when the
+// session-auth layer copies the perms onto `req.user.featurePermissions`.
+
+describe("seed defaults — generic round-trip", () => {
+  // For every role × feature with a non-`none` seed level, the user
+  // must be able to call `requireFeature(feature, seedLevel)` and pass.
+  it.each(ROLES)("%s: every non-none seed level passes its own gate", (role: Role) => {
+    const perms = SEED_FEATURE_DEFAULTS[role];
+    for (const f of FEATURE_KEYS) {
+      const lvl = perms[f];
+      if (lvl === "none") continue;
+      expect(
+        hasFeatureLevel(perms, f, lvl),
+        `${role} seed has ${f}:${lvl} but hasFeatureLevel said false`,
+      ).toBe(true);
+    }
+  });
+
+  // For every role × feature with a `none` seed level, every gate should reject.
+  it.each(ROLES)("%s: `none`-seeded features reject every required level", (role: Role) => {
+    const perms = SEED_FEATURE_DEFAULTS[role];
+    for (const f of FEATURE_KEYS) {
+      if (perms[f] !== "none") continue;
+      expect(hasFeatureLevel(perms, f, "read")).toBe(false);
+      expect(hasFeatureLevel(perms, f, "write")).toBe(false);
+      expect(hasFeatureLevel(perms, f, "manage")).toBe(false);
+    }
+  });
+
+  // The matrix should exhibit hierarchy: super_admin ≥ admin ≥ operator ≥ viewer
+  // for every feature that's NOT marked super_admin-only. (super_admin-only
+  // features are zeroed for admin/operator/viewer by design, which fits the
+  // hierarchy trivially.)
+  it("super_admin level >= admin level for every non-super-admin-only feature", () => {
+    const sa = SEED_FEATURE_DEFAULTS.super_admin;
+    const a = SEED_FEATURE_DEFAULTS.admin;
+    const RANK = { none: 0, read: 1, write: 2, manage: 3 };
+    for (const f of FEATURE_KEYS) {
+      if (FEATURE_BY_KEY[f].superAdminOnly) continue;
+      expect(
+        RANK[sa[f]] >= RANK[a[f]],
+        `${f}: super_admin=${sa[f]} should be >= admin=${a[f]}`,
+      ).toBe(true);
+    }
+  });
+
+  it("admin level >= operator level for every feature", () => {
+    const a = SEED_FEATURE_DEFAULTS.admin;
+    const o = SEED_FEATURE_DEFAULTS.operator;
+    const RANK = { none: 0, read: 1, write: 2, manage: 3 };
+    for (const f of FEATURE_KEYS) {
+      expect(
+        RANK[a[f]] >= RANK[o[f]],
+        `${f}: admin=${a[f]} should be >= operator=${o[f]}`,
+      ).toBe(true);
+    }
+  });
+
+  it("operator level >= viewer level for every feature", () => {
+    const o = SEED_FEATURE_DEFAULTS.operator;
+    const v = SEED_FEATURE_DEFAULTS.viewer;
+    const RANK = { none: 0, read: 1, write: 2, manage: 3 };
+    for (const f of FEATURE_KEYS) {
+      expect(
+        RANK[o[f]] >= RANK[v[f]],
+        `${f}: operator=${o[f]} should be >= viewer=${v[f]}`,
+      ).toBe(true);
+    }
+  });
+});
+
+// ── Specific matrix promises (the security-critical pins) ─────────────────
+//
+// These are the assertions the matrix UI implies but the generic
+// hierarchy tests above don't enforce. If any of these flips, an
+// operator just lost a security boundary and we want to know.
+
+describe("seed defaults — specific security pins", () => {
+  it("viewer never has write or manage on any feature", () => {
+    const v = SEED_FEATURE_DEFAULTS.viewer;
+    for (const f of FEATURE_KEYS) {
+      expect(
+        v[f] === "none" || v[f] === "read",
+        `viewer.${f}=${v[f]} — viewer should never have write/manage`,
+      ).toBe(true);
+    }
+  });
+
+  it("admin gets `none` on every super_admin-only feature", () => {
+    const a = SEED_FEATURE_DEFAULTS.admin;
+    for (const f of FEATURE_KEYS) {
+      if (FEATURE_BY_KEY[f].superAdminOnly) {
+        expect(a[f]).toBe("none");
+      }
+    }
+  });
+
+  it("operator can write to permanent_delete (restore) but cannot manage (permanent delete)", () => {
+    const o = SEED_FEATURE_DEFAULTS.operator;
+    expect(hasFeatureLevel(o, "permanent_delete", "write")).toBe(true);
+    expect(hasFeatureLevel(o, "permanent_delete", "manage")).toBe(false);
+  });
+
+  it("operator cannot write to global_settings / sms_templates / data_point_defaults / audit_log / billing", () => {
+    const o = SEED_FEATURE_DEFAULTS.operator;
+    for (const f of ["global_settings", "sms_templates", "data_point_defaults", "audit_log", "billing"]) {
+      // These features may be defined or not; only assert when they exist.
+      if (!FEATURE_BY_KEY[f]) continue;
+      expect(
+        hasFeatureLevel(o, f, "write"),
+        `operator.${f}=${o[f]} — operator should NOT have write here`,
+      ).toBe(false);
+    }
   });
 });
