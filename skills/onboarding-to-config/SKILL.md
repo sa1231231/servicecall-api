@@ -30,37 +30,24 @@ The dominant input shape is a lead form row from Facebook Ads or a similar captu
 
 If a transcript IS provided (rare), it overrides anything found via search. Otherwise, search is the source of truth.
 
-## Phone-Number-First Discovery
+## Pre-Search Context Is The Source Of Truth
 
-The phone number is the most reliable identifier. Always start there.
+Every prompt for this skill arrives with a **"Pre-search context (Brave Search results)"** block. Our backend runs Brave web searches against the lead's phone number (in three formats) plus the name and website before invoking the model. The block contains the raw hits — title, URL, description.
 
-### Step 1: Search the phone number
+**Read those results first.** They're the authoritative discovery output for this lead. Do not rely on internal knowledge of phone-number-to-business mappings; you don't have it. The pre-search block does.
 
-Use the `web_search` tool to look up the phone number. A typical query: `"+19739781542"` or `"973-978-1542 business"`. Phone numbers are deduplicated across the web — if a business uses that line, it'll appear in directory listings, Google Maps, Yelp, BBB, the business's own website, etc.
+### Picking the right hit
 
-You're looking for:
-- Business name (canonical, as it appears on Google Maps / their site)
-- Vertical / what they do (matches a template)
-- Service area / location
-- Any FAQ-relevant facts: hours, services, pricing notes, after-hours behavior, payment methods, scheduling style
+1. **Phone-number queries are the strongest signal.** If a query like `"973-978-1542"` or `"(973) 978-1542"` returned a business listing, that's the business — even if the description is a snippet from Yelp/Google/BBB rather than the canonical site.
+2. **Cross-reference the name.** The lead's `name` field is often the owner or a partial business name. If the phone-matched listing says "Super Mario Auto Repair & Towing" and the lead `name` is "Mario Mina", trust the listing — the form was filled out by the owner.
+3. **Use name + location queries as a backup.** If phone-number queries returned no results, look at the `[name] business` query results. A hit in the right area code (973 = NJ, 415 = SF, etc.) with a plausibly-related name is a usable match — just flag the verification gap inside the FAQ.
+4. **Trust verified-listing signals.** Yelp / Google Business Profile / BBB / the business's own website > random directory aggregators. Pick the strongest source when multiple disagree.
 
-### Step 2: Cross-reference
+### When to use DRAFT
 
-If the lead's `name` field doesn't match what the search returned (e.g., lead name is "Mario Mina" but the phone resolves to "Super Mario Auto Repair & Towing"), trust the phone-number-derived name — that's the business identity. The lead-form name is often the owner or whoever filled out the form, not the business itself.
+Reserve the DRAFT path **only when every pre-search query came back empty**. If at least one query produced a relevant hit, commit to that business in the JSON — even if some details (hours, full address) need verification, just note the gaps in the FAQ. DRAFT is for "we found nothing"; partial info is not DRAFT.
 
-If multiple businesses come up for the same number (rare — usually means an answering service or a dead number), pick the one with the strongest signal (verified Google Business Profile > Yelp listing > scraped directory entry). Note the ambiguity in the FAQ if relevant.
-
-### Step 3: Fall back gracefully
-
-If the phone search returns nothing (number is too new, unlisted, or only appears on the lead form itself):
-
-- Try the name + likely location, e.g., `"Mario Mina HVAC New Jersey"` based on the area code's region
-- Try the website if one was provided
-- If still nothing, output the JSON with what you have. Set `businessName` to the lead's name and `templateName` to "" (empty). Put a clear note at the top of the FAQ:
-
-  > "DRAFT — could not identify the business via search. Operator should hand-fill this before promoting."
-
-Always emit the JSON envelope even when discovery fails — the operator can edit and promote from there.
+If the pre-search block is missing entirely (rare — would indicate a backend bug), output a DRAFT with the lead-form `name` as `businessName` and `templateName: ""`.
 
 ## Output Shape
 
@@ -102,21 +89,21 @@ Do NOT trigger for:
 
 ## Pipeline
 
-### Step 1: Search by phone number
+### Step 1: Read the pre-search context
 
-Always the first step when a phone number is in the lead. Use `web_search` with the number in quotes. Capture the canonical business name, vertical, location, hours, services.
+Always the first step. Look at every query result block in the "Pre-search context" section. Identify the strongest hit (phone-number-matched > name+area-code-matched > website-matched). Capture: canonical business name, vertical, location, hours, services, payment style.
 
-### Step 2: Cross-reference and pick the template
+### Step 2: Pick the template
 
-Match the business to a template based on the search-derived vertical. If unclear, leave `templateName` blank.
+Match the resolved business to a template based on the vertical Brave returned. If the vertical doesn't fit any template in the catalog, set `templateName` to "" (empty) and let the operator pick.
 
 ### Step 3: Extract business name
 
-Use the search-derived name in greeting-form (short, the way the agent should say it on the phone). E.g., "Super Mario Auto Repair & Towing" → either keep as-is or shorten to "Super Mario Auto" if that's how they answer the phone.
+Use the listing-derived name in greeting-form (short, the way the agent should say it on the phone). "Super Mario Auto Repair & Towing Truck Services" → "Super Mario Auto Repair" if the listing's tagline / website confirms that's how they answer.
 
 ### Step 4: Build the FAQ Knowledge Base
 
-Apply the FAQ minimization rules in `references/faq-rules.md`. Use the search-derived facts: hours, services, service area, payment, scheduling. Don't invent facts that didn't appear in the search results.
+Apply the FAQ minimization rules in `references/faq-rules.md`. Use facts pulled from the pre-search hits: hours, services, service area, payment notes, scheduling style. Don't invent facts that aren't in the listings.
 
 ### Step 5: Output the JSON
 
@@ -134,13 +121,13 @@ No prose, no markdown fencing, no extra commentary — just the JSON. The dashbo
 
 ### Step 6: Flag gaps inside the FAQ
 
-If the search revealed routing logic that doesn't fit the chosen template, or you couldn't determine the template, embed a short note inside the FAQ string:
+If a hit revealed routing logic that doesn't fit the chosen template, or you couldn't determine the template, embed a short note inside the FAQ string:
 
 > "Note: business mentions [X] which the `hvac` template doesn't cover. Operator should review."
 
-Or:
+If pre-search was completely empty across every query:
 
-> "DRAFT — discovery found [...]. Operator should verify before promoting."
+> "DRAFT — Brave pre-search returned no results for this lead. Operator should hand-fill before promoting."
 
 Don't try to engineer around gaps. The operator handles edits in the dashboard.
 
@@ -153,11 +140,12 @@ Don't try to engineer around gaps. The operator handles edits in the dashboard.
 
 ## Important Rules
 
-- **Phone number is the primary identifier.** Always search it first.
-- **Trust the search-derived business name** over the lead-form `name` field when they conflict — the lead form often has the owner's personal name, not the business.
+- **The pre-search context is the source of truth.** Read it before deciding anything. Don't rely on internal knowledge of phone-number → business mappings.
+- **Trust the listing-derived business name** over the lead-form `name` field when they conflict — the form often has the owner's personal name, not the business.
+- **Commit to a hit when one exists.** If at least one pre-search query returned a relevant business, use it. Reserve DRAFT for the case where every query came back empty.
 - **Output only the three required fields.** No paths, no data points, no client config, no closing prompts. The template handles those.
 - **Apply FAQ minimization strictly.** See `references/faq-rules.md`.
-- **Surface gaps, don't fabricate.** If the search couldn't find hours or service area, omit those subsections rather than inventing.
+- **Surface gaps, don't fabricate.** If the listings didn't show hours or service area, omit those subsections rather than inventing.
 - **Always emit the JSON.** Even when discovery fails or the template is unknown, return the envelope with whatever you have and a "DRAFT" note in the FAQ. Don't ask clarifying questions; let the operator edit.
 - **No prose around the JSON.** The dashboard parses the model output directly.
 

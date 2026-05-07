@@ -45,4 +45,10 @@ export const config = {
     // Optional: if unset, intake still accepts rows but they land in
     // `failed` status so the operator can fill in fields manually.
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
+    // Brave Search API — used as the primary lookup engine for lead
+    // enrichment. Phone-number searches resolve via Brave's index
+    // (better business-listing coverage than Anthropic's web_search),
+    // and the results are baked into the user message before we hand
+    // off to the skill. Required at boot.
+    BRAVE_API_KEY: requireEnv("BRAVE_API_KEY"),
 };

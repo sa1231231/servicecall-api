@@ -23,4 +23,5 @@ export declare const config: {
     R2_BUCKET: string;
     ROOT_PASSWORD: string;
     ANTHROPIC_API_KEY: string;
+    BRAVE_API_KEY: string;
 };

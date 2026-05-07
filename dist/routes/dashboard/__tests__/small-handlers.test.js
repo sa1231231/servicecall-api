@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-const { mockGetClientDocument, mockUpdateClientField, mockUpdateClientFields, mockGetCallLogsByClient, mockSyncRetellDisplayLabels, } = vi.hoisted(() => ({
+const { mockGetClientDocument, mockUpdateClientField, mockUpdateClientFields, mockGetCallLogsByClient, mockSyncRetellDisplayLabels, mockAuditFindOne, } = vi.hoisted(() => ({
     mockGetClientDocument: vi.fn(),
     mockUpdateClientField: vi.fn(),
     mockUpdateClientFields: vi.fn(),
     mockGetCallLogsByClient: vi.fn(),
     mockSyncRetellDisplayLabels: vi.fn(),
+    mockAuditFindOne: vi.fn(),
 }));
 vi.mock("../../../config/client-store.js", () => ({
     getClientDocument: (...a) => mockGetClientDocument(...a),
@@ -13,6 +14,13 @@ vi.mock("../../../config/client-store.js", () => ({
 }));
 vi.mock("../../../lib/call-log.js", () => ({
     getCallLogsByClient: (...a) => mockGetCallLogsByClient(...a),
+}));
+vi.mock("../../../lib/db.js", () => ({
+    getDb: () => ({
+        collection: (name) => ({
+            findOne: (...a) => mockAuditFindOne(name, ...a),
+        }),
+    }),
 }));
 vi.mock("../../../config.js", () => ({ config: { RETELL_API_KEY: "test_key" } }));
 vi.mock("retell-sdk", () => ({ default: class {
@@ -37,12 +45,14 @@ function makeReq(opts) {
 beforeEach(() => {
     for (const m of [
         mockGetClientDocument, mockUpdateClientField, mockUpdateClientFields,
-        mockGetCallLogsByClient, mockSyncRetellDisplayLabels,
+        mockGetCallLogsByClient, mockSyncRetellDisplayLabels, mockAuditFindOne,
     ])
         m.mockReset();
     mockSyncRetellDisplayLabels.mockResolvedValue({
         agentNameUpdated: true, nicknameUpdated: [], nicknameErrors: [],
     });
+    // Default: no audit entry. Tests that need a last_edit override per-case.
+    mockAuditFindOne.mockResolvedValue(null);
 });
 describe("getAgentHandler", () => {
     it("returns 404 when slug not found", async () => {
@@ -62,6 +72,46 @@ describe("getAgentHandler", () => {
         const res = makeRes();
         await getAgentHandler(makeReq({ params: { slug: "acme" } }), res);
         expect(res._status).toBe(500);
+    });
+    it("attaches last_edit when audit_log has a recent entry for the slug", async () => {
+        mockGetClientDocument.mockResolvedValue({ name: "Acme" });
+        const ts = new Date("2026-04-01T12:00:00Z");
+        mockAuditFindOne.mockResolvedValue({
+            username: "alice", action: "save_and_publish", timestamp: ts,
+        });
+        const res = makeRes();
+        await getAgentHandler(makeReq({ params: { slug: "acme" } }), res);
+        expect(res._status).toBe(200);
+        expect(res._json.last_edit).toEqual({
+            username: "alice", action: "save_and_publish", timestamp: ts,
+        });
+        // Audit query must be scoped to the slug + slash prefix.
+        const callArgs = mockAuditFindOne.mock.calls[0];
+        expect(callArgs[0]).toBe("audit_log");
+        const filter = callArgs[1];
+        const regex = filter.target.$regex;
+        expect(regex).toBeInstanceOf(RegExp);
+        expect(regex.test("acme")).toBe(true);
+        expect(regex.test("acme/agent_abc")).toBe(true);
+        expect(regex.test("other-slug")).toBe(false);
+    });
+    it("omits last_edit when no audit entry matches", async () => {
+        mockGetClientDocument.mockResolvedValue({ name: "Acme" });
+        mockAuditFindOne.mockResolvedValue(null);
+        const res = makeRes();
+        await getAgentHandler(makeReq({ params: { slug: "acme" } }), res);
+        expect(res._status).toBe(200);
+        expect(res._json.last_edit).toBeUndefined();
+    });
+    it("falls through cleanly when the audit_log query throws", async () => {
+        mockGetClientDocument.mockResolvedValue({ name: "Acme" });
+        mockAuditFindOne.mockRejectedValue(new Error("audit collection unavailable"));
+        const spy = vi.spyOn(console, "warn").mockImplementation(() => { });
+        const res = makeRes();
+        await getAgentHandler(makeReq({ params: { slug: "acme" } }), res);
+        expect(res._status).toBe(200); // Detail page must not 500 on enrichment failure.
+        expect(res._json.last_edit).toBeUndefined();
+        spy.mockRestore();
     });
 });
 describe("getCallsHandler", () => {

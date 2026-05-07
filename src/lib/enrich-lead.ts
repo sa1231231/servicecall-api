@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
+import { preSearchLead, formatPreSearch, type PreSearchResult } from "./brave-search.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,7 +130,20 @@ const SKILL_NAME = "onboarding-to-config";
  * error so the caller can park the lead in `failed` status.
  */
 export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResult> {
-  const userMessage = formatLeadAsUserMessage(input);
+  // Pre-search via Brave runs on every call — it's the primary lookup
+  // engine for "phone number → business" since Anthropic's web_search
+  // index has poor coverage of business listings. Results are baked
+  // into the user message so the skill reads facts off a structured
+  // block instead of guessing from training data.
+  let preSearch: PreSearchResult = { searches: [] };
+  try {
+    preSearch = await preSearchLead(input);
+  } catch (err) {
+    console.warn(
+      `[enrich-lead] Brave pre-search failed for ${input.name}: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+  const userMessage = formatLeadAsUserMessage(input, preSearch);
 
   if (!config.ANTHROPIC_API_KEY) {
     return {
@@ -162,30 +176,20 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
   const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
 
   try {
-    // Server-managed web search lets the skill look up the lead by phone
-    // number / business name during the same call and weave the result
-    // into the JSON config. The API runs the tool transparently and
-    // returns the final text — we don't have to handle multi-turn here.
+    // No server-side tools — the skill consumes the Brave results
+    // baked into the user message and emits the JSON directly. Cheaper,
+    // faster, and the response is deterministic on a fixed pre-search.
     const result = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
-      tools: [
-        {
-          type: "web_search_20250305" as any,
-          name: "web_search",
-          max_uses: 5,
-        } as any,
-      ],
-    } as any);
+    });
 
     const rawResponse = extractText(result);
     const rawContentBlocks = summarizeContentBlocks(result);
-    // Length-bounded log so we can correlate parser misses with what the
-    // model actually said in production without dumping full FAQs.
     console.log(
-      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, blocks=${rawContentBlocks.slice(0, 120)}…`,
+      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, brave-queries=${preSearch.searches.length}`,
     );
     return parseEnrichmentResponse(rawResponse, userMessage, systemPrompt, rawContentBlocks);
   } catch (err) {
@@ -200,20 +204,30 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
   }
 }
 
-/** Hand-shaped user message that matches the skill's trigger phrasing. */
-export function formatLeadAsUserMessage(input: EnrichmentInput): string {
+/** Hand-shaped user message that matches the skill's trigger phrasing.
+ *  Includes the Brave pre-search results inline so the skill can read
+ *  business facts off concrete listings instead of guessing. */
+export function formatLeadAsUserMessage(
+  input: EnrichmentInput,
+  preSearch?: PreSearchResult,
+): string {
   const lines = [
     "Onboard this client and produce a Service Call Saver config.",
     "",
-    "Lead info:",
+    "## Lead info",
     `- Name / Business: ${input.name}`,
   ];
   if (input.phone) lines.push(`- Phone: ${input.phone}`);
   if (input.website) lines.push(`- Website: ${input.website}`);
   if (input.notes) lines.push(`- Notes: ${input.notes}`);
+
+  if (preSearch && preSearch.searches.length > 0) {
+    lines.push("", formatPreSearch(preSearch));
+  }
+
   lines.push(
     "",
-    "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Produce a best-effort JSON now, even if you have to infer the vertical from the name (e.g., \"Mario's HVAC\" → hvac template). If you genuinely cannot determine the templateName, leave it as an empty string — but still emit the JSON.",
+    "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Use the pre-search context above as the primary source of truth: if a search hit identifies a business in the right area code with a name that's plausibly related to the lead's name, use it (the lead-form `name` is often the owner or a partial business name, not the full business). Reserve DRAFT for when every pre-search query came back empty.",
     "",
     "Return ONLY the JSON config (businessName, faqKnowledgeBase, templateName) — no prose, no markdown fencing.",
   );
