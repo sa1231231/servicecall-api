@@ -260,6 +260,69 @@ describe("PATCH /api/leads/:id", () => {
       enriched: { business_name: "New", faqKnowledgeBase: "Old FAQ" },
     });
   });
+
+  // The dashboard's Editable Original Lead panel sends `input: {...}` so an
+  // operator can correct a typo before re-enriching. The route sanitizes
+  // and patches the input field on the lead doc.
+  it("updates the editable original-lead input via PATCH", async () => {
+    mockGetPendingLead.mockResolvedValue({ _id: "lead1", input: { name: "Original" } });
+    mockUpdatePendingLead.mockResolvedValue({});
+    const res = makeRes();
+    await runRoute("patch", "/:id", makeReq({
+      params: { id: "lead1" },
+      body: { input: { name: "Edited Name", phone: "+15558889999", website: "edited.com" } },
+    }), res);
+    expect(res._status).toBe(200);
+    expect(mockUpdatePendingLead).toHaveBeenCalledWith("lead1", {
+      input: { name: "Edited Name", phone: "+15558889999", website: "edited.com" },
+    });
+  });
+
+  it("rejects PATCH input with empty / whitespace name (sanitizer-enforced)", async () => {
+    mockGetPendingLead.mockResolvedValue({ _id: "lead1", input: { name: "Original" } });
+    const res = makeRes();
+    await runRoute("patch", "/:id", makeReq({
+      params: { id: "lead1" },
+      body: { input: { name: "   ", phone: "+15558889999" } },
+    }), res);
+    expect(res._status).toBe(400);
+    expect(res._json.error).toMatch(/input\.name/);
+    expect(mockUpdatePendingLead).not.toHaveBeenCalled();
+  });
+
+  it("trims whitespace and drops empty optional fields when PATCH-ing input", async () => {
+    mockGetPendingLead.mockResolvedValue({ _id: "lead1", input: { name: "Original" } });
+    mockUpdatePendingLead.mockResolvedValue({});
+    await runRoute("patch", "/:id", makeReq({
+      params: { id: "lead1" },
+      body: { input: { name: "  Edited  ", phone: "  +15558889999  ", website: "", notes: "   " } },
+    }), makeRes());
+    expect(mockUpdatePendingLead).toHaveBeenCalledWith("lead1", {
+      input: { name: "Edited", phone: "+15558889999" },
+    });
+  });
+
+  it("PATCH input + enriched + status in one call applies all three", async () => {
+    mockGetPendingLead.mockResolvedValue({
+      _id: "lead1",
+      input: { name: "Old" },
+      enriched: { faqKnowledgeBase: "old faq" },
+    });
+    mockUpdatePendingLead.mockResolvedValue({});
+    await runRoute("patch", "/:id", makeReq({
+      params: { id: "lead1" },
+      body: {
+        input: { name: "New" },
+        enriched: { business_name: "Acme" },
+        status: "ready",
+      },
+    }), makeRes());
+    expect(mockUpdatePendingLead).toHaveBeenCalledWith("lead1", {
+      input: { name: "New" },
+      enriched: { faqKnowledgeBase: "old faq", business_name: "Acme" },
+      status: "ready",
+    });
+  });
 });
 
 // ── /:id/re-enrich ─────────────────────────────────────────────────────────
@@ -479,5 +542,123 @@ describe("POST /api/leads/intake", () => {
       body: { name: "Acme" },
     }), res, leadsIntakeRouter);
     expect(res._status).toBe(201);
+  });
+});
+
+// ── AI Feed transcript stash (`runEnrichment`) ──────────────────────────────
+//
+// The dashboard's AI Feed panel renders the system prompt, user message,
+// raw response, and content blocks the model returned, so an operator can
+// see exactly what got sent and what came back — even on parse failure.
+// `runEnrichment` (in routes/leads/index.ts) stashes those four values into
+// `enriched.extra` under `_systemPrompt` / `_userMessage` / `_rawResponse` /
+// `_rawContentBlocks` keys. These tests drive intake POST and re-enrich,
+// flush the background promise, then inspect the persisted shape.
+
+describe("runEnrichment — AI Feed transcript stash", () => {
+  // Flush all pending microtasks (the promise that runs in the background
+  // after the route returns 201). We need a few ticks to clear because the
+  // helper does several awaits in sequence.
+  async function flushBackgroundEnrichment() {
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setImmediate(r));
+    }
+  }
+
+  const transcriptShape = {
+    systemPrompt: "SYSTEM_PROMPT_FROM_SKILL",
+    userMessage: "USER_MESSAGE_AS_FORMATTED",
+    rawResponse: '{"businessName":"Acme","faqKnowledgeBase":"Q?"}',
+    rawContentBlocks: '[{"type":"text","text":"..."}]',
+  };
+
+  it("stashes the AI Feed transcript under enriched.extra on success", async () => {
+    mockCreatePendingLead.mockResolvedValue({ _id: "lead1", source: "manual", status: "queued" });
+    mockEnrichLead.mockResolvedValue({
+      ok: true,
+      business_name: "Acme",
+      faqKnowledgeBase: "Q?",
+      extra: { business_type: "plumbing" },
+      ...transcriptShape,
+    });
+    await runRoute("post", "/", makeReq({ body: { name: "Acme" } }), makeRes());
+    await flushBackgroundEnrichment();
+
+    // First call sets status=enriching; the second is the result write.
+    const calls = mockUpdatePendingLead.mock.calls;
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    const finalCall = calls[calls.length - 1];
+    expect(finalCall[0]).toBe("lead1");
+    const final = finalCall[1];
+    expect(final.status).toBe("ready");
+    // The skill's `extra` AND the AI Feed transcript both land in extra.
+    expect(final.enriched.extra.business_type).toBe("plumbing");
+    expect(final.enriched.extra._systemPrompt).toBe("SYSTEM_PROMPT_FROM_SKILL");
+    expect(final.enriched.extra._userMessage).toBe("USER_MESSAGE_AS_FORMATTED");
+    expect(final.enriched.extra._rawResponse).toContain("businessName");
+    expect(final.enriched.extra._rawContentBlocks).toContain("text");
+  });
+
+  it("stashes the AI Feed transcript on parse-failure and merges with prior enriched fields", async () => {
+    mockCreatePendingLead.mockResolvedValue({ _id: "lead1", source: "manual", status: "queued" });
+    // Prior state: a previous enrichment succeeded, so enriched.business_name
+    // exists. The new attempt fails — we want the OLD business_name preserved
+    // and the new transcript stashed alongside.
+    mockGetPendingLead.mockResolvedValue({
+      _id: "lead1",
+      enriched: { business_name: "Prior Name", extra: { _userMessage: "OLD" } },
+    });
+    mockEnrichLead.mockResolvedValue({
+      ok: false,
+      error: "could not parse JSON from skill response",
+      ...transcriptShape,
+    });
+    await runRoute("post", "/", makeReq({ body: { name: "Acme" } }), makeRes());
+    await flushBackgroundEnrichment();
+
+    const finalCall = mockUpdatePendingLead.mock.calls.at(-1)!;
+    const final = finalCall[1];
+    expect(final.status).toBe("failed");
+    expect(final.enrichmentError).toMatch(/parse/i);
+    // Prior enriched fields survive — operator-edited business_name isn't lost.
+    expect(final.enriched.business_name).toBe("Prior Name");
+    // New transcript is in extra; old extra entries also survive.
+    expect(final.enriched.extra._systemPrompt).toBe("SYSTEM_PROMPT_FROM_SKILL");
+    expect(final.enriched.extra._userMessage).toBe("USER_MESSAGE_AS_FORMATTED");
+  });
+
+  it("re-enrich (POST /:id/re-enrich) also stashes the transcript", async () => {
+    mockGetPendingLead.mockResolvedValue({ _id: "lead1", input: { name: "Acme" } });
+    mockEnrichLead.mockResolvedValue({
+      ok: true,
+      business_name: "Acme",
+      faqKnowledgeBase: "Q?",
+      extra: {},
+      ...transcriptShape,
+    });
+    await runRoute("post", "/:id/re-enrich", makeReq({ params: { id: "lead1" } }), makeRes());
+    await flushBackgroundEnrichment();
+
+    const finalCall = mockUpdatePendingLead.mock.calls.at(-1)!;
+    const final = finalCall[1];
+    expect(final.status).toBe("ready");
+    expect(final.enriched.extra._userMessage).toBe("USER_MESSAGE_AS_FORMATTED");
+    expect(final.enriched.extra._rawContentBlocks).toContain("text");
+  });
+
+  it("flips status to `enriching` and clears prior error before the model call", async () => {
+    mockCreatePendingLead.mockResolvedValue({ _id: "lead1", source: "manual", status: "queued" });
+    mockEnrichLead.mockResolvedValue({
+      ok: true,
+      business_name: "X",
+      faqKnowledgeBase: "Y",
+      extra: {},
+      ...transcriptShape,
+    });
+    await runRoute("post", "/", makeReq({ body: { name: "X" } }), makeRes());
+    await flushBackgroundEnrichment();
+
+    const firstCall = mockUpdatePendingLead.mock.calls[0];
+    expect(firstCall[1]).toEqual({ status: "enriching", enrichmentError: undefined });
   });
 });

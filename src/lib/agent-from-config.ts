@@ -181,8 +181,8 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
   }
   // Find a unique slug. If the requested slug is taken, append -2, -3, ...
   // until we find a free one. Lets onboarding flows that derive slug from
-  // businessName (e.g. POST /agents/from-template) create multiple agents
-  // for businesses with the same name without manual disambiguation.
+  // businessName create multiple agents for businesses with the same name
+  // without manual disambiguation.
   const baseSlug = body.client.slug;
   let slug = baseSlug;
   let collisionCounter = 2;
