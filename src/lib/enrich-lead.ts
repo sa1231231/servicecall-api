@@ -4,6 +4,11 @@ import { fileURLToPath } from "url";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
 import { preSearchLead, formatPreSearch, type PreSearchResult } from "./brave-search.js";
+import {
+  preSearchLeadPlaces,
+  formatPlacesPreSearch,
+  type PlacesPreSearchResult,
+} from "./google-places.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -130,20 +135,24 @@ const SKILL_NAME = "onboarding-to-config";
  * error so the caller can park the lead in `failed` status.
  */
 export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResult> {
-  // Pre-search via Brave runs on every call — it's the primary lookup
-  // engine for "phone number → business" since Anthropic's web_search
-  // index has poor coverage of business listings. Results are baked
-  // into the user message so the skill reads facts off a structured
-  // block instead of guessing from training data.
+  // Pre-search runs on every call. Google Places (New) is the primary
+  // identifier source — it's backed by Google Business Profile data,
+  // which is where small service businesses actually live. Brave fills
+  // out long-tail web context (BBB, Yelp, news, the business's own
+  // site) that Places doesn't return. Run both in parallel.
   let preSearch: PreSearchResult = { searches: [] };
+  let placesSearch: PlacesPreSearchResult = { searches: [] };
   try {
-    preSearch = await preSearchLead(input);
+    [preSearch, placesSearch] = await Promise.all([
+      preSearchLead(input),
+      preSearchLeadPlaces(input),
+    ]);
   } catch (err) {
     console.warn(
-      `[enrich-lead] Brave pre-search failed for ${input.name}: ${err instanceof Error ? err.message : err}`,
+      `[enrich-lead] pre-search failed for ${input.name}: ${err instanceof Error ? err.message : err}`,
     );
   }
-  const userMessage = formatLeadAsUserMessage(input, preSearch);
+  const userMessage = formatLeadAsUserMessage(input, preSearch, placesSearch);
 
   if (!config.ANTHROPIC_API_KEY) {
     return {
@@ -189,7 +198,7 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
     const rawResponse = extractText(result);
     const rawContentBlocks = summarizeContentBlocks(result);
     console.log(
-      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, brave-queries=${preSearch.searches.length}`,
+      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, places=${placesSearch.searches.length}, brave=${preSearch.searches.length}`,
     );
     return parseEnrichmentResponse(rawResponse, userMessage, systemPrompt, rawContentBlocks);
   } catch (err) {
@@ -205,11 +214,13 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
 }
 
 /** Hand-shaped user message that matches the skill's trigger phrasing.
- *  Includes the Brave pre-search results inline so the skill can read
- *  business facts off concrete listings instead of guessing. */
+ *  Includes Google Places + Brave pre-search results inline so the
+ *  skill can read business facts off concrete listings instead of
+ *  guessing. Places hits go first because they're authoritative. */
 export function formatLeadAsUserMessage(
   input: EnrichmentInput,
   preSearch?: PreSearchResult,
+  placesSearch?: PlacesPreSearchResult,
 ): string {
   const lines = [
     "Onboard this client and produce a Service Call Saver config.",
@@ -221,13 +232,16 @@ export function formatLeadAsUserMessage(
   if (input.website) lines.push(`- Website: ${input.website}`);
   if (input.notes) lines.push(`- Notes: ${input.notes}`);
 
+  if (placesSearch && placesSearch.searches.length > 0) {
+    lines.push("", formatPlacesPreSearch(placesSearch));
+  }
   if (preSearch && preSearch.searches.length > 0) {
     lines.push("", formatPreSearch(preSearch));
   }
 
   lines.push(
     "",
-    "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Use the pre-search context above as the primary source of truth: if a search hit identifies a business in the right area code with a name that's plausibly related to the lead's name, use it (the lead-form `name` is often the owner or a partial business name, not the full business). Reserve DRAFT for when every pre-search query came back empty.",
+    "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Use the pre-search context above as the primary source of truth: **Google Places hits are authoritative** — if Places returned a business for the phone number, that's the business, full stop. Use the Brave block for supplementary context (hours, services, summaries). The lead-form `name` is often the owner or a partial business name; trust the Places-derived name when they conflict. Reserve DRAFT for when both Places AND Brave came back empty across every query.",
     "",
     "Return ONLY the JSON config (businessName, faqKnowledgeBase, templateName) — no prose, no markdown fencing.",
   );

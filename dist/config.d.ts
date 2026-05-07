@@ -24,4 +24,5 @@ export declare const config: {
     ROOT_PASSWORD: string;
     ANTHROPIC_API_KEY: string;
     BRAVE_API_KEY: string;
+    GOOGLE_PLACES_API_KEY: string;
 };
