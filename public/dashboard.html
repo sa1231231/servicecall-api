@@ -535,6 +535,24 @@
   .btn-group-menu button:disabled:hover { background: none; }
   .btn-group-menu button.danger { color: #dc2626; }
   .btn-group-menu button.danger:hover { background: #fef2f2; }
+  /* Nested submenu — used by "Send Instructions" inside Send to Client.
+     Positioned to the right of the parent menu so it doesn't push items
+     down. Visible only when the wrap has .open. */
+  .btn-group-menu .submenu-wrap { position: relative; }
+  .btn-group-menu .submenu-toggle {
+    display: flex !important; align-items: center; justify-content: space-between;
+  }
+  .btn-group-menu .submenu-toggle::after {
+    content: "▸"; color: #9ca3af; font-size: 0.7rem; margin-left: 0.5rem;
+  }
+  .btn-group-menu .submenu-wrap.open > .submenu-toggle { background: #f3f4f6; }
+  .btn-group-menu .submenu {
+    display: none; position: absolute; left: 100%; top: -0.25rem;
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 21; min-width: 180px;
+    padding: 0.25rem 0; margin-left: 2px;
+  }
+  .btn-group-menu .submenu-wrap.open .submenu { display: block; }
   .smoke-results {
     background: #fff; border-radius: 8px; padding: 1rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 1rem;
@@ -2871,25 +2889,29 @@
         `<button onclick="sendTestNotify('${esc(slug)}')" id="btnTestNotify">Send Test Notification</button>` +
       `</div></div>`;
 
-    const sendItems =
-      `<button onclick="sendWeeklyReport('${esc(slug)}')" id="btnReport">Weekly Report</button>` +
-      `<button onclick="requestReview('${esc(slug)}')" id="btnReview">Request Review</button>` +
-      `<button onclick="sendPaymentLink('${esc(slug)}')" id="btnPayment">Send Payment Link</button>` +
-      `<button onclick="sendPortalLink('${esc(slug)}')" id="btnPortal">Send Portal Link</button>`;
-    const sendMenu = p.send_comms
-      ? `<div class="btn-group"><button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send to Client &#9662;</button><div class="btn-group-menu">${sendItems}</div></div>`
-      : '';
-
-    // Setup-instructions dropdown — one item per configured carrier.
-    // Shown only when send_comms perm is granted AND at least one
-    // template exists (otherwise the dropdown would be empty/confusing).
+    // Setup-instructions submenu — one item per configured carrier.
+    // Nested inside the Send to Client dropdown so all client-facing
+    // sends live behind one toggle.
     const instructionsItems = globalSetupInstructions
       .filter((it) => it && it.id && it.label)
       .map((it) =>
         `<button onclick="sendInstructions('${esc(slug)}','${esc(it.id)}',this)">${esc(it.label)}</button>`
       ).join('');
-    const instructionsMenu = p.send_comms && instructionsItems
-      ? `<div class="btn-group"><button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send Instructions &#9662;</button><div class="btn-group-menu">${instructionsItems}</div></div>`
+    const instructionsSubmenu = instructionsItems
+      ? `<div class="submenu-wrap">` +
+          `<button class="submenu-toggle" onclick="toggleSubmenu(event, this)">Send Instructions</button>` +
+          `<div class="submenu">${instructionsItems}</div>` +
+        `</div>`
+      : `<button disabled style="color:#aaa;" title="Add carriers in Settings → Templates → Setup Instructions">Send Instructions (none configured)</button>`;
+
+    const sendItems =
+      `<button onclick="sendWeeklyReport('${esc(slug)}')" id="btnReport">Weekly Report</button>` +
+      `<button onclick="requestReview('${esc(slug)}')" id="btnReview">Request Review</button>` +
+      `<button onclick="sendPaymentLink('${esc(slug)}')" id="btnPayment">Send Payment Link</button>` +
+      `<button onclick="sendPortalLink('${esc(slug)}')" id="btnPortal">Send Portal Link</button>` +
+      instructionsSubmenu;
+    const sendMenu = p.send_comms
+      ? `<div class="btn-group"><button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send to Client &#9662;</button><div class="btn-group-menu">${sendItems}</div></div>`
       : '';
 
     const manageItems =
@@ -2909,7 +2931,7 @@
         `<button disabled style="color:#888;">Loading…</button>` +
       `</div></div>`;
 
-    return testMenu + sendMenu + instructionsMenu + manageMenu + portalMenu;
+    return testMenu + sendMenu + manageMenu + portalMenu;
   }
 
   function exportAgentConfig(slug) {
@@ -2929,17 +2951,36 @@
   function toggleDropdown(btn) {
     const group = btn.closest('.btn-group');
     const wasOpen = group.classList.contains('open');
-    // Close all dropdowns first
+    // Close all dropdowns + any open submenus first
     document.querySelectorAll('.btn-group.open').forEach(g => g.classList.remove('open'));
+    document.querySelectorAll('.submenu-wrap.open').forEach(s => s.classList.remove('open'));
     if (!wasOpen) group.classList.add('open');
   }
 
-  // Close dropdowns when clicking outside or clicking a menu item
+  // Toggle a nested submenu inside a .btn-group-menu. stopPropagation prevents
+  // the document-level click handler from closing the parent dropdown.
+  function toggleSubmenu(event, btn) {
+    event.stopPropagation();
+    const wrap = btn.closest('.submenu-wrap');
+    const wasOpen = wrap.classList.contains('open');
+    // Only one submenu open at a time across all dropdowns.
+    document.querySelectorAll('.submenu-wrap.open').forEach(s => s.classList.remove('open'));
+    if (!wasOpen) wrap.classList.add('open');
+  }
+
+  // Close dropdowns when clicking outside or clicking a menu item.
+  // Submenu toggles handle their own state via stopPropagation; clicks on
+  // submenu items (real action buttons) bubble up here and close everything.
   document.addEventListener('click', (e) => {
+    if (e.target.closest('.submenu-toggle')) return;
+    const closeAll = () => {
+      document.querySelectorAll('.btn-group.open').forEach(g => g.classList.remove('open'));
+      document.querySelectorAll('.submenu-wrap.open').forEach(s => s.classList.remove('open'));
+    };
     if (e.target.closest('.btn-group-menu button')) {
-      document.querySelectorAll('.btn-group.open').forEach(g => g.classList.remove('open'));
+      closeAll();
     } else if (!e.target.closest('.btn-group')) {
-      document.querySelectorAll('.btn-group.open').forEach(g => g.classList.remove('open'));
+      closeAll();
     }
   });
 
