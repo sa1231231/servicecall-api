@@ -22,4 +22,6 @@ export declare const config: {
     R2_SECRET_ACCESS_KEY: string;
     R2_BUCKET: string;
     ROOT_PASSWORD: string;
+    ANTHROPIC_API_KEY: string;
+    ANTHROPIC_SKILL_ID: string;
 };

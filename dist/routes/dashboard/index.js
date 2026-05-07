@@ -119,46 +119,25 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requirePermission("mana
 dashboardApiRouter.delete("/deleted-agents/:slug", requireRootForProtectedSlug, requirePermission("manage_deleted"), async (req, res) => {
     const slug = String(req.params.slug);
     try {
-        // Actually delete from Retell now (permanent delete)
         const doc = await getClientDocument(slug);
+        let release;
         if (doc) {
-            const retell = new Retell({ apiKey: config.RETELL_API_KEY });
-            const retellAgents = doc.retell_agents ?? {};
-            for (const [agentId, agentJson] of Object.entries(retellAgents)) {
-                try {
-                    await retell.agent.delete(agentId);
-                    console.log(`[permanent-delete] deleted Retell agent ${agentId}`);
-                }
-                catch (err) {
-                    console.warn(`[permanent-delete] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
-                }
-                const flowId = agentJson?.conversationFlow?.conversation_flow_id ??
-                    agentJson?.response_engine?.conversation_flow_id;
-                if (flowId) {
-                    try {
-                        await retell.conversationFlow.delete(flowId);
-                        console.log(`[permanent-delete] deleted Retell flow ${flowId}`);
-                    }
-                    catch (err) {
-                        console.warn(`[permanent-delete] could not delete Retell flow ${flowId}: ${err instanceof Error ? err.message : err}`);
-                    }
-                }
-            }
-            // Belt-and-suspenders: also delete the agent_id if not already in retell_agents map
-            if (doc.agent_id && !retellAgents[doc.agent_id]) {
-                try {
-                    await retell.agent.delete(doc.agent_id);
-                    console.log(`[permanent-delete] deleted Retell agent ${doc.agent_id} (from agent_id)`);
-                }
-                catch (err) {
-                    console.warn(`[permanent-delete] could not delete Retell agent ${doc.agent_id}: ${err instanceof Error ? err.message : err}`);
-                }
-            }
+            const { releaseAgentResources } = await import("../../lib/release-agent-resources.js");
+            release = await releaseAgentResources(slug, doc, "permanent-delete");
         }
         await deleteClient(slug);
-        await logAudit(req, "permanent_delete_agent", slug);
+        await logAudit(req, "permanent_delete_agent", slug, release ? {
+            released_numbers: release.released,
+            cleanup_errors: release.errors,
+        } : undefined);
         alertRootIfNeeded(req, "permanent_delete_agent", slug);
-        res.json({ success: true, slug });
+        const response = { success: true, slug };
+        if (release) {
+            response.released_numbers = release.released;
+            if (release.errors.length > 0)
+                response.cleanup_errors = release.errors;
+        }
+        res.json(response);
     }
     catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
@@ -266,9 +245,17 @@ dashboardApiRouter.post("/agents/:slug/send-instructions", requirePermission("se
         res.status(400).json({ error: "No dispatch text numbers configured for this client" });
         return;
     }
+    // {{agent_phone}}     → E.164 form, e.g. "+18158804070"
+    // {{agent_phone_10}}  → 10-digit US form, e.g. "8158804070" — for use
+    //   inside carrier star/MMI codes (`*72{{agent_phone_10}}`,
+    //   `**21*{{agent_phone_10}}#`) where the `+1` country prefix can break
+    //   tap-to-dial activation on some carriers/dialers.
+    const e164 = doc.outbound_from_number ?? "";
+    const tenDigit = e164.replace(/^\+1/, "").replace(/^\+/, "").replace(/\D/g, "").slice(-10);
     const message = template.message
         .replace(/\{\{business_name\}\}/g, doc.name ?? "")
-        .replace(/\{\{agent_phone\}\}/g, doc.outbound_from_number ?? "");
+        .replace(/\{\{agent_phone_10\}\}/g, tenDigit)
+        .replace(/\{\{agent_phone\}\}/g, e164);
     try {
         await sendSmsToAll(numbers, message);
         res.json({ success: true, sent_to: numbers, label: template.label });

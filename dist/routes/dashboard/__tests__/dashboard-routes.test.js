@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-const { mockGetClientDocument, mockGeneratePortalToken, mockListDeletedClients, mockRestoreClient, mockDeleteClient, mockGetCallLogById, mockSendSmsToAll, mockGetSettings, mockUpdateSettings, mockRunBackup, mockGetDataPointDefaultsWithCategory, mockUpdateDataPointDefault, mockCreateDataPointDefault, mockDeleteDataPointDefault, mockReorderDataPointDefaults, mockLogAudit, mockAlertRootIfNeeded, mockListUsers, mockCreateUser, mockDeleteUser, mockUpdateUserPermissions, mockGetClientCogs, mockPreviewBlast, mockSendBlast, mockAgentRetrieve, mockAgentUpdate, mockAgentDelete, mockFlowDelete, mockListAgents, mockGetAgent, mockGetCalls, mockToggleShadow, mockToggleActive, mockUpdateAgent, mockCloneAgent, mockDeleteAgent, mockExportAgent, mockNodeEditorRouter, } = vi.hoisted(() => ({
+const { mockGetClientDocument, mockGeneratePortalToken, mockListDeletedClients, mockRestoreClient, mockDeleteClient, mockGetCallLogById, mockSendSmsToAll, mockGetSettings, mockUpdateSettings, mockRunBackup, mockGetDataPointDefaultsWithCategory, mockUpdateDataPointDefault, mockCreateDataPointDefault, mockDeleteDataPointDefault, mockReorderDataPointDefaults, mockLogAudit, mockAlertRootIfNeeded, mockListUsers, mockCreateUser, mockDeleteUser, mockUpdateUserPermissions, mockGetClientCogs, mockPreviewBlast, mockSendBlast, mockAgentRetrieve, mockAgentUpdate, mockAgentDelete, mockFlowDelete, mockListAgents, mockGetAgent, mockGetCalls, mockToggleShadow, mockToggleActive, mockUpdateAgent, mockCloneAgent, mockDeleteAgent, mockExportAgent, mockNodeEditorRouter, mockReleaseAgentResources, } = vi.hoisted(() => ({
     mockGetClientDocument: vi.fn(),
     mockGeneratePortalToken: vi.fn(),
     mockListDeletedClients: vi.fn(),
@@ -38,6 +38,7 @@ const { mockGetClientDocument, mockGeneratePortalToken, mockListDeletedClients, 
     mockDeleteAgent: vi.fn(),
     mockExportAgent: vi.fn(),
     mockNodeEditorRouter: { stack: [] },
+    mockReleaseAgentResources: vi.fn(),
 }));
 vi.mock("../../../config.js", () => ({ config: { RETELL_API_KEY: "test_key", API_KEY: "internal_key" } }));
 vi.mock("retell-sdk", () => ({
@@ -105,6 +106,9 @@ vi.mock("./update-agent.js", () => ({ updateAgentHandler: mockUpdateAgent }));
 vi.mock("./clone-agent.js", () => ({ cloneAgentHandler: mockCloneAgent }));
 vi.mock("./delete-agent.js", () => ({ deleteAgentHandler: mockDeleteAgent }));
 vi.mock("../agents/export-agent.js", () => ({ exportAgentHandler: mockExportAgent }));
+vi.mock("../../../lib/release-agent-resources.js", () => ({
+    releaseAgentResources: (...a) => mockReleaseAgentResources(...a),
+}));
 const { dashboardApiRouter, backupRouter } = await import("../index.js");
 function makeRes() {
     const res = { _status: 200, _json: null, _data: null, _headers: {} };
@@ -228,37 +232,48 @@ describe("POST /deleted-agents/:slug/restore", () => {
     });
 });
 describe("DELETE /deleted-agents/:slug", () => {
-    it("deletes Retell agents and flows then permanent-deletes client", async () => {
-        mockGetClientDocument.mockResolvedValue({
+    it("delegates external cleanup to releaseAgentResources, then permanent-deletes client", async () => {
+        const doc = {
             agent_id: "agent_1",
             retell_agents: {
                 agent_1: { conversationFlow: { conversation_flow_id: "flow_1" } },
                 agent_2: { response_engine: { conversation_flow_id: "flow_2" } },
             },
+        };
+        mockGetClientDocument.mockResolvedValue(doc);
+        mockReleaseAgentResources.mockResolvedValue({
+            released: [{ phone_number: "+15550001111", phone_number_sid: "PN_a" }],
+            errors: [],
         });
-        mockAgentDelete.mockResolvedValue(undefined);
-        mockFlowDelete.mockResolvedValue(undefined);
         mockDeleteClient.mockResolvedValue(undefined);
         const res = makeRes();
         await runRoute(dashboardApiRouter, "delete", "/deleted-agents/:slug", makeReq({ params: { slug: "acme" } }), res);
         expect(res._status).toBe(200);
-        expect(mockAgentDelete).toHaveBeenCalledWith("agent_1");
-        expect(mockAgentDelete).toHaveBeenCalledWith("agent_2");
-        expect(mockFlowDelete).toHaveBeenCalledWith("flow_1");
-        expect(mockFlowDelete).toHaveBeenCalledWith("flow_2");
+        expect(mockReleaseAgentResources).toHaveBeenCalledWith("acme", doc, "permanent-delete");
         expect(mockDeleteClient).toHaveBeenCalledWith("acme");
+        expect(res._json.released_numbers).toEqual([
+            { phone_number: "+15550001111", phone_number_sid: "PN_a" },
+        ]);
+        // No cleanup_errors when the helper had none.
+        expect(res._json.cleanup_errors).toBeUndefined();
     });
-    it("tolerates Retell delete failures and still deletes client", async () => {
+    it("surfaces cleanup errors in the response and still deletes the client", async () => {
         mockGetClientDocument.mockResolvedValue({
             agent_id: "agent_1",
             retell_agents: { agent_1: {} },
         });
-        mockAgentDelete.mockRejectedValue(new Error("not found"));
+        mockReleaseAgentResources.mockResolvedValue({
+            released: [],
+            errors: ["twilio release (+15550001111): not found"],
+        });
         mockDeleteClient.mockResolvedValue(undefined);
         const res = makeRes();
         await runRoute(dashboardApiRouter, "delete", "/deleted-agents/:slug", makeReq({ params: { slug: "acme" } }), res);
         expect(res._status).toBe(200);
         expect(mockDeleteClient).toHaveBeenCalled();
+        expect(res._json.cleanup_errors).toEqual([
+            "twilio release (+15550001111): not found",
+        ]);
     });
 });
 // ── Transcript ─────────────────────────────────────────────────────────────
@@ -411,6 +426,24 @@ describe("POST /agents/:slug/send-instructions", () => {
         const res = makeRes();
         await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
         expect(res._status).toBe(502);
+    });
+    it("substitutes {{agent_phone_10}} with the 10-digit form (no +1) for star-code dial-strings", async () => {
+        const star = {
+            id: "verizon",
+            label: "Verizon",
+            message: "Tap to dial: *72{{agent_phone_10}} — full E.164 backup: {{agent_phone}}.",
+        };
+        mockGetClientDocument.mockResolvedValue({
+            dispatch_text_numbers: ["+15551111111"],
+            name: "Acme",
+            outbound_from_number: "+18158804070",
+        });
+        mockGetSettings.mockResolvedValue({ setup_instructions: [star] });
+        mockSendSmsToAll.mockResolvedValue(undefined);
+        const res = makeRes();
+        await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
+        expect(res._status).toBe(200);
+        expect(mockSendSmsToAll).toHaveBeenCalledWith(["+15551111111"], "Tap to dial: *728158804070 — full E.164 backup: +18158804070.");
     });
 });
 describe("POST /agents/:slug/send-payment-link", () => {

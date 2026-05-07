@@ -2,6 +2,20 @@ import { getDb } from "./db.js";
 function collection() {
     return getDb().collection("phone_number_history");
 }
+/**
+ * Look up the Twilio SID for a (slug, phone_number) pair from the most recent
+ * `provisioned` event in this collection. Retell doesn't track Twilio SIDs,
+ * so any cleanup or update path that needs to call Twilio with a SID
+ * (release, friendlyName update, etc.) routes through here.
+ */
+export async function lookupSidFromHistory(slug, phone_number) {
+    const events = (await collection()
+        .find({ client_slug: slug, phone_number, event: "provisioned" })
+        .sort({ at: -1 })
+        .limit(1)
+        .toArray());
+    return events[0]?.phone_number_sid || null;
+}
 /** Append a provision/release event for a client's phone number. Fire-and-forget safe. */
 export async function logPhoneEvent(client_slug, phone_number, phone_number_sid, event, at = new Date()) {
     try {

@@ -163,4 +163,54 @@ describe("preHookHandler", () => {
         expect(validatedLog[1]).toMatchObject({ active: false });
         spy.mockRestore();
     });
+    // When resolution falls back to to_number, the handler MUST replace the
+    // (possibly missing or unrelated) inbound agent_id with the bound client's
+    // own agent_id. Without this, downstream consumers of the resolved
+    // identifier — and the post-hook flow that follows — would key on the
+    // wrong agent.
+    it("resolves agent_id from the bound client when matching by to_number", async () => {
+        const client = makeClient({ agent_id: "agent_real" });
+        mockPhoneNumberToClient["+15559999999"] = { slug: "test-co", config: client };
+        const spy = vi.spyOn(console, "log").mockImplementation(() => { });
+        const res = mockRes();
+        await preHookHandler(mockReq({
+            event: "call_inbound",
+            call_inbound: { to_number: "+15559999999" },
+        }), res);
+        const resolvedLog = spy.mock.calls.find((c) => typeof c[0] === "string" && c[0].includes("resolved client by to_number"));
+        expect(resolvedLog).toBeTruthy();
+        expect(resolvedLog[1]).toMatchObject({
+            to_number: "+15559999999",
+            client: "test-co",
+            resolved_agent_id: "agent_real",
+        });
+        const validatedLog = spy.mock.calls.find((c) => typeof c[0] === "string" && c[0].includes("inbound call validated"));
+        expect(validatedLog[1]).toMatchObject({
+            agent_id: "agent_real",
+            client: "test-co",
+        });
+        spy.mockRestore();
+    });
+    // Malformed inbound (neither agent_id nor to_number) must still pass
+    // through gracefully — Retell already accepted the call, so a 4xx here
+    // would just confuse the carrier. Verifies the handler logs the unknown
+    // state cleanly without throwing.
+    it("passes through gracefully when both agent_id and to_number are absent", async () => {
+        const spy = vi.spyOn(console, "log").mockImplementation(() => { });
+        const res = mockRes();
+        await preHookHandler(mockReq({
+            event: "call_inbound",
+            call_inbound: {},
+        }), res);
+        expect(res._status).toBe(200);
+        expect(res._json).toEqual({ call_inbound: {} });
+        const validatedLog = spy.mock.calls.find((c) => typeof c[0] === "string" && c[0].includes("inbound call validated"));
+        expect(validatedLog).toBeTruthy();
+        expect(validatedLog[1]).toMatchObject({
+            agent_id: null,
+            client: "unknown",
+            to_number: null,
+        });
+        spy.mockRestore();
+    });
 });

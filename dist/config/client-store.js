@@ -210,7 +210,13 @@ export async function listDeletedClients() {
     })
         .toArray();
 }
-/** Permanently delete documents where deletedAt is older than `days` days. Also cleans up Retell. */
+/**
+ * Permanently delete documents where deletedAt is older than `days` days.
+ * Also releases Retell + Twilio resources via the shared
+ * releaseAgentResources helper — same code path as the manual hard-delete
+ * handler, so TTL-expired clients get the same Twilio number release (and
+ * therefore the same charge cutoff) as a manually-purged one.
+ */
 export async function purgeExpiredClients(days = 30) {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const expired = await clients()
@@ -218,50 +224,15 @@ export async function purgeExpiredClients(days = 30) {
         .toArray();
     if (expired.length === 0)
         return 0;
-    // Lazy-import Retell + config to avoid circular deps at module load
-    const [{ default: Retell }, { config }] = await Promise.all([
-        import("retell-sdk"),
-        import("../config.js"),
-    ]);
-    const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+    // Lazy-import to avoid circular deps at module load.
+    const { releaseAgentResources } = await import("../lib/release-agent-resources.js");
     for (const doc of expired) {
-        const retellAgents = doc.retell_agents ?? {};
-        for (const [agentId, agentJson] of Object.entries(retellAgents)) {
-            try {
-                await retell.agent.delete(agentId);
-                console.log(`[purge] deleted Retell agent ${agentId}`);
-            }
-            catch (err) {
-                console.warn(`[purge] could not delete Retell agent ${agentId}: ${err instanceof Error ? err.message : err}`);
-            }
-            const flowId = agentJson?.conversationFlow?.conversation_flow_id ??
-                agentJson?.response_engine?.conversation_flow_id;
-            if (flowId) {
-                try {
-                    await retell.conversationFlow.delete(flowId);
-                    console.log(`[purge] deleted Retell flow ${flowId}`);
-                }
-                catch (err) {
-                    console.warn(`[purge] could not delete Retell flow ${flowId}: ${err instanceof Error ? err.message : err}`);
-                }
-            }
-        }
-        // Belt-and-suspenders: also delete the agent_id if not in retell_agents map
-        const fallbackAgentId = doc.agent_id;
-        if (fallbackAgentId && !retellAgents[fallbackAgentId]) {
-            try {
-                await retell.agent.delete(fallbackAgentId);
-                console.log(`[purge] deleted Retell agent ${fallbackAgentId} (from agent_id)`);
-            }
-            catch (err) {
-                console.warn(`[purge] could not delete Retell agent ${fallbackAgentId}: ${err instanceof Error ? err.message : err}`);
-            }
-        }
+        await releaseAgentResources(doc._id, doc, "purge");
     }
     const result = await clients().deleteMany({
         deletedAt: { $lt: cutoff },
     });
-    console.log(`[client-store] purged ${result.deletedCount} expired soft-deleted client(s) + their Retell resources`);
+    console.log(`[client-store] purged ${result.deletedCount} expired soft-deleted client(s) + their external resources`);
     return result.deletedCount;
 }
 /** Permanently delete a client from MongoDB and remove from in-memory cache. */

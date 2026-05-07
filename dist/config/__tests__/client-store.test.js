@@ -197,6 +197,50 @@ vi.mock("retell-sdk", () => ({
 vi.mock("../../config.js", () => ({
     config: { RETELL_API_KEY: "test_key" },
 }));
+// Mock release-agent-resources so purgeExpiredClients delegates to a stub
+// that re-emits the same Retell calls + warn-format the tests assert on.
+// (The helper itself has its own dedicated test file with full coverage.)
+vi.mock("../../lib/release-agent-resources.js", () => ({
+    releaseAgentResources: async (_slug, doc, logTag = "release-agent") => {
+        // Simulate the helper's per-resource try/catch + warn behavior so the
+        // existing log-format assertions in this test file keep their meaning.
+        const errors = [];
+        const retellAgents = doc.retell_agents ?? {};
+        for (const [agentId, agentJson] of Object.entries(retellAgents)) {
+            try {
+                await mockRetellAgentDelete(agentId);
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                console.warn(`[${logTag}] retell.agent.delete(${agentId}): ${msg}`);
+                errors.push(`retell.agent.delete(${agentId}): ${msg}`);
+            }
+            const flowId = agentJson?.conversationFlow?.conversation_flow_id ??
+                agentJson?.response_engine?.conversation_flow_id;
+            if (flowId) {
+                try {
+                    await mockRetellFlowDelete(flowId);
+                }
+                catch (err) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    console.warn(`[${logTag}] retell.conversationFlow.delete(${flowId}): ${msg}`);
+                    errors.push(`retell.conversationFlow.delete(${flowId}): ${msg}`);
+                }
+            }
+        }
+        if (doc.agent_id && !retellAgents[doc.agent_id]) {
+            try {
+                await mockRetellAgentDelete(doc.agent_id);
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                console.warn(`[${logTag}] retell.agent.delete(${doc.agent_id}): ${msg}`);
+                errors.push(`retell.agent.delete(${doc.agent_id}): ${msg}`);
+            }
+        }
+        return { released: [], errors };
+    },
+}));
 const { loadClientsFromDb, persistClient, updateClientField, updateClientFields, softDeleteClient, restoreClient, listDeletedClients, deleteClient, getClientDocument, getAllClientDocuments, getAllClientSummaries, generatePortalToken, findClientsByEmail, validatePortalToken, purgeExpiredClients, } = await import("../client-store.js");
 function chainable(items) {
     return {
@@ -606,7 +650,8 @@ describe("purgeExpiredClients", () => {
         expect(mockRetellFlowDelete).toHaveBeenCalledWith("cf_x");
         expect(mockDeleteMany).toHaveBeenCalledTimes(1);
         expect(count).toBe(1);
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining("could not delete Retell agent"));
+        // Helper logs `[purge] retell.agent.delete(<id>): <msg>` on per-call failure.
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("retell.agent.delete"));
         warn.mockRestore();
     });
     it("continues purging when an individual Retell flow delete throws", async () => {
@@ -624,7 +669,7 @@ describe("purgeExpiredClients", () => {
         const warn = vi.spyOn(console, "warn").mockImplementation(() => { });
         const count = await purgeExpiredClients();
         expect(count).toBe(1);
-        expect(warn).toHaveBeenCalledWith(expect.stringContaining("could not delete Retell flow"));
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining("retell.conversationFlow.delete"));
         warn.mockRestore();
     });
     it("processes multiple expired clients independently", async () => {

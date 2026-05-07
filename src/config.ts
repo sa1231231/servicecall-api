@@ -50,4 +50,11 @@ export const config = {
 
   // Root account password (break-glass access)
   ROOT_PASSWORD: requireEnv("ROOT_PASSWORD"),
+
+  // Anthropic API — used to enrich incoming leads via a registered Skill.
+  // Optional: if either is unset the lead-intake endpoint still accepts rows
+  // and parks them in `failed` status so the operator can fill in fields by
+  // hand, instead of blocking the whole deploy.
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
+  ANTHROPIC_SKILL_ID: process.env.ANTHROPIC_SKILL_ID ?? "",
 };

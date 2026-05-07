@@ -12,6 +12,7 @@ export const PERMISSION_DEFS = [
     { key: "manage_users", label: "Manage Users", description: "Create and remove user accounts" },
     { key: "view_billing", label: "View Billing", description: "View call costs, cost charts, and billing data" },
     { key: "manage_deleted", label: "Manage Deleted", description: "View, restore, and permanently delete soft-deleted agents" },
+    { key: "manage_leads", label: "Manage Leads", description: "Triage incoming leads, run enrichment, and promote them to agents" },
 ];
 export const PERMISSION_KEYS = PERMISSION_DEFS.map((d) => d.key);
 // Default permissions per role (used when creating new users)
@@ -29,6 +30,7 @@ export const DEFAULT_PERMISSIONS = {
         manage_users: false,
         view_billing: false,
         manage_deleted: false,
+        manage_leads: true,
     },
     viewer: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, false])),
 };

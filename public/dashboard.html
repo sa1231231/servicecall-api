@@ -861,6 +861,37 @@
     cursor: pointer; margin-right: 0.5rem; text-decoration: none;
   }
   .btn-create:hover { background: #15803d; }
+  /* Pending Leads view */
+  .lead-status { display:inline-block; padding:0.1rem 0.45rem; border-radius:8px; font-size:0.7rem; font-weight:600; text-transform:uppercase; letter-spacing:0.02em; }
+  .lead-status-queued    { background:#e0e7ff; color:#3730a3; }
+  .lead-status-enriching { background:#fef3c7; color:#92400e; }
+  .lead-status-ready     { background:#d1fae5; color:#065f46; }
+  .lead-status-failed    { background:#fee2e2; color:#991b1b; }
+  .lead-status-promoted  { background:#dbeafe; color:#1e40af; }
+  .lead-status-dismissed { background:#f3f4f6; color:#6b7280; }
+  .lead-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; align-items:start; }
+  @media (max-width: 760px) { .lead-detail-grid { grid-template-columns: 1fr; } }
+  .lead-detail-section { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:0.85rem; }
+  .lead-detail-section h3 { margin:0 0 0.5rem; font-size:0.85rem; color:#374151; border:none; padding:0; }
+  .lead-detail-section .field-label { display:block; font-size:0.72rem; font-weight:600; color:#6b7280; margin:0.4rem 0 0.15rem; text-transform:uppercase; letter-spacing:0.03em; }
+  .lead-detail-section .read-field { font-size:0.82rem; color:#374151; padding:0.35rem 0.5rem; background:#f9fafb; border-radius:4px; word-break:break-word; }
+  .lead-detail-section input[type="text"], .lead-detail-section textarea, .lead-detail-section select {
+    width:100%; padding:0.4rem 0.5rem; font-size:0.85rem; border:1px solid #d1d5db; border-radius:5px;
+    box-sizing:border-box; font-family:inherit;
+  }
+  .lead-detail-section textarea { min-height:140px; resize:vertical; }
+  .lead-action-row { display:flex; gap:0.5rem; flex-wrap:wrap; margin-top:0.75rem; }
+  .lead-action-row button { padding:0.4rem 0.8rem; font-size:0.82rem; font-weight:500; border-radius:5px; cursor:pointer; border:1px solid transparent; }
+  .lead-btn-promote { background:#059669; color:#fff; border-color:#059669; }
+  .lead-btn-promote:hover { background:#047857; }
+  .lead-btn-promote:disabled { background:#9ca3af; border-color:#9ca3af; cursor:not-allowed; }
+  .lead-btn-save    { background:#2563eb; color:#fff; border-color:#2563eb; }
+  .lead-btn-save:hover { background:#1d4ed8; }
+  .lead-btn-reenrich { background:#fff; color:#7c3aed; border-color:#c4b5fd; }
+  .lead-btn-reenrich:hover { background:#f5f3ff; }
+  .lead-btn-dismiss  { background:#fff; color:#dc2626; border-color:#fecaca; margin-left:auto; }
+  .lead-btn-dismiss:hover { background:#fef2f2; }
+  .lead-error-box { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:0.5rem 0.65rem; border-radius:5px; font-size:0.78rem; margin-top:0.5rem; }
   .settings-form { background: #fff; border-radius: 8px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
   .settings-form label { display: block; font-size: 0.82rem; font-weight: 600; color: #555; margin-bottom: 0.25rem; margin-top: 0.75rem; }
   .settings-form label:first-child { margin-top: 0; }
@@ -954,7 +985,7 @@
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
-  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><a class="btn-create" data-perm="create_agents" href="/quick-create" target="_blank" style="background:#7c3aed;" title="Pick a draft, name the business, paste an FAQ — done.">⚡ Quick Create</a><a class="btn-create" data-perm="create_agents" href="/form" target="_blank">+ Create</a><span id="userBadge" class="user-badge"></span></h1>
+  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-settings" data-perm="manage_leads" onclick="showPendingLeads()" style="background:#fef3c7;border-color:#fde68a;color:#92400e;" title="Triage incoming Facebook leads, run enrichment, promote to agent">Leads <span id="leadsBadge" style="display:none;background:#dc2626;color:#fff;border-radius:9px;padding:0.05rem 0.4rem;font-size:0.7rem;margin-left:0.25rem;">0</span></button><a class="btn-create" data-perm="create_agents" href="/quick-create" target="_blank" style="background:#7c3aed;" title="Pick a draft, name the business, paste an FAQ — done.">⚡ Quick Create</a><a class="btn-create" data-perm="create_agents" href="/form" target="_blank">+ Create</a><span id="userBadge" class="user-badge"></span></h1>
   <p class="subtitle">Click a client to view details and call history.</p>
   <div id="agentSearchBar" class="agent-search-bar" style="display:none;">
     <div class="agent-search-chips" id="agentSearchChips"></div>
@@ -973,6 +1004,37 @@
     <button type="button" class="btn-new-folder" onclick="createFolderPrompt()">+ New Folder</button>
   </div>
   <div id="agentList"><div class="loading">Loading agents...</div></div>
+</div>
+
+<!-- ── Pending Leads View ─────────────────────────────────────────── -->
+<div id="pendingLeadsView" style="display:none;">
+  <button class="btn-back" onclick="hidePendingLeads()">&larr; Back to all agents</button>
+  <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0 0.25rem;">
+    <h1 style="margin:0;display:flex;align-items:center;gap:0.5rem;">Pending Leads</h1>
+    <button onclick="openAddLeadModal()" class="btn-create" style="float:none;background:#2563eb;border-color:#2563eb;">+ Add Lead</button>
+  </div>
+  <p class="subtitle">Each row is an incoming lead. Enrichment runs automatically; review the result, pick a draft template, and promote to an agent.</p>
+  <div id="pendingLeadsBody"><div class="loading">Loading leads...</div></div>
+</div>
+
+<!-- Add Lead modal -->
+<div id="addLeadModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:9000;align-items:center;justify-content:center;padding:1rem;" onclick="if(event.target===this)closeAddLeadModal()">
+  <div style="width:min(480px,100%);background:#fff;border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,0.25);padding:1rem 1.1rem;">
+    <h3 style="margin:0 0 0.4rem;font-size:1rem;">Add Lead</h3>
+    <p style="margin:0 0 0.75rem;color:#666;font-size:0.78rem;">Drop in a name (required) and whatever else you have. Enrichment runs in the background.</p>
+    <label style="display:block;font-size:0.78rem;color:#444;margin-bottom:0.15rem;">Name *</label>
+    <input id="addLeadName" type="text" placeholder="e.g. Acme Plumbing or Jane Doe" style="width:100%;padding:0.4rem 0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:5px;margin-bottom:0.5rem;box-sizing:border-box;">
+    <label style="display:block;font-size:0.78rem;color:#444;margin-bottom:0.15rem;">Phone</label>
+    <input id="addLeadPhone" type="text" placeholder="+15551234567" style="width:100%;padding:0.4rem 0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:5px;margin-bottom:0.5rem;box-sizing:border-box;">
+    <label style="display:block;font-size:0.78rem;color:#444;margin-bottom:0.15rem;">Website</label>
+    <input id="addLeadWebsite" type="text" placeholder="https://…" style="width:100%;padding:0.4rem 0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:5px;margin-bottom:0.5rem;box-sizing:border-box;">
+    <label style="display:block;font-size:0.78rem;color:#444;margin-bottom:0.15rem;">Notes</label>
+    <textarea id="addLeadNotes" rows="3" placeholder="Anything else (the original Facebook lead text, etc.)" style="width:100%;padding:0.4rem 0.5rem;font-size:0.85rem;border:1px solid #d1d5db;border-radius:5px;box-sizing:border-box;font-family:inherit;"></textarea>
+    <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.75rem;">
+      <button type="button" onclick="closeAddLeadModal()" style="padding:0.4rem 0.9rem;border:1px solid #d1d5db;border-radius:5px;background:#fff;cursor:pointer;">Cancel</button>
+      <button type="button" onclick="submitAddLead()" id="addLeadSubmit" style="padding:0.4rem 0.9rem;border:none;border-radius:5px;background:#2563eb;color:#fff;cursor:pointer;">Add &amp; Enrich</button>
+    </div>
+  </div>
 </div>
 
 <!-- ── Settings View ──────────────────────────────────────────────── -->
@@ -2292,6 +2354,8 @@
   function showList() {
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
+    const lv = document.getElementById('pendingLeadsView');
+    if (lv) lv.style.display = 'none';
     document.getElementById('listView').style.display = '';
     currentSlug = null;
     if (window.location.hash) history.pushState(null, '', '/dashboard/');
@@ -4064,9 +4128,22 @@
           '<input type="text" class="instr-label" value="' + esc(it.label || '') + '" placeholder="e.g. Verizon">' +
           '<button type="button" class="instr-remove" onclick="settingsRemoveInstruction(' + idx + ')">Remove</button>' +
         '</div>' +
-        '<textarea class="instr-message" placeholder="Hi {{business_name}}, to forward calls to your AI receptionist, tap to dial: *72{{agent_phone_10}} — press call, wait for the chime, hang up. To turn off later, dial *73.">' + esc(it.message || '') + '</textarea>' +
+        '<div class="tmpl-editor-wrap">' +
+          '<div class="tmpl-editor" contenteditable="true" data-placeholder="Hi {{business_name}}, to forward calls tap *72{{agent_phone_10}} — press call, wait for the chime, hang up. To turn off later, dial *73." style="min-height:5rem;"></div>' +
+          '<input type="hidden" class="instr-message-hidden" value="' + esc(it.message || '') + '">' +
+        '</div>' +
       '</div>'
     ).join('');
+    // Wire up chip-style variable rendering for each row, matching the
+    // pattern used by the other Settings template editors. The hidden input
+    // already carries the raw template string; initTemplateEditor renders
+    // {{var}} chunks into green chips and keeps the hidden input synced.
+    const VALID_VARS = ['business_name', 'agent_phone', 'agent_phone_10'];
+    list.querySelectorAll('.instruction-row').forEach((row) => {
+      const editorEl = row.querySelector('.tmpl-editor');
+      const hiddenEl = row.querySelector('.instr-message-hidden');
+      if (editorEl && hiddenEl) initTemplateEditor(editorEl, hiddenEl, VALID_VARS);
+    });
   }
 
   function settingsAddInstruction() {
@@ -4096,7 +4173,9 @@
       const idx = parseInt(row.dataset.idx, 10);
       const stable = _settingsInstructions[idx];
       const label = row.querySelector('.instr-label').value.trim();
-      const message = row.querySelector('.instr-message').value;
+      // Read from the hidden input that initTemplateEditor keeps in sync
+      // with the chip editor (was a plain <textarea> previously).
+      const message = (row.querySelector('.instr-message-hidden')?.value) ?? '';
       if (!keepEmpty && !label && !message.trim()) return; // drop blanks on save
       collected.push({
         id: stable?.id || ('ins_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
@@ -4383,6 +4462,8 @@
   async function showSettings() {
     document.getElementById('listView').style.display = 'none';
     document.getElementById('detailView').style.display = 'none';
+    const lv = document.getElementById('pendingLeadsView');
+    if (lv) lv.style.display = 'none';
     document.getElementById('settingsView').style.display = '';
     if (window.location.hash !== '#settings') {
       history.pushState(null, '', '#settings');
@@ -7143,6 +7224,15 @@
       showSettings();
       return;
     }
+    if (hash === '#leads') {
+      showPendingLeads();
+      return;
+    }
+    const leadMatch = hash.match(/^#leads\/([^&]+)/);
+    if (leadMatch) {
+      showPendingLeads(decodeURIComponent(leadMatch[1]));
+      return;
+    }
     const m = hash.match(/^#agent=([^&]+)/);
     if (m) {
       const slug = decodeURIComponent(m[1]);
@@ -7153,8 +7243,293 @@
     // via browser navigation that already updated the URL.
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
+    const lv = document.getElementById('pendingLeadsView');
+    if (lv) lv.style.display = 'none';
     document.getElementById('listView').style.display = '';
     currentSlug = null;
+  }
+
+  // ── Pending Leads ──────────────────────────────────────────────────
+  // The queue of incoming leads waiting for QA + promote-to-agent. Mirrors
+  // the showSettings/hideSettings pattern. State is fetched fresh from
+  // /api/leads each time the view is opened so multiple operators see the
+  // same live queue without coordinating.
+  let pendingLeadsCache = [];
+  let pendingLeadDrafts = [];
+  let pendingLeadActiveId = null;
+
+  function fmtLeadTime(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    return sameDay
+      ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+      : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  async function showPendingLeads(focusId) {
+    document.getElementById('listView').style.display = 'none';
+    document.getElementById('detailView').style.display = 'none';
+    document.getElementById('settingsView').style.display = 'none';
+    document.getElementById('pendingLeadsView').style.display = '';
+    const desiredHash = focusId ? '#leads/' + encodeURIComponent(focusId) : '#leads';
+    if (window.location.hash !== desiredHash) {
+      history.pushState(null, '', desiredHash);
+    }
+    pendingLeadActiveId = focusId || null;
+    await loadPendingLeads();
+  }
+
+  function hidePendingLeads() {
+    document.getElementById('pendingLeadsView').style.display = 'none';
+    document.getElementById('listView').style.display = '';
+    pendingLeadActiveId = null;
+    if (window.location.hash) history.pushState(null, '', '/dashboard/');
+  }
+
+  async function loadPendingLeads() {
+    const body = document.getElementById('pendingLeadsBody');
+    body.innerHTML = '<div class="loading">Loading leads...</div>';
+    try {
+      const [leadsRes, draftsRes] = await Promise.all([
+        fetch('/api/leads'),
+        fetch('/form/drafts'),
+      ]);
+      if (!leadsRes.ok) throw new Error('Leads: ' + leadsRes.status);
+      pendingLeadsCache = await leadsRes.json();
+      pendingLeadDrafts = draftsRes.ok ? await draftsRes.json() : [];
+      updateLeadsBadge();
+      renderPendingLeadsBody();
+    } catch (err) {
+      body.innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+    }
+  }
+
+  function updateLeadsBadge() {
+    const badge = document.getElementById('leadsBadge');
+    if (!badge) return;
+    const pending = (pendingLeadsCache || []).filter((l) =>
+      l.status === 'queued' || l.status === 'enriching' || l.status === 'ready' || l.status === 'failed',
+    ).length;
+    if (pending > 0) {
+      badge.textContent = String(pending);
+      badge.style.display = '';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function renderPendingLeadsBody() {
+    if (pendingLeadActiveId) {
+      const lead = pendingLeadsCache.find((l) => l._id === pendingLeadActiveId);
+      if (lead) {
+        renderPendingLeadDetail(lead);
+        return;
+      }
+      // Lead not in cache (e.g. just promoted/dismissed) — fall back to list.
+      pendingLeadActiveId = null;
+    }
+    renderPendingLeadsList();
+  }
+
+  function renderPendingLeadsList() {
+    const body = document.getElementById('pendingLeadsBody');
+    if (pendingLeadsCache.length === 0) {
+      body.innerHTML = '<div style="padding:1rem;text-align:center;color:#888;">No pending leads. Click + Add Lead to drop one in.</div>';
+      return;
+    }
+    let html = '<table><thead><tr>' +
+      '<th>Name</th><th>Phone</th><th>Website</th><th>Status</th><th>Updated</th><th></th>' +
+      '</tr></thead><tbody>';
+    for (const l of pendingLeadsCache) {
+      const enrichedName = l.enriched?.business_name;
+      const displayName = enrichedName || l.input?.name || '(no name)';
+      const subtitle = enrichedName && l.input?.name && enrichedName !== l.input.name
+        ? '<div style="font-size:0.7rem;color:#888;">↳ from "' + esc(l.input.name) + '"</div>'
+        : '';
+      html += '<tr class="clickable-row" onclick="openLeadDetail(\'' + esc(l._id) + '\')">' +
+        '<td><strong>' + esc(displayName) + '</strong>' + subtitle + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums;">' + esc(l.input?.phone || '') + '</td>' +
+        '<td style="word-break:break-word;">' + esc(l.input?.website || '') + '</td>' +
+        '<td><span class="lead-status lead-status-' + esc(l.status) + '">' + esc(l.status) + '</span></td>' +
+        '<td style="color:#666;font-size:0.78rem;">' + esc(fmtLeadTime(l.updatedAt)) + '</td>' +
+        '<td style="text-align:right;"><button onclick="event.stopPropagation();dismissLead(\'' + esc(l._id) + '\')" style="padding:0.2rem 0.5rem;font-size:0.7rem;background:#fff;border:1px solid #fecaca;color:#dc2626;border-radius:4px;cursor:pointer;">Dismiss</button></td>' +
+      '</tr>';
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  }
+
+  function renderPendingLeadDetail(lead) {
+    const body = document.getElementById('pendingLeadsBody');
+    const draftOptions = ['<option value="">— Pick a draft template —</option>']
+      .concat(pendingLeadDrafts.map((d) => '<option value="' + esc(d.name || d._id) + '">' + esc(d.name || d._id) + '</option>'))
+      .join('');
+    const enriched = lead.enriched || {};
+    const errorBlock = lead.enrichmentError
+      ? '<div class="lead-error-box"><strong>Enrichment error:</strong> ' + esc(lead.enrichmentError) + '</div>'
+      : '';
+    const promotedSlug = lead.promotedSlug
+      ? '<div style="margin-top:0.5rem;padding:0.5rem;background:#dbeafe;border-radius:5px;font-size:0.82rem;">Promoted → <a href="/dashboard/#agent=' + esc(lead.promotedSlug) + '">' + esc(lead.promotedSlug) + '</a></div>'
+      : '';
+    const isTerminal = lead.status === 'promoted' || lead.status === 'dismissed';
+    const promoteDisabled = isTerminal || !enriched.business_name || !enriched.faqKnowledgeBase ? 'disabled' : '';
+    body.innerHTML =
+      '<div style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem;">' +
+        '<button onclick="backToLeadsList()" class="btn-back" style="margin:0;">&larr; Back to leads</button>' +
+        '<span class="lead-status lead-status-' + esc(lead.status) + '">' + esc(lead.status) + '</span>' +
+        '<span style="color:#777;font-size:0.78rem;margin-left:auto;">Created ' + esc(fmtLeadTime(lead.createdAt)) + ' · Updated ' + esc(fmtLeadTime(lead.updatedAt)) + '</span>' +
+      '</div>' +
+      errorBlock +
+      promotedSlug +
+      '<div class="lead-detail-grid" style="margin-top:0.75rem;">' +
+        '<div class="lead-detail-section">' +
+          '<h3>Original Lead</h3>' +
+          '<span class="field-label">Name</span><div class="read-field">' + esc(lead.input?.name || '') + '</div>' +
+          '<span class="field-label">Phone</span><div class="read-field">' + esc(lead.input?.phone || '—') + '</div>' +
+          '<span class="field-label">Website</span><div class="read-field">' + esc(lead.input?.website || '—') + '</div>' +
+          '<span class="field-label">Notes</span><div class="read-field" style="white-space:pre-wrap;">' + esc(lead.input?.notes || '—') + '</div>' +
+          '<span class="field-label">Source</span><div class="read-field">' + esc(lead.source) + '</div>' +
+        '</div>' +
+        '<div class="lead-detail-section">' +
+          '<h3>Enriched (editable)</h3>' +
+          '<span class="field-label">Business Name</span>' +
+          '<input id="leadBizName" type="text" value="' + esc(enriched.business_name || '') + '" placeholder="Skill output drops in here">' +
+          '<span class="field-label">FAQ / Knowledge Base</span>' +
+          '<textarea id="leadFaq" placeholder="Q. ...\nA. ...">' + esc(enriched.faqKnowledgeBase || '') + '</textarea>' +
+          '<div class="lead-action-row">' +
+            '<button class="lead-btn-save" onclick="saveLeadEdits(\'' + esc(lead._id) + '\')">Save edits</button>' +
+            '<button class="lead-btn-reenrich" onclick="reEnrichLead(\'' + esc(lead._id) + '\')" ' + (isTerminal ? 'disabled' : '') + '>Re-enrich</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="lead-detail-section" style="margin-top:1rem;">' +
+        '<h3>Promote to Agent</h3>' +
+        '<p style="font-size:0.78rem;color:#6b7280;margin:0 0 0.4rem;">Pick one of your saved drafts as the template. Business name + FAQ above flow into the new agent.</p>' +
+        '<select id="leadDraftPicker">' + draftOptions + '</select>' +
+        '<div class="lead-action-row">' +
+          '<button class="lead-btn-promote" onclick="promoteLead(\'' + esc(lead._id) + '\')" ' + promoteDisabled + '>Promote to Agent</button>' +
+          '<button class="lead-btn-dismiss" onclick="dismissLead(\'' + esc(lead._id) + '\')" ' + (isTerminal ? 'disabled' : '') + '>Dismiss</button>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function openLeadDetail(id) {
+    pendingLeadActiveId = id;
+    history.pushState(null, '', '#leads/' + encodeURIComponent(id));
+    renderPendingLeadsBody();
+  }
+
+  function backToLeadsList() {
+    pendingLeadActiveId = null;
+    history.pushState(null, '', '#leads');
+    renderPendingLeadsBody();
+  }
+
+  // ── Add Lead modal ─────────────────────────────────────────────
+  function openAddLeadModal() {
+    ['addLeadName','addLeadPhone','addLeadWebsite','addLeadNotes'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    document.getElementById('addLeadModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('addLeadName')?.focus(), 0);
+  }
+  function closeAddLeadModal() {
+    document.getElementById('addLeadModal').style.display = 'none';
+  }
+  async function submitAddLead() {
+    const btn = document.getElementById('addLeadSubmit');
+    const name = document.getElementById('addLeadName').value.trim();
+    if (!name) { showToast('Name is required', 'error'); return; }
+    const body = {
+      name,
+      phone:   document.getElementById('addLeadPhone').value.trim() || undefined,
+      website: document.getElementById('addLeadWebsite').value.trim() || undefined,
+      notes:   document.getElementById('addLeadNotes').value.trim() || undefined,
+    };
+    btn.disabled = true; btn.textContent = 'Adding…';
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      closeAddLeadModal();
+      showToast('Lead added — enrichment running in background', 'success');
+      await loadPendingLeads();
+    } catch (err) {
+      showToast('Failed to add lead: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Add & Enrich';
+    }
+  }
+
+  // ── Lead actions ───────────────────────────────────────────────
+  async function saveLeadEdits(id) {
+    const business_name = document.getElementById('leadBizName').value.trim();
+    const faqKnowledgeBase = document.getElementById('leadFaq').value;
+    try {
+      const res = await fetch('/api/leads/' + encodeURIComponent(id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enriched: { business_name, faqKnowledgeBase } }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      showToast('Saved', 'success');
+      await loadPendingLeads();
+    } catch (err) {
+      showToast('Save failed: ' + err.message, 'error');
+    }
+  }
+
+  async function reEnrichLead(id) {
+    try {
+      const res = await fetch('/api/leads/' + encodeURIComponent(id) + '/re-enrich', { method: 'POST' });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      showToast('Re-enrichment started', 'success');
+      await loadPendingLeads();
+    } catch (err) {
+      showToast('Re-enrich failed: ' + err.message, 'error');
+    }
+  }
+
+  async function dismissLead(id) {
+    if (!confirm('Dismiss this lead? You can still view it under terminal statuses.')) return;
+    try {
+      const res = await fetch('/api/leads/' + encodeURIComponent(id) + '/dismiss', { method: 'POST' });
+      if (!res.ok) throw new Error((await res.json()).error || 'Failed');
+      showToast('Dismissed', 'success');
+      // If we were on the detail view of this lead, drop back to list.
+      if (pendingLeadActiveId === id) backToLeadsList();
+      else await loadPendingLeads();
+    } catch (err) {
+      showToast('Dismiss failed: ' + err.message, 'error');
+    }
+  }
+
+  async function promoteLead(id) {
+    const draft = document.getElementById('leadDraftPicker').value;
+    if (!draft) { showToast('Pick a draft template first', 'error'); return; }
+    // Save any pending edits first so the promote uses the latest values.
+    await saveLeadEdits(id).catch(() => {});
+    try {
+      const res = await fetch('/api/leads/' + encodeURIComponent(id) + '/promote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draft }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || data.details || 'Failed');
+      showToast('Promoted → ' + data.slug, 'success');
+      // Take the operator straight to the new agent's editor.
+      window.location.hash = '#agent=' + encodeURIComponent(data.slug);
+    } catch (err) {
+      showToast('Promote failed: ' + err.message, 'error');
+    }
   }
 
   window.addEventListener('popstate', renderFromHash);

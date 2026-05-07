@@ -87,7 +87,13 @@ export declare function listDeletedClients(): Promise<Array<{
     name: string;
     deletedAt: Date;
 }>>;
-/** Permanently delete documents where deletedAt is older than `days` days. Also cleans up Retell. */
+/**
+ * Permanently delete documents where deletedAt is older than `days` days.
+ * Also releases Retell + Twilio resources via the shared
+ * releaseAgentResources helper — same code path as the manual hard-delete
+ * handler, so TTL-expired clients get the same Twilio number release (and
+ * therefore the same charge cutoff) as a manually-purged one.
+ */
 export declare function purgeExpiredClients(days?: number): Promise<number>;
 /** Permanently delete a client from MongoDB and remove from in-memory cache. */
 export declare function deleteClient(slug: string): Promise<void>;

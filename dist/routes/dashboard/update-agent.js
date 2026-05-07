@@ -48,7 +48,7 @@ export async function updateAgentHandler(req, res) {
             const label = (doc.display_name && doc.display_name.trim()) || doc.name;
             const retell = new Retell({ apiKey: config.RETELL_API_KEY });
             try {
-                displaySync = await syncRetellDisplayLabels(retell, doc.agent_id, doc.outbound_from_number ?? null, label);
+                displaySync = await syncRetellDisplayLabels(retell, slug, doc.agent_id, doc.outbound_from_number ?? null, label);
             }
             catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);

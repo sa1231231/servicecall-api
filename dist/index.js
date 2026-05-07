@@ -12,6 +12,7 @@ import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
 import { dashboardRouter, dashboardApiRouter, backupRouter } from "./routes/dashboard/index.js";
 import { qaRouter } from "./routes/qa.js";
+import { leadsRouter } from "./routes/leads/index.js";
 import { portalRouter } from "./routes/portal/index.js";
 import { startAutoSync } from "./lib/retell-auto-sync.js";
 import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
@@ -332,6 +333,7 @@ app.use("/dashboard", dashboardRouter);
 app.use("/dashboard/api", dashboardApiRouter);
 app.use("/api/backup", sessionAuth, requirePermission("manage_settings"), backupRouter);
 app.use("/qa", sessionAuth, qaRouter);
+app.use("/api/leads", sessionAuth, leadsRouter);
 app.use("/api/reports", sessionAuth, reportsRouter);
 // ── API Key middleware (external/machine routes only) ────────────────────────
 app.use((req, res, next) => {

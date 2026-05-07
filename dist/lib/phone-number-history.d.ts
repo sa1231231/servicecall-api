@@ -6,6 +6,13 @@ export interface PhoneNumberHistoryDoc {
     event: PhoneEvent;
     at: Date;
 }
+/**
+ * Look up the Twilio SID for a (slug, phone_number) pair from the most recent
+ * `provisioned` event in this collection. Retell doesn't track Twilio SIDs,
+ * so any cleanup or update path that needs to call Twilio with a SID
+ * (release, friendlyName update, etc.) routes through here.
+ */
+export declare function lookupSidFromHistory(slug: string, phone_number: string): Promise<string | null>;
 /** Append a provision/release event for a client's phone number. Fire-and-forget safe. */
 export declare function logPhoneEvent(client_slug: string, phone_number: string, phone_number_sid: string, event: PhoneEvent, at?: Date): Promise<void>;
 /**
