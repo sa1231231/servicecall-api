@@ -1,85 +1,32 @@
-import { describe, it, expect } from "vitest";
-import { notificationClients, agentIdToClient, } from "../../_cache/clients.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { ownerConfig, setOwnerConfig } from "../notification-clients.js";
 describe("setOwnerConfig", () => {
+    // Capture-and-restore is centralized so a failing assertion mid-test can't
+    // leak the mutated singleton into sibling tests in the same worker.
+    let originalEmail;
+    let originalPhone;
+    beforeEach(() => {
+        originalEmail = ownerConfig.email;
+        originalPhone = ownerConfig.phone;
+    });
+    afterEach(() => {
+        setOwnerConfig(originalEmail, originalPhone);
+    });
     it("mutates the exported ownerConfig email and phone", () => {
-        const originalEmail = ownerConfig.email;
-        const originalPhone = ownerConfig.phone;
         setOwnerConfig("new@x.com", "+15551234567");
         expect(ownerConfig.email).toBe("new@x.com");
         expect(ownerConfig.phone).toBe("+15551234567");
-        // Restore so we don't pollute other tests that read ownerConfig.
-        setOwnerConfig(originalEmail, originalPhone);
     });
     it("ownerConfig retains the same object reference (so callers holding it stay live)", () => {
         const ref = ownerConfig;
         setOwnerConfig("a@b.com", "+10000000000");
         expect(ownerConfig).toBe(ref);
         expect(ref.email).toBe("a@b.com");
-        // Restore
-        setOwnerConfig("samasra93@gmail.com", "+13017872841");
     });
 });
-describe("notificationClients", () => {
-    it("has dispatch_email as arrays or null", () => {
-        for (const [key, client] of Object.entries(notificationClients)) {
-            if (client.dispatch_email !== null) {
-                expect(Array.isArray(client.dispatch_email), `${key}.dispatch_email should be an array`).toBe(true);
-                expect(client.dispatch_email.length, `${key}.dispatch_email should not be empty`).toBeGreaterThan(0);
-            }
-        }
-    });
-    it("has dispatch_text_numbers as non-empty arrays for active clients", () => {
-        for (const [key, client] of Object.entries(notificationClients)) {
-            expect(Array.isArray(client.dispatch_text_numbers), `${key}.dispatch_text_numbers should be an array`).toBe(true);
-        }
-    });
-    it("maps agent_id to clients correctly", () => {
-        for (const [, client] of Object.entries(notificationClients)) {
-            if (client.agent_id) {
-                expect(agentIdToClient[client.agent_id]).toBe(client);
-            }
-        }
-    });
-    it("has valid resolve_type returning existing message types", () => {
-        for (const [key, client] of Object.entries(notificationClients)) {
-            const result = client.resolve_type({});
-            expect(result in client.message_types, `${key}.resolve_type({}) returned "${result}" which is not in message_types`).toBe(true);
-        }
-    });
-    it("each message type has at least one field", () => {
-        for (const [key, client] of Object.entries(notificationClients)) {
-            for (const [typeKey, msgType] of Object.entries(client.message_types)) {
-                expect(msgType.fields.length, `${key}.message_types.${typeKey} has no fields`).toBeGreaterThan(0);
-            }
-        }
-    });
-    it("default_message_type exists in message_types", () => {
-        for (const [key, client] of Object.entries(notificationClients)) {
-            expect(client.default_message_type in client.message_types, `${key}.default_message_type "${client.default_message_type}" not found`).toBe(true);
-        }
-    });
-    it("required fields have valid structure", () => {
-        for (const [key, client] of Object.entries(notificationClients)) {
-            for (const [typeKey, msgType] of Object.entries(client.message_types)) {
-                for (const field of msgType.fields) {
-                    if (field.required && field.required !== true) {
-                        const eq = field.required.equals;
-                        expect(typeof eq === "string" || Array.isArray(eq), `${key}.${typeKey}.${field.key}: required.equals must be string or string[]`).toBe(true);
-                    }
-                }
-            }
-        }
-    });
-    it("show property is boolean when set", () => {
-        for (const [key, client] of Object.entries(notificationClients)) {
-            for (const [typeKey, msgType] of Object.entries(client.message_types)) {
-                for (const field of msgType.fields) {
-                    if (field.show !== undefined) {
-                        expect(typeof field.show, `${key}.${typeKey}.${field.key}: show must be boolean`).toBe("boolean");
-                    }
-                }
-            }
-        }
-    });
-});
+// The previous "notificationClients" suite iterated over the in-memory cache
+// to validate runtime client-doc shape. In the unit-test process that map is
+// empty (no MongoDB load), so every for-of body was a no-op and every
+// assertion passed vacuously. Deploy-time data validity is enforced by
+// TypeScript types on JsonClientEntry plus the type-guarded loaders in
+// loadClientsFromDb(); no runtime assertion is needed here.

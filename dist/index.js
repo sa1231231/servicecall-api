@@ -28,15 +28,20 @@ import { requirePermission } from "./middleware/require-role.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const globalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 300,
+    max: 1000, // ~67/min — comfortable headroom for normal
+    // dashboard use and test runs while keeping a
+    // global brute-force ceiling.
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Too many requests, please try again later." },
 });
-// Tighter limiter for login-protected routes — prevent brute-force
+// Tighter limiter for login-protected routes — prevent brute-force.
+// Applied to /form, which sees normal-user save/autosave traffic, so we
+// allow ~24/min: still firm against credential-stuffing but won't punish
+// a user editing the agent form for an extended session.
 const authLimiter = rateLimit({
     windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 30, // 30 attempts per 5 minutes per IP
+    max: 120, // 120 attempts per 5 minutes per IP
     standardHeaders: true,
     legacyHeaders: false,
     message: "Too many login attempts, please try again later.",
@@ -220,22 +225,18 @@ formRouter.get("/data-points", async (_req, res) => {
         res.status(500).json({ error: "Failed to load data points" });
     }
 });
-// ── Agent Drafts & Templates ────────────────────────────────────────────────
+// ── Agent Drafts ────────────────────────────────────────────────────────────
+// Drafts and "templates" used to be tracked separately via a `type` field on
+// each doc; that distinction is gone. Every saved form config is just a draft.
+// A user can name a draft "Template - Foo" by convention if they want, but
+// the code makes no distinction.
 function draftsCollection() {
     return getDb().collection("agent_drafts");
 }
-formRouter.get("/drafts", async (req, res) => {
+formRouter.get("/drafts", async (_req, res) => {
     try {
-        const filter = {};
-        if (req.query.type === "template") {
-            filter.type = "template";
-        }
-        else if (req.query.type === "draft" || !req.query.type) {
-            // Default: return drafts (including legacy docs without a type field)
-            filter.type = { $ne: "template" };
-        }
         const drafts = await draftsCollection()
-            .find(filter, { projection: { name: 1, type: 1, updatedAt: 1 } })
+            .find({}, { projection: { name: 1, updatedAt: 1 } })
             .sort({ updatedAt: -1 })
             .toArray();
         res.json(drafts);
@@ -259,7 +260,7 @@ formRouter.get("/drafts/:id", async (req, res) => {
 });
 formRouter.post("/drafts", async (req, res) => {
     try {
-        const { name, formData, type, exportConfig } = req.body;
+        const { name, formData, exportConfig } = req.body;
         if (!name || !formData) {
             res.status(400).json({ error: "name and formData are required" });
             return;
@@ -267,7 +268,6 @@ formRouter.post("/drafts", async (req, res) => {
         const doc = {
             name,
             formData,
-            type: type === "template" ? "template" : "draft",
             createdAt: new Date(),
             updatedAt: new Date(),
         };
@@ -315,6 +315,17 @@ formRouter.delete("/drafts/:id", async (req, res) => {
     }
 });
 app.use("/form", authLimiter, sessionAuth, requirePermission("create_agents"), formRouter);
+// ── Quick Create (one-page agent-from-draft instantiator) ───────────────────
+const quickCreateHtmlPath = path.join(__dirname, "..", "public", "quick-create.html");
+app.get("/quick-create", authLimiter, sessionAuth, requirePermission("create_agents"), (_req, res) => {
+    try {
+        res.type("html").send(fs.readFileSync(quickCreateHtmlPath, "utf8"));
+    }
+    catch (err) {
+        console.error("[quick-create] failed to read quick-create.html:", err);
+        res.status(500).send("Page not found");
+    }
+});
 // ── Dashboard (Basic Auth protected) ────────────────────────────────────────
 app.use("/dashboard", sessionAuth);
 app.use("/dashboard", dashboardRouter);

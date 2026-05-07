@@ -27,6 +27,10 @@ export function applyOverrides(exportConfig, overrides) {
         client: {
             ...exportConfig.client,
             ...(overrides.client ?? {}),
+            // Pin client.name to the new businessName so the template's stored
+            // client.name can never leak into a fresh agent. Explicit
+            // overrides.client.name still wins because the spread above runs first.
+            name: overrides.client?.name ?? overrides.business.businessName,
             slug,
         },
     };

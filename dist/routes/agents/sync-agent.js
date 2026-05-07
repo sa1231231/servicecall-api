@@ -12,19 +12,29 @@ export async function importAgentHandler(req, res) {
         res.status(400).json({ error: "Missing required field: agent_id" });
         return;
     }
+    // Require an explicit client.name. We used to silently fall back to the
+    // Retell agent's `agent_name` when this was missing, but that meant
+    // imports could pick up template-prefixed or "[DELETED]" names without
+    // the caller realizing — fail loudly instead of guessing.
+    if (typeof body.client?.name !== "string" || !body.client.name.trim()) {
+        res.status(400).json({
+            error: "Missing required field: client.name (no fallback to Retell's agent_name)",
+        });
+        return;
+    }
+    const explicitName = body.client.name.trim();
     const retell = new Retell({ apiKey: config.RETELL_API_KEY });
     try {
         console.log(`[import-agent] fetching agent ${body.agent_id} from Retell...`);
         const snapshot = await fetchRetellAgent(retell, body.agent_id);
-        // Auto-generate slug from agent name if not provided
-        const slug = body.client?.slug || generateSlug(snapshot.agentName);
+        const slug = body.client?.slug || generateSlug(explicitName);
         if (notificationClients[slug]) {
             res.status(409).json({ error: `Client slug "${slug}" already exists` });
             return;
         }
         const clientInfo = {
             slug,
-            name: body.client?.name ?? snapshot.agentName,
+            name: explicitName,
             dispatch_text_numbers: body.client?.dispatch_text_numbers ?? [],
             dispatch_call_number: body.client?.dispatch_call_number,
             dispatch_email: body.client?.dispatch_email,
@@ -114,19 +124,59 @@ export async function syncAgentHandler(req, res) {
                 }
             }
         }
-        // Preserve all existing doc fields, only overwrite Retell-derived ones
+        // Build the merged entry as an explicit allowlist rather than a
+        // blocklist-by-omission spread. Adding a new field to JsonClientEntry
+        // forces a conscious decision here about whether sync should re-derive
+        // it from Retell or preserve the operator's value — instead of silently
+        // inheriting from existingDoc and risking stale-data bugs.
         const mergedEntry = {
-            ...existingDoc,
-            ...jsonEntry,
+            // ── Identity (preserved from existingDoc; sync never renames a client) ──
             agent_id: existingDoc.agent_id,
+            name: existingDoc.name,
+            display_name: existingDoc.display_name,
+            // ── Notification structure (re-derived from Retell variables) ──
+            // message_types arrives from jsonEntry but with field-level
+            // customizations already merged in above (lines 148-174), so we
+            // take it from jsonEntry rather than existingDoc.
+            message_types: jsonEntry.message_types,
+            default_message_type: jsonEntry.default_message_type,
+            resolve_rule: jsonEntry.resolve_rule,
+            // ── Dispatch routing (preserved — operator-configured) ──
+            dispatch_text_numbers: existingDoc.dispatch_text_numbers,
+            dispatch_call_number: existingDoc.dispatch_call_number,
             dispatch_call_overrides: existingDoc.dispatch_call_overrides,
+            dispatch_by_type: existingDoc.dispatch_by_type,
+            path_end_modes: existingDoc.path_end_modes,
+            dispatch_email: existingDoc.dispatch_email,
+            dispatch_cc: existingDoc.dispatch_cc,
+            outbound_from_number: existingDoc.outbound_from_number,
+            summary_agent_id: existingDoc.summary_agent_id,
+            // ── Behavior flags (preserved — operator-configured) ──
+            shadow_mode: existingDoc.shadow_mode,
+            active: existingDoc.active,
+            phone_fallback_to_caller: existingDoc.phone_fallback_to_caller,
+            hide_not_mentioned: existingDoc.hide_not_mentioned,
+            notification_greeting: existingDoc.notification_greeting,
+            webhook_url: existingDoc.webhook_url,
+            weekly_report_enabled: existingDoc.weekly_report_enabled,
+            trial_start_date: existingDoc.trial_start_date,
+            // ── Admin/contact metadata (preserved) ──
+            contact_name: existingDoc.contact_name,
+            contact_phone: existingDoc.contact_phone,
+            contact_email: existingDoc.contact_email,
+            contact_timezone: existingDoc.contact_timezone,
+            contact_notes: existingDoc.contact_notes,
+            folder_id: existingDoc.folder_id,
             portal_token: existingDoc.portal_token,
+            // ── System-managed (snapshot updated) ──
             retell_agents: {
                 ...(existingDoc.retell_agents ?? {}),
                 [agentId]: snapshot.canonicalJson,
             },
+            last_deployed_at: existingDoc.last_deployed_at,
         };
-        // Preserve existing resolve_rules if manually configured
+        // Preserve existing resolve_rules if manually configured (overrides the
+        // single resolve_rule derived from the snapshot).
         if (existingDoc.resolve_rules && existingDoc.resolve_rules.length > 0) {
             mergedEntry.resolve_rules = existingDoc.resolve_rules;
             delete mergedEntry.resolve_rule;
@@ -154,13 +204,21 @@ export async function duplicateAgentHandler(req, res) {
         res.status(400).json({ error: "Missing required field: source_agent_id" });
         return;
     }
+    // Require an explicit client.name. The previous fallback to the source
+    // agent's Retell `agent_name` quietly produced duplicates whose slug and
+    // notifications inherited the source's name — fail loudly instead.
+    if (typeof body.client?.name !== "string" || !body.client.name.trim()) {
+        res.status(400).json({
+            error: "Missing required field: client.name (no fallback to source agent's name)",
+        });
+        return;
+    }
+    const agentName = body.client.name.trim();
     const retell = new Retell({ apiKey: config.RETELL_API_KEY });
     let newFlowId;
     try {
         console.log(`[duplicate-agent] fetching source agent ${body.source_agent_id} from Retell...`);
         const snapshot = await fetchRetellAgent(retell, body.source_agent_id);
-        // Auto-generate slug from agent name if not provided
-        const agentName = body.client?.name ?? snapshot.agentName;
         const slug = body.client?.slug || generateSlug(agentName);
         if (notificationClients[slug]) {
             res.status(409).json({ error: `Client slug "${slug}" already exists` });

@@ -266,6 +266,56 @@ describe("createFromTemplateHandler — happy path", () => {
         expect(res._json.slug).toBe("acme-plumbing-4");
         expect(mockPersistClient).toHaveBeenCalledWith("acme-plumbing-4", expect.any(Object));
     });
+    // Regression for the "Handy Quinn shows as Second Opinion Services" bug:
+    // applyOverrides used to leak the template's stored client.name into the
+    // new agent. Fix pins client.name to the override's businessName by default.
+    it("pins client.name to the new businessName, ignoring the template's stored client.name", async () => {
+        mockLoadTemplate.mockResolvedValue({
+            _id: "x",
+            name: "second-opinion",
+            type: "template",
+            formData: {},
+            // Template's stored client.name differs from the override's businessName.
+            exportConfig: {
+                ...makeTemplateExportConfig(),
+                client: {
+                    ...makeTemplateExportConfig().client,
+                    name: "Second Opinion Services",
+                    slug: "second-opinion-services",
+                },
+            },
+        });
+        const res = mockRes();
+        await createFromTemplateHandler(mockReq({
+            template: "second-opinion",
+            business: { businessName: "Handy Quinn", faqKnowledgeBase: "## FAQ" },
+        }), res);
+        expect(res._status).toBe(201);
+        // The merged client config passed into deriveNotificationConfig must
+        // carry the new businessName as `name`, not the template's stale value.
+        const mergedClient = mockDeriveNotificationConfig.mock.calls[0][1];
+        expect(mergedClient.name).toBe("Handy Quinn");
+        expect(mergedClient.name).not.toBe("Second Opinion Services");
+        expect(mergedClient.slug).toBe("handy-quinn");
+    });
+    it("respects an explicit client.name override over both template and businessName", async () => {
+        mockLoadTemplate.mockResolvedValue({
+            _id: "x",
+            name: "plumber",
+            type: "template",
+            formData: {},
+            exportConfig: makeTemplateExportConfig(),
+        });
+        const res = mockRes();
+        await createFromTemplateHandler(mockReq({
+            template: "plumber",
+            business: { businessName: "Handy Quinn", faqKnowledgeBase: "x" },
+            client: { name: "Quinn Heating LLC" },
+        }), res);
+        expect(res._status).toBe(201);
+        const mergedClient = mockDeriveNotificationConfig.mock.calls[0][1];
+        expect(mergedClient.name).toBe("Quinn Heating LLC");
+    });
     it("uses overridden client.dispatch_text_numbers from the request", async () => {
         mockLoadTemplate.mockResolvedValue({
             _id: "x",

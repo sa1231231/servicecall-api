@@ -20,6 +20,9 @@ export async function getSettings() {
         owner_email: doc?.owner_email ?? "",
         owner_phone: doc?.owner_phone ?? "",
         default_summary_agent_id: doc?.default_summary_agent_id ?? "",
+        setup_instructions: Array.isArray(doc?.setup_instructions)
+            ? doc.setup_instructions
+            : [],
         category_order: doc?.category_order ?? undefined,
         category_labels: doc?.category_labels ?? undefined,
         cost_rates: {
@@ -49,6 +52,8 @@ export async function updateSettings(updates) {
         setObj.owner_phone = updates.owner_phone;
     if (updates.default_summary_agent_id !== undefined)
         setObj.default_summary_agent_id = updates.default_summary_agent_id;
+    if (updates.setup_instructions !== undefined)
+        setObj.setup_instructions = updates.setup_instructions;
     if (updates.category_order !== undefined)
         setObj.category_order = updates.category_order;
     if (updates.category_labels !== undefined)

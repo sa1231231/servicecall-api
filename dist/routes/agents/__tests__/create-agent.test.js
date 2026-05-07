@@ -92,6 +92,7 @@ function makeBody(overrides = {}) {
         ],
         client: {
             slug: "test-co",
+            name: "Test Co",
             dispatch_text_numbers: ["+15550001111"],
             dispatch_email: ["dispatch@test.com"],
             ...client,
@@ -230,6 +231,33 @@ describe("createAgentHandler — validation", () => {
         await createAgentHandler(mockReq(body), res);
         expect(res._status).toBe(400);
         expect(res._json.error).toContain("slug");
+    });
+    // Regression: a "GMC" form input was ending up as "gmc" in the dashboard
+    // because the form omitted client.name and the backend silently fell back
+    // to the lowercased slug via `name: clientInfo.name ?? clientInfo.slug`.
+    // Now we require the name explicitly with a hard error.
+    it("400 when client.name missing — does not fall back to slug", async () => {
+        const res = mockRes();
+        const body = makeBody();
+        delete body.client.name;
+        await createAgentHandler(mockReq(body), res);
+        expect(res._status).toBe(400);
+        expect(res._json.error).toMatch(/client\.name/);
+    });
+    it("400 when client.name is whitespace-only", async () => {
+        const res = mockRes();
+        await createAgentHandler(mockReq(makeBody({ client: { name: "   " } })), res);
+        expect(res._status).toBe(400);
+    });
+    it("preserves the exact case of client.name through to deriveNotificationConfig", async () => {
+        const res = mockRes();
+        await createAgentHandler(mockReq(makeBody({ client: { slug: "gmc", name: "GMC" } })), res);
+        expect(res._status).toBe(201);
+        // The clientInfo passed into deriveNotificationConfig must carry "GMC"
+        // verbatim — not the lowercased slug.
+        const clientInfo = mockDeriveNotificationConfig.mock.calls[0][1];
+        expect(clientInfo.name).toBe("GMC");
+        expect(clientInfo.slug).toBe("gmc");
     });
     it("falls back to owner_phone when dispatch_text_numbers is empty", async () => {
         const res = mockRes();

@@ -75,23 +75,34 @@ describe("importAgentHandler", () => {
         await importAgentHandler(makeReq({ body: {} }), res);
         expect(res._status).toBe(400);
     });
+    it("returns 400 when client.name missing — does not fall back to Retell agent_name", async () => {
+        const res = makeRes();
+        await importAgentHandler(makeReq({ body: { agent_id: "agent_1" } }), res);
+        expect(res._status).toBe(400);
+        expect(res._json.error).toMatch(/client\.name/);
+    });
+    it("returns 400 when client.name is whitespace-only", async () => {
+        const res = makeRes();
+        await importAgentHandler(makeReq({ body: { agent_id: "agent_1", client: { name: "   " } } }), res);
+        expect(res._status).toBe(400);
+    });
     it("returns 409 when slug already exists", async () => {
         mockNotificationClients["acme"] = {};
         mockFetchRetellAgent.mockResolvedValue({
             agentId: "agent_1", agentName: "Acme", canonicalJson: {}, conversationFlowId: "f", variables: [],
         });
         const res = makeRes();
-        await importAgentHandler(makeReq({ body: { agent_id: "agent_1", client: { slug: "acme" } } }), res);
+        await importAgentHandler(makeReq({ body: { agent_id: "agent_1", client: { slug: "acme", name: "Acme" } } }), res);
         expect(res._status).toBe(409);
         expect(res._json.error).toMatch(/already exists/);
     });
-    it("auto-generates slug from agent name when not provided", async () => {
+    it("auto-generates slug from explicit client.name (not Retell's agent_name)", async () => {
         mockFetchRetellAgent.mockResolvedValue({
-            agentId: "agent_1", agentName: "Acme Inc",
+            agentId: "agent_1", agentName: "[DELETED] Stale Name",
             canonicalJson: { conversationFlow: {} }, conversationFlowId: "f", variables: [],
         });
         const res = makeRes();
-        await importAgentHandler(makeReq({ body: { agent_id: "agent_1" } }), res);
+        await importAgentHandler(makeReq({ body: { agent_id: "agent_1", client: { name: "Acme Inc" } } }), res);
         expect(res._status).toBe(201);
         expect(res._json.slug).toBe("acme-inc");
         expect(mockGenerateSlug).toHaveBeenCalledWith("Acme Inc");
@@ -102,7 +113,7 @@ describe("importAgentHandler", () => {
             canonicalJson: { conversationFlow: {} }, conversationFlowId: "flow_1", variables: ["v1"],
         });
         const res = makeRes();
-        await importAgentHandler(makeReq({ body: { agent_id: "agent_1" } }), res);
+        await importAgentHandler(makeReq({ body: { agent_id: "agent_1", client: { name: "Acme" } } }), res);
         expect(res._status).toBe(201);
         expect(res._json).toMatchObject({
             success: true, agent_id: "agent_1", agent_name: "Acme", conversation_flow_id: "flow_1",
@@ -119,7 +130,7 @@ describe("importAgentHandler", () => {
             canonicalJson: {}, conversationFlowId: "f", variables: [],
         });
         const res = makeRes();
-        await importAgentHandler(makeReq({ body: { agent_id: "agent_1", client: { shadow_mode: false } } }), res);
+        await importAgentHandler(makeReq({ body: { agent_id: "agent_1", client: { name: "Acme", shadow_mode: false } } }), res);
         expect(res._status).toBe(201);
         const derivedCall = mockDeriveNotificationConfig.mock.calls[0];
         expect(derivedCall[1].shadow_mode).toBe(false);
@@ -127,7 +138,7 @@ describe("importAgentHandler", () => {
     it("returns 502 when Retell fetch fails", async () => {
         mockFetchRetellAgent.mockRejectedValue(new Error("retell down"));
         const res = makeRes();
-        await importAgentHandler(makeReq({ body: { agent_id: "agent_1" } }), res);
+        await importAgentHandler(makeReq({ body: { agent_id: "agent_1", client: { name: "Acme" } } }), res);
         expect(res._status).toBe(502);
         expect(res._json.error).toBe("Failed to import agent from Retell");
         expect(res._json.details).toBe("retell down");
@@ -215,6 +226,48 @@ describe("syncAgentHandler", () => {
         expect(phoneField.label).toBe("Custom Phone Label");
         expect(phoneField.show).toBe(false);
     });
+    it("explicit-allowlist merge preserves display_name, contact_*, and folder_id from existingDoc", async () => {
+        // Regression: the syncAgent merge used to be a blocklist-by-omission spread
+        // (`{...existingDoc, ...jsonEntry, agent_id, ...}`). Any new field added
+        // to JsonClientEntry that wasn't explicitly listed would silently inherit
+        // from existingDoc — a stale-fallback bug shape. The merge is now an
+        // explicit allowlist, and these fields must be in it.
+        mockGetClientDocument.mockResolvedValue({
+            name: "Acme",
+            agent_id: "agent_1",
+            display_name: "Acme — Pretty Label",
+            contact_name: "Jane Doe",
+            contact_phone: "+15551234567",
+            contact_email: "jane@acme.com",
+            contact_timezone: "America/New_York",
+            contact_notes: "VIP",
+            folder_id: "folder_abc",
+            portal_token: "ptk_xyz",
+            shadow_mode: false,
+            active: true,
+        });
+        mockFetchRetellAgent.mockResolvedValue({
+            agentName: "Acme", canonicalJson: {}, variables: [],
+        });
+        mockDeriveNotificationConfig.mockReturnValue({
+            message_types: { default: { label: "Lead", fields: [] } },
+            default_message_type: "default",
+        });
+        const res = makeRes();
+        await syncAgentHandler(makeReq({ params: { slug: "acme" } }), res);
+        expect(res._status).toBe(200);
+        const persisted = mockPersistClient.mock.calls[0][1];
+        expect(persisted.display_name).toBe("Acme — Pretty Label");
+        expect(persisted.contact_name).toBe("Jane Doe");
+        expect(persisted.contact_phone).toBe("+15551234567");
+        expect(persisted.contact_email).toBe("jane@acme.com");
+        expect(persisted.contact_timezone).toBe("America/New_York");
+        expect(persisted.contact_notes).toBe("VIP");
+        expect(persisted.folder_id).toBe("folder_abc");
+        expect(persisted.portal_token).toBe("ptk_xyz");
+        expect(persisted.active).toBe(true);
+        expect(persisted.shadow_mode).toBe(false);
+    });
     it("preserves resolve_rules when manually configured", async () => {
         mockGetClientDocument.mockResolvedValue({
             name: "Acme", agent_id: "agent_1",
@@ -246,6 +299,17 @@ describe("duplicateAgentHandler", () => {
         await duplicateAgentHandler(makeReq({ body: {} }), res);
         expect(res._status).toBe(400);
     });
+    it("returns 400 when client.name missing — does not fall back to source agent's name", async () => {
+        const res = makeRes();
+        await duplicateAgentHandler(makeReq({ body: { source_agent_id: "src1" } }), res);
+        expect(res._status).toBe(400);
+        expect(res._json.error).toMatch(/client\.name/);
+    });
+    it("returns 400 when client.name is whitespace-only", async () => {
+        const res = makeRes();
+        await duplicateAgentHandler(makeReq({ body: { source_agent_id: "src1", client: { name: "   " } } }), res);
+        expect(res._status).toBe(400);
+    });
     it("returns 409 when slug already exists", async () => {
         mockNotificationClients["acme"] = {};
         mockFetchRetellAgent.mockResolvedValue({
@@ -253,7 +317,7 @@ describe("duplicateAgentHandler", () => {
         });
         const res = makeRes();
         await duplicateAgentHandler(makeReq({
-            body: { source_agent_id: "src1", client: { slug: "acme" } },
+            body: { source_agent_id: "src1", client: { slug: "acme", name: "Acme Copy" } },
         }), res);
         expect(res._status).toBe(409);
     });
@@ -293,7 +357,7 @@ describe("duplicateAgentHandler", () => {
         mockFlowDelete.mockResolvedValue(undefined);
         const res = makeRes();
         await duplicateAgentHandler(makeReq({
-            body: { source_agent_id: "src1" },
+            body: { source_agent_id: "src1", client: { name: "Acme Copy" } },
         }), res);
         expect(res._status).toBe(502);
         expect(res._json.details).toBe("agent create failed");
@@ -310,14 +374,14 @@ describe("duplicateAgentHandler", () => {
         mockAgentCreate.mockRejectedValue(new Error("agent failed"));
         mockFlowDelete.mockRejectedValue(new Error("cleanup also failed"));
         const res = makeRes();
-        await duplicateAgentHandler(makeReq({ body: { source_agent_id: "src1" } }), res);
+        await duplicateAgentHandler(makeReq({ body: { source_agent_id: "src1", client: { name: "Acme Copy" } } }), res);
         expect(res._status).toBe(502);
         expect(res._json.details).toBe("agent failed");
     });
     it("returns 502 when source fetch fails (no flow created, no cleanup)", async () => {
         mockFetchRetellAgent.mockRejectedValue(new Error("not found"));
         const res = makeRes();
-        await duplicateAgentHandler(makeReq({ body: { source_agent_id: "src1" } }), res);
+        await duplicateAgentHandler(makeReq({ body: { source_agent_id: "src1", client: { name: "Acme Copy" } } }), res);
         expect(res._status).toBe(502);
         expect(mockFlowDelete).not.toHaveBeenCalled();
     });

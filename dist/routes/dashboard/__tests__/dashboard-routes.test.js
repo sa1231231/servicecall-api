@@ -359,6 +359,60 @@ describe("POST /agents/:slug/request-review", () => {
         expect(res._status).toBe(502);
     });
 });
+describe("POST /agents/:slug/send-instructions", () => {
+    const verizon = { id: "verizon", label: "Verizon", message: "Hi {{business_name}}, forward to {{agent_phone}}." };
+    it("returns 400 when body is missing the template id", async () => {
+        const res = makeRes();
+        await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: {} }), res);
+        expect(res._status).toBe(400);
+    });
+    it("returns 404 when client missing", async () => {
+        mockGetClientDocument.mockResolvedValue(null);
+        const res = makeRes();
+        await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
+        expect(res._status).toBe(404);
+    });
+    it("returns 404 when no template matches the id", async () => {
+        mockGetClientDocument.mockResolvedValue({ dispatch_text_numbers: ["+1"] });
+        mockGetSettings.mockResolvedValue({ setup_instructions: [verizon] });
+        const res = makeRes();
+        await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "att" } }), res);
+        expect(res._status).toBe(404);
+    });
+    it("returns 400 when client has no dispatch numbers", async () => {
+        mockGetClientDocument.mockResolvedValue({ dispatch_text_numbers: [], name: "Acme" });
+        mockGetSettings.mockResolvedValue({ setup_instructions: [verizon] });
+        const res = makeRes();
+        await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
+        expect(res._status).toBe(400);
+    });
+    it("substitutes business_name + agent_phone and sends to all dispatch numbers", async () => {
+        mockGetClientDocument.mockResolvedValue({
+            dispatch_text_numbers: ["+15551111111", "+15552222222"],
+            name: "Acme Plumbing",
+            outbound_from_number: "+15559998888",
+        });
+        mockGetSettings.mockResolvedValue({ setup_instructions: [verizon] });
+        mockSendSmsToAll.mockResolvedValue(undefined);
+        const res = makeRes();
+        await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
+        expect(res._status).toBe(200);
+        expect(res._json.label).toBe("Verizon");
+        expect(mockSendSmsToAll).toHaveBeenCalledWith(["+15551111111", "+15552222222"], "Hi Acme Plumbing, forward to +15559998888.");
+    });
+    it("returns 502 when SMS send fails", async () => {
+        mockGetClientDocument.mockResolvedValue({
+            dispatch_text_numbers: ["+1"],
+            name: "Acme",
+            outbound_from_number: "+15550000000",
+        });
+        mockGetSettings.mockResolvedValue({ setup_instructions: [verizon] });
+        mockSendSmsToAll.mockRejectedValue(new Error("twilio down"));
+        const res = makeRes();
+        await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions", makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
+        expect(res._status).toBe(502);
+    });
+});
 describe("POST /agents/:slug/send-payment-link", () => {
     it("templates stripe_payment_url and sends", async () => {
         mockGetClientDocument.mockResolvedValue({ dispatch_text_numbers: ["+1"] });

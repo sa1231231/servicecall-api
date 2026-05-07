@@ -284,6 +284,50 @@ dashboardApiRouter.post("/agents/:slug/request-review", requirePermission("send_
   }
 });
 
+// Send carrier-specific setup instructions. The body is `{ id }` referring
+// to one of the `setup_instructions` entries configured globally. Mirrors
+// the request-review handler — looks up the template, substitutes vars,
+// and SMS-blasts the client's dispatch numbers.
+dashboardApiRouter.post("/agents/:slug/send-instructions", requirePermission("send_comms"), async (req, res) => {
+  const slug = String(req.params.slug);
+  const id = typeof req.body?.id === "string" ? req.body.id.trim() : "";
+  if (!id) {
+    res.status(400).json({ error: "Body must include `id` of the instruction template" });
+    return;
+  }
+
+  const doc = await getClientDocument(slug);
+  if (!doc) {
+    res.status(404).json({ error: `Client "${slug}" not found` });
+    return;
+  }
+
+  const settings = await getSettings();
+  const template = (settings.setup_instructions ?? []).find((t) => t.id === id);
+  if (!template) {
+    res.status(404).json({ error: `No setup instruction template with id "${id}"` });
+    return;
+  }
+
+  const numbers = doc.dispatch_text_numbers ?? [];
+  if (numbers.length === 0) {
+    res.status(400).json({ error: "No dispatch text numbers configured for this client" });
+    return;
+  }
+
+  const message = template.message
+    .replace(/\{\{business_name\}\}/g, doc.name ?? "")
+    .replace(/\{\{agent_phone\}\}/g, doc.outbound_from_number ?? "");
+
+  try {
+    await sendSmsToAll(numbers, message);
+    res.json({ success: true, sent_to: numbers, label: template.label });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(502).json({ error: "Failed to send setup instructions", details: msg });
+  }
+});
+
 dashboardApiRouter.post("/agents/:slug/send-payment-link", requirePermission("send_comms"), async (req, res) => {
   const slug = String(req.params.slug);
   const doc = await getClientDocument(slug);

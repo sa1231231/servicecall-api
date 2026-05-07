@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
 // ── Config ──────────────────────────────────────────────────────────────────
 const BASE_URL = process.env.SYSTEM_TEST_URL ?? process.env.BASE_URL;
 const API_KEY = process.env.API_KEY;
@@ -500,6 +500,13 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
                 method: "DELETE", headers: authHeaders(),
             })).status).toBe(200);
         });
+        // Belt-and-suspenders: if any earlier `it` fails between create and delete,
+        // ensure the test user is still removed.
+        afterAll(async () => {
+            await fetch(url(`/dashboard/api/users/${testUser}`), {
+                method: "DELETE", headers: authHeaders(),
+            });
+        });
     });
     // ── 14. Form ───────────────────────────────────────────────────────────
     describe("Form", () => {
@@ -510,6 +517,14 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         });
         it("rejects without auth", async () => {
             expect((await fetch(url("/form"))).status).toBe(401);
+        });
+        it("serves quick-create HTML with auth", async () => {
+            const resp = await fetch(url("/quick-create"), { headers: { Authorization: basicAuthHeader() } });
+            expect(resp.status).toBe(200);
+            expect(await resp.text()).toContain("Quick Create Agent");
+        });
+        it("/quick-create rejects without auth", async () => {
+            expect((await fetch(url("/quick-create"))).status).toBe(401);
         });
         it("serves dashboard HTML with auth", async () => {
             const resp = await fetch(url("/dashboard"), { headers: { Authorization: basicAuthHeader() } });
@@ -528,8 +543,10 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
                 headers: { Authorization: basicAuthHeader(), "Content-Type": "application/json" },
                 body: JSON.stringify({ name: "_systest_draft", formData: { test: true } }),
             });
+            // Capture id before asserting so afterAll can clean up regardless of status.
+            if (resp.ok)
+                draftId = (await json(resp))._id;
             expect(resp.status).toBe(200);
-            draftId = (await json(resp))._id;
         });
         it("deletes draft", async () => {
             if (!draftId)
@@ -537,6 +554,13 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             expect((await fetch(url(`/form/drafts/${draftId}`), {
                 method: "DELETE", headers: { Authorization: basicAuthHeader() },
             })).status).toBe(200);
+        });
+        afterAll(async () => {
+            if (draftId) {
+                await fetch(url(`/form/drafts/${draftId}`), {
+                    method: "DELETE", headers: { Authorization: basicAuthHeader() },
+                });
+            }
         });
     });
     // ── 16. Agent API Routes ───────────────────────────────────────────────
@@ -561,6 +585,17 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         });
         it("rejects provision-number without slug", async () => {
             expect((await fetch(url("/agents/provision-number"), { method: "POST", headers: authHeaders(), body: "{}" })).status).toBe(400);
+        });
+        // Unification regression: drafts and templates were collapsed; the route
+        // is now /agents/from-draft. Old path is gone.
+        it("rejects from-draft without draft field", async () => {
+            const r = await fetch(url("/agents/from-draft"), { method: "POST", headers: authHeaders(), body: "{}" });
+            expect(r.status).toBe(400);
+            expect((await json(r)).error).toMatch(/draft/);
+        });
+        it("legacy /agents/from-template returns 404 (route removed)", async () => {
+            const r = await fetch(url("/agents/from-template"), { method: "POST", headers: authHeaders(), body: "{}" });
+            expect(r.status).toBe(404);
         });
     });
     // ── 17. Data Point Defaults ─────────────────────────────────────────
@@ -640,6 +675,15 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
                 method: "DELETE", headers: authHeaders(),
             })).status).toBe(404);
         });
+        // Belt-and-suspenders: the explicit DELETE `it` may not run if an earlier
+        // test threw. Always try to remove the captured key.
+        afterAll(async () => {
+            if (createdKey) {
+                await fetch(url(`/dashboard/api/data-point-defaults/${createdKey}`), {
+                    method: "DELETE", headers: authHeaders(),
+                });
+            }
+        });
     });
     // ── 18. Settings CRUD ──────────────────────────────────────────────
     describe("Settings CRUD", () => {
@@ -657,7 +701,10 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             // Verify persistence
             const verify = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
             expect(verify.portal_sms_message).toBe(testMsg);
-            // Restore
+        });
+        afterAll(async () => {
+            // Restore the original portal_sms_message regardless of whether the
+            // verify assertion above threw.
             if (origPortalMsg !== undefined) {
                 await fetch(url("/dashboard/api/settings"), {
                     method: "PATCH", headers: authHeaders(),
@@ -668,10 +715,13 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
     // ── 18b. Settings — category_order ─────────────────────────────────
     describe("Settings category_order", () => {
+        let origOrder;
+        let origCaptured = false;
         it("saves and retrieves category_order", async () => {
             // Save original
             const orig = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
-            const origOrder = orig.category_order;
+            origOrder = orig.category_order;
+            origCaptured = true;
             const order = ["billing", "trucking", "caller_info"];
             const patchResp = await fetch(url("/dashboard/api/settings"), {
                 method: "PATCH", headers: authHeaders(),
@@ -683,11 +733,16 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             // Verify data-point-defaults returns custom order
             const dpResp = await json(await fetch(url("/dashboard/api/data-point-defaults"), { headers: authHeaders() }));
             expect(dpResp.categoryOrder).toEqual(order);
-            // Restore original (not null — preserve user's settings)
-            await fetch(url("/dashboard/api/settings"), {
-                method: "PATCH", headers: authHeaders(),
-                body: JSON.stringify({ category_order: origOrder ?? null }),
-            });
+        });
+        afterAll(async () => {
+            // Restore original (not null — preserve user's settings) regardless of
+            // whether the assertions above threw.
+            if (origCaptured) {
+                await fetch(url("/dashboard/api/settings"), {
+                    method: "PATCH", headers: authHeaders(),
+                    body: JSON.stringify({ category_order: origOrder ?? null }),
+                });
+            }
         });
     });
     // ── 18c. Blast SMS ───────────────────────────────────────────────
@@ -771,6 +826,10 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
     // ── 23. Roles & Permissions ─────────────────────────────────────────
     describe("Roles and permissions", () => {
+        // Hoisted so the afterAll hook below can clean up the test user even if
+        // the inline DELETE inside `it("super_admin role accepted...")` doesn't
+        // run (e.g. because an earlier `expect` in that `it` threw).
+        const superAdminTestUser = "_systest_super_" + Date.now();
         it("sam_admin exists and has elevated permissions", async () => {
             const resp = await fetch(url("/dashboard/api/users"), { headers: authHeaders() });
             expect(resp.status).toBe(200);
@@ -786,14 +845,13 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             }
         });
         it("super_admin role accepted in user creation", async () => {
-            const testUser = "_systest_super_" + Date.now();
             const resp = await fetch(url("/dashboard/api/users"), {
                 method: "POST", headers: authHeaders(),
-                body: JSON.stringify({ username: testUser, password: "testpass123", role: "super_admin" }),
+                body: JSON.stringify({ username: superAdminTestUser, password: "testpass123", role: "super_admin" }),
             });
             expect(resp.status).toBe(200);
-            // Clean up
-            await fetch(url(`/dashboard/api/users/${testUser}`), { method: "DELETE", headers: authHeaders() });
+            // Clean up (afterAll repeats this as a safety net if the assertion threw)
+            await fetch(url(`/dashboard/api/users/${superAdminTestUser}`), { method: "DELETE", headers: authHeaders() });
         });
         it("settings include view_billing and manage_deleted in permission defs", async () => {
             const resp = await fetch(url("/dashboard/config"), { headers: { Authorization: basicAuthHeader() } });
@@ -807,6 +865,12 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             const body = await json(resp);
             expect(body.user.permissions.view_billing).toBe(true);
             expect(body.user.permissions.manage_deleted).toBe(true);
+        });
+        afterAll(async () => {
+            // Idempotent: 404 if already deleted by the inline cleanup above.
+            await fetch(url(`/dashboard/api/users/${superAdminTestUser}`), {
+                method: "DELETE", headers: authHeaders(),
+            });
         });
     });
     // ── 23b. Export Agent Config ──────────────────────────────────────
@@ -891,10 +955,13 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     });
     // ── 23c. Settings — category_labels ─────────────────────────────────
     describe("Settings category_labels", () => {
+        let origLabels;
+        let origCaptured = false;
         it("saves and retrieves custom category labels", async () => {
             // Save original
             const orig = await json(await fetch(url("/dashboard/api/settings"), { headers: authHeaders() }));
-            const origLabels = orig.category_labels;
+            origLabels = orig.category_labels;
+            origCaptured = true;
             const labels = { ...(origLabels || {}), _systest_cat: "System Test Category" };
             const patchResp = await fetch(url("/dashboard/api/settings"), {
                 method: "PATCH", headers: authHeaders(),
@@ -907,11 +974,15 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             const dpResp = await json(await fetch(url("/dashboard/api/data-point-defaults"), { headers: authHeaders() }));
             expect(dpResp.categoryLabels._systest_cat).toBe("System Test Category");
             expect(dpResp.categoryLabels.caller_info).toBeDefined();
-            // Restore original (remove only the test key)
-            await fetch(url("/dashboard/api/settings"), {
-                method: "PATCH", headers: authHeaders(),
-                body: JSON.stringify({ category_labels: origLabels ?? null }),
-            });
+        });
+        afterAll(async () => {
+            // Restore original (remove the test key) regardless of assertion outcome.
+            if (origCaptured) {
+                await fetch(url("/dashboard/api/settings"), {
+                    method: "PATCH", headers: authHeaders(),
+                    body: JSON.stringify({ category_labels: origLabels ?? null }),
+                });
+            }
         });
     });
     // ── 24. Form Config ─────────────────────────────────────────────────
@@ -1639,6 +1710,21 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
                 expect(body.globalPrompt).not.toContain("[INTEGRATION-");
                 expect(body.faqKnowledgeBase).not.toContain("[FAQ-TEST-");
             });
+            // Belt-and-suspenders: if the rollback `it` above failed (or its
+            // snapshotBeforeIntegration was never captured), this hook makes one
+            // more attempt to restore the agent. Idempotent — replaying the same
+            // versionId into rollback is safe.
+            afterAll(async () => {
+                if (!snapshotBeforeIntegration)
+                    return;
+                try {
+                    await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/rollback`), {
+                        method: "POST", headers: authHeaders(),
+                        body: JSON.stringify({ versionId: snapshotBeforeIntegration }),
+                    });
+                }
+                catch { /* best-effort */ }
+            });
         });
     });
     // ══════════════════════════════════════════════════════════════════════════
@@ -1863,6 +1949,25 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     describe("Folders CRUD + agent move", { timeout: 30_000 }, () => {
         let testFolderId;
         let originalFolderId;
+        // Sweep any orphan `_systest_*` folders left behind by prior failed runs
+        // before we create a new one — keeps the dashboard clean even when a
+        // previous run's afterAll didn't fire.
+        beforeAll(async () => {
+            try {
+                const resp = await fetch(url("/dashboard/api/folders"), { headers: authHeaders() });
+                if (!resp.ok)
+                    return;
+                const folders = await json(resp);
+                for (const f of folders) {
+                    if (typeof f?.name === "string" && f.name.startsWith("_systest_")) {
+                        await fetch(url(`/dashboard/api/folders/${f._id}`), {
+                            method: "DELETE", headers: authHeaders(),
+                        });
+                    }
+                }
+            }
+            catch { /* best-effort sweep; failures here shouldn't block the suite */ }
+        });
         it("captures Demo Meter's current folder", async () => {
             const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
             originalFolderId = doc.folder_id ?? null;
@@ -1872,9 +1977,13 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
                 method: "POST", headers: authHeaders(),
                 body: JSON.stringify({ name: `_systest_${Date.now()}` }),
             });
-            expect(resp.status).toBe(200);
-            const body = await json(resp);
-            testFolderId = body._id ?? body.id;
+            // Capture id BEFORE the status assertion so the afterAll can clean up
+            // even when the status doesn't match expectations.
+            if (resp.ok) {
+                const body = await json(resp);
+                testFolderId = body._id ?? body.id;
+            }
+            expect(resp.status).toBe(201);
             expect(testFolderId).toBeTruthy();
         });
         it("lists the new folder", async () => {

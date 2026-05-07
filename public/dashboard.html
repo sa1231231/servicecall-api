@@ -843,6 +843,12 @@
   .settings-form label { display: block; font-size: 0.82rem; font-weight: 600; color: #555; margin-bottom: 0.25rem; margin-top: 0.75rem; }
   .settings-form label:first-child { margin-top: 0; }
   .settings-section { border: 1px solid #e5e7eb; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1rem; }
+  .instruction-row { border: 1px solid #e5e7eb; border-radius: 6px; padding: 0.5rem 0.6rem; margin-bottom: 0.5rem; background: #fafafa; }
+  .instruction-row .instr-row-top { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem; }
+  .instruction-row .instr-label { flex: 1; padding: 0.35rem 0.5rem; font-size: 0.85rem; }
+  .instruction-row .instr-remove { padding: 0.3rem 0.6rem; font-size: 0.72rem; background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; border-radius: 4px; cursor: pointer; }
+  .instruction-row .instr-remove:hover { background: #fecaca; }
+  .instruction-row .instr-message { width: 100%; min-height: 70px; padding: 0.4rem 0.5rem; font-size: 0.82rem; border: 1px solid #d1d5db; border-radius: 4px; resize: vertical; box-sizing: border-box; font-family: inherit; }
   .settings-section-title { font-size: 0.85rem; font-weight: 700; color: #374151; margin: 0 0 0.25rem; display: flex; align-items: center; gap: 0.4rem; }
   .settings-section-title .section-icon { font-size: 1rem; }
   .settings-form input, .settings-form textarea {
@@ -1026,6 +1032,13 @@
               <input type="hidden" id="settings-portal-msg">
             </div>
             <p class="settings-hint">Type {{ to insert {{portal_url}}.</p>
+          </div>
+
+          <div class="settings-section">
+            <div class="settings-section-title">Setup Instructions</div>
+            <p class="settings-hint" style="margin-bottom:0.6rem;">Carrier-specific call-forwarding instructions. Each entry shows up in the agent editor's "Send Instructions" dropdown. Use <code>{{business_name}}</code> and <code>{{agent_phone}}</code> in the message.</p>
+            <div id="settings-instructions-list"></div>
+            <button type="button" onclick="settingsAddInstruction()" style="margin-top:0.4rem;font-size:0.78rem;padding:0.35rem 0.7rem;background:#fff;border:1px dashed #2563eb;border-radius:5px;color:#2563eb;cursor:pointer;">+ Add Carrier</button>
           </div>
         </div>
       </div>
@@ -1374,6 +1387,14 @@
   // client-side as the user clicks headers or adds/removes search chips.
   let agentRows = [];
   let agentTrialDays = 14;
+  // Cached per-carrier setup-instruction templates from global settings.
+  // Loaded alongside the agent list and used by buildHeaderButtons to
+  // populate the agent editor's "Send Instructions" dropdown.
+  let globalSetupInstructions = [];
+  // Working copy used by the Settings → Templates editor — separate from
+  // globalSetupInstructions so an unsaved edit doesn't leak into the
+  // agent editor's dropdown until the user clicks Save Settings.
+  let _settingsInstructions = [];
   let agentSearchChips = [];
   let agentSortKey = null;
   let agentSortDir = null;
@@ -1568,6 +1589,9 @@
       const agents = await res.json();
       const globalSettings = settingsRes.ok ? await settingsRes.json() : {};
       agentTrialDays = globalSettings.free_trial_days || 14;
+      globalSetupInstructions = Array.isArray(globalSettings.setup_instructions)
+        ? globalSettings.setup_instructions
+        : [];
       agentRows = agents;
       agentFolders = foldersRes.ok ? await foldersRes.json() : [];
       agentPhoneByAgent = phonesRes.ok ? ((await phonesRes.json()).byAgent || {}) : {};
@@ -2853,6 +2877,18 @@
       ? `<div class="btn-group"><button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send to Client &#9662;</button><div class="btn-group-menu">${sendItems}</div></div>`
       : '';
 
+    // Setup-instructions dropdown — one item per configured carrier.
+    // Shown only when send_comms perm is granted AND at least one
+    // template exists (otherwise the dropdown would be empty/confusing).
+    const instructionsItems = globalSetupInstructions
+      .filter((it) => it && it.id && it.label)
+      .map((it) =>
+        `<button onclick="sendInstructions('${esc(slug)}','${esc(it.id)}',this)">${esc(it.label)}</button>`
+      ).join('');
+    const instructionsMenu = p.send_comms && instructionsItems
+      ? `<div class="btn-group"><button class="btn-group-toggle send" onclick="toggleDropdown(this)">Send Instructions &#9662;</button><div class="btn-group-menu">${instructionsItems}</div></div>`
+      : '';
+
     const manageItems =
       `<button onclick="exportAgentConfig('${esc(slug)}')">Export Config</button>` +
       (p.clone_agents ? `<button onclick="showCloneModal()">Clone Agent</button>` : '') +
@@ -2870,7 +2906,7 @@
         `<button disabled style="color:#888;">Loading…</button>` +
       `</div></div>`;
 
-    return testMenu + sendMenu + manageMenu + portalMenu;
+    return testMenu + sendMenu + instructionsMenu + manageMenu + portalMenu;
   }
 
   function exportAgentConfig(slug) {
@@ -3963,6 +3999,90 @@
 
   // ── REQUEST REVIEW ──────────────────────────────────────────────────
 
+  // ── SETUP INSTRUCTIONS — Settings editor ────────────────────────────
+  // Working copy lives in _settingsInstructions; rebuilt into HTML on each
+  // mutation so add/remove are simple state-then-render. Save flows pulls
+  // the live values out of the inputs via collectSettingsInstructions().
+  function settingsRenderInstructions() {
+    const list = document.getElementById('settings-instructions-list');
+    if (!list) return;
+    if (_settingsInstructions.length === 0) {
+      list.innerHTML = '<div style="padding:0.6rem;color:#888;font-size:0.8rem;text-align:center;border:1px dashed #e5e7eb;border-radius:6px;">No carriers yet — click + Add Carrier to create one.</div>';
+      return;
+    }
+    list.innerHTML = _settingsInstructions.map((it, idx) =>
+      '<div class="instruction-row" data-idx="' + idx + '">' +
+        '<div class="instr-row-top">' +
+          '<input type="text" class="instr-label" value="' + esc(it.label || '') + '" placeholder="e.g. Verizon">' +
+          '<button type="button" class="instr-remove" onclick="settingsRemoveInstruction(' + idx + ')">Remove</button>' +
+        '</div>' +
+        '<textarea class="instr-message" placeholder="Hi {{business_name}}, to forward your calls to your AI agent at {{agent_phone}}, dial *72 then the number...">' + esc(it.message || '') + '</textarea>' +
+      '</div>'
+    ).join('');
+  }
+
+  function settingsAddInstruction() {
+    // Persist live label/message edits before rebuilding so the new row
+    // appears alongside existing in-progress text instead of clobbering it.
+    _settingsInstructions = collectSettingsInstructions({ keepEmpty: true });
+    _settingsInstructions.push({
+      id: 'ins_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      label: '',
+      message: '',
+    });
+    settingsRenderInstructions();
+  }
+
+  function settingsRemoveInstruction(idx) {
+    _settingsInstructions = collectSettingsInstructions({ keepEmpty: true });
+    _settingsInstructions.splice(idx, 1);
+    settingsRenderInstructions();
+  }
+
+  function collectSettingsInstructions(opts) {
+    const list = document.getElementById('settings-instructions-list');
+    if (!list) return _settingsInstructions;
+    const keepEmpty = !!(opts && opts.keepEmpty);
+    const collected = [];
+    list.querySelectorAll('.instruction-row').forEach((row) => {
+      const idx = parseInt(row.dataset.idx, 10);
+      const stable = _settingsInstructions[idx];
+      const label = row.querySelector('.instr-label').value.trim();
+      const message = row.querySelector('.instr-message').value;
+      if (!keepEmpty && !label && !message.trim()) return; // drop blanks on save
+      collected.push({
+        id: stable?.id || ('ins_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+        label,
+        message,
+      });
+    });
+    return collected;
+  }
+
+  // ── SEND SETUP INSTRUCTIONS ─────────────────────────────────────────
+  // Per-carrier templates configured in Settings → Templates → Setup
+  // Instructions. The dropdown built in buildHeaderButtons fires this
+  // with the chosen template id; the server substitutes business_name +
+  // agent_phone and SMS-blasts the client's dispatch numbers.
+  async function sendInstructions(slug, id, btnEl) {
+    const originalText = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Sending…'; }
+    try {
+      const res = await fetch('/dashboard/api/agents/' + encodeURIComponent(slug) + '/send-instructions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed: ' + res.status);
+      showToast(data.label + ' instructions sent to ' + data.sent_to.length + ' number(s)', 'success');
+    } catch (err) {
+      showToast('Send failed: ' + err.message, 'error');
+    } finally {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = originalText; }
+    }
+  }
+
   async function requestReview(slug) {
     const btn = document.getElementById('btnReview');
     btn.disabled = true;
@@ -4233,6 +4353,10 @@
       document.getElementById('settings-payment-url').value = settings.stripe_payment_url || '';
       document.getElementById('settings-payment-msg').value = settings.payment_sms_message || '';
       document.getElementById('settings-portal-msg').value = settings.portal_sms_message || '';
+      _settingsInstructions = Array.isArray(settings.setup_instructions)
+        ? settings.setup_instructions.map((it) => ({ ...it }))
+        : [];
+      settingsRenderInstructions();
       const rates = settings.cost_rates || {};
       const smsEl = document.getElementById('settings-rate-sms-cents');
       const emailEl = document.getElementById('settings-rate-email-cents');
@@ -4334,6 +4458,7 @@
       stripe_payment_url: document.getElementById('settings-payment-url').value.trim(),
       payment_sms_message: document.getElementById('settings-payment-msg').value,
       portal_sms_message: document.getElementById('settings-portal-msg').value,
+      setup_instructions: collectSettingsInstructions(),
       default_summary_agent_id: getChipValues('settings-chip-summary')[0] || '',
       cost_rates: {
         twilio_sms_cents: parseFloat(document.getElementById('settings-rate-sms-cents').value) || 0,
