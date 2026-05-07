@@ -1058,7 +1058,7 @@
 
           <div class="settings-section">
             <div class="settings-section-title">Setup Instructions</div>
-            <p class="settings-hint" style="margin-bottom:0.6rem;">Carrier-specific call-forwarding instructions. Each entry shows up in the agent editor's "Send Instructions" dropdown. Use <code>{{business_name}}</code> and <code>{{agent_phone}}</code> in the message.</p>
+            <p class="settings-hint" style="margin-bottom:0.6rem;">Carrier-specific call-forwarding instructions. Each entry shows up in the agent editor's "Send Instructions" dropdown. Placeholders: <code>{{business_name}}</code>, <code>{{agent_phone}}</code> (E.164, e.g. <code>+18158804070</code>), <code>{{agent_phone_10}}</code> (10-digit, e.g. <code>8158804070</code> — use this inside star/MMI codes like <code>*72{{agent_phone_10}}</code> so tap-to-dial activates forwarding).</p>
             <div id="settings-instructions-list"></div>
             <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;">
               <button type="button" onclick="settingsAddInstruction()" style="font-size:0.78rem;padding:0.35rem 0.7rem;background:#fff;border:1px dashed #2563eb;border-radius:5px;color:#2563eb;cursor:pointer;">+ Add Carrier</button>
@@ -4064,7 +4064,7 @@
           '<input type="text" class="instr-label" value="' + esc(it.label || '') + '" placeholder="e.g. Verizon">' +
           '<button type="button" class="instr-remove" onclick="settingsRemoveInstruction(' + idx + ')">Remove</button>' +
         '</div>' +
-        '<textarea class="instr-message" placeholder="Hi {{business_name}}, to forward your calls to your AI agent at {{agent_phone}}, dial *72 then the number...">' + esc(it.message || '') + '</textarea>' +
+        '<textarea class="instr-message" placeholder="Hi {{business_name}}, to forward calls to your AI receptionist, tap to dial: *72{{agent_phone_10}} — press call, wait for the chime, hang up. To turn off later, dial *73.">' + esc(it.message || '') + '</textarea>' +
       '</div>'
     ).join('');
   }

@@ -507,6 +507,31 @@ describe("POST /agents/:slug/send-instructions", () => {
       makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
     expect(res._status).toBe(502);
   });
+
+  it("substitutes {{agent_phone_10}} with the 10-digit form (no +1) for star-code dial-strings", async () => {
+    const star = {
+      id: "verizon",
+      label: "Verizon",
+      message: "Tap to dial: *72{{agent_phone_10}} — full E.164 backup: {{agent_phone}}.",
+    };
+    mockGetClientDocument.mockResolvedValue({
+      dispatch_text_numbers: ["+15551111111"],
+      name: "Acme",
+      outbound_from_number: "+18158804070",
+    });
+    mockGetSettings.mockResolvedValue({ setup_instructions: [star] });
+    mockSendSmsToAll.mockResolvedValue(undefined);
+
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions",
+      makeReq({ params: { slug: "acme" }, body: { id: "verizon" } }), res);
+
+    expect(res._status).toBe(200);
+    expect(mockSendSmsToAll).toHaveBeenCalledWith(
+      ["+15551111111"],
+      "Tap to dial: *728158804070 — full E.164 backup: +18158804070.",
+    );
+  });
 });
 
 describe("POST /agents/:slug/send-payment-link", () => {

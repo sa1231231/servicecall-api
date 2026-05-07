@@ -295,9 +295,17 @@ dashboardApiRouter.post("/agents/:slug/send-instructions", requirePermission("se
     return;
   }
 
+  // {{agent_phone}}     → E.164 form, e.g. "+18158804070"
+  // {{agent_phone_10}}  → 10-digit US form, e.g. "8158804070" — for use
+  //   inside carrier star/MMI codes (`*72{{agent_phone_10}}`,
+  //   `**21*{{agent_phone_10}}#`) where the `+1` country prefix can break
+  //   tap-to-dial activation on some carriers/dialers.
+  const e164 = doc.outbound_from_number ?? "";
+  const tenDigit = e164.replace(/^\+1/, "").replace(/^\+/, "").replace(/\D/g, "").slice(-10);
   const message = template.message
     .replace(/\{\{business_name\}\}/g, doc.name ?? "")
-    .replace(/\{\{agent_phone\}\}/g, doc.outbound_from_number ?? "");
+    .replace(/\{\{agent_phone_10\}\}/g, tenDigit)
+    .replace(/\{\{agent_phone\}\}/g, e164);
 
   try {
     await sendSmsToAll(numbers, message);
