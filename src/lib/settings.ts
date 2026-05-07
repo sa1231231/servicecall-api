@@ -16,7 +16,8 @@ export const DEFAULT_COST_RATES: CostRates = {
 /** A single setup-instruction template (e.g. Verizon, AT&T, RingCentral).
  *  Keyed by `id` so the dashboard's send dropdown can identify the choice
  *  while letting the operator rename `label` without breaking outstanding
- *  references. `message` may use {{business_name}} and {{agent_phone}}. */
+ *  references. `message` may use {{business_name}}, {{agent_phone}},
+ *  {{agent_phone_10}}, and {{agent_phone_pretty}}. */
 export interface SetupInstruction {
   id: string;
   label: string;

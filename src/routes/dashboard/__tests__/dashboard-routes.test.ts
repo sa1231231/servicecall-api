@@ -589,6 +589,31 @@ describe("POST /agents/:slug/send-instructions", () => {
       "Tap to dial: *728158804070 — full E.164 backup: +18158804070.",
     );
   });
+
+  it("substitutes {{agent_phone_pretty}} with the (NNN) NNN-NNNN form for hosted-PBX UIs", async () => {
+    const ringcentral = {
+      id: "ringcentral",
+      label: "RingCentral",
+      message: "In RingCentral, set forwarding target to {{agent_phone_pretty}}.",
+    };
+    mockGetClientDocument.mockResolvedValue({
+      dispatch_text_numbers: ["+15551111111"],
+      name: "Acme",
+      outbound_from_number: "+18158804070",
+    });
+    mockGetSettings.mockResolvedValue({ setup_instructions: [ringcentral] });
+    mockSendSmsToAll.mockResolvedValue(undefined);
+
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "post", "/agents/:slug/send-instructions",
+      makeReq({ params: { slug: "acme" }, body: { id: "ringcentral" } }), res);
+
+    expect(res._status).toBe(200);
+    expect(mockSendSmsToAll).toHaveBeenCalledWith(
+      ["+15551111111"],
+      "In RingCentral, set forwarding target to (815) 880-4070.",
+    );
+  });
 });
 
 describe("POST /agents/:slug/send-payment-link", () => {

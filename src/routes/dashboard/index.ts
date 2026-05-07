@@ -295,11 +295,14 @@ dashboardApiRouter.post("/agents/:slug/send-instructions", requirePermission("se
     return;
   }
 
-  // {{agent_phone}}     → E.164 form, e.g. "+18158804070"
-  // {{agent_phone_10}}  → 10-digit US form, e.g. "8158804070" — for use
+  // {{agent_phone}}        → E.164 form, e.g. "+18158804070"
+  // {{agent_phone_10}}     → 10-digit US form, e.g. "8158804070" — for use
   //   inside carrier star/MMI codes (`*72{{agent_phone_10}}`,
   //   `**21*{{agent_phone_10}}#`) where the `+1` country prefix can break
   //   tap-to-dial activation on some carriers/dialers.
+  // {{agent_phone_pretty}} → human-readable US form, e.g. "(815) 880-4070"
+  //   — for hosted-PBX UIs like RingCentral that want a display-formatted
+  //   number in the forwarding-target field.
   //
   // Source-of-truth chain: doc.outbound_from_number (fast path) → Retell
   // live (fallback for legacy agents whose outbound_from_number was
@@ -331,8 +334,12 @@ dashboardApiRouter.post("/agents/:slug/send-instructions", requirePermission("se
     });
     return;
   }
+  const pretty = tenDigit.length === 10
+    ? `(${tenDigit.slice(0, 3)}) ${tenDigit.slice(3, 6)}-${tenDigit.slice(6)}`
+    : e164;
   const message = template.message
     .replace(/\{\{business_name\}\}/g, doc.name ?? "")
+    .replace(/\{\{agent_phone_pretty\}\}/g, pretty)
     .replace(/\{\{agent_phone_10\}\}/g, tenDigit)
     .replace(/\{\{agent_phone\}\}/g, e164);
 
