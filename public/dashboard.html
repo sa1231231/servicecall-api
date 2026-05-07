@@ -7630,9 +7630,10 @@
         (matched ? '' : ' — no matching draft yet, pick another or create the template') +
         '</div>'
       : '';
+    const systemPrompt = enriched.extra?._systemPrompt || '';
     const userMessage = enriched.extra?._userMessage || '';
     const rawResponse = enriched.extra?._rawResponse || '';
-    const hasFeed = userMessage || rawResponse;
+    const hasFeed = systemPrompt || userMessage || rawResponse;
     const errorBlock = lead.enrichmentError
       ? '<div class="lead-error-box"><strong>Enrichment error:</strong> ' + esc(lead.enrichmentError) + '</div>'
       : '';
@@ -7653,13 +7654,20 @@
         '<span class="field-label">Source</span><div class="read-field">' + esc(lead.source) + '</div>' +
       '</div>';
 
-    // Panel 2 — AI Feed (sent + received). Hidden until enrichment has run.
+    // Panel 2 — AI Feed (system prompt + user message + response). Each
+    // block is exact byte-for-byte text — no truncation, no rewriting.
+    // Hidden until enrichment has run.
     const feedPre = (text) => '<pre style="white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:0.65rem;margin:0;border-radius:5px;font-size:0.76rem;line-height:1.45;font-family:ui-monospace,Menlo,Consolas,monospace;max-height:340px;overflow:auto;">' + esc(text) + '</pre>';
     const aiFeedPanel = hasFeed
       ? '<div class="lead-detail-section">' +
-          '<h3>2. AI Feed</h3>' +
+          '<h3>2. AI Feed <span style="font-weight:400;font-size:0.7rem;color:#777;text-transform:none;letter-spacing:0;">(exact text — no truncation)</span></h3>' +
+          (systemPrompt
+            ? '<details style="margin-bottom:0.5rem;"><summary style="cursor:pointer;font-size:0.78rem;font-weight:600;color:#4b5563;">System prompt — SKILL.md + references (' + systemPrompt.length + ' chars)</summary>' +
+              '<div style="margin-top:0.35rem;">' + feedPre(systemPrompt) + '</div>' +
+              '</details>'
+            : '') +
           (userMessage
-            ? '<span class="field-label">Sent to AI</span>' + feedPre(userMessage)
+            ? '<span class="field-label">Sent to AI (user message)</span>' + feedPre(userMessage)
             : '') +
           (rawResponse
             ? '<span class="field-label" style="margin-top:0.6rem;">Received from AI</span>' + feedPre(rawResponse) +

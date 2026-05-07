@@ -17,6 +17,10 @@ export interface EnrichmentInput {
  *  dashboard's AI Feed panel so the operator can see exactly what was
  *  sent and what came back, regardless of parse outcome. */
 export interface EnrichmentTranscript {
+  /** The system prompt the model received — SKILL.md body + each
+   *  reference file concatenated by `buildSystemPrompt`. Persisted with
+   *  the lead so refinement isn't ambiguous if SKILL.md changes later. */
+  systemPrompt: string;
   /** The user message we POSTed (output of `formatLeadAsUserMessage`). */
   userMessage: string;
   /** The text content of the model's reply (concatenated text blocks). */
@@ -127,6 +131,7 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
     return {
       ok: false,
       error: "Anthropic enrichment not configured — set ANTHROPIC_API_KEY.",
+      systemPrompt: "",
       userMessage,
       rawResponse: "",
     };
@@ -141,18 +146,20 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
       error:
         "Could not load skill from disk: " +
         (err instanceof Error ? err.message : String(err)),
+      systemPrompt: "",
       userMessage,
       rawResponse: "",
     };
   }
 
+  const systemPrompt = buildSystemPrompt(skill);
   const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
 
   try {
     const result = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
-      system: buildSystemPrompt(skill),
+      system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     });
 
@@ -162,11 +169,12 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
     console.log(
       `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b: ${rawResponse.slice(0, 240)}`,
     );
-    return parseEnrichmentResponse(rawResponse, userMessage);
+    return parseEnrichmentResponse(rawResponse, userMessage, systemPrompt);
   } catch (err) {
     return {
       ok: false,
       error: err instanceof Error ? err.message : String(err),
+      systemPrompt,
       userMessage,
       rawResponse: "",
     };
@@ -213,13 +221,14 @@ export function extractText(result: unknown): string {
 export function parseEnrichmentResponse(
   text: string,
   userMessage = "",
+  systemPrompt = "",
 ): EnrichmentResult {
   const stripped = text
     .replace(/^\s*```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/i, "")
     .trim();
   if (!stripped) {
-    return { ok: false, error: "skill response was empty", userMessage, rawResponse: text };
+    return { ok: false, error: "skill response was empty", systemPrompt, userMessage, rawResponse: text };
   }
   let obj: unknown;
   try {
@@ -230,6 +239,7 @@ export function parseEnrichmentResponse(
       error:
         "could not parse JSON from skill response: " +
         (err instanceof Error ? err.message : String(err)),
+      systemPrompt,
       userMessage,
       rawResponse: text,
     };
@@ -238,6 +248,7 @@ export function parseEnrichmentResponse(
     return {
       ok: false,
       error: "skill response was not a JSON object",
+      systemPrompt,
       userMessage,
       rawResponse: text,
     };
@@ -253,6 +264,7 @@ export function parseEnrichmentResponse(
     return {
       ok: false,
       error: "skill response missing businessName and faqKnowledgeBase",
+      systemPrompt,
       userMessage,
       rawResponse: text,
     };
@@ -276,6 +288,7 @@ export function parseEnrichmentResponse(
     faqKnowledgeBase,
     templateName,
     extra,
+    systemPrompt,
     userMessage,
     rawResponse: text,
   };

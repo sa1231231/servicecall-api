@@ -39,6 +39,7 @@ async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<v
   // structured data; the failure branch merges into prior enriched fields
   // so a failed re-enrich doesn't wipe operator edits.
   const aiTrace = {
+    _systemPrompt: result.systemPrompt,
     _userMessage: result.userMessage,
     _rawResponse: result.rawResponse,
   };
