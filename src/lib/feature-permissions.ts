@@ -334,12 +334,12 @@ export const FEATURES: Feature[] = [
   {
     key: "audit_log",
     label: "Audit Log",
-    description: "View the audit trail of mutations (who changed what, when). No UI yet — this gate reserves the feature.",
+    description: "View the audit trail of dashboard actions (who changed what, when) under Settings → Activity Log.",
     available: ["none", "read"],
     levels: {
       read: {
-        ui: ["(planned) Audit Log viewer"],
-        routes: ["(planned) GET /dashboard/api/audit"],
+        ui: ["Settings → Activity Log tab — filterable list of recent actions"],
+        routes: ["GET /dashboard/api/audit-log"],
       },
     },
   },

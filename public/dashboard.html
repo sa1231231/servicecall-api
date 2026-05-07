@@ -1376,6 +1376,29 @@
           <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them. Permanently deleting also releases the Twilio number and stops billing for it.</p>
           <div id="deletedAgentsContainer"><div class="loading">Loading...</div></div>
         </div>
+
+        <div id="auditLogSection" style="display:none;margin-top:1.5rem;" data-feature="audit_log" data-feature-level="read">
+          <h2>Activity Log</h2>
+          <p class="settings-hint" style="margin-bottom:0.5rem;">Every state-changing dashboard action (creates, edits, deletes, restores, sends) is recorded. Entries are kept for 90 days.</p>
+          <div id="auditLogFilters" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.6rem;">
+            <select id="auditFilterAction" style="padding:0.3rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
+              <option value="">All actions</option>
+            </select>
+            <select id="auditFilterUser" style="padding:0.3rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
+              <option value="">All users</option>
+            </select>
+            <input type="text" id="auditFilterTarget" placeholder="Target (slug prefix)" style="padding:0.3rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;width:170px;">
+            <input type="date" id="auditFilterSince" style="padding:0.25rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
+            <span style="font-size:0.78rem;color:#666;">to</span>
+            <input type="date" id="auditFilterUntil" style="padding:0.25rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
+            <button type="button" onclick="loadAuditLog(true)" style="padding:0.3rem 0.7rem;font-size:0.78rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;">Apply</button>
+            <button type="button" onclick="resetAuditLogFilters()" style="padding:0.3rem 0.7rem;font-size:0.78rem;background:#fff;color:#666;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Reset</button>
+          </div>
+          <div id="auditLogContainer"><div class="loading">Loading...</div></div>
+          <div style="margin-top:0.6rem;text-align:center;">
+            <button type="button" id="auditLoadMoreBtn" onclick="loadAuditLog(false)" style="display:none;padding:0.4rem 0.9rem;font-size:0.78rem;background:#fff;color:#2563eb;border:1px solid #2563eb;border-radius:4px;cursor:pointer;">Load more</button>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -5187,6 +5210,11 @@
     if (hasFeature('permanent_delete', 'read')) {
       loadDeletedAgents();
     }
+    // Activity Log mirrors the deleted-agents pattern — same gating story,
+    // same Admin tab, lazy-loaded only when the user can see it.
+    if (hasFeature('audit_log', 'read')) {
+      loadAuditLog(true);
+    }
     // The "Super Admin" role option in user-creation stays root-only — only
     // root should be able to mint a new super_admin.
     if (currentUser && currentUser.isRoot) {
@@ -5407,6 +5435,124 @@
       const btn = document.getElementById('btnBlastSend');
       btn.disabled = false;
       btn.textContent = 'Send Blast';
+    }
+  }
+
+  // ── ACTIVITY LOG ──────────────────────────────────────────────────────
+
+  // Pagination state for "Load more" — driven by the latest applied filter
+  // set so a paginated fetch keeps the same filter envelope.
+  let auditLogState = { offset: 0, total: 0, filters: {} };
+
+  function readAuditFilters() {
+    const f = {};
+    const action = document.getElementById('auditFilterAction').value;
+    const username = document.getElementById('auditFilterUser').value;
+    const target = document.getElementById('auditFilterTarget').value.trim();
+    const since = document.getElementById('auditFilterSince').value;
+    const until = document.getElementById('auditFilterUntil').value;
+    if (action) f.action = action;
+    if (username) f.username = username;
+    if (target) f.target = target;
+    // The date inputs return YYYY-MM-DD; the API accepts any ISO string.
+    // Clamp `until` to end-of-day so the row picked on a date is included.
+    if (since) f.since = new Date(since + 'T00:00:00').toISOString();
+    if (until) f.until = new Date(until + 'T23:59:59').toISOString();
+    return f;
+  }
+
+  function resetAuditLogFilters() {
+    document.getElementById('auditFilterAction').value = '';
+    document.getElementById('auditFilterUser').value = '';
+    document.getElementById('auditFilterTarget').value = '';
+    document.getElementById('auditFilterSince').value = '';
+    document.getElementById('auditFilterUntil').value = '';
+    loadAuditLog(true);
+  }
+
+  async function loadAuditLog(resetOffset) {
+    const container = document.getElementById('auditLogContainer');
+    const loadMoreBtn = document.getElementById('auditLoadMoreBtn');
+    if (resetOffset) {
+      auditLogState = { offset: 0, total: 0, filters: readAuditFilters() };
+      container.innerHTML = '<div class="loading">Loading...</div>';
+    }
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(auditLogState.filters)) params.set(k, v);
+    params.set('offset', String(auditLogState.offset));
+    params.set('limit', '100');
+
+    try {
+      const res = await fetch('/dashboard/api/audit-log?' + params.toString());
+      if (!res.ok) throw new Error('Failed: ' + res.status);
+      const data = await res.json();
+
+      // Filter dropdowns repopulate from the API's distinct lists. Only
+      // refresh on initial load so the dropdown doesn't clobber the
+      // user's selection mid-pagination.
+      if (resetOffset) {
+        const actSel = document.getElementById('auditFilterAction');
+        const usrSel = document.getElementById('auditFilterUser');
+        const curAct = actSel.value, curUsr = usrSel.value;
+        actSel.innerHTML = '<option value="">All actions</option>' +
+          (data.actions || []).map(a => '<option value="' + esc(a) + '"' + (a === curAct ? ' selected' : '') + '>' + esc(a) + '</option>').join('');
+        usrSel.innerHTML = '<option value="">All users</option>' +
+          (data.usernames || []).map(u => '<option value="' + esc(u) + '"' + (u === curUsr ? ' selected' : '') + '>' + esc(u) + '</option>').join('');
+      }
+
+      auditLogState.total = data.total;
+      auditLogState.offset += (data.entries || []).length;
+
+      if (data.total === 0) {
+        container.innerHTML = '<p style="color:#6b7280;font-size:0.85rem;">No matching activity in this range.</p>';
+        loadMoreBtn.style.display = 'none';
+        return;
+      }
+
+      let rowsHtml = '';
+      for (const e of data.entries) {
+        const ts = new Date(e.timestamp);
+        const tsStr = ts.toLocaleString();
+        const detailsStr = (e.details && Object.keys(e.details).length)
+          ? '<details style="cursor:pointer;"><summary style="color:#2563eb;font-size:0.75rem;">view</summary><pre style="margin:0.25rem 0 0;font-size:0.72rem;white-space:pre-wrap;background:#f9fafb;padding:0.4rem;border-radius:4px;">' + esc(JSON.stringify(e.details, null, 2)) + '</pre></details>'
+          : '<span style="color:#9ca3af;">—</span>';
+        rowsHtml += '<tr style="border-bottom:1px solid #f3f4f6;">';
+        rowsHtml += '<td style="padding:0.35rem 0.5rem;white-space:nowrap;color:#444;">' + esc(tsStr) + '</td>';
+        rowsHtml += '<td style="padding:0.35rem 0.5rem;">' + esc(e.username || '') + '<span style="color:#9ca3af;font-size:0.72rem;"> (' + esc(e.role || '') + ')</span></td>';
+        rowsHtml += '<td style="padding:0.35rem 0.5rem;font-family:monospace;font-size:0.78rem;color:#0f766e;">' + esc(e.action || '') + '</td>';
+        rowsHtml += '<td style="padding:0.35rem 0.5rem;font-family:monospace;font-size:0.78rem;">' + esc(e.target || '') + '</td>';
+        rowsHtml += '<td style="padding:0.35rem 0.5rem;">' + detailsStr + '</td>';
+        rowsHtml += '</tr>';
+      }
+
+      const tableHtml = '<table style="width:100%;border-collapse:collapse;font-size:0.82rem;">' +
+        '<tr style="text-align:left;border-bottom:2px solid #e5e7eb;color:#666;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.03em;">' +
+        '<th style="padding:0.4rem 0.5rem;">When</th>' +
+        '<th style="padding:0.4rem 0.5rem;">Who</th>' +
+        '<th style="padding:0.4rem 0.5rem;">Action</th>' +
+        '<th style="padding:0.4rem 0.5rem;">Target</th>' +
+        '<th style="padding:0.4rem 0.5rem;">Details</th>' +
+        '</tr>' + rowsHtml + '</table>' +
+        '<p style="color:#6b7280;font-size:0.75rem;margin-top:0.5rem;">Showing ' + auditLogState.offset + ' of ' + data.total + '.</p>';
+
+      if (resetOffset) {
+        container.innerHTML = tableHtml;
+      } else {
+        // Append rows when paginating so the user doesn't lose their scroll.
+        const existingTbody = container.querySelector('table');
+        if (existingTbody) {
+          existingTbody.insertAdjacentHTML('beforeend', rowsHtml);
+          const counter = container.querySelector('p');
+          if (counter) counter.textContent = 'Showing ' + auditLogState.offset + ' of ' + data.total + '.';
+        } else {
+          container.innerHTML = tableHtml;
+        }
+      }
+
+      loadMoreBtn.style.display = data.hasMore ? '' : 'none';
+    } catch (err) {
+      container.innerHTML = '<div class="error-msg">Error: ' + esc(err.message) + '</div>';
+      loadMoreBtn.style.display = 'none';
     }
   }
 
