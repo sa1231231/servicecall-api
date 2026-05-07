@@ -296,6 +296,7 @@ describe("POST /api/leads/:id/dismiss", () => {
 describe("POST /api/leads/:id/promote", () => {
   const leadReady = {
     _id: "lead1",
+    input: { name: "Acme Owner", phone: "+19739781542" },
     enriched: { business_name: "Acme", faqKnowledgeBase: "Q?\nA." },
   };
   const draft = { _id: "default", exportConfig: { /* presence is the assertion */ } };
@@ -363,6 +364,36 @@ describe("POST /api/leads/:id/promote", () => {
       }),
     );
     expect(mockMarkPromoted).toHaveBeenCalledWith("lead1", "acme");
+  });
+
+  it("carries the lead's name + phone + area-code timezone onto the new client doc", async () => {
+    mockGetPendingLead.mockResolvedValue(leadReady);
+    mockLoadDraft.mockResolvedValue(draft);
+    mockApplyOverrides.mockReturnValue({});
+    mockCreateAgentFromConfig.mockResolvedValue({ ok: true, slug: "acme", agentId: "a" });
+    await runRoute("post", "/:id/promote", makeReq({
+      params: { id: "lead1" }, body: { draft: "default" },
+    }), makeRes());
+    const overridesArg = mockApplyOverrides.mock.calls[0][1];
+    expect(overridesArg.client.contact_name).toBe("Acme Owner");
+    expect(overridesArg.client.contact_phone).toBe("+19739781542");
+    // 973 is northern NJ → America/New_York per area-code-timezone lookup
+    expect(overridesArg.client.contact_timezone).toBe("America/New_York");
+  });
+
+  it("operator-supplied client overrides win over the lead-derived contact defaults", async () => {
+    mockGetPendingLead.mockResolvedValue(leadReady);
+    mockLoadDraft.mockResolvedValue(draft);
+    mockApplyOverrides.mockReturnValue({});
+    mockCreateAgentFromConfig.mockResolvedValue({ ok: true, slug: "acme", agentId: "a" });
+    await runRoute("post", "/:id/promote", makeReq({
+      params: { id: "lead1" },
+      body: { draft: "default", client: { contact_name: "Hand-edited" } },
+    }), makeRes());
+    const overridesArg = mockApplyOverrides.mock.calls[0][1];
+    expect(overridesArg.client.contact_name).toBe("Hand-edited");
+    // Phone wasn't overridden, so the lead-derived value remains.
+    expect(overridesArg.client.contact_phone).toBe("+19739781542");
   });
 
   it("propagates createAgentFromConfig failure status without marking promoted", async () => {

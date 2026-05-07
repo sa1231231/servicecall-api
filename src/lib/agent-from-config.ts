@@ -62,6 +62,15 @@ export interface CreateAgentBody {
     phone_fallback_to_caller?: boolean;
     hide_not_mentioned?: boolean;
     shadow_mode?: boolean;
+    /** Admin-only Client Contact info shown in the Billing tab. When
+     *  provided, these win over the area-code-derived auto-populate
+     *  for `contact_timezone`. Used by the lead-promotion flow to
+     *  carry the lead's name/phone onto the resulting client doc. */
+    contact_name?: string | null;
+    contact_phone?: string | null;
+    contact_email?: string | null;
+    contact_timezone?: string | null;
+    contact_notes?: string | null;
   };
 }
 
@@ -298,17 +307,31 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
       jsonEntry.weekly_report_enabled = body.client.weekly_report_enabled;
     }
 
+    // Pass-through admin Client Contact fields. The lead-promotion flow
+    // uses these to carry the lead's name + phone onto the new client
+    // doc. Explicit values here win over the area-code auto-populate
+    // below (so a lead's phone area code drives contact_timezone, not
+    // the operator's dispatch_call_number).
+    if (body.client.contact_name !== undefined) jsonEntry.contact_name = body.client.contact_name;
+    if (body.client.contact_phone !== undefined) jsonEntry.contact_phone = body.client.contact_phone;
+    if (body.client.contact_email !== undefined) jsonEntry.contact_email = body.client.contact_email;
+    if (body.client.contact_timezone !== undefined) jsonEntry.contact_timezone = body.client.contact_timezone;
+    if (body.client.contact_notes !== undefined) jsonEntry.contact_notes = body.client.contact_notes;
+
     // Auto-populate Client Contact timezone from the dispatch number's area
     // code so the operator gets a sensible default in the Billing tab. Only
     // applied if a US area code we recognize maps to one of the four IANA
-    // zones the dropdown supports; otherwise left unset for manual selection.
-    const dispatchNumberForAreaCode = body.client.dispatch_call_number
-      || (body.client.dispatch_by_type
-        ? Object.values(body.client.dispatch_by_type).find(o => o.dispatch_call_number)?.dispatch_call_number
-        : null);
-    if (dispatchNumberForAreaCode) {
-      const tz = areaCodeToTimezone(extractAreaCode(dispatchNumberForAreaCode));
-      if (tz) jsonEntry.contact_timezone = tz;
+    // zones the dropdown supports, AND only when the caller didn't already
+    // pass an explicit contact_timezone (lead-promote path).
+    if (jsonEntry.contact_timezone === undefined) {
+      const dispatchNumberForAreaCode = body.client.dispatch_call_number
+        || (body.client.dispatch_by_type
+          ? Object.values(body.client.dispatch_by_type).find(o => o.dispatch_call_number)?.dispatch_call_number
+          : null);
+      if (dispatchNumberForAreaCode) {
+        const tz = areaCodeToTimezone(extractAreaCode(dispatchNumberForAreaCode));
+        if (tz) jsonEntry.contact_timezone = tz;
+      }
     }
 
     await persistClient(slug, jsonEntry);

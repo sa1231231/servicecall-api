@@ -15,6 +15,8 @@ import {
 import { enrichLead } from "../../lib/enrich-lead.js";
 import { loadDraft, applyOverrides } from "../../lib/agent-from-draft.js";
 import { createAgentFromConfig, type CreateAgentBody } from "../../lib/agent-from-config.js";
+import { extractAreaCode } from "../../lib/provision-number.js";
+import { areaCodeToTimezone } from "../../lib/area-code-timezone.js";
 
 export const leadsRouter = Router();
 leadsRouter.use(express.json());
@@ -239,9 +241,23 @@ leadsRouter.post("/:id/promote", async (req, res) => {
     return;
   }
 
+  // Carry the lead's contact info onto the new client doc so the agent's
+  // Billing tab is pre-filled. The lead's phone area code drives
+  // contact_timezone (overrides the dispatch-number-based auto-populate
+  // in agent-from-config). Operator-supplied overrides in req.body.client
+  // still win on top of these defaults.
+  const leadContact: Partial<CreateAgentBody["client"]> = {};
+  if (lead.input?.name) leadContact.contact_name = lead.input.name;
+  if (lead.input?.phone) {
+    leadContact.contact_phone = lead.input.phone;
+    const tz = areaCodeToTimezone(extractAreaCode(lead.input.phone));
+    if (tz) leadContact.contact_timezone = tz;
+  }
+  const operatorOverrides = (req.body?.client as Partial<CreateAgentBody["client"]> | undefined) ?? {};
+
   const fullBody = applyOverrides(draft.exportConfig, {
     business: { businessName, faqKnowledgeBase: faq },
-    client: req.body?.client as Partial<CreateAgentBody["client"]> | undefined,
+    client: { ...leadContact, ...operatorOverrides },
   });
 
   const result = await createAgentFromConfig(fullBody);
