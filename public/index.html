@@ -2729,12 +2729,20 @@
       const selectedLabel = sel.options[sel.selectedIndex]?.textContent || 'this draft';
       if (!confirm(`Overwrite ${selectedLabel}?`)) return;
     } else {
-      // New draft — prompt for a name, defaulting to the businessName so
-      // a one-keystroke save still works.
-      const def = formData.businessName || 'Untitled Draft';
-      const input = prompt('Name this draft:', def);
+      // New draft — prompt for a name. The default is intentionally
+      // generic and NOT tied to the businessName field: drafts are
+      // reusable templates (e.g. "HVAC", "Handyman"), so the operator
+      // should always type a real template name. Tying the default to
+      // businessName trained operators to leave the prompt as-is and
+      // ended up with drafts named after a single client they were
+      // building when they first saved.
+      const input = prompt('Name this draft (e.g. "HVAC", "Handyman"):', '');
       if (input === null) return;        // user cancelled
-      name = input.trim() || def;
+      name = input.trim();
+      if (!name) {
+        showSaveStatus('Save cancelled — name is required');
+        return;
+      }
     }
 
     try {
