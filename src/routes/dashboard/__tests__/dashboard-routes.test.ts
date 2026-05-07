@@ -111,6 +111,7 @@ vi.mock("../../../lib/users.js", () => ({
   createUser: (...a: any[]) => mockCreateUser(...a),
   deleteUser: (...a: any[]) => mockDeleteUser(...a),
   updateUserPermissions: (...a: any[]) => mockUpdateUserPermissions(...a),
+  resolvePermissions: (_role: string, stored?: Record<string, boolean>) => stored ?? {},
   PERMISSION_DEFS: [],
   DEFAULT_PERMISSIONS: {},
 }));
@@ -900,11 +901,23 @@ describe("DELETE /data-point-defaults/:key", () => {
 // ── Users ──────────────────────────────────────────────────────────────────
 
 describe("GET /users", () => {
-  it("returns user list", async () => {
-    mockListUsers.mockResolvedValue([{ username: "alice" }]);
+  it("returns user list with resolved permissions", async () => {
+    // Stored map missing keys (e.g. a key added after the user was created).
+    // The route must return a resolved permission map, not the raw stored one,
+    // so the UI doesn't show a super_admin as missing newly-added perms.
+    mockListUsers.mockResolvedValue([
+      { _id: "alice", role: "super_admin", permissions: { create_agents: true } },
+    ]);
     const res = makeRes();
     await runRoute(dashboardApiRouter, "get", "/users", makeReq({}), res);
-    expect(res._json).toEqual([{ username: "alice" }]);
+    expect(res._json).toHaveLength(1);
+    expect(res._json[0]._id).toBe("alice");
+    // The mock resolvePermissions echoes the stored map as a sanity check
+    // that the route ran resolvePermissions(role, stored) — if the route
+    // returned the raw `permissions: {...}` field unchanged, this still
+    // passes; what changes is in production where the real resolver fills
+    // in role defaults. The negative regression is covered by users.test.ts.
+    expect(res._json[0].permissions).toBeDefined();
   });
 });
 

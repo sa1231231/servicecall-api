@@ -48,6 +48,7 @@ import { nodeEditorRouter } from "./node-editor.js";
 import { alertRootIfNeeded } from "../../lib/root-alerts.js";
 import {
   listUsers,
+  resolvePermissions,
   createUser,
   deleteUser,
   updateUserPermissions,
@@ -613,7 +614,14 @@ dashboardApiRouter.delete("/data-point-defaults/:key", requirePermission("manage
 
 dashboardApiRouter.get("/users", requirePermission("manage_users"), async (_req, res) => {
   const users = await listUsers();
-  res.json(users);
+  // Return resolved/effective permissions so the UI matches what
+  // requirePermission(...) actually enforces. For super_admin and
+  // admin, role defaults override the stored map (any keys added to
+  // PERMISSION_DEFS after a user was created appear correctly).
+  res.json(users.map((u) => ({
+    ...u,
+    permissions: resolvePermissions(u.role, u.permissions),
+  })));
 });
 
 dashboardApiRouter.post("/users", requirePermission("manage_users"), async (req, res) => {
