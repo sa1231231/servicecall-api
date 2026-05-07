@@ -3294,9 +3294,17 @@
             esc(p.label) + '</span>'
         ).join(' ')
       : '<span class="badge badge-shadow" style="font-size:0.72rem;vertical-align:middle;">No phone bound</span>';
+    const lastEditHtml = doc.last_edit
+      ? `<div class="detail-last-edit" style="font-size:0.72rem;color:#777;margin:-0.35rem 0 0.4rem 0;">` +
+          `Last edited by <strong>${esc(doc.last_edit.username)}</strong> ` +
+          `· ${esc(timeAgo(doc.last_edit.timestamp))} ` +
+          `· <code style="font-size:0.7rem;background:#f3f4f6;padding:0.05rem 0.3rem;border-radius:3px;">${esc(doc.last_edit.action)}</code>` +
+        `</div>`
+      : '';
     document.getElementById('detailHeader').innerHTML =
       `<h1>${esc(doc.display_name || doc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
       buildHeaderButtons(doc._id) + `</h1>` +
+      lastEditHtml +
       `<div class="detail-phone-chips" style="margin:-0.25rem 0 0.6rem 0;display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;">` +
         `<span style="font-size:0.72rem;color:#777;">Phone:</span>${phoneChips}` +
       `</div>`;
@@ -3728,9 +3736,17 @@
         const inactiveBadge = originalDoc.active === false
           ? ' <span class="badge" style="font-size:0.7rem;vertical-align:middle;background:#fee2e2;color:#991b1b;">Inactive</span>'
           : '';
+        const lastEditHtml = originalDoc.last_edit
+          ? `<div class="detail-last-edit" style="font-size:0.72rem;color:#777;margin:-0.35rem 0 0.4rem 0;">` +
+              `Last edited by <strong>${esc(originalDoc.last_edit.username)}</strong> ` +
+              `· ${esc(timeAgo(originalDoc.last_edit.timestamp))} ` +
+              `· <code style="font-size:0.7rem;background:#f3f4f6;padding:0.05rem 0.3rem;border-radius:3px;">${esc(originalDoc.last_edit.action)}</code>` +
+            `</div>`
+          : '';
         document.getElementById('detailHeader').innerHTML =
           `<h1>${esc(originalDoc.display_name || originalDoc.name)} <span class="badge ${sc}" style="font-size:0.7rem;vertical-align:middle;">${sl}</span>${inactiveBadge}` +
-          buildHeaderButtons(currentSlug) + `</h1>`;
+          buildHeaderButtons(currentSlug) + `</h1>` +
+          lastEditHtml;
         // Header rebuild blew away the portal dropdown contents — repopulate
         // from the cached URL so the user doesn't see "Loading…" forever.
         renderPortalLink(currentSlug, currentPortalUrl);
@@ -7633,6 +7649,7 @@
     const systemPrompt = enriched.extra?._systemPrompt || '';
     const userMessage = enriched.extra?._userMessage || '';
     const rawResponse = enriched.extra?._rawResponse || '';
+    const rawContentBlocks = enriched.extra?._rawContentBlocks || '';
     const hasFeed = systemPrompt || userMessage || rawResponse;
     const errorBlock = lead.enrichmentError
       ? '<div class="lead-error-box"><strong>Enrichment error:</strong> ' + esc(lead.enrichmentError) + '</div>'
@@ -7675,6 +7692,12 @@
             : (lead.status === 'enriching'
               ? '<div style="font-size:0.78rem;color:#92400e;margin-top:0.4rem;">Waiting for the model…</div>'
               : '')) +
+          (rawContentBlocks
+            ? '<details style="margin-top:0.6rem;"><summary style="cursor:pointer;font-size:0.78rem;font-weight:600;color:#4b5563;">All content blocks (tool_use / tool_result / text)</summary>' +
+              '<div style="margin-top:0.35rem;">' + feedPre(rawContentBlocks) + '</div>' +
+              '<div style="font-size:0.72rem;color:#777;margin-top:0.25rem;">If you see <code>tool_use</code> entries with <code>name: "web_search"</code>, the skill ran searches. If only <code>type: "text"</code> blocks appear, web_search didn\'t fire — likely the tool isn\'t enabled on this API key.</div>' +
+              '</details>'
+            : '') +
         '</div>'
       : '';
 

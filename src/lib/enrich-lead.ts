@@ -25,6 +25,10 @@ export interface EnrichmentTranscript {
   userMessage: string;
   /** The text content of the model's reply (concatenated text blocks). */
   rawResponse: string;
+  /** Compact summary of every content block the API returned, so we can
+   *  see tool_use / tool_result activity (e.g. web_search calls) in the
+   *  AI Feed — not just the final text. JSON-stringified for storage. */
+  rawContentBlocks: string;
 }
 
 export interface EnrichmentSuccess extends EnrichmentTranscript {
@@ -134,6 +138,7 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
       systemPrompt: "",
       userMessage,
       rawResponse: "",
+      rawContentBlocks: "",
     };
   }
 
@@ -149,6 +154,7 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
       systemPrompt: "",
       userMessage,
       rawResponse: "",
+      rawContentBlocks: "",
     };
   }
 
@@ -175,12 +181,13 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
     } as any);
 
     const rawResponse = extractText(result);
+    const rawContentBlocks = summarizeContentBlocks(result);
     // Length-bounded log so we can correlate parser misses with what the
     // model actually said in production without dumping full FAQs.
     console.log(
-      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b: ${rawResponse.slice(0, 240)}`,
+      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, blocks=${rawContentBlocks.slice(0, 120)}…`,
     );
-    return parseEnrichmentResponse(rawResponse, userMessage, systemPrompt);
+    return parseEnrichmentResponse(rawResponse, userMessage, systemPrompt, rawContentBlocks);
   } catch (err) {
     return {
       ok: false,
@@ -188,6 +195,7 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
       systemPrompt,
       userMessage,
       rawResponse: "",
+      rawContentBlocks: "",
     };
   }
 }
@@ -223,6 +231,32 @@ export function extractText(result: unknown): string {
     .join("\n");
 }
 
+/** JSON-stringify every content block (text, tool_use, tool_result, etc.)
+ *  with a length cap per block so we can spot whether web_search fired,
+ *  what queries it ran, and what came back, without dumping the full
+ *  result on every call. Stored verbatim on the lead for the AI Feed. */
+export function summarizeContentBlocks(result: unknown): string {
+  const blocks = (result as { content?: Array<Record<string, unknown>> })?.content;
+  if (!Array.isArray(blocks)) return "[]";
+  const compact = blocks.map((b) => {
+    const out: Record<string, unknown> = { type: b.type };
+    // Tool inputs (web_search query, etc.) are short and high-signal.
+    if (b.input !== undefined) out.input = b.input;
+    if (b.name !== undefined) out.name = b.name;
+    // Tool results can be huge — truncate to keep the lead doc small.
+    if (b.content !== undefined) {
+      const c = b.content;
+      const stringified = typeof c === "string" ? c : JSON.stringify(c);
+      out.content = stringified.length > 1500 ? stringified.slice(0, 1500) + " …[truncated]" : stringified;
+    }
+    if (typeof b.text === "string") {
+      out.text = b.text.length > 1500 ? b.text.slice(0, 1500) + " …[truncated]" : b.text;
+    }
+    return out;
+  });
+  return JSON.stringify(compact, null, 2);
+}
+
 /** Parse the skill's JSON envelope. Tolerates leading/trailing whitespace,
  *  accidental ```json fences, and either snake_case or camelCase field
  *  names — the skill emits `businessName` but we accept `business_name`
@@ -233,13 +267,14 @@ export function parseEnrichmentResponse(
   text: string,
   userMessage = "",
   systemPrompt = "",
+  rawContentBlocks = "[]",
 ): EnrichmentResult {
   const stripped = text
     .replace(/^\s*```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/i, "")
     .trim();
   if (!stripped) {
-    return { ok: false, error: "skill response was empty", systemPrompt, userMessage, rawResponse: text };
+    return { ok: false, error: "skill response was empty", systemPrompt, userMessage, rawResponse: text, rawContentBlocks };
   }
   let obj: unknown;
   try {
@@ -253,6 +288,7 @@ export function parseEnrichmentResponse(
       systemPrompt,
       userMessage,
       rawResponse: text,
+      rawContentBlocks,
     };
   }
   if (!obj || typeof obj !== "object") {
@@ -262,6 +298,7 @@ export function parseEnrichmentResponse(
       systemPrompt,
       userMessage,
       rawResponse: text,
+      rawContentBlocks,
     };
   }
   const o = obj as Record<string, unknown>;
@@ -278,6 +315,7 @@ export function parseEnrichmentResponse(
       systemPrompt,
       userMessage,
       rawResponse: text,
+      rawContentBlocks,
     };
   }
   // Pass-through bag for keys we didn't extract above.
@@ -302,6 +340,7 @@ export function parseEnrichmentResponse(
     systemPrompt,
     userMessage,
     rawResponse: text,
+    rawContentBlocks,
   };
 }
 

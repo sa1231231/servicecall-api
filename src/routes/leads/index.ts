@@ -42,6 +42,7 @@ async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<v
     _systemPrompt: result.systemPrompt,
     _userMessage: result.userMessage,
     _rawResponse: result.rawResponse,
+    _rawContentBlocks: result.rawContentBlocks,
   };
   if (result.ok) {
     await updatePendingLead(leadId, {
