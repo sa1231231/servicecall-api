@@ -176,6 +176,17 @@
   }
   .btn-new-folder:hover { background: #e0f2fe; }
   tbody.folder-group[data-collapsed="true"] tr:not(.folder-header) { display: none; }
+  /* Folder reorder via drag-and-drop on the folder header itself. Unfiled
+     stays pinned to top — its row is not draggable. */
+  tr.folder-header[draggable="true"] { cursor: grab; }
+  tr.folder-header[draggable="true"]:active { cursor: grabbing; }
+  tbody.folder-group.dragging-folder { opacity: 0.45; }
+  tbody.folder-group.drop-above-folder > tr.folder-header > td {
+    box-shadow: inset 0 3px 0 0 #2563eb;
+  }
+  tbody.folder-group.drop-below-folder > tr.folder-header > td {
+    box-shadow: inset 0 -3px 0 0 #2563eb;
+  }
   tr.folder-header > td {
     background: #f1f5f9;
     border-top: 2px solid #cbd5e1;
@@ -1886,10 +1897,21 @@
           '<button type="button" class="danger" onclick="deleteFolderConfirm(\'' + esc(folder._id) + '\')">Delete</button>' +
           '</span>'
         : '';
+      // The folder header is draggable for non-Unfiled folders when the
+      // user can edit. Drag handlers are wired to the <tr> directly; the
+      // tbody's existing ondragover/ondrop already handles agent-into-folder
+      // and is extended to also handle folder-into-folder reorder.
+      const folderDraggable = canEdit && !isUnfiled;
+      const folderDragAttrs = folderDraggable
+        ? ' draggable="true"' +
+          ' ondragstart="onFolderHeaderDragStart(event, \'' + esc(folder._id) + '\')"' +
+          ' ondragend="onFolderHeaderDragEnd(event)"'
+        : '';
       html += '<tbody class="folder-group" data-folder-id="' + esc(folder._id) + '" data-collapsed="' + collapsed + '"' +
         ' ondrop="onFolderDrop(event, \'' + esc(folder._id) + '\')"' +
         ' ondragover="onFolderDragOver(event)" ondragleave="onFolderDragLeave(event)">' +
-        '<tr class="folder-header' + (isUnfiled ? ' unfiled' : '') + '" onclick="toggleFolder(\'' + esc(folder._id) + '\')">' +
+        '<tr class="folder-header' + (isUnfiled ? ' unfiled' : '') + '"' + folderDragAttrs +
+        ' onclick="toggleFolder(\'' + esc(folder._id) + '\')">' +
           '<td colspan="' + visibleColCount + '">' +
             '<span class="folder-header-arrow">▶</span>' +
             '<span class="folder-header-name" data-folder-id="' + esc(folder._id) + '">' + esc(folder.name) + '</span>' +
@@ -2273,13 +2295,19 @@
   }
 
   // ── Drag-and-drop ───────────────────────────────────────────────────────────
+  // Two flavors share the same tbody-level handlers, distinguished by which
+  // module-level "currently dragging" var is set:
+  //   • draggingSlug      → an agent row is being dragged onto a folder
+  //   • draggingFolderId  → a folder header is being dragged to reorder
+  // Only one is active at a time; the other is null.
 
   let draggingSlug = null;
+  let draggingFolderId = null;
+
   function onAgentDragStart(evt) {
     const tr = evt.currentTarget;
     draggingSlug = tr.dataset.slug;
     tr.classList.add('dragging');
-    // Set dataTransfer so Firefox honors the drag.
     evt.dataTransfer.effectAllowed = 'move';
     try { evt.dataTransfer.setData('text/plain', draggingSlug); } catch (_) {}
   }
@@ -2288,27 +2316,123 @@
     draggingSlug = null;
     document.querySelectorAll('tr.folder-header.drop-target').forEach(el => el.classList.remove('drop-target'));
   }
+
+  function onFolderHeaderDragStart(evt, folderId) {
+    if (folderId === UNFILED_FOLDER_ID) { evt.preventDefault(); return; }
+    draggingFolderId = folderId;
+    const tbody = evt.currentTarget.closest('tbody.folder-group');
+    if (tbody) tbody.classList.add('dragging-folder');
+    evt.dataTransfer.effectAllowed = 'move';
+    try { evt.dataTransfer.setData('text/plain', 'folder:' + folderId); } catch (_) {}
+    // The drag also bubbles to the parent tbody's onclick → toggleFolder.
+    // Stop that path so the folder doesn't collapse mid-drag.
+    evt.stopPropagation();
+  }
+  function onFolderHeaderDragEnd(evt) {
+    const tbody = evt.currentTarget.closest('tbody.folder-group');
+    if (tbody) tbody.classList.remove('dragging-folder');
+    draggingFolderId = null;
+    document.querySelectorAll('tbody.folder-group.drop-above-folder, tbody.folder-group.drop-below-folder')
+      .forEach(el => el.classList.remove('drop-above-folder', 'drop-below-folder'));
+  }
+
   function onFolderDragOver(evt) {
-    if (!draggingSlug) return;
-    evt.preventDefault();
-    evt.dataTransfer.dropEffect = 'move';
     const tbody = evt.currentTarget;
-    const header = tbody.querySelector('tr.folder-header');
-    if (header) header.classList.add('drop-target');
+    // ── Agent → folder (existing behavior) ──
+    if (draggingSlug) {
+      evt.preventDefault();
+      evt.dataTransfer.dropEffect = 'move';
+      const header = tbody.querySelector('tr.folder-header');
+      if (header) header.classList.add('drop-target');
+      return;
+    }
+    // ── Folder → folder reorder ──
+    if (draggingFolderId) {
+      const targetId = tbody.dataset.folderId;
+      if (!targetId || targetId === draggingFolderId) return;
+      // Unfiled is pinned to position -1 — can't drop above or below it.
+      if (targetId === UNFILED_FOLDER_ID) return;
+      evt.preventDefault();
+      evt.dataTransfer.dropEffect = 'move';
+      const header = tbody.querySelector('tr.folder-header');
+      if (!header) return;
+      const rect = header.getBoundingClientRect();
+      const dropAbove = (evt.clientY - rect.top) < rect.height / 2;
+      tbody.classList.toggle('drop-above-folder', dropAbove);
+      tbody.classList.toggle('drop-below-folder', !dropAbove);
+    }
   }
   function onFolderDragLeave(evt) {
     const tbody = evt.currentTarget;
-    // Only clear when the cursor leaves the entire tbody, not an inner cell.
     if (tbody.contains(evt.relatedTarget)) return;
     const header = tbody.querySelector('tr.folder-header');
     if (header) header.classList.remove('drop-target');
+    tbody.classList.remove('drop-above-folder', 'drop-below-folder');
   }
   function onFolderDrop(evt, folderId) {
-    if (!draggingSlug) return;
-    evt.preventDefault();
-    const slug = draggingSlug;
-    const targetId = folderId === UNFILED_FOLDER_ID ? null : folderId;
-    moveAgentToFolder(slug, targetId);
+    // Agent drop (existing)
+    if (draggingSlug) {
+      evt.preventDefault();
+      const slug = draggingSlug;
+      const targetId = folderId === UNFILED_FOLDER_ID ? null : folderId;
+      moveAgentToFolder(slug, targetId);
+      return;
+    }
+    // Folder reorder
+    if (draggingFolderId) {
+      if (folderId === draggingFolderId || folderId === UNFILED_FOLDER_ID) return;
+      evt.preventDefault();
+      const tbody = evt.currentTarget;
+      const dropBelow = tbody.classList.contains('drop-below-folder');
+      reorderFolder(draggingFolderId, folderId, dropBelow ? 'after' : 'before');
+    }
+  }
+
+  // Drop `srcId` immediately before/after `targetId` in the user-folder
+  // ordering. Renumbers every user folder to sequential positions (0..N-1)
+  // and PATCHes only the ones whose position actually changed. UI updates
+  // optimistically; PATCH failures roll back nothing — the operator can
+  // re-drag if a request 500s.
+  async function reorderFolder(srcId, targetId, where) {
+    const userFolders = agentFolders.slice().sort((a, b) => a.position - b.position);
+    const srcIdx = userFolders.findIndex(f => f._id === srcId);
+    if (srcIdx === -1) return;
+    const [src] = userFolders.splice(srcIdx, 1);
+    const tgtIdx = userFolders.findIndex(f => f._id === targetId);
+    if (tgtIdx === -1) {
+      // Target is gone (race) — abort
+      userFolders.splice(srcIdx, 0, src);
+      return;
+    }
+    const insertAt = where === 'after' ? tgtIdx + 1 : tgtIdx;
+    userFolders.splice(insertAt, 0, src);
+
+    const updates = [];
+    userFolders.forEach((f, i) => {
+      if (f.position !== i) {
+        f.position = i;
+        updates.push({ id: f._id, position: i });
+      }
+    });
+    if (updates.length === 0) return; // no-op (e.g. dropped onto adjacent slot)
+
+    agentFolders = userFolders;
+    renderAgentList();
+
+    let failed = 0;
+    for (const u of updates) {
+      try {
+        const r = await fetch('/dashboard/api/folders/' + encodeURIComponent(u.id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ position: u.position }),
+        });
+        if (!r.ok) failed++;
+      } catch (_) { failed++; }
+    }
+    if (failed > 0) {
+      showToast('Folder reorder partially failed (' + failed + ' of ' + updates.length + ' updates)', 'error');
+    }
   }
 
   async function toggleActive(slug, cb) {
