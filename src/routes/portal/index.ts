@@ -28,7 +28,14 @@ async function portalAuth(
   next: NextFunction,
 ): Promise<void> {
   const slug = String(req.params.slug);
-  const token = String(req.query.token ?? "");
+  // Prefer the Authorization: Bearer header so tokens don't ride in URLs
+  // (which leak via Referer, browser history, and access logs). The
+  // ?token= query path is kept for backward compatibility with magic
+  // links already in the wild — clients should rewrite to use the
+  // header on first load.
+  const authHeader = String(req.headers.authorization ?? "");
+  const bearer = /^Bearer\s+(.+)$/i.exec(authHeader)?.[1] ?? "";
+  const token = bearer || String(req.query.token ?? "");
 
   if (!slug || !token) {
     res.status(401).json({ error: "Missing slug or token" });
@@ -58,7 +65,15 @@ portalRouter.post("/request-link", async (req: Request, res: Response) => {
   // Always return success to prevent email enumeration
   const successMsg = "If that email is associated with an account, you'll receive a login link shortly.";
 
+  // The match path runs sendEmail (Resend round-trip ~500ms). The
+  // no-match path used to return immediately; an attacker could probe
+  // emails and time the responses to learn which were registered.
+  // Sleep a similar duration on the no-match branches so timing is
+  // indistinguishable from the real send path.
+  const enumerationDelay = () => new Promise((r) => setTimeout(r, 600));
+
   if (!email || !email.includes("@")) {
+    await enumerationDelay();
     res.json({ success: true, message: successMsg });
     return;
   }
@@ -66,6 +81,7 @@ portalRouter.post("/request-link", async (req: Request, res: Response) => {
   try {
     const matches = await findClientsByEmail(email);
     if (matches.length === 0) {
+      await enumerationDelay();
       res.json({ success: true, message: successMsg });
       return;
     }

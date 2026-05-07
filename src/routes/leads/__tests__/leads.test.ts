@@ -52,6 +52,10 @@ vi.mock("../../../middleware/require-role.js", () => ({
     mockRequirePermission(req);
     next();
   },
+  // The in-progress feature-permission refactor added `requireFeature` to
+  // require-role.js. Tests don't exercise the gate logic; pass-through is
+  // sufficient so the route handlers under test still execute.
+  requireFeature: () => (_req: Request, _res: Response, next: NextFunction) => next(),
 }));
 // Token check is exercised in its own unit test; here we always allow so the
 // route handler logic (toggle, sanitize, source default) is what's tested.

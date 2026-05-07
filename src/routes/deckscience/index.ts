@@ -8,8 +8,10 @@ export const deckscienceRouter = Router();
 deckscienceRouter.use(express.json());
 
 deckscienceRouter.use((req, _res, next) => {
+  // Log only the request shape — appointment payloads carry customer
+  // names, phones, and free-text notes that shouldn't land in Railway logs.
   if (req.body && Object.keys(req.body).length) {
-    console.log(`[deckscience] ${req.method} ${req.path} body:`, JSON.stringify(req.body, null, 2));
+    console.log(`[deckscience] ${req.method} ${req.path} body keys:`, Object.keys(req.body).join(","));
   }
   next();
 });

@@ -616,7 +616,7 @@ describe("getAllClientSummaries", () => {
 });
 
 describe("generatePortalToken", () => {
-  it("generates a hex token and persists it", async () => {
+  it("generates a hex token and persists it with issued/expires timestamps", async () => {
     mockUpdateOne.mockResolvedValue({ matchedCount: 1 });
 
     const token = await generatePortalToken("acme");
@@ -624,8 +624,18 @@ describe("generatePortalToken", () => {
     expect(token).toMatch(/^[0-9a-f]{64}$/);
     expect(mockUpdateOne).toHaveBeenCalledWith(
       { _id: "acme" },
-      { $set: { portal_token: token } },
+      {
+        $set: expect.objectContaining({
+          portal_token: token,
+          portal_token_issued_at: expect.any(Number),
+          portal_token_expires_at: expect.any(Number),
+        }),
+      },
     );
+    // Expiry is ~90 days out from issue.
+    const setArg = mockUpdateOne.mock.calls[0][1].$set;
+    expect(setArg.portal_token_expires_at - setArg.portal_token_issued_at)
+      .toBe(90 * 24 * 60 * 60 * 1000);
   });
 
   it("throws when client not found", async () => {
@@ -655,13 +665,23 @@ describe("findClientsByEmail / validatePortalToken", () => {
     expect(result).toBe(items);
   });
 
-  it("validatePortalToken returns true for matching token", async () => {
+  it("validatePortalToken returns true for a matching token without expiry (legacy)", async () => {
     mockFindOne.mockResolvedValue({ _id: "acme" });
     expect(await validatePortalToken("acme", "tok")).toBe(true);
     expect(mockFindOne).toHaveBeenCalledWith(
       { _id: "acme", portal_token: "tok" },
-      { projection: { _id: 1 } },
+      { projection: { _id: 1, portal_token_expires_at: 1 } },
     );
+  });
+
+  it("validatePortalToken returns true for a matching unexpired token", async () => {
+    mockFindOne.mockResolvedValue({ _id: "acme", portal_token_expires_at: Date.now() + 60_000 });
+    expect(await validatePortalToken("acme", "tok")).toBe(true);
+  });
+
+  it("validatePortalToken returns false for an expired token", async () => {
+    mockFindOne.mockResolvedValue({ _id: "acme", portal_token_expires_at: Date.now() - 60_000 });
+    expect(await validatePortalToken("acme", "tok")).toBe(false);
   });
 
   it("validatePortalToken returns false for non-matching token", async () => {

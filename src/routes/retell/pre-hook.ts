@@ -12,9 +12,6 @@ export async function preHookHandler(req: Request, res: Response) {
 
   // 2) Parse payload
   const body = req.body;
-
-  console.log("retell-pre-hook: body", { body });
-
   const eventType = body?.event ?? null;
 
   const inbound =
@@ -34,10 +31,11 @@ export async function preHookHandler(req: Request, res: Response) {
     return;
   }
 
-  console.log("retell-pre-hook: Received inbound event:", { eventType, inbound });
-
   const agentId = inbound?.agent_id ?? null;
   const toNumber = inbound?.to_number ?? null;
+  // Log only the routing-relevant fields. Caller phone (`from_number`)
+  // and call_id are PII and should not land in Railway logs.
+  console.log("retell-pre-hook: received inbound", { eventType, agent_id: agentId, to_number: toNumber });
   const responseKey = eventType === "call_inbound" ? "call_inbound" : "chat_inbound";
 
   // 3) Resolve client — try agent_id first, fall back to to_number

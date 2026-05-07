@@ -453,17 +453,28 @@ export function getAllClientSummaries(): Array<{
   }));
 }
 
-/** Generate a portal token for a client and persist it. */
+/** Portal tokens expire 90 days after issue. Operators can regenerate
+ *  on demand via the dashboard's portal-token endpoint. */
+export const PORTAL_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Generate a portal token for a client and persist it (with issue + expiry). */
 export async function generatePortalToken(slug: string): Promise<string> {
   const token = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
   const result = await clients().updateOne(
     { _id: slug } as any,
-    { $set: { portal_token: token } },
+    {
+      $set: {
+        portal_token: token,
+        portal_token_issued_at: now,
+        portal_token_expires_at: now + PORTAL_TOKEN_TTL_MS,
+      },
+    },
   );
   if (result.matchedCount === 0) {
     throw new Error(`Client "${slug}" not found`);
   }
-  console.log(`[client-store] generated portal token for "${slug}"`);
+  console.log(`[client-store] generated portal token for "${slug}" (expires ${new Date(now + PORTAL_TOKEN_TTL_MS).toISOString()})`);
   return token;
 }
 
@@ -479,14 +490,21 @@ export async function findClientsByEmail(
     .toArray() as any;
 }
 
-/** Validate a portal token against a client slug. */
+/** Validate a portal token against a client slug. Rejects expired tokens
+ *  even if they match — operator must regenerate from the dashboard.
+ *  Tokens minted before the TTL feature shipped have no
+ *  `portal_token_expires_at` field; we treat those as legacy and accept
+ *  them indefinitely until the next regeneration migrates them. */
 export async function validatePortalToken(
   slug: string,
   token: string,
 ): Promise<boolean> {
   const doc = await clients().findOne(
     { _id: slug, portal_token: token } as any,
-    { projection: { _id: 1 } },
+    { projection: { _id: 1, portal_token_expires_at: 1 } },
   );
-  return doc !== null;
+  if (!doc) return false;
+  const expiresAt = (doc as any).portal_token_expires_at as number | undefined;
+  if (typeof expiresAt === "number" && Date.now() > expiresAt) return false;
+  return true;
 }
