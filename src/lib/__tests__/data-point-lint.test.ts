@@ -250,8 +250,13 @@ describe("lintBranchVariableReferences", () => {
 // ── Deployed defaults (env-gated on MONGODB_URL) ─────────────────────────────
 
 const MONGODB_URL = process.env.MONGODB_URL;
+// Treat CI-stub MONGODB_URLs as "no live DB" so this suite skips in CI.
+// `src/config.ts` requires MONGODB_URL via requireEnv() at module load,
+// so the workflow has to provide *some* value — but the value contains
+// "ci-stub" specifically to mark it as inert.
+const HAS_LIVE_DB = !!MONGODB_URL && !MONGODB_URL.includes("ci-stub");
 
-describe.skipIf(!MONGODB_URL)("Deployed data point defaults (live MongoDB)", () => {
+describe.skipIf(!HAS_LIVE_DB)("Deployed data point defaults (live MongoDB)", () => {
   let client: MongoClient;
   let db: Db;
 
