@@ -13,6 +13,16 @@ import {
   formatPlacesPreSearch,
   type PlacesPreSearchResult,
 } from "./google-places.js";
+import {
+  lookupCallerName,
+  formatCallerName,
+  type CallerNameResult,
+} from "./twilio-caller-name.js";
+import {
+  yelpPhoneSearch,
+  formatYelpPhoneSearch,
+  type YelpPhoneSearchResult,
+} from "./yelp-search.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,26 +154,48 @@ const SKILL_NAME = "onboarding-to-config";
  * error so the caller can park the lead in `failed` status.
  */
 export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResult> {
-  // Pre-search runs on every call. Google Places (New) is the primary
-  // identifier source — it's backed by Google Business Profile data,
-  // which is where small service businesses actually live. Google
-  // Custom Search fills out long-tail web context (Nextdoor, Facebook,
-  // Yelp, BBB, contractor-locator pages) that Places doesn't return.
-  // Run both in parallel. If both come up empty, the model falls back
-  // on its `web_search` tool — see SKILL.md.
-  let preSearch: CustomPreSearchResult = { searches: [] };
+  // Pre-search runs on every call. Four parallel channels — each has a
+  // different sweet spot, so we hit all four and let the model pick the
+  // strongest signal:
+  //
+  //   1. Google Places (New)     — phone-match against Google Business
+  //                                 Profile. Authoritative when it hits.
+  //   2. Yelp Fusion              — phone-match against Yelp listings.
+  //                                 Strong on B2B service businesses
+  //                                 with thin GBP presence.
+  //   3. Twilio caller-name       — carrier CNAM lookup. Sometimes the
+  //                                 business name; otherwise the owner's
+  //                                 personal name (still useful for
+  //                                 cross-referencing the lead form).
+  //   4. Google Custom Search     — long-tail web hits via PSE. Disabled
+  //                                 in deployments without API key/cx.
+  //
+  // If all four miss, the skill falls back on its `web_search` tool —
+  // see SKILL.md. Twilio + Yelp gate on `input.phone` so they don't
+  // fire on phone-less leads.
+  let customSearch: CustomPreSearchResult = { searches: [] };
   let placesSearch: PlacesPreSearchResult = { searches: [] };
+  let callerName: CallerNameResult | undefined;
+  let yelpSearch: YelpPhoneSearchResult | undefined;
   try {
-    [preSearch, placesSearch] = await Promise.all([
+    [customSearch, placesSearch, callerName, yelpSearch] = await Promise.all([
       preSearchLeadCustom(input),
       preSearchLeadPlaces(input),
+      input.phone ? lookupCallerName(input.phone) : Promise.resolve(undefined),
+      input.phone ? yelpPhoneSearch(input.phone) : Promise.resolve(undefined),
     ]);
   } catch (err) {
     console.warn(
       `[enrich-lead] pre-search failed for ${input.name}: ${err instanceof Error ? err.message : err}`,
     );
   }
-  const userMessage = formatLeadAsUserMessage(input, preSearch, placesSearch);
+  const userMessage = formatLeadAsUserMessage(
+    input,
+    customSearch,
+    placesSearch,
+    callerName,
+    yelpSearch,
+  );
 
   if (!config.ANTHROPIC_API_KEY) {
     return {
@@ -228,8 +260,10 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
 
     const rawResponse = extractText(result);
     const rawContentBlocks = summarizeContentBlocks(result);
+    const yelpHits = yelpSearch?.ok ? yelpSearch.hits.length : "n/a";
+    const cnam = callerName?.ok ? callerName.lookup?.callerName ?? "(empty)" : "n/a";
     console.log(
-      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, places=${placesSearch.searches.length}, custom=${preSearch.searches.length}`,
+      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, places=${placesSearch.searches.length}, yelp=${yelpHits}, cnam=${cnam}, custom=${customSearch.searches.length}`,
     );
     return parseEnrichmentResponse(rawResponse, userMessage, systemPrompt, rawContentBlocks);
   } catch (err) {
@@ -245,14 +279,17 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
 }
 
 /** Hand-shaped user message that matches the skill's trigger phrasing.
- *  Includes Google Places + Google Custom Search pre-search results
- *  inline so the skill can read business facts off concrete listings
- *  instead of guessing. Places hits go first because they're
- *  authoritative. */
+ *  Bakes in every pre-search channel that returned data: Places, Yelp,
+ *  Twilio CNAM, Custom Search. Order in the prompt matches strength of
+ *  signal — Places first (authoritative when it hits), then Yelp (also
+ *  strong for B2B services), then CNAM (sometimes the business name),
+ *  then Custom Search (broadest, weakest individual hit). */
 export function formatLeadAsUserMessage(
   input: EnrichmentInput,
-  preSearch?: CustomPreSearchResult,
+  customSearch?: CustomPreSearchResult,
   placesSearch?: PlacesPreSearchResult,
+  callerName?: CallerNameResult,
+  yelpSearch?: YelpPhoneSearchResult,
 ): string {
   const lines = [
     "Onboard this client and produce a Service Call Saver config.",
@@ -268,13 +305,25 @@ export function formatLeadAsUserMessage(
   if (placesSearch && placesSearch.searches.length > 0) {
     lines.push("", formatPlacesPreSearch(placesSearch));
   }
-  if (preSearch && preSearch.searches.length > 0) {
-    lines.push("", formatCustomPreSearch(preSearch));
+  if (yelpSearch) {
+    lines.push("", formatYelpPhoneSearch(yelpSearch));
+  }
+  if (callerName) {
+    lines.push("", formatCallerName(callerName));
+  }
+  if (customSearch && customSearch.searches.length > 0) {
+    lines.push("", formatCustomPreSearch(customSearch));
   }
 
   lines.push(
     "",
-    "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Use the pre-search context above as the primary source of truth: **Google Places hits are authoritative** — if Places returned a business for the phone number, that's the business, full stop. Use the Custom Search block for supplementary context (hours, services, summaries). The lead-form `name` is often the owner or a partial business name; trust the Places-derived name when they conflict. If both pre-search blocks are empty or inconclusive, **call `web_search`** with the phone number (multiple formats) before resorting to DRAFT. Once a business is resolved, **call `web_fetch`** on the strongest listing or website to extract concrete FAQ facts. Reserve DRAFT for when Places AND Custom Search AND web_search all came back empty.",
+    "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Use the pre-search context above as the primary source of truth, in this order of authority:",
+    "1. **Google Places phone-match** — strongest signal; use the listing's name verbatim.",
+    "2. **Yelp phone-match** — also strong for B2B service businesses; categories map directly to a template.",
+    "3. **Twilio CNAM** — sometimes the registered business name, sometimes the owner's personal name. When the name looks like a person, treat it as identity-confirming for the lead, not as the business name.",
+    "4. **Google Custom Search** — supplementary web context (hours, services).",
+    "",
+    "The lead-form `name` is often the owner or a partial business name; trust Places/Yelp-derived names when they conflict. If all pre-search blocks are empty or inconclusive, **call `web_search`** with the phone number (multiple formats) before resorting to DRAFT. Once a business is resolved, **call `web_fetch`** on the strongest listing or website to extract concrete FAQ facts. Reserve DRAFT for when every pre-search channel AND web_search all came back empty.",
     "",
     "Return ONLY the JSON config (businessName, faqKnowledgeBase, templateName) — no prose, no markdown fencing.",
   );

@@ -9,6 +9,8 @@ const {
   mockMessagesCreate,
   mockPreSearchLeadCustom,
   mockPreSearchLeadPlaces,
+  mockLookupCallerName,
+  mockYelpPhoneSearch,
   mockFsExistsSync,
   mockFsReadFileSync,
   mockConfig,
@@ -16,6 +18,8 @@ const {
   mockMessagesCreate: vi.fn(),
   mockPreSearchLeadCustom: vi.fn(),
   mockPreSearchLeadPlaces: vi.fn(),
+  mockLookupCallerName: vi.fn(),
+  mockYelpPhoneSearch: vi.fn(),
   mockFsExistsSync: vi.fn(),
   mockFsReadFileSync: vi.fn(),
   mockConfig: { ANTHROPIC_API_KEY: "test_key" as string | undefined },
@@ -38,6 +42,16 @@ vi.mock("../google-custom-search.js", () => ({
 vi.mock("../google-places.js", () => ({
   preSearchLeadPlaces: (...a: any[]) => mockPreSearchLeadPlaces(...a),
   formatPlacesPreSearch: () => "PLACES_PRE_SEARCH_BLOCK",
+}));
+
+vi.mock("../twilio-caller-name.js", () => ({
+  lookupCallerName: (...a: any[]) => mockLookupCallerName(...a),
+  formatCallerName: () => "CNAM_BLOCK",
+}));
+
+vi.mock("../yelp-search.js", () => ({
+  yelpPhoneSearch: (...a: any[]) => mockYelpPhoneSearch(...a),
+  formatYelpPhoneSearch: () => "YELP_BLOCK",
 }));
 
 vi.mock("fs", async () => {
@@ -65,13 +79,23 @@ const {
 } = await import("../enrich-lead.js");
 
 beforeEach(() => {
-  for (const m of [mockMessagesCreate, mockPreSearchLeadCustom, mockPreSearchLeadPlaces, mockFsExistsSync, mockFsReadFileSync]) {
+  for (const m of [
+    mockMessagesCreate,
+    mockPreSearchLeadCustom,
+    mockPreSearchLeadPlaces,
+    mockLookupCallerName,
+    mockYelpPhoneSearch,
+    mockFsExistsSync,
+    mockFsReadFileSync,
+  ]) {
     m.mockReset();
   }
   mockConfig.ANTHROPIC_API_KEY = "test_key";
-  // Default: pre-search returns empty (no Custom Search / Places hits).
+  // Default: every pre-search channel returns empty/undefined.
   mockPreSearchLeadCustom.mockResolvedValue({ searches: [] });
   mockPreSearchLeadPlaces.mockResolvedValue({ searches: [] });
+  mockLookupCallerName.mockResolvedValue({ ok: false, phone: "x", error: "test default" });
+  mockYelpPhoneSearch.mockResolvedValue({ ok: true, phone: "x", hits: [] });
   // Default: skill loads cleanly. SKILL_DIR_DIST exists; references dir
   // does NOT (so the loop in loadSkill skips ref-file loading).
   mockFsExistsSync.mockImplementation((p: any) => {
@@ -348,6 +372,24 @@ describe("enrichLead — orchestrator", () => {
       expect(result.systemPrompt).toContain("SKILL_BODY_INSTRUCTIONS");
       expect(result.userMessage).toContain("Acme");
     }
+  });
+
+  it("skips Twilio + Yelp when the lead has no phone (gated on input.phone)", async () => {
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: "text", text: JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "ok" }) }],
+    });
+    await enrichLead({ name: "Phoneless Acme" });
+    expect(mockLookupCallerName).not.toHaveBeenCalled();
+    expect(mockYelpPhoneSearch).not.toHaveBeenCalled();
+  });
+
+  it("calls Twilio + Yelp pre-search when the lead has a phone", async () => {
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: "text", text: JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "ok" }) }],
+    });
+    await enrichLead({ name: "Acme", phone: "+15551112222" });
+    expect(mockLookupCallerName).toHaveBeenCalledWith("+15551112222");
+    expect(mockYelpPhoneSearch).toHaveBeenCalledWith("+15551112222");
   });
 
   it("does NOT abort enrichment when the pre-search (Custom Search/Places) fails", async () => {
