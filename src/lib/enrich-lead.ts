@@ -367,12 +367,48 @@ export function summarizeContentBlocks(result: unknown): string {
   return JSON.stringify(compact, null, 2);
 }
 
+/** Walk the text and return the substring of the first balanced `{...}`
+ *  JSON object. Handles the common case where the model emits prose
+ *  before a fenced or unfenced JSON block (e.g., "I have enough to build
+ *  the config. Key facts: …\n```json\n{ ... }\n```"). String-aware so
+ *  braces inside string literals don't throw the depth count off. */
+function extractFirstJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 /** Parse the skill's JSON envelope. Tolerates leading/trailing whitespace,
- *  accidental ```json fences, and either snake_case or camelCase field
- *  names — the skill emits `businessName` but we accept `business_name`
- *  too for symmetry with other internal call sites. The raw model text
- *  and the user message we sent are returned on every result so the UI
- *  can render an AI Feed regardless of parse outcome. */
+ *  accidental ```json fences, prose wrapping (model adds an explanation
+ *  before/after the JSON despite being told not to), and either snake_case
+ *  or camelCase field names — the skill emits `businessName` but we
+ *  accept `business_name` too for symmetry with other internal call sites.
+ *  The raw model text and the user message we sent are returned on every
+ *  result so the UI can render an AI Feed regardless of parse outcome. */
 export function parseEnrichmentResponse(
   text: string,
   userMessage = "",
@@ -387,14 +423,28 @@ export function parseEnrichmentResponse(
     return { ok: false, error: "skill response was empty", systemPrompt, userMessage, rawResponse: text, rawContentBlocks };
   }
   let obj: unknown;
+  let firstErr: string | undefined;
   try {
     obj = JSON.parse(stripped);
   } catch (err) {
+    firstErr = err instanceof Error ? err.message : String(err);
+    // Fall back: extract the first balanced {...} block, in case the
+    // model wrapped the JSON in prose / commentary / a fenced block we
+    // didn't catch with the simple top/bottom strip above.
+    const candidate = extractFirstJsonObject(stripped);
+    if (candidate) {
+      try {
+        obj = JSON.parse(candidate);
+      } catch (_) {
+        // fall through; report firstErr below
+      }
+    }
+  }
+  if (obj === undefined) {
     return {
       ok: false,
       error:
-        "could not parse JSON from skill response: " +
-        (err instanceof Error ? err.message : String(err)),
+        "could not parse JSON from skill response: " + (firstErr ?? "no JSON object found"),
       systemPrompt,
       userMessage,
       rawResponse: text,

@@ -8604,13 +8604,23 @@
       // Only poll if the view is still visible — defensive against
       // hash-based navigation that could leave the timer dangling.
       if (document.getElementById('pendingLeadsView').style.display === 'none') return;
-      loadPendingLeads();
+      // Silent poll: don't blank the panel, don't lose scroll position.
+      // The operator is watching the AI Feed panel update in real time.
+      loadPendingLeads({ silent: true });
     }, 3500);
   }
 
-  async function loadPendingLeads() {
+  async function loadPendingLeads(opts) {
+    const silent = opts && opts.silent === true;
     const body = document.getElementById('pendingLeadsBody');
-    body.innerHTML = '<div class="loading">Loading leads...</div>';
+    // Only show the spinner on first load / explicit refresh — silent
+    // polling keeps the existing detail panel rendered (and its scroll
+    // position intact) so the operator can watch the lead's status flip
+    // from `enriching` → `ready` without the page jumping to top.
+    if (!silent) {
+      body.innerHTML = '<div class="loading">Loading leads...</div>';
+    }
+    const scrollY = silent ? window.scrollY : null;
     try {
       const [leadsRes, draftsRes] = await Promise.all([
         fetch('/api/leads'),
@@ -8621,9 +8631,19 @@
       pendingLeadDrafts = draftsRes.ok ? await draftsRes.json() : [];
       updateLeadsBadge();
       renderPendingLeadsBody();
+      // Restore scroll on silent polls — renderPendingLeadDetail rebuilds
+      // the detail innerHTML, which would otherwise scroll the page back
+      // to the top on each poll tick. requestAnimationFrame waits one
+      // paint so the new DOM is laid out before we restore.
+      if (silent && scrollY !== null) {
+        requestAnimationFrame(() => window.scrollTo(0, scrollY));
+      }
       maybeSchedulePendingLeadsPoll();
     } catch (err) {
-      body.innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+      if (!silent) {
+        body.innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+      }
+      // Silent poll errors stay silent; next tick will retry.
     }
     // Refresh the auto-intake toggle alongside the leads list. Cheap and
     // keeps the UI honest when another operator flips it from elsewhere.
