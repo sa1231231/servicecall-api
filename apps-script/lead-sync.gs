@@ -160,3 +160,110 @@ function postLead(baseUrl, token, payload) {
   try { body = JSON.parse(res.getContentText()); } catch (_) { body = res.getContentText(); }
   return { code: code, body: body };
 }
+
+/**
+ * One-shot setup: append follow-up cadence checkboxes (cols 24–32) to the
+ * lead tab, plus conditional formatting that flags overdue rows.
+ *
+ * Run from the Apps Script editor: select `setupFollowupColumns` in the
+ * function dropdown → Run. Idempotent — safe to re-run; existing checkboxes
+ * survive and matching conditional rules get replaced.
+ *
+ * Update FOLLOWUP_SHEET_NAME below if the lead tab is ever renamed.
+ */
+const FOLLOWUP_SHEET_NAME = 'Default Lead V2';
+const FOLLOWUP_FIRST_COL = 24;          // first column we append (after Notes at 23)
+const FOLLOWUP_LAST_DATA_ROW = 1000;    // pre-populate this many rows with checkboxes
+const FOLLOWUP_HEADERS = [
+  '5-min response',  // 24 (col X) — within 5 min, two calls
+  'D1 VM',           // 25 (col Y)
+  'D1 Text 1',       // 26 (col Z)
+  'D1 Attempt 2',    // 27 (col AA) — 2 more calls + Text 2
+  'D1 Attempt 3',    // 28 (col AB) — 2 more calls + Text 3
+  'D2 Done',         // 29 (col AC)
+  'D3 Done',         // 30 (col AD)
+  'D4 Done',         // 31 (col AE)
+  'Outcome',         // 32 (col AF) — dropdown
+];
+const FOLLOWUP_OUTCOMES = ['Active', 'Connected', 'Booked', 'Lost', 'DNC'];
+
+function setupFollowupColumns() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(FOLLOWUP_SHEET_NAME);
+  if (!sheet) {
+    const msg = 'Tab "' + FOLLOWUP_SHEET_NAME + '" not found. Update FOLLOWUP_SHEET_NAME in lead-sync.gs and re-push.';
+    Logger.log(msg);
+    try { SpreadsheetApp.getUi().alert(msg); } catch (_) {}
+    return;
+  }
+
+  const checkboxCount = FOLLOWUP_HEADERS.length - 1;  // last col is dropdown, not a checkbox
+  const lastCol = FOLLOWUP_FIRST_COL + FOLLOWUP_HEADERS.length - 1;
+  const dataRows = FOLLOWUP_LAST_DATA_ROW - 1;
+
+  // 1. Headers, bolded
+  sheet.getRange(1, FOLLOWUP_FIRST_COL, 1, FOLLOWUP_HEADERS.length)
+    .setValues([FOLLOWUP_HEADERS])
+    .setFontWeight('bold');
+
+  // 2. Checkboxes on cols 24-31, rows 2-1000
+  sheet.getRange(2, FOLLOWUP_FIRST_COL, dataRows, checkboxCount).insertCheckboxes();
+
+  // 3. Outcome dropdown on col 32, rows 2-1000
+  const outcomeValidation = SpreadsheetApp.newDataValidation()
+    .requireValueInList(FOLLOWUP_OUTCOMES, true)
+    .setAllowInvalid(false)
+    .build();
+  sheet.getRange(2, FOLLOWUP_FIRST_COL + checkboxCount, dataRows, 1)
+    .setDataValidation(outcomeValidation);
+
+  // 4. Conditional formatting on the entire row, rows 2-1000.
+  //    Cols (1-indexed): id=1, created_time=2, full_name=15, ...,
+  //    5-min=24 (X), VM=25 (Y), Text1=26 (Z), Att2=27 (AA), Att3=28 (AB).
+  //
+  //    Red = 5-min not done & a created_time exists (the SLA failed; needs
+  //    immediate action). The formula references col X (24) by absolute col
+  //    + relative row, so it follows down each row.
+  //
+  //    Yellow = lead is older than today AND any of the 4 D1 sub-steps
+  //    (VM/Text1/Att2/Att3) is unchecked. The DATEVALUE(LEFT(...,10)) trick
+  //    extracts the YYYY-MM-DD date portion of the ISO created_time string.
+  const fullRowRange = sheet.getRange(2, 1, dataRows, lastCol);
+
+  const redRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied('=AND($B2<>"", NOT($X2))')
+    .setBackground('#fce4e4')
+    .setRanges([fullRowRange])
+    .build();
+
+  const yellowRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(
+      '=AND($B2<>"", IFERROR(DATEVALUE(LEFT($B2,10)),0)<TODAY(), OR(NOT($Y2),NOT($Z2),NOT($AA2),NOT($AB2)))'
+    )
+    .setBackground('#fff4cc')
+    .setRanges([fullRowRange])
+    .build();
+
+  // Idempotent rule replacement: drop any prior rules that look like ours
+  // (formula references $X2 or $Y2) and append the fresh pair.
+  const existing = sheet.getConditionalFormatRules();
+  const kept = existing.filter(function (rule) {
+    const cond = rule.getBooleanCondition && rule.getBooleanCondition();
+    if (!cond) return true;
+    const vals = cond.getCriteriaValues && cond.getCriteriaValues();
+    if (!vals) return true;
+    const formula = String(vals[0] || '');
+    return formula.indexOf('$X2') === -1 && formula.indexOf('$Y2') === -1;
+  });
+  sheet.setConditionalFormatRules(kept.concat([redRule, yellowRule]));
+
+  Logger.log('Follow-up columns ready. Cols ' + FOLLOWUP_FIRST_COL + '-' + lastCol +
+    ' on tab "' + FOLLOWUP_SHEET_NAME + '". Red = 5-min missed; yellow = Day 1 incomplete + day passed.');
+  try {
+    SpreadsheetApp.getUi().alert(
+      'Follow-up columns ready on "' + FOLLOWUP_SHEET_NAME + '" (cols ' +
+      FOLLOWUP_FIRST_COL + '-' + lastCol + '). ' +
+      'Red rows = 5-min SLA missed. Yellow = Day 1 incomplete after a day has passed.'
+    );
+  } catch (_) {}
+}
