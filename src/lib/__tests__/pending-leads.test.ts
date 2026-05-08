@@ -30,6 +30,7 @@ const {
   updatePendingLead,
   markPromoted,
   markDismissed,
+  findPendingLeadByExternalId,
 } = await import("../pending-leads.js");
 
 beforeEach(() => {
@@ -165,6 +166,48 @@ describe("markPromoted", () => {
     expect(update.$set.status).toBe("promoted");
     expect(update.$set.promotedSlug).toBe("acme-plumbing");
     expect(update.$set.updatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+describe("createPendingLead with externalId / status overrides", () => {
+  it("stamps externalId on the doc when provided", async () => {
+    const lead = await createPendingLead({
+      source: "google_sheet",
+      input: { name: "Meta Lead" },
+      externalId: "l:1574729760257730",
+    });
+    expect(lead.externalId).toBe("l:1574729760257730");
+    expect(mockInsertOne).toHaveBeenCalledWith(lead);
+  });
+
+  it("omits externalId from the doc when not provided", async () => {
+    const lead = await createPendingLead({ source: "manual", input: { name: "X" } });
+    expect(lead).not.toHaveProperty("externalId");
+    expect(mockInsertOne.mock.calls[0][0]).not.toHaveProperty("externalId");
+  });
+
+  it("honors a status override (used by the backfill seed)", async () => {
+    const lead = await createPendingLead({
+      source: "meta_lead_ads_backfill",
+      input: { name: "(backfill)" },
+      externalId: "l:9999",
+      status: "dismissed",
+    });
+    expect(lead.status).toBe("dismissed");
+  });
+});
+
+describe("findPendingLeadByExternalId", () => {
+  it("looks up by externalId", async () => {
+    mockFindOne.mockResolvedValue({ _id: "abc", externalId: "l:1", status: "ready" });
+    const out = await findPendingLeadByExternalId("l:1");
+    expect(mockFindOne).toHaveBeenCalledWith({ externalId: "l:1" });
+    expect(out?._id).toBe("abc");
+  });
+
+  it("returns null when unknown", async () => {
+    mockFindOne.mockResolvedValue(null);
+    expect(await findPendingLeadByExternalId("l:nope")).toBeNull();
   });
 });
 

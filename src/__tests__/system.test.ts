@@ -2904,5 +2904,59 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(lead.input.name).toBe(testName);
       expect(lead.source).toBe("system_test");
     });
+
+    it("creates a lead with externalId on first POST (201)", async () => {
+      const externalId = "system-test-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      const testName = TEST_NAME_PREFIX + "extid-fresh-" + Date.now();
+      const resp = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${LEAD_INTAKE_TOKEN}`,
+        },
+        body: JSON.stringify({ name: testName, source: "system_test", externalId }),
+      });
+      expect(resp.status).toBe(201);
+      const body = await json(resp);
+      expect(typeof body._id).toBe("string");
+      expect(body.deduped).toBeUndefined();
+      createdLeadIds.push(body._id);
+
+      const lookup = await fetch(url(`/api/leads/${body._id}`), { headers: authHeaders() });
+      const lead = await json(lookup);
+      expect(lead.externalId).toBe(externalId);
+    });
+
+    it("dedups a duplicate externalId — second POST returns 200 with the same _id", async () => {
+      const externalId = "system-test-dup-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      const testName = TEST_NAME_PREFIX + "extid-dup-" + Date.now();
+
+      const first = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${LEAD_INTAKE_TOKEN}`,
+        },
+        body: JSON.stringify({ name: testName, source: "system_test", externalId }),
+      });
+      expect(first.status).toBe(201);
+      const firstBody = await json(first);
+      createdLeadIds.push(firstBody._id);
+
+      // Second POST with the same externalId but a different name body —
+      // should return the existing lead, not create a new one.
+      const second = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${LEAD_INTAKE_TOKEN}`,
+        },
+        body: JSON.stringify({ name: testName + " (resend)", source: "system_test", externalId }),
+      });
+      expect(second.status).toBe(200);
+      const secondBody = await json(second);
+      expect(secondBody._id).toBe(firstBody._id);
+      expect(secondBody.deduped).toBe(true);
+    });
   });
 });

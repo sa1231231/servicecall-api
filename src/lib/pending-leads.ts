@@ -40,6 +40,10 @@ export interface PendingLead {
   enrichmentError?: string;
   /** Set when status==="promoted". The newly-created Retell agent's slug. */
   promotedSlug?: string;
+  /** Stable upstream id (e.g. Meta Lead Ads `l:...`) used for idempotent
+   *  intake. When set, a second POST with the same externalId returns the
+   *  existing lead instead of creating a duplicate. */
+  externalId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -68,17 +72,29 @@ function nowIso(): string {
 export async function createPendingLead(opts: {
   source: PendingLead["source"];
   input: PendingLeadInput;
+  externalId?: string;
+  status?: PendingLeadStatus;
 }): Promise<PendingLead> {
   const lead: PendingLead = {
     _id: newId(),
     source: opts.source,
     input: opts.input,
-    status: "queued",
+    status: opts.status ?? "queued",
     createdAt: nowIso(),
     updatedAt: nowIso(),
   };
+  if (opts.externalId) lead.externalId = opts.externalId;
   await collection().insertOne(lead);
   return lead;
+}
+
+/** Lookup by upstream id (e.g. Meta Lead Ads `l:...`). Returns null if
+ *  unknown. Used by the intake route to make Apps Script POSTs idempotent
+ *  when the source sheet has no STATUS column to write back into. */
+export async function findPendingLeadByExternalId(
+  externalId: string,
+): Promise<PendingLead | null> {
+  return collection().findOne({ externalId } as any);
 }
 
 /** List leads, optionally filtered by status. Newest first. By default
@@ -123,4 +139,17 @@ export async function markDismissed(id: string): Promise<void> {
     { _id: id } as any,
     { $set: { status: "dismissed", updatedAt: nowIso() } },
   );
+}
+
+// ── Indexes ──────────────────────────────────────────────────────────────────
+
+/** Unique sparse index on externalId — only docs with externalId set are
+ *  indexed, and the index enforces uniqueness so two concurrent intake
+ *  POSTs with the same externalId can't both create a doc. */
+export async function ensurePendingLeadIndexes(): Promise<void> {
+  await collection().createIndex(
+    { externalId: 1 },
+    { unique: true, sparse: true, name: "externalId_unique_sparse" },
+  );
+  console.log("[pending-leads] indexes ensured");
 }

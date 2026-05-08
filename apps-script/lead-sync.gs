@@ -22,16 +22,28 @@
  *        PHONE_COL          2
  *        WEBSITE_COL                                        (optional; leave blank to skip)
  *        NOTES_COL                                          (optional)
- *        STATUS_COL         5                               (we write the lead id here)
+ *        EXTERNAL_ID_COL                                    (optional; column with a stable upstream
+ *                                                           id like Meta Lead Ads `l:...`. When set,
+ *                                                           the API dedups by this id so the script
+ *                                                           can re-POST every row on every run.)
+ *        STATUS_COL                                         (optional; column where we write the lead
+ *                                                           id back so the row never re-syncs. Faster
+ *                                                           than EXTERNAL_ID_COL for large sheets.)
  *        HEADER_ROWS        1                               (rows to skip at the top)
+ *
+ *      You must set at least one of EXTERNAL_ID_COL or STATUS_COL — both is fine and gives
+ *      you sheet-side fast-skip plus API-side safety net.
+ *
  *   2. Triggers → Add trigger → syncNewLeads → on change   (or time-based every 5 min).
  *
- * Behavior: rows whose STATUS_COL is empty get POSTed. On 201 we write the lead id
- * back so the row never re-syncs. On 423 (paused via dashboard toggle) we stop early
- * and leave the row unsynced — next run picks up from where we paused.
+ * Behavior: rows whose STATUS_COL is empty (or every non-header row, when STATUS_COL
+ * isn't configured) get POSTed. On 201 (created) or 200 (already known via externalId
+ * dedup) we treat the row as synced and write the lead id back to STATUS_COL when it's
+ * configured. On 423 (paused via dashboard toggle) we stop early — next run picks up
+ * from where we paused.
  */
 
-const REQUIRED_PROPS = ['API_BASE_URL', 'LEAD_INTAKE_TOKEN', 'NAME_COL', 'STATUS_COL'];
+const REQUIRED_PROPS = ['API_BASE_URL', 'LEAD_INTAKE_TOKEN', 'NAME_COL'];
 
 function syncNewLeads() {
   // Serialize concurrent executions. With both an `on change` trigger and
@@ -58,6 +70,10 @@ function syncNewLeadsImpl() {
       return;
     }
   }
+  if (!props.STATUS_COL && !props.EXTERNAL_ID_COL) {
+    Logger.log('Configure at least one of STATUS_COL or EXTERNAL_ID_COL — otherwise every run would re-create every row.');
+    return;
+  }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = props.SHEET_NAME ? ss.getSheetByName(props.SHEET_NAME) : ss.getSheets()[0];
@@ -75,14 +91,17 @@ function syncNewLeadsImpl() {
     phone: props.PHONE_COL ? parseInt(props.PHONE_COL, 10) : 0,
     website: props.WEBSITE_COL ? parseInt(props.WEBSITE_COL, 10) : 0,
     notes: props.NOTES_COL ? parseInt(props.NOTES_COL, 10) : 0,
-    status: parseInt(props.STATUS_COL, 10),
+    status: props.STATUS_COL ? parseInt(props.STATUS_COL, 10) : 0,
+    externalId: props.EXTERNAL_ID_COL ? parseInt(props.EXTERNAL_ID_COL, 10) : 0,
   };
 
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
     const sheetRow = headerRows + 1 + i;
-    const statusCell = String(row[cols.status - 1] || '').trim();
-    if (statusCell) continue; // already synced
+    if (cols.status) {
+      const statusCell = String(row[cols.status - 1] || '').trim();
+      if (statusCell) continue; // already synced (sheet-side fast skip)
+    }
 
     const name = String(row[cols.name - 1] || '').trim();
     if (!name) continue; // empty row — don't burn an API call
@@ -100,17 +119,28 @@ function syncNewLeadsImpl() {
       const notes = String(row[cols.notes - 1] || '').trim();
       if (notes) payload.notes = notes;
     }
+    if (cols.externalId) {
+      const externalId = String(row[cols.externalId - 1] || '').trim();
+      if (!externalId) continue; // no upstream id — can't dedup, skip rather than risk duplicates
+      payload.externalId = externalId;
+    }
 
     const result = postLead(props.API_BASE_URL, props.LEAD_INTAKE_TOKEN, payload);
     if (result.code === 423) {
       Logger.log('Intake paused — stopping at row ' + sheetRow);
       return; // leave this and remaining rows unsynced
     }
-    if (result.code === 201 && result.body && result.body._id) {
-      sheet.getRange(sheetRow, cols.status).setValue(result.body._id);
+    // 200 = already known via externalId dedup; 201 = freshly created. Both
+    // mean "synced, don't retry," so write the lead id back if STATUS_COL
+    // is configured.
+    if ((result.code === 201 || result.code === 200) && result.body && result.body._id) {
+      if (cols.status) {
+        sheet.getRange(sheetRow, cols.status).setValue(result.body._id);
+      }
     } else {
       // 4xx (bad payload) / 5xx (server error) — log and move on. Next run
-      // retries since STATUS_COL is still empty.
+      // retries since STATUS_COL is still empty (or via externalId dedup
+      // when STATUS_COL isn't configured).
       Logger.log('Row ' + sheetRow + ' sync failed: ' + result.code + ' ' + JSON.stringify(result.body));
     }
   }

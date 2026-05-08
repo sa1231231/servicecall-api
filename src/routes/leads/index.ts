@@ -9,6 +9,7 @@ import {
   updatePendingLead,
   markPromoted,
   markDismissed,
+  findPendingLeadByExternalId,
   type PendingLead,
   type PendingLeadStatus,
   type PendingLeadInput,
@@ -126,7 +127,21 @@ leadsIntakeRouter.post("/", async (req, res) => {
   const source = typeof req.body?.source === "string" && req.body.source.trim()
     ? req.body.source.trim()
     : "google_sheet";
-  const lead = await createPendingLead({ source, input });
+  const externalId = typeof req.body?.externalId === "string" && req.body.externalId.trim()
+    ? req.body.externalId.trim()
+    : undefined;
+  // Idempotent intake: when the source sheet has no STATUS column to write
+  // the lead id back into, Apps Script re-POSTs every row on every run.
+  // Short-circuit by returning the existing lead instead of creating a
+  // duplicate. 200 (vs 201) tells the script "already known, don't retry."
+  if (externalId) {
+    const existing = await findPendingLeadByExternalId(externalId);
+    if (existing) {
+      res.status(200).json({ _id: existing._id, status: existing.status, deduped: true });
+      return;
+    }
+  }
+  const lead = await createPendingLead({ source, input, externalId });
   runEnrichment(lead._id, input).catch((err) => {
     console.error(`[leads] enrichment crashed for ${lead._id}:`, err);
   });

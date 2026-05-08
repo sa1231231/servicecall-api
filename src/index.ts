@@ -27,6 +27,7 @@ import { getUser, verifyPassword, resolvePermissions, resolveUserFeaturePermissi
 import { SEED_FEATURE_DEFAULTS } from "./lib/feature-permissions.js";
 import { ensureAuditIndex } from "./lib/audit.js";
 import { ensureVersionIndexes } from "./lib/agent-versions.js";
+import { ensurePendingLeadIndexes } from "./lib/pending-leads.js";
 import { requireFeature } from "./middleware/require-role.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -475,6 +476,7 @@ app.use("/agents", agentsRouter);
 await initDb();
 await ensureAuditIndex();
 await ensureVersionIndexes();
+await ensurePendingLeadIndexes();
 await purgeExpiredClients();
 await loadClientsFromDb();
 await refreshOwnerConfig();
