@@ -58,21 +58,44 @@ When Places is empty (or every hit is irrelevant — wrong city, wrong vertical,
 - `(765) 480-3157`
 - `+17654803157`
 
-Many small service businesses (handyman, HVAC, remodeling) live primarily on Nextdoor, Facebook business pages, Yelp, or contractor-locator pages (Delta Faucet pro listings, BBB) that don't always surface from a single Custom Search query but are easy hits via `web_search`. A second `web_search` combining a partial business name with the area code or city often disambiguates further.
+Many small service businesses (handyman, HVAC, remodeling) live primarily on Nextdoor, Facebook business pages, Yelp, or contractor-locator pages (Delta Faucet pro listings, BBB) that don't always surface from a single Custom Search query but are easy hits via `web_search`. A second `web_search` combining the CNAM personal name with the area code's state or a vertical hint often disambiguates further (e.g. `"Marvin Pena" Maryland handyman`).
 
-Read the resulting snippets the same way you read the pre-search blocks — phone-match wins, name+location-match is acceptable.
+#### Reading web_search results — important
+
+`web_search` returns a list of `{ title, url, page_age, encrypted_content }` objects. **The `encrypted_content` field is sealed by Anthropic** — you cannot read its body via JSON parsing or code execution. You only see **title and URL** until you call `web_fetch` on the URL.
+
+This means: **trust title-only matches.** If a search-result title contains a business-name + city/state pattern that matches the lead, treat it as a probable hit even though you can't see the body. Examples that should be considered direct hits:
+
+- `"Pro Solutions LLC - Halethorpe, MD - Nextdoor"` for a 410 (Maryland) phone number
+- `"Cairo Heating & Air"` on a Yelp/BBB URL for a 973 (NJ) phone number
+- `"<NAME> Plumbing"` on findapro.deltafaucet.com or a similar contractor-locator page
+
+The pattern `"<business> - <city, state>"` is *especially* high-confidence — directory sites only list a business at a city if it operates there. Area code → state mapping (765 = central IN, 410 = MD, 404 = GA, 973 = NJ, 415 = SF, etc.) is a fast geographic sanity check.
+
+**Don't dismiss a hit just because it's #3 in the results** or because the first two were generic directory pages. Read every title and URL in every search result before deciding the channel was empty.
 
 ### Enriching with web_fetch
 
-Once a business is resolved (from any source), if the pre-search snippets didn't give you enough material for a good FAQ, **call `web_fetch`** on the strongest single source — usually the business's own website, their Yelp page, or a Facebook business page. Use the fetched content to fill the FAQ knowledge base with concrete services, hours, service area, payment notes, and any "what we're known for" detail.
+`web_fetch` is the bridge between a title-only `web_search` hit and the JSON config. Use it in two situations — and **always at least once before DRAFT** when `web_search` returned any plausible URL.
 
-Skip `web_fetch` when:
+**1. Confirm the business identity** when `web_search` gave you a promising title-only hit. Fetch the URL, look for the phone number on the page (it should match the lead's), and read the business name + services. This is the step that turns "Pro Solutions LLC - Halethorpe, MD - Nextdoor" into a confirmed match.
 
-- Places already returned hours and the snippets cover services
-- The strongest hit is a generic directory (Yellow Pages, "find a contractor") with no real content
-- You'd just be padding the FAQ with marketing copy
+**2. Fill the FAQ** with concrete content from the resolved business's strongest single source — Yelp page, business website, Facebook business page, BBB page. Pull services, hours, service area, payment notes.
 
-Do **not** invent facts. Only use what the fetched page actually says. If the fetched page is a 404, login wall, or otherwise unhelpful, skip it and produce the FAQ from what you do have.
+**Order of operations when pre-search misses:**
+
+1. `web_search` with phone number (multiple formats)
+2. Read every result's title + URL. Identify any plausible match using the title-only rules above.
+3. If you found a plausible URL, **`web_fetch` it now**. Don't re-search; fetch what you already have.
+4. If the fetch confirms (phone matches, name is real), commit to that business in the JSON.
+5. Only DRAFT after `web_fetch` returns a 404, login wall, or genuinely unrelated content.
+
+Skip `web_fetch` only when:
+
+- Places + Yelp already returned the full picture (name, hours, services) and you have nothing left to learn
+- Every `web_search` result is a generic directory home page (yellowpages.com root, /find-a-contractor) with no business-specific URL
+
+Do **not** invent facts. Only use what the fetched page actually says. If the fetched page is a 404, login wall, or otherwise unhelpful, try the next-most-promising URL from the same search before giving up. `max_uses: 3` for `web_fetch` is enough for this — use it.
 
 ### Self-reported business type
 
@@ -86,9 +109,15 @@ The hint is self-reported and can be wrong — Places phone-match still wins on 
 
 ### When to use DRAFT
 
-Reserve the DRAFT path **only when every pre-search channel (Places, Yelp, CNAM, Custom Search) AND your `web_search` calls all came back empty or returned only a personal name with no business attached**. If any source produced a relevant business, commit to that business in the JSON — even if some details (hours, full address) need verification, just note the gaps in the FAQ. DRAFT is for "we found nothing across every channel"; partial info is not DRAFT.
+Reserve the DRAFT path **only after**:
 
-If pre-search blocks are missing entirely (rare — usually means the deployment hasn't configured those channels), still try `web_search` before giving up. Only output a DRAFT with the lead-form `name` as `businessName` and `templateName: ""` after the tool also turns up nothing.
+1. Every pre-search channel (Places, Yelp, CNAM, Custom Search) is empty or returns only personal names / unrelated businesses, AND
+2. `web_search` was called with multiple phone formats AND with the CNAM personal name + area-code-state, AND
+3. Every plausible-looking title-only URL from those searches has been **`web_fetch`-ed** and either 404'd or turned out to be unrelated.
+
+If any source — including a `web_search` title that fits the lead's geography — produced a plausible business, fetch it and commit. **Title-only matches are not "empty results"; they are unfetched leads.** DRAFT is for "we tried every channel and fetched the promising URLs"; it is not for "the first two results were generic directories so I gave up."
+
+If pre-search blocks are missing entirely (rare — usually means the deployment hasn't configured those channels), still try `web_search` + `web_fetch` before giving up. Only output a DRAFT with the lead-form `name` as `businessName` and `templateName: ""` after the tools also turn up nothing.
 
 ## Output Shape
 
