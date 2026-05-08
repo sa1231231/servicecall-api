@@ -96,6 +96,31 @@ async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<v
   }
 }
 
+/**
+ * Merge a lead's self-reported business_type into the agent's contact_notes
+ * during promotion. Returns the value to set on `client.contact_notes`, or
+ * `undefined` when neither input has anything to contribute.
+ *
+ * Cases:
+ *  - no business_type, no operator note → undefined (don't set the field)
+ *  - no business_type, operator note    → operator note (passthrough)
+ *  - business_type, no operator note    → "Business type: <X>"
+ *  - business_type, operator note       → "Business type: <X>\n\n<operator>"
+ *
+ * Empty strings (after trim) are treated as "not set" so operator-clears
+ * don't accidentally include the business_type prefix on its own.
+ */
+export function mergeContactNotesForPromote(opts: {
+  businessType?: string;
+  operatorOverrideNotes?: string;
+}): string | undefined {
+  const bt = opts.businessType?.trim();
+  const operator = opts.operatorOverrideNotes?.trim();
+  if (!bt) return operator || undefined;
+  const typeNote = `Business type: ${bt}`;
+  return operator ? `${typeNote}\n\n${operator}` : typeNote;
+}
+
 function sanitizeInput(body: unknown): PendingLeadInput | null {
   if (!body || typeof body !== "object") return null;
   const b = body as Record<string, unknown>;
@@ -331,6 +356,20 @@ leadsRouter.post("/:id/promote", requireFeature("pending_leads", "write"), async
     if (tz) leadContact.contact_timezone = tz;
   }
   const operatorOverrides = (req.body?.client as Partial<CreateAgentBody["client"]> | undefined) ?? {};
+
+  // Carry the lead's self-reported business type onto contact_notes so the
+  // operator never loses that context after promotion. If the operator
+  // also passed their own contact_notes in the override, prepend the
+  // business type so neither is lost.
+  const mergedNotes = mergeContactNotesForPromote({
+    businessType: lead.input?.business_type,
+    operatorOverrideNotes:
+      typeof operatorOverrides.contact_notes === "string" ? operatorOverrides.contact_notes : undefined,
+  });
+  if (mergedNotes !== undefined) {
+    // Set on operatorOverrides since it wins in the spread below.
+    operatorOverrides.contact_notes = mergedNotes;
+  }
 
   const fullBody = applyOverrides(draft.exportConfig, {
     business: { businessName, faqKnowledgeBase: faq },

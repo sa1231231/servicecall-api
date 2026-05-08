@@ -138,6 +138,39 @@ beforeEach(() => {
 
 // ── POST / (intake) ────────────────────────────────────────────────────────
 
+describe("mergeContactNotesForPromote", () => {
+  let mergeContactNotesForPromote: any;
+  beforeEach(async () => {
+    ({ mergeContactNotesForPromote } = await import("../index.js"));
+  });
+
+  it("returns undefined when neither field is set", () => {
+    expect(mergeContactNotesForPromote({})).toBeUndefined();
+    expect(mergeContactNotesForPromote({ businessType: "", operatorOverrideNotes: "" })).toBeUndefined();
+    expect(mergeContactNotesForPromote({ businessType: "   ", operatorOverrideNotes: "  " })).toBeUndefined();
+  });
+
+  it("passthrough operator note when no business_type", () => {
+    expect(mergeContactNotesForPromote({ operatorOverrideNotes: "VIP" })).toBe("VIP");
+  });
+
+  it("formats business_type alone when no operator note", () => {
+    expect(mergeContactNotesForPromote({ businessType: "HVAC" })).toBe("Business type: HVAC");
+  });
+
+  it("merges both with a blank line between", () => {
+    expect(
+      mergeContactNotesForPromote({ businessType: "Plumbing", operatorOverrideNotes: "Wants demo Friday" }),
+    ).toBe("Business type: Plumbing\n\nWants demo Friday");
+  });
+
+  it("trims whitespace on both inputs", () => {
+    expect(
+      mergeContactNotesForPromote({ businessType: "  HVAC  ", operatorOverrideNotes: "  VIP\n" }),
+    ).toBe("Business type: HVAC\n\nVIP");
+  });
+});
+
 describe("POST /api/leads — intake", () => {
   it("returns 400 when name is missing", async () => {
     const res = makeRes();
@@ -501,6 +534,54 @@ describe("POST /api/leads/:id/promote", () => {
     expect(overridesArg.client.contact_name).toBe("Hand-edited");
     // Phone wasn't overridden, so the lead-derived value remains.
     expect(overridesArg.client.contact_phone).toBe("+19739781542");
+  });
+
+  it("carries lead.input.business_type into contact_notes when operator didn't supply one", async () => {
+    mockGetPendingLead.mockResolvedValue({
+      ...leadReady,
+      input: { ...leadReady.input, business_type: "HVAC" },
+    });
+    mockLoadDraft.mockResolvedValue(draft);
+    mockApplyOverrides.mockReturnValue({});
+    mockCreateAgentFromConfig.mockResolvedValue({ ok: true, slug: "acme", agentId: "a" });
+    await runRoute("post", "/:id/promote", makeReq({
+      params: { id: "lead1" }, body: { draft: "default" },
+    }), makeRes());
+    const overridesArg = mockApplyOverrides.mock.calls[0][1];
+    expect(overridesArg.client.contact_notes).toBe("Business type: HVAC");
+  });
+
+  it("prepends business_type to operator's contact_notes (both kept)", async () => {
+    mockGetPendingLead.mockResolvedValue({
+      ...leadReady,
+      input: { ...leadReady.input, business_type: "Plumbing" },
+    });
+    mockLoadDraft.mockResolvedValue(draft);
+    mockApplyOverrides.mockReturnValue({});
+    mockCreateAgentFromConfig.mockResolvedValue({ ok: true, slug: "acme", agentId: "a" });
+    await runRoute("post", "/:id/promote", makeReq({
+      params: { id: "lead1" },
+      body: {
+        draft: "default",
+        client: { contact_notes: "Spoke to owner — VIP, prefers texts." },
+      },
+    }), makeRes());
+    const overridesArg = mockApplyOverrides.mock.calls[0][1];
+    expect(overridesArg.client.contact_notes).toBe(
+      "Business type: Plumbing\n\nSpoke to owner — VIP, prefers texts.",
+    );
+  });
+
+  it("leaves contact_notes unset when neither business_type nor operator note present", async () => {
+    mockGetPendingLead.mockResolvedValue(leadReady);
+    mockLoadDraft.mockResolvedValue(draft);
+    mockApplyOverrides.mockReturnValue({});
+    mockCreateAgentFromConfig.mockResolvedValue({ ok: true, slug: "acme", agentId: "a" });
+    await runRoute("post", "/:id/promote", makeReq({
+      params: { id: "lead1" }, body: { draft: "default" },
+    }), makeRes());
+    const overridesArg = mockApplyOverrides.mock.calls[0][1];
+    expect(overridesArg.client.contact_notes).toBeUndefined();
   });
 
   it("propagates createAgentFromConfig failure status without marking promoted", async () => {

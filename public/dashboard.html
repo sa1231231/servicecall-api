@@ -8706,7 +8706,7 @@
       return;
     }
     let html = '<table><thead><tr>' +
-      '<th>Name</th><th>Phone</th><th>Website</th><th>Status</th><th>Updated</th><th></th>' +
+      '<th>Name</th><th>Phone</th><th>Website</th><th>Type</th><th>Status</th><th>Updated</th><th></th>' +
       '</tr></thead><tbody>';
     for (const l of pendingLeadsCache) {
       const enrichedName = l.enriched?.business_name;
@@ -8718,6 +8718,7 @@
         '<td><strong>' + esc(displayName) + '</strong>' + subtitle + '</td>' +
         '<td style="font-variant-numeric:tabular-nums;">' + esc(l.input?.phone || '') + '</td>' +
         '<td style="word-break:break-word;">' + esc(l.input?.website || '') + '</td>' +
+        '<td style="color:#555;font-size:0.78rem;">' + esc(l.input?.business_type || '') + '</td>' +
         '<td><span class="lead-status lead-status-' + esc(l.status) + '">' + esc(l.status) + '</span></td>' +
         '<td style="color:#666;font-size:0.78rem;">' + esc(fmtLeadTime(l.updatedAt)) + '</td>' +
         '<td style="text-align:right;"><button onclick="event.stopPropagation();dismissLead(\'' + esc(l._id) + '\')" style="padding:0.2rem 0.5rem;font-size:0.7rem;background:#fff;border:1px solid #fecaca;color:#dc2626;border-radius:4px;cursor:pointer;">Dismiss</button></td>' +
@@ -8770,6 +8771,8 @@
         '<input id="leadInputPhone" type="text" value="' + esc(lead.input?.phone || '') + '" placeholder="+15551234567">' +
         '<span class="field-label">Website</span>' +
         '<input id="leadInputWebsite" type="text" value="' + esc(lead.input?.website || '') + '" placeholder="https://example.com">' +
+        '<span class="field-label">Business type <span style="font-weight:400;font-size:0.7rem;color:#777;">(self-reported on lead form)</span></span>' +
+        '<input id="leadInputBusinessType" type="text" value="' + esc(lead.input?.business_type || '') + '" placeholder="e.g. HVAC, Plumbing, Auto repair">' +
         '<span class="field-label">Notes</span>' +
         '<textarea id="leadInputNotes" rows="3" maxlength="10000" placeholder="Anything else about this lead (vertical hint, prior call notes, etc.)">' + esc(lead.input?.notes || '') + '</textarea>' +
         '<span class="field-label">Source</span><div class="read-field">' + esc(lead.source) + '</div>' +
@@ -8945,9 +8948,10 @@
     }
     const input = {
       name,
-      phone:   document.getElementById('leadInputPhone')?.value.trim() || undefined,
-      website: document.getElementById('leadInputWebsite')?.value.trim() || undefined,
-      notes:   document.getElementById('leadInputNotes')?.value.trim() || undefined,
+      phone:         document.getElementById('leadInputPhone')?.value.trim() || undefined,
+      website:       document.getElementById('leadInputWebsite')?.value.trim() || undefined,
+      business_type: document.getElementById('leadInputBusinessType')?.value.trim() || undefined,
+      notes:         document.getElementById('leadInputNotes')?.value.trim() || undefined,
     };
     try {
       const res = await fetch('/api/leads/' + encodeURIComponent(id), {
