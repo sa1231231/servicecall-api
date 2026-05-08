@@ -251,7 +251,13 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
         system: systemPrompt,
         messages: [{ role: "user", content: userMessage }],
         tools: [
-          { type: "web_search_20260209", name: "web_search", max_uses: 4 },
+          // 8 (not 4) because the model spends 2–3 web_search calls
+          // exploring query variants before landing on the bare-phone
+          // query that surfaces Nextdoor/Facebook long-tail listings.
+          // With code_execution wrapping each search, a tight budget
+          // hits "Server tool use limit exceeded" before the obvious
+          // query gets tried. 8 is still ~$0.08/lead worst case.
+          { type: "web_search_20260209", name: "web_search", max_uses: 8 },
           { type: "web_fetch_20260309", name: "web_fetch", max_uses: 3 },
         ],
       },

@@ -52,13 +52,36 @@ Every prompt for this skill arrives with up to four pre-search blocks generated 
 
 ### Falling back to web_search
 
-When Places is empty (or every hit is irrelevant — wrong city, wrong vertical, generic directories with no business name) AND the Custom Search block is also empty / absent / thin, **call `web_search`** before considering DRAFT. Try the phone number in multiple formats:
+When Places is empty (or every hit is irrelevant — wrong city, wrong vertical, generic directories with no business name) AND the Custom Search block is also empty / absent / thin, **call `web_search`** before considering DRAFT.
 
-- `765-480-3157`
-- `(765) 480-3157`
-- `+17654803157`
+#### Query order is mandatory — do not deviate
 
-Many small service businesses (handyman, HVAC, remodeling) live primarily on Nextdoor, Facebook business pages, Yelp, or contractor-locator pages (Delta Faucet pro listings, BBB) that don't always surface from a single Custom Search query but are easy hits via `web_search`. A second `web_search` combining the CNAM personal name with the area code's state or a vertical hint often disambiguates further (e.g. `"Marvin Pena" Maryland handyman`).
+The Anthropic web_search index has the right answer most of the time, **but only if the query is bare**. Vertical hints filter out the long-tail Nextdoor/Facebook/Yelp results we need. Run queries in this exact order, stopping the moment you find a plausible URL:
+
+**Phase 1 — bare phone, no qualifiers, no quotes.** Run *exactly* these three queries, one per call:
+
+```
+4106941202
+410-694-1202
+(410) 694-1202
+```
+
+Read every result's title and URL. Long-tail listings (Nextdoor, Facebook, Yelp, BBB, contractor-locator pages) often appear at positions 3–5, *not* the top. **Do not stop reading at the first generic Yellow Pages directory result.** You're scanning for any title in the format `"<business name> - <city, state>"` or `"<business name> | Nextdoor / Facebook / Yelp / BBB"`.
+
+**Phase 2 — geography-narrowed.** Only if Phase 1 returned no plausible URLs:
+
+```
+<phone-formatted> <state-from-area-code>      e.g.  410-694-1202 Maryland
+<phone-digits> <city-guess>                   e.g.  4106941202 Baltimore
+```
+
+**Phase 3 — name + state + vertical hint.** Last resort, only if Phase 1 and 2 are empty:
+
+```
+"<CNAM-name>" <state> <vertical-hint>         e.g.  "Marvin Pena" Maryland handyman
+```
+
+**Do NOT combine phone + vertical-hint in Phase 1.** That's what filters out the long-tail listings we're trying to find. The phone alone is a unique-enough identifier — adding "handyman" or "contractor" excludes Nextdoor pages that don't carry those keywords in their title.
 
 #### Reading web_search results — important
 
