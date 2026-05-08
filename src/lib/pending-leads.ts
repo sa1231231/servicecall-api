@@ -119,7 +119,7 @@ export async function getPendingLead(id: string): Promise<PendingLead | null> {
 /** Apply field updates and bump updatedAt. Returns the updated doc. */
 export async function updatePendingLead(
   id: string,
-  updates: Partial<Pick<PendingLead, "input" | "status" | "enriched" | "enrichmentError" | "promotedSlug">>,
+  updates: Partial<Pick<PendingLead, "input" | "status" | "enriched" | "enrichmentError" | "promotedSlug" | "externalId">>,
 ): Promise<PendingLead | null> {
   const setObj: Record<string, unknown> = { ...updates, updatedAt: nowIso() };
   await collection().updateOne({ _id: id } as any, { $set: setObj });

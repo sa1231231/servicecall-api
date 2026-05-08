@@ -219,12 +219,24 @@ leadsRouter.patch("/:id", requireFeature("pending_leads", "write"), async (req, 
   if (typeof body.status === "string") {
     updates.status = body.status as PendingLeadStatus;
   }
+  if (typeof body.externalId === "string" && body.externalId.trim()) {
+    updates.externalId = body.externalId.trim();
+  }
   if (Object.keys(updates).length === 0) {
     res.status(400).json({ error: "Nothing editable in body" });
     return;
   }
-  const updated = await updatePendingLead(id, updates);
-  res.json(updated);
+  try {
+    const updated = await updatePendingLead(id, updates);
+    res.json(updated);
+  } catch (err: any) {
+    // Mongo unique-index violation when an externalId is already taken.
+    if (err?.code === 11000) {
+      res.status(409).json({ error: "externalId already in use by another lead" });
+      return;
+    }
+    throw err;
+  }
 });
 
 /** Re-run enrichment (e.g. after the operator added a website to the input). */
