@@ -145,6 +145,37 @@ export async function markDismissed(id: string): Promise<void> {
   );
 }
 
+/**
+ * Reset any lead that's been stuck in `enriching` longer than `staleAfterMs`
+ * back to `failed`. Covers the case where a Railway redeploy (or any other
+ * worker death) killed the process mid-`runEnrichment`, leaving the lead's
+ * status stale forever — the route's success/failure patch never ran, so
+ * nothing else clears it.
+ *
+ * Runs once on server boot. The threshold is conservative (default 3
+ * minutes) so a still-in-flight enrichment can't be killed by a peer
+ * replica's startup. Normal enrichments take 30–60s; the request-level
+ * timeout in `enrichLead` is 120s. Anything >180s is definitionally dead.
+ */
+export async function resetStaleEnrichingLeads(staleAfterMs = 180_000): Promise<number> {
+  const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
+  const result = await collection().updateMany(
+    { status: "enriching", updatedAt: { $lt: cutoff } } as any,
+    {
+      $set: {
+        status: "failed",
+        enrichmentError:
+          "Worker died mid-enrichment (likely a redeploy or hang). Reset on server boot — click Re-enrich to retry.",
+        updatedAt: nowIso(),
+      },
+    },
+  );
+  if (result.modifiedCount > 0) {
+    console.log(`[pending-leads] reset ${result.modifiedCount} stale enriching lead(s) to failed`);
+  }
+  return result.modifiedCount;
+}
+
 // ── Indexes ──────────────────────────────────────────────────────────────────
 
 /** Unique sparse index on externalId — only docs with externalId set are

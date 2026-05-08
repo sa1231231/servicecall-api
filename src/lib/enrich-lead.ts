@@ -205,16 +205,26 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
     // listing/website to fill the FAQ. `max_uses` caps blast radius.
     // Tool blocks are captured by `summarizeContentBlocks` so the AI
     // Feed shows every search and fetch the model ran.
-    const result = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userMessage }],
-      tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 4 },
-        { type: "web_fetch_20260309", name: "web_fetch", max_uses: 3 },
-      ],
-    });
+    // 120s ceiling: web_search (max 4) + web_fetch (max 3) plus model
+    // thinking time should land in 30–60s typical, 90s worst case. The
+    // ceiling guarantees we *fail* the lead instead of leaving it stuck
+    // in "enriching" forever if the SDK hangs or the model gets into a
+    // tool-calling loop. The route's catch path will then patch the
+    // lead to status="failed" with the timeout error so the operator
+    // can re-enrich.
+    const result = await client.messages.create(
+      {
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        system: systemPrompt,
+        messages: [{ role: "user", content: userMessage }],
+        tools: [
+          { type: "web_search_20260209", name: "web_search", max_uses: 4 },
+          { type: "web_fetch_20260309", name: "web_fetch", max_uses: 3 },
+        ],
+      },
+      { timeout: 120_000 },
+    );
 
     const rawResponse = extractText(result);
     const rawContentBlocks = summarizeContentBlocks(result);
