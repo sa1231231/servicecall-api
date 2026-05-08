@@ -17,6 +17,11 @@ export interface EnrichmentInput {
   phone?: string;
   website?: string;
   notes?: string;
+  /** Self-reported industry from a structured form question (e.g. Meta
+   *  Lead Ads "which best fits the business you have?"). Surfaced to the
+   *  skill as a disambiguation hint — see the SKILL.md section "Self-
+   *  reported business type". */
+  business_type?: string;
 }
 
 /** Conversation transcript captured for every call. Surfaced in the
@@ -230,6 +235,7 @@ export function formatLeadAsUserMessage(
   ];
   if (input.phone) lines.push(`- Phone: ${input.phone}`);
   if (input.website) lines.push(`- Website: ${input.website}`);
+  if (input.business_type) lines.push(`- Self-reported business type: ${input.business_type}`);
   if (input.notes) lines.push(`- Notes: ${input.notes}`);
 
   if (placesSearch && placesSearch.searches.length > 0) {

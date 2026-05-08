@@ -22,6 +22,12 @@
  *        PHONE_COL          2
  *        WEBSITE_COL                                        (optional; leave blank to skip)
  *        NOTES_COL                                          (optional)
+ *        BUSINESS_TYPE_COL                                  (optional; column with a self-reported
+ *                                                           industry/category from a form question
+ *                                                           e.g. "which best fits the business you
+ *                                                           have?". The API forwards it to the
+ *                                                           enrichment skill as a disambiguation
+ *                                                           hint for Places matching + templateName.)
  *        EXTERNAL_ID_COL                                    (optional; column with a stable upstream
  *                                                           id like Meta Lead Ads `l:...`. When set,
  *                                                           the API dedups by this id so the script
@@ -91,6 +97,7 @@ function syncNewLeadsImpl() {
     phone: props.PHONE_COL ? parseInt(props.PHONE_COL, 10) : 0,
     website: props.WEBSITE_COL ? parseInt(props.WEBSITE_COL, 10) : 0,
     notes: props.NOTES_COL ? parseInt(props.NOTES_COL, 10) : 0,
+    businessType: props.BUSINESS_TYPE_COL ? parseInt(props.BUSINESS_TYPE_COL, 10) : 0,
     status: props.STATUS_COL ? parseInt(props.STATUS_COL, 10) : 0,
     externalId: props.EXTERNAL_ID_COL ? parseInt(props.EXTERNAL_ID_COL, 10) : 0,
   };
@@ -118,6 +125,10 @@ function syncNewLeadsImpl() {
     if (cols.notes) {
       const notes = String(row[cols.notes - 1] || '').trim();
       if (notes) payload.notes = notes;
+    }
+    if (cols.businessType) {
+      const businessType = String(row[cols.businessType - 1] || '').trim();
+      if (businessType) payload.business_type = businessType;
     }
     if (cols.externalId) {
       const externalId = String(row[cols.externalId - 1] || '').trim();

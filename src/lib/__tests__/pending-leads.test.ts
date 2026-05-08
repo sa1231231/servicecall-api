@@ -195,6 +195,15 @@ describe("createPendingLead with externalId / status overrides", () => {
     });
     expect(lead.status).toBe("dismissed");
   });
+
+  it("preserves business_type on input when provided", async () => {
+    const lead = await createPendingLead({
+      source: "google_sheet",
+      input: { name: "Acme HVAC", business_type: "HVAC" },
+    });
+    expect(lead.input.business_type).toBe("HVAC");
+    expect(mockInsertOne.mock.calls[0][0].input.business_type).toBe("HVAC");
+  });
 });
 
 describe("findPendingLeadByExternalId", () => {

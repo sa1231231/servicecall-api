@@ -2927,6 +2927,30 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(lead.externalId).toBe(externalId);
     });
 
+    it("stores business_type on the lead when intake includes it", async () => {
+      const externalId = "system-test-bt-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
+      const testName = TEST_NAME_PREFIX + "biztype-" + Date.now();
+      const resp = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${LEAD_INTAKE_TOKEN}`,
+        },
+        body: JSON.stringify({
+          name: testName,
+          source: "system_test",
+          externalId,
+          business_type: "HVAC",
+        }),
+      });
+      expect(resp.status).toBe(201);
+      const body = await json(resp);
+      createdLeadIds.push(body._id);
+      const lookup = await fetch(url(`/api/leads/${body._id}`), { headers: authHeaders() });
+      const lead = await json(lookup);
+      expect(lead.input.business_type).toBe("HVAC");
+    });
+
     it("dedups a duplicate externalId — second POST returns 200 with the same _id", async () => {
       const externalId = "system-test-dup-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8);
       const testName = TEST_NAME_PREFIX + "extid-dup-" + Date.now();

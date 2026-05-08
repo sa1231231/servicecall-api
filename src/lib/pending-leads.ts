@@ -18,6 +18,10 @@ export interface PendingLeadInput {
   website?: string;
   /** Free-form context the operator paste-in or that came from the Sheet. */
   notes?: string;
+  /** Self-reported industry/category from a structured form question
+   *  (e.g. Meta Lead Ads "which best fits the business you have?").
+   *  Surfaced to the enrichment skill as a disambiguation hint. */
+  business_type?: string;
 }
 
 export interface PendingLeadEnriched {

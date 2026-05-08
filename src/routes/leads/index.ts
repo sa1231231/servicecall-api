@@ -105,6 +105,9 @@ function sanitizeInput(body: unknown): PendingLeadInput | null {
   if (typeof b.phone === "string" && b.phone.trim()) input.phone = b.phone.trim();
   if (typeof b.website === "string" && b.website.trim()) input.website = b.website.trim();
   if (typeof b.notes === "string" && b.notes.trim()) input.notes = b.notes.trim();
+  if (typeof b.business_type === "string" && b.business_type.trim()) {
+    input.business_type = b.business_type.trim();
+  }
   return input;
 }
 

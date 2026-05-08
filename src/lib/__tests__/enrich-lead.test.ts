@@ -197,6 +197,16 @@ describe("formatLeadAsUserMessage", () => {
     expect(msg).toContain("Website: x.com");
     expect(msg).toContain("Notes: vip");
   });
+
+  it("includes self-reported business type when provided", () => {
+    const msg = formatLeadAsUserMessage({ name: "Acme", business_type: "HVAC" });
+    expect(msg).toContain("Self-reported business type: HVAC");
+  });
+
+  it("omits the business-type line when not provided", () => {
+    const msg = formatLeadAsUserMessage({ name: "Acme" });
+    expect(msg).not.toContain("Self-reported business type");
+  });
 });
 
 describe("buildSystemPrompt", () => {
