@@ -65,17 +65,21 @@ export const config = {
   // `failed` status so the operator can fill in fields manually.
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
 
-  // Brave Search API — used for general web context during lead
-  // enrichment (long-tail listings, news, BBB pages that aren't in
-  // Google Maps). Required at boot.
-  BRAVE_API_KEY: requireEnv("BRAVE_API_KEY"),
-
   // Google Places API (New) — primary phone-number-to-business
   // resolver since it sits on top of Google Business Profile data,
   // which is where small service businesses actually live. Used
-  // alongside Brave; both pre-searches are baked into the user
-  // message before the skill is called. Required at boot.
+  // alongside Custom Search; both pre-searches are baked into the
+  // user message before the skill is called. Required at boot.
   GOOGLE_PLACES_API_KEY: requireEnv("GOOGLE_PLACES_API_KEY"),
+
+  // Google Programmable Search Engine — long-tail web context for
+  // lead enrichment (Yelp, Nextdoor, Facebook, BBB, contractor-locator
+  // pages). Replaces Brave because Google's index has the small-service
+  // business listings Brave was missing. Requires both an API key
+  // (Custom Search API enabled on the Cloud project) and the cx id of a
+  // Programmable Search Engine configured to search the entire web.
+  GOOGLE_CUSTOM_SEARCH_API_KEY: requireEnv("GOOGLE_CUSTOM_SEARCH_API_KEY"),
+  GOOGLE_CUSTOM_SEARCH_CX: requireEnv("GOOGLE_CUSTOM_SEARCH_CX"),
 
   // Shared secret for the Google Apps Script lead sync. Optional —
   // when unset, POST /api/leads/intake returns 401 for everyone, so

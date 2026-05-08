@@ -7,14 +7,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const {
   mockMessagesCreate,
-  mockPreSearchLead,
+  mockPreSearchLeadCustom,
   mockPreSearchLeadPlaces,
   mockFsExistsSync,
   mockFsReadFileSync,
   mockConfig,
 } = vi.hoisted(() => ({
   mockMessagesCreate: vi.fn(),
-  mockPreSearchLead: vi.fn(),
+  mockPreSearchLeadCustom: vi.fn(),
   mockPreSearchLeadPlaces: vi.fn(),
   mockFsExistsSync: vi.fn(),
   mockFsReadFileSync: vi.fn(),
@@ -30,9 +30,9 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 vi.mock("../../config.js", () => ({ config: mockConfig }));
 
-vi.mock("../brave-search.js", () => ({
-  preSearchLead: (...a: any[]) => mockPreSearchLead(...a),
-  formatPreSearch: () => "BRAVE_PRE_SEARCH_BLOCK",
+vi.mock("../google-custom-search.js", () => ({
+  preSearchLeadCustom: (...a: any[]) => mockPreSearchLeadCustom(...a),
+  formatCustomPreSearch: () => "CUSTOM_PRE_SEARCH_BLOCK",
 }));
 
 vi.mock("../google-places.js", () => ({
@@ -65,12 +65,12 @@ const {
 } = await import("../enrich-lead.js");
 
 beforeEach(() => {
-  for (const m of [mockMessagesCreate, mockPreSearchLead, mockPreSearchLeadPlaces, mockFsExistsSync, mockFsReadFileSync]) {
+  for (const m of [mockMessagesCreate, mockPreSearchLeadCustom, mockPreSearchLeadPlaces, mockFsExistsSync, mockFsReadFileSync]) {
     m.mockReset();
   }
   mockConfig.ANTHROPIC_API_KEY = "test_key";
-  // Default: pre-search returns empty (no Brave / Places hits).
-  mockPreSearchLead.mockResolvedValue({ searches: [] });
+  // Default: pre-search returns empty (no Custom Search / Places hits).
+  mockPreSearchLeadCustom.mockResolvedValue({ searches: [] });
   mockPreSearchLeadPlaces.mockResolvedValue({ searches: [] });
   // Default: skill loads cleanly. SKILL_DIR_DIST exists; references dir
   // does NOT (so the loop in loadSkill skips ref-file loading).
@@ -246,10 +246,10 @@ describe("extractText", () => {
 
 // ── enrichLead orchestrator ─────────────────────────────────────────────────
 //
-// Covers the path: pre-search (Brave + Places) → skill load → Anthropic call
-// → parse. The AI Feed transcript (systemPrompt / userMessage / rawResponse /
-// rawContentBlocks) is what the dashboard's AI Feed panel renders, so every
-// branch must populate it.
+// Covers the path: pre-search (Custom Search + Places) → skill load →
+// Anthropic call → parse. The AI Feed transcript (systemPrompt / userMessage
+// / rawResponse / rawContentBlocks) is what the dashboard's AI Feed panel
+// renders, so every branch must populate it.
 
 describe("enrichLead — orchestrator", () => {
   it("happy path: returns ok=true with parsed business_name + faqKnowledgeBase + AI feed transcript", async () => {
@@ -350,8 +350,8 @@ describe("enrichLead — orchestrator", () => {
     }
   });
 
-  it("does NOT abort enrichment when the pre-search (Brave/Places) fails", async () => {
-    mockPreSearchLead.mockRejectedValue(new Error("brave down"));
+  it("does NOT abort enrichment when the pre-search (Custom Search/Places) fails", async () => {
+    mockPreSearchLeadCustom.mockRejectedValue(new Error("custom search down"));
     mockPreSearchLeadPlaces.mockRejectedValue(new Error("places down"));
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: "text", text: JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "ok" }) }],
@@ -364,8 +364,8 @@ describe("enrichLead — orchestrator", () => {
     spy.mockRestore();
   });
 
-  it("includes Places block before Brave block in the user message (Places is authoritative)", async () => {
-    mockPreSearchLead.mockResolvedValue({ searches: [{ query: "x", hits: [{}] }] });
+  it("includes Places block before Custom Search block in the user message (Places is authoritative)", async () => {
+    mockPreSearchLeadCustom.mockResolvedValue({ searches: [{ query: "x", hits: [{}] }] });
     mockPreSearchLeadPlaces.mockResolvedValue({ searches: [{ query: "y", hits: [{}] }] });
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: "text", text: JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "ok" }) }],
@@ -374,11 +374,30 @@ describe("enrichLead — orchestrator", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       const placesIdx = result.userMessage.indexOf("PLACES_PRE_SEARCH_BLOCK");
-      const braveIdx = result.userMessage.indexOf("BRAVE_PRE_SEARCH_BLOCK");
+      const customIdx = result.userMessage.indexOf("CUSTOM_PRE_SEARCH_BLOCK");
       expect(placesIdx).toBeGreaterThan(-1);
-      expect(braveIdx).toBeGreaterThan(-1);
-      expect(placesIdx).toBeLessThan(braveIdx);
+      expect(customIdx).toBeGreaterThan(-1);
+      expect(placesIdx).toBeLessThan(customIdx);
     }
+  });
+
+  it("passes server-side web_search and web_fetch tools to Anthropic so the model can fall back when pre-search misses", async () => {
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: "text", text: JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "Q" }) }],
+    });
+    await enrichLead({ name: "Acme" });
+    const arg = mockMessagesCreate.mock.calls[0][0];
+    expect(arg.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "web_search_20260209", name: "web_search" }),
+        expect.objectContaining({ type: "web_fetch_20260309", name: "web_fetch" }),
+      ]),
+    );
+    // max_uses caps blast radius — confirm both tools have it set.
+    const ws = arg.tools.find((t: any) => t.name === "web_search");
+    const wf = arg.tools.find((t: any) => t.name === "web_fetch");
+    expect(typeof ws.max_uses).toBe("number");
+    expect(typeof wf.max_uses).toBe("number");
   });
 
   it("calls the model with the correct shape (system=skill body, user=formatted lead)", async () => {

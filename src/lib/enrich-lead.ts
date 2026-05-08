@@ -3,7 +3,11 @@ import path from "path";
 import { fileURLToPath } from "url";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
-import { preSearchLead, formatPreSearch, type PreSearchResult } from "./brave-search.js";
+import {
+  preSearchLeadCustom,
+  formatCustomPreSearch,
+  type CustomPreSearchResult,
+} from "./google-custom-search.js";
 import {
   preSearchLeadPlaces,
   formatPlacesPreSearch,
@@ -142,14 +146,16 @@ const SKILL_NAME = "onboarding-to-config";
 export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResult> {
   // Pre-search runs on every call. Google Places (New) is the primary
   // identifier source — it's backed by Google Business Profile data,
-  // which is where small service businesses actually live. Brave fills
-  // out long-tail web context (BBB, Yelp, news, the business's own
-  // site) that Places doesn't return. Run both in parallel.
-  let preSearch: PreSearchResult = { searches: [] };
+  // which is where small service businesses actually live. Google
+  // Custom Search fills out long-tail web context (Nextdoor, Facebook,
+  // Yelp, BBB, contractor-locator pages) that Places doesn't return.
+  // Run both in parallel. If both come up empty, the model falls back
+  // on its `web_search` tool — see SKILL.md.
+  let preSearch: CustomPreSearchResult = { searches: [] };
   let placesSearch: PlacesPreSearchResult = { searches: [] };
   try {
     [preSearch, placesSearch] = await Promise.all([
-      preSearchLead(input),
+      preSearchLeadCustom(input),
       preSearchLeadPlaces(input),
     ]);
   } catch (err) {
@@ -190,20 +196,30 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
   const client = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
 
   try {
-    // No server-side tools — the skill consumes the Brave results
-    // baked into the user message and emits the JSON directly. Cheaper,
-    // faster, and the response is deterministic on a fixed pre-search.
+    // Server-side `web_search` and `web_fetch` tools are exposed so the
+    // model has a real fallback when both pre-searches miss. Small
+    // service businesses on Nextdoor/Facebook frequently aren't in
+    // Places and don't surface from a single Custom Search query — the
+    // skill is instructed to call `web_search` with multiple phone
+    // formats before resorting to DRAFT, then `web_fetch` the resolved
+    // listing/website to fill the FAQ. `max_uses` caps blast radius.
+    // Tool blocks are captured by `summarizeContentBlocks` so the AI
+    // Feed shows every search and fetch the model ran.
     const result = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
       system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
+      tools: [
+        { type: "web_search_20260209", name: "web_search", max_uses: 4 },
+        { type: "web_fetch_20260309", name: "web_fetch", max_uses: 3 },
+      ],
     });
 
     const rawResponse = extractText(result);
     const rawContentBlocks = summarizeContentBlocks(result);
     console.log(
-      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, places=${placesSearch.searches.length}, brave=${preSearch.searches.length}`,
+      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, places=${placesSearch.searches.length}, custom=${preSearch.searches.length}`,
     );
     return parseEnrichmentResponse(rawResponse, userMessage, systemPrompt, rawContentBlocks);
   } catch (err) {
@@ -219,12 +235,13 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
 }
 
 /** Hand-shaped user message that matches the skill's trigger phrasing.
- *  Includes Google Places + Brave pre-search results inline so the
- *  skill can read business facts off concrete listings instead of
- *  guessing. Places hits go first because they're authoritative. */
+ *  Includes Google Places + Google Custom Search pre-search results
+ *  inline so the skill can read business facts off concrete listings
+ *  instead of guessing. Places hits go first because they're
+ *  authoritative. */
 export function formatLeadAsUserMessage(
   input: EnrichmentInput,
-  preSearch?: PreSearchResult,
+  preSearch?: CustomPreSearchResult,
   placesSearch?: PlacesPreSearchResult,
 ): string {
   const lines = [
@@ -242,12 +259,12 @@ export function formatLeadAsUserMessage(
     lines.push("", formatPlacesPreSearch(placesSearch));
   }
   if (preSearch && preSearch.searches.length > 0) {
-    lines.push("", formatPreSearch(preSearch));
+    lines.push("", formatCustomPreSearch(preSearch));
   }
 
   lines.push(
     "",
-    "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Use the pre-search context above as the primary source of truth: **Google Places hits are authoritative** — if Places returned a business for the phone number, that's the business, full stop. Use the Brave block for supplementary context (hours, services, summaries). The lead-form `name` is often the owner or a partial business name; trust the Places-derived name when they conflict. Reserve DRAFT for when both Places AND Brave came back empty across every query.",
+    "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Use the pre-search context above as the primary source of truth: **Google Places hits are authoritative** — if Places returned a business for the phone number, that's the business, full stop. Use the Custom Search block for supplementary context (hours, services, summaries). The lead-form `name` is often the owner or a partial business name; trust the Places-derived name when they conflict. If both pre-search blocks are empty or inconclusive, **call `web_search`** with the phone number (multiple formats) before resorting to DRAFT. Once a business is resolved, **call `web_fetch`** on the strongest listing or website to extract concrete FAQ facts. Reserve DRAFT for when Places AND Custom Search AND web_search all came back empty.",
     "",
     "Return ONLY the JSON config (businessName, faqKnowledgeBase, templateName) — no prose, no markdown fencing.",
   );
