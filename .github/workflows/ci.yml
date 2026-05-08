@@ -39,8 +39,6 @@ jobs:
       ROOT_PASSWORD: ci-stub-root-pw
       SESSION_SECRET: ci-stub-session-secret
       GOOGLE_PLACES_API_KEY: ci-stub-places
-      GOOGLE_CUSTOM_SEARCH_API_KEY: ci-stub-custom-search-key
-      GOOGLE_CUSTOM_SEARCH_CX: ci-stub-custom-search-cx
 
     steps:
       - uses: actions/checkout@v4

@@ -72,14 +72,17 @@ export const config = {
   // user message before the skill is called. Required at boot.
   GOOGLE_PLACES_API_KEY: requireEnv("GOOGLE_PLACES_API_KEY"),
 
-  // Google Programmable Search Engine — long-tail web context for
-  // lead enrichment (Yelp, Nextdoor, Facebook, BBB, contractor-locator
-  // pages). Replaces Brave because Google's index has the small-service
-  // business listings Brave was missing. Requires both an API key
-  // (Custom Search API enabled on the Cloud project) and the cx id of a
-  // Programmable Search Engine configured to search the entire web.
-  GOOGLE_CUSTOM_SEARCH_API_KEY: requireEnv("GOOGLE_CUSTOM_SEARCH_API_KEY"),
-  GOOGLE_CUSTOM_SEARCH_CX: requireEnv("GOOGLE_CUSTOM_SEARCH_CX"),
+  // Google Programmable Search Engine — optional long-tail web context
+  // for lead enrichment (Yelp, Nextdoor, Facebook, BBB). Both the API
+  // key (with Custom Search API enabled on the Cloud project) and the
+  // cx id of a Programmable Search Engine are required to enable it.
+  // When either is unset, the Custom Search pre-search short-circuits
+  // and the model falls back on its `web_search` tool — which covers
+  // the same long-tail listings, just without the deterministic pre-
+  // search prefetch. Google has been gating the "search the entire web"
+  // toggle on new PSEs, so leaving these blank is a reasonable default.
+  GOOGLE_CUSTOM_SEARCH_API_KEY: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY ?? "",
+  GOOGLE_CUSTOM_SEARCH_CX: process.env.GOOGLE_CUSTOM_SEARCH_CX ?? "",
 
   // Shared secret for the Google Apps Script lead sync. Optional —
   // when unset, POST /api/leads/intake returns 401 for everyone, so

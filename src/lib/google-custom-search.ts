@@ -118,10 +118,20 @@ export function buildCustomLeadQueries(input: CustomPreSearchInput): string[] {
  *  volume modest against the Custom Search free tier (100 queries/day).
  *  Each query result — including failures and zero-hit responses — flows
  *  through to the skill so it can see what was tried, not just what
- *  worked. */
+ *  worked.
+ *
+ *  Short-circuits to an empty bundle when the env vars are unset —
+ *  Google has been gating the "search the entire web" toggle on new
+ *  Programmable Search Engines, so deployments often skip Custom Search
+ *  and rely on the Anthropic `web_search` tool instead. An empty bundle
+ *  produces no Custom Search block in the user message, and the skill
+ *  is already instructed to fall through to `web_search`. */
 export async function preSearchLeadCustom(
   input: CustomPreSearchInput,
 ): Promise<CustomPreSearchResult> {
+  if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX) {
+    return { searches: [] };
+  }
   const queries = buildCustomLeadQueries(input);
   const searches: CustomSearchResult[] = [];
   for (const q of queries) {
