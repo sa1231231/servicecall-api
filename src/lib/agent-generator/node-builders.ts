@@ -985,8 +985,18 @@ export function buildDataChain(
     const chainIds = pathIds.chain[i];
     const chainPos = pathPos.chain[i];
 
-    // Tapered variable list: this variable + all remaining after it
-    const remainingVarDefs = resolvedDataPoints.slice(i).flatMap(toVarDefs);
+    // Variable list for this Confirm extract:
+    //   • Non-orphan dps taper down the chain — once a normal var has been
+    //     collected, it falls off subsequent extracts so the LLM doesn't
+    //     re-prompt for it.
+    //   • Orphan (extract-only) dps persist in every Confirm extract because
+    //     the agent never asks for them — the only chance to capture one is
+    //     when the caller spontaneously mentions it, which can happen at any
+    //     point in the conversation. Keeping them live across the whole
+    //     chain maximizes that capture window.
+    const taperedNonOrphans = resolvedDataPoints.slice(i).filter((d) => !d.orphan);
+    const persistentOrphans = resolvedDataPoints.filter((d) => d.orphan);
+    const remainingVarDefs = [...taperedNonOrphans, ...persistentOrphans].flatMap(toVarDefs);
 
     // Collect node — ask for the variable
     nodes.push({

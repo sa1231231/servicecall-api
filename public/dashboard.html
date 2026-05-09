@@ -3635,13 +3635,35 @@
       fields.push({ label, key: fieldKey });
     }
 
-    // Build sample field lines
-    const sampleValues = { full_name: 'John Doe', phone_number: '555-123-4567', street_address: '123 Main St', city: 'Springfield', email: 'john@example.com', problem_description: 'Leaking faucet in kitchen' };
-    const fieldLines = fields.map(f => `${f.label}: ${sampleValues[f.key] || 'Sample value'}`).join('\n');
-    const fieldLinesHtml = fields.map(f => `<strong>${esc(f.label)}:</strong> ${esc(sampleValues[f.key] || 'Sample value')}`).join('<br>');
+    // Resolve a sample value for any field, using (in priority order):
+    //   1. A hardcoded "looks real" value for the most common contact fields.
+    //   2. The dp's own metadata from dpDefaults — for an enum, the first
+    //      non-sentinel choice (e.g. orphan hvac_service_type with choices
+    //      ["maintenance","repair",...] → "maintenance").
+    //   3. "yes" for booleans.
+    //   4. A readable angle-bracketed fallback ("<key>") so the operator can
+    //      still see which variable is rendering even when there's no sample.
+    function sampleValueFor(fieldKey) {
+      const hardcoded = {
+        full_name: 'John Doe', phone_number: '555-123-4567',
+        street_address: '123 Main St', city: 'Springfield',
+        email: 'john@example.com', problem_description: 'Leaking faucet in kitchen',
+      };
+      if (hardcoded[fieldKey]) return hardcoded[fieldKey];
+      const dp = (typeof dpDefaults === 'object' && dpDefaults) ? dpDefaults[fieldKey] : null;
+      if (dp && dp.type === 'enum' && Array.isArray(dp.choices)) {
+        const real = dp.choices.find(c => c && c !== 'Not Mentioned' && c !== "Caller Doesn't Know");
+        if (real) return real;
+      }
+      if (dp && dp.type === 'boolean') return 'yes';
+      return '<' + fieldKey + '>';
+    }
+
+    const fieldLines = fields.map(f => `${f.label}: ${sampleValueFor(f.key)}`).join('\n');
+    const fieldLinesHtml = fields.map(f => `<strong>${esc(f.label)}:</strong> ${esc(sampleValueFor(f.key))}`).join('<br>');
 
     // Subject with sample values
-    const subject = subjectTemplate.replace(/\{\{(\w+)\}\}/g, (_, k) => sampleValues[k] || '');
+    const subject = subjectTemplate.replace(/\{\{(\w+)\}\}/g, (_, k) => sampleValueFor(k));
 
     // SMS preview
     const smsEl = section.querySelector('.preview-sms');
