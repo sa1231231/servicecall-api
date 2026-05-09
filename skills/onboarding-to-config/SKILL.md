@@ -154,6 +154,42 @@ If pre-search blocks are missing entirely (rare — usually means the deployment
 
 That's it.
 
+## Worked Example (gold standard)
+
+This is real output the skill produced on a Bend, OR HVAC lead. Use it as the bar for new leads — same level of resolution, FAQ structure, and confidence.
+
+**Lead input:**
+```
+name:          Ric Secor
+phone:         +15417881600
+business_type: hvac
+```
+
+**What happened (good behavior):**
+1. The lead's `name` ("Ric Secor") looked like a person, not a business. The skill did NOT use it as `businessName` — it correctly read this as "owner filled out the form using their personal name" and trusted the phone-number search instead.
+2. Pre-search resolved the phone to **Home Heating & Cooling, Inc.** in Bend, OR. The skill committed to that name.
+3. The `business_type: hvac` hint corroborated the Places/Yelp categories, confirming the `hvac` template choice.
+4. The FAQ pulled real, verifiable facts from the business's site/listings: 16+ years in business, exact service area cities, separate "Service" vs "Office" hours, full services list (cooling/heating/ductwork/IAQ subsections), payment policy ("don't quote prices on the phone — tech provides during visit"), maintenance plans. No invented details.
+
+**Output:**
+```json
+{
+  "businessName": "Home Heating & Cooling",
+  "templateName": "hvac",
+  "faqKnowledgeBase": "## Company Info\nHome Heating & Cooling, Inc. is a locally owned and operated HVAC company based in Bend, OR. They have been serving the Central Oregon area for 16+ years. All field personnel are background checked, drug-screened, and certified.\n\nWebsite: homeheatingbend.com\n\n## Service Area\nBend, Redmond, La Pine, Powell Butte, Sisters, and Sunriver, OR.\n\n## Hours\nService and Sales: 7 AM to 7 PM, 7 days a week.\nOffice: 7 AM to 6 PM, Monday through Friday.\n\n## Services Offered\nCooling:\n- AC repair, maintenance, and installation\n- Heat pumps\n- Ductless HVAC / mini-splits\n- VRF systems\n- WiFi thermostat installation\n\nHeating:\n- Heating repair, maintenance, and installation\n- Heat pumps\n- Ductless HVAC / mini-splits\n- VRF systems\n- WiFi thermostat installation\n\nDuctwork:\n- Duct cleaning\n- Duct repair and maintenance\n- Aeroseal duct sealing (they operate their own dedicated Aeroseal truck)\n- Dryer vent cleaning\n\nIndoor air quality services also available.\n\nSeasonal maintenance plans offered to keep AC and heating equipment running year-round.\n\n## Pricing & Payment\nDo not quote prices on the phone. Tell the caller a technician will provide pricing during the visit or via the online instant quote tool.\n\nFinancing options are available which a technician at our office can go into detail with them.\n\n## Maintenance Plans\nHome Heating & Cooling offers seasonal maintenance plans covering both spring AC and fall heating tune-ups."
+}
+```
+
+**FAQ structure to mirror:**
+- `## Company Info` — one short paragraph: legal name, location, years in business, distinguishing creds (background-checked, certified, etc.). Include the website URL on its own line if known.
+- `## Service Area` — bare comma-separated city list, state suffix once.
+- `## Hours` — separate "Service" vs "Office" hours when they differ. Use natural language ("7 AM to 7 PM, 7 days a week"), not codes.
+- `## Services Offered` — group by sub-category (Cooling / Heating / Ductwork / IAQ for HVAC). Use bullet lists. Surface unique differentiators inline (e.g. "their own dedicated Aeroseal truck") — those become talking points the receptionist can volunteer.
+- `## Pricing & Payment` — explicit "what to do when asked about price" rule, in imperative voice ("Do not quote prices on the phone."). Mention financing if the business offers it.
+- `## Maintenance Plans` — short note that they exist, what seasons they cover. Don't invent pricing.
+
+When you have less data, write fewer/shorter sections — but keep the same headings and the same imperative-rule style.
+
 ## Available Templates
 
 Currently (as of this skill version):
