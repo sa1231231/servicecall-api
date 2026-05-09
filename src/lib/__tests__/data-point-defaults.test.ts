@@ -45,7 +45,7 @@ describe("category configuration", () => {
 // ── DB-backed CRUD (mocked) ─────────────────────────────────────────────────
 
 const {
-  mockFind, mockFindOne, mockFindOneAndUpdate, mockInsertOne, mockDeleteOne, mockBulkOp, mockBulkExecute,
+  mockFind, mockFindOne, mockFindOneAndUpdate, mockInsertOne, mockDeleteOne, mockBulkOp, mockBulkExecute, mockCountDocuments,
 } = vi.hoisted(() => ({
   mockFind: vi.fn(),
   mockFindOne: vi.fn(),
@@ -54,6 +54,7 @@ const {
   mockDeleteOne: vi.fn(),
   mockBulkOp: vi.fn(),
   mockBulkExecute: vi.fn(),
+  mockCountDocuments: vi.fn(),
 }));
 
 vi.mock("../db.js", () => ({
@@ -64,6 +65,7 @@ vi.mock("../db.js", () => ({
       findOneAndUpdate: mockFindOneAndUpdate,
       insertOne: mockInsertOne,
       deleteOne: mockDeleteOne,
+      countDocuments: mockCountDocuments,
       initializeUnorderedBulkOp: () => ({
         find: (q: any) => ({
           updateOne: (u: any) => mockBulkOp(q, u),
@@ -82,6 +84,8 @@ const {
   createDataPointDefault,
   deleteDataPointDefault,
   reorderDataPointDefaults,
+  countDataPointsInCategory,
+  listUsedCategories,
 } = await import("../data-point-defaults.js");
 
 beforeEach(() => {
@@ -226,6 +230,29 @@ describe("createDataPointDefault", () => {
     expect(inserted.forwardCondition).toBe("custom forward");
   });
 
+  it("preserves explicit empty-string conversationPrompt + forwardCondition (hidden-value variable case)", async () => {
+    // Regression: operator wants a hidden-value variable that the agent never
+    // asks about. Before this fix, `||` fallbacks silently filled in the
+    // default boilerplate even when the operator submitted "".
+    await createDataPointDefault("hidden_var", {
+      label: "Hidden Var",
+      conversationPrompt: "",
+      forwardCondition: "",
+    });
+    const inserted = mockInsertOne.mock.calls[0][0];
+    expect(inserted.conversationPrompt).toBe("");
+    expect(inserted.forwardCondition).toBe("");
+  });
+
+  it("still applies boilerplate defaults when prompt/condition fields are omitted", async () => {
+    // Distinguishes "not provided at all" from "explicitly empty". Omission
+    // (undefined) → boilerplate. Empty string → respected as user intent.
+    await createDataPointDefault("default_case", { label: "Default Case" });
+    const inserted = mockInsertOne.mock.calls[0][0];
+    expect(inserted.conversationPrompt).toContain("default case");
+    expect(inserted.forwardCondition).toContain("default case");
+  });
+
   it("places new item at end of category (sortOrder = max+1)", async () => {
     mockFind.mockReturnValue({
       toArray: vi.fn().mockResolvedValue([
@@ -284,5 +311,42 @@ describe("reorderDataPointDefaults", () => {
     await reorderDataPointDefaults([]);
     expect(mockBulkOp).not.toHaveBeenCalled();
     expect(mockBulkExecute).not.toHaveBeenCalled();
+  });
+});
+
+describe("countDataPointsInCategory", () => {
+  it("delegates to collection.countDocuments with the category filter", async () => {
+    mockCountDocuments.mockResolvedValue(3);
+    const n = await countDataPointsInCategory("hvac");
+    expect(n).toBe(3);
+    expect(mockCountDocuments).toHaveBeenCalledWith({ category: "hvac" });
+  });
+});
+
+describe("listUsedCategories", () => {
+  it("returns the distinct set of category values across all docs", async () => {
+    mockFind.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([
+        { category: "caller_info" },
+        { category: "hvac" },
+        { category: "caller_info" },
+        { category: "hvac" },
+        { category: "trucking" },
+      ]),
+    });
+    const cats = await listUsedCategories();
+    expect(cats.sort()).toEqual(["caller_info", "hvac", "trucking"]);
+  });
+
+  it("ignores docs with missing/blank category", async () => {
+    mockFind.mockReturnValue({
+      toArray: vi.fn().mockResolvedValue([
+        { category: "ok" },
+        { category: "" },
+        { category: "   " },
+        {},
+      ]),
+    });
+    expect(await listUsedCategories()).toEqual(["ok"]);
   });
 });

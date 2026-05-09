@@ -36,10 +36,13 @@ import { validateGlobalSettingsUpdates } from "../../lib/validate-client-fields.
 import { runBackup } from "../../lib/backup.js";
 import {
   getDataPointDefaultsWithCategory,
+  getDataPointDefault,
   updateDataPointDefault,
   createDataPointDefault,
   deleteDataPointDefault,
   reorderDataPointDefaults,
+  countDataPointsInCategory,
+  listUsedCategories,
   CATEGORY_ORDER,
   CATEGORY_LABELS,
 } from "../../lib/data-point-defaults.js";
@@ -625,6 +628,13 @@ dashboardApiRouter.put("/data-point-defaults/reorder", requireFeature("data_poin
 dashboardApiRouter.delete("/data-point-defaults/:key", requireFeature("data_point_defaults", "manage"), async (req, res) => {
   const key = String(req.params.key);
   try {
+    // Snapshot the dp's category before deletion so we can decide whether
+    // to cascade-cleanup the category once it's empty. Built-in categories
+    // (CATEGORY_ORDER) are protected from auto-cleanup so they always stay
+    // available as targets in the dropdown.
+    const existing = await getDataPointDefault(key);
+    const category = existing?.category;
+
     const deleted = await deleteDataPointDefault(key);
     if (!deleted) {
       res.status(404).json({ error: `Data point "${key}" not found` });
@@ -632,10 +642,78 @@ dashboardApiRouter.delete("/data-point-defaults/:key", requireFeature("data_poin
     }
     await logAudit(req, "delete_data_point", key);
     alertRootIfNeeded(req, "delete_data_point", key);
-    res.json({ success: true });
+
+    // Cascade: if the dp's category is now empty AND the category isn't
+    // a built-in, drop it from settings.category_order + category_labels
+    // so empty user-managed categories don't accumulate as orphans.
+    let categoryRemoved: string | undefined;
+    if (category && !CATEGORY_ORDER.includes(category)) {
+      const remaining = await countDataPointsInCategory(category);
+      if (remaining === 0) {
+        const settings = await getSettings();
+        const order = settings.category_order ? settings.category_order.filter((c) => c !== category) : undefined;
+        const labels = settings.category_labels ? { ...settings.category_labels } : undefined;
+        if (labels) delete labels[category];
+        const updates: Partial<typeof settings> = {};
+        if (order && (settings.category_order ?? []).includes(category)) updates.category_order = order;
+        if (labels && (settings.category_labels ?? {})[category] !== undefined) updates.category_labels = labels;
+        if (Object.keys(updates).length > 0) {
+          await updateSettings(updates);
+          categoryRemoved = category;
+          console.log(`[data-point-defaults] cascade-removed empty category "${category}" from settings`);
+        }
+      }
+    }
+
+    res.json({ success: true, ...(categoryRemoved ? { categoryRemoved } : {}) });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     res.status(400).json({ error: msg });
+  }
+});
+
+/** One-shot cleanup of orphaned categories: any entry in
+ *  settings.category_order or settings.category_labels that is not a
+ *  built-in AND has zero data points referencing it gets removed.
+ *  Idempotent. Admin-only. */
+dashboardApiRouter.post("/data-point-defaults/cleanup-orphan-categories", requireFeature("data_point_defaults", "manage"), async (req, res) => {
+  try {
+    const settings = await getSettings();
+    const used = new Set(await listUsedCategories());
+    const builtin = new Set(CATEGORY_ORDER);
+
+    const order = settings.category_order ?? [];
+    const labels = settings.category_labels ?? {};
+    const orphans: string[] = [];
+
+    for (const cat of order) {
+      if (!builtin.has(cat) && !used.has(cat)) orphans.push(cat);
+    }
+    for (const cat of Object.keys(labels)) {
+      if (!builtin.has(cat) && !used.has(cat) && !orphans.includes(cat)) orphans.push(cat);
+    }
+
+    if (orphans.length === 0) {
+      res.json({ success: true, removed: [] });
+      return;
+    }
+
+    const newOrder = order.filter((c) => !orphans.includes(c));
+    const newLabels: Record<string, string> = {};
+    for (const [k, v] of Object.entries(labels)) {
+      if (!orphans.includes(k)) newLabels[k] = v;
+    }
+
+    const updates: Partial<typeof settings> = {};
+    if (settings.category_order !== undefined) updates.category_order = newOrder;
+    if (settings.category_labels !== undefined) updates.category_labels = newLabels;
+    if (Object.keys(updates).length > 0) await updateSettings(updates);
+
+    await logAudit(req, "cleanup_orphan_categories", orphans.join(","));
+    res.json({ success: true, removed: orphans });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: msg });
   }
 });
 

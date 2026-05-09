@@ -143,6 +143,11 @@ export async function createDataPointDefault(
   const varName = key;
   const isComposite = data.composite === true && Array.isArray(data.variables) && data.variables.length > 0;
 
+  // For prompt/condition fields, distinguish between "not provided" (apply
+  // the boilerplate default) and "explicitly empty" (operator wants the
+  // field blank — e.g. for a hidden-value variable that the agent never
+  // asks about). `||` treated empty strings as falsy and silently filled
+  // them in; a typeof check preserves operator intent.
   const dp: StoredDataPoint & { _id: string } = {
     _id: key,
     label: data.label,
@@ -153,11 +158,13 @@ export async function createDataPointDefault(
       data.description ||
       `${varName}. If not mentioned, set to "${NOT_MENTIONED}". If the caller explicitly says they don't know, set to "${CALLER_DOESNT_KNOW}".`,
     conversationPrompt:
-      data.conversationPrompt ||
-      `Ask the caller for their ${varName.replace(/_/g, " ")}.\n\nIf the caller says they don't know, acknowledge it and move on.`,
+      typeof data.conversationPrompt === "string"
+        ? data.conversationPrompt
+        : `Ask the caller for their ${varName.replace(/_/g, " ")}.\n\nIf the caller says they don't know, acknowledge it and move on.`,
     forwardCondition:
-      data.forwardCondition ||
-      `The caller has provided their ${varName.replace(/_/g, " ")} or has indicated they don't know it`,
+      typeof data.forwardCondition === "string"
+        ? data.forwardCondition
+        : `The caller has provided their ${varName.replace(/_/g, " ")} or has indicated they don't know it`,
     finetuneExamples: [],
     // Composite parents don't extract themselves — their nested variables do.
     extractSuccessEquation: isComposite ? [] : defaultExtractEquation(varName),
@@ -180,6 +187,26 @@ export async function deleteDataPointDefault(key: string): Promise<boolean> {
     return true;
   }
   return false;
+}
+
+/** Count data points in a given category. Used by the route's cascade-on-
+ *  delete logic to decide whether to remove the category from settings. */
+export async function countDataPointsInCategory(category: string): Promise<number> {
+  return collection().countDocuments({ category } as any);
+}
+
+/** List every distinct `category` value present on a stored data point.
+ *  Used by the orphan-cleanup pass to determine which categories in
+ *  settings.category_order are actually backed by data and which have
+ *  drifted into orphan state (every dp in them was deleted). */
+export async function listUsedCategories(): Promise<string[]> {
+  const docs = await collection().find({}, { projection: { category: 1 } } as any).toArray();
+  const set = new Set<string>();
+  for (const d of docs) {
+    const cat = (d as any).category;
+    if (typeof cat === "string" && cat.trim()) set.add(cat);
+  }
+  return [...set];
 }
 
 /** Bulk reorder data points — updates category and sortOrder for each item. */
