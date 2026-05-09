@@ -105,6 +105,31 @@ describe("listAgentsHandler", () => {
     expect(res._json[0].trial_start_date).toBeNull();
   });
 
+  it("surfaces contact_name on the summary", async () => {
+    mockGetAllClientDocuments.mockResolvedValue([
+      makeDoc({ contact_name: "Sam Asra" }),
+    ]);
+    const res = mockRes();
+    await listAgentsHandler({} as Request, res);
+    expect(res._json[0].contact_name).toBe("Sam Asra");
+  });
+
+  it("returns contact_name: null when unset", async () => {
+    mockGetAllClientDocuments.mockResolvedValue([makeDoc()]); // no contact_name
+    const res = mockRes();
+    await listAgentsHandler({} as Request, res);
+    expect(res._json[0].contact_name).toBeNull();
+  });
+
+  it("returns contact_name: null when explicitly null", async () => {
+    mockGetAllClientDocuments.mockResolvedValue([
+      makeDoc({ contact_name: null }),
+    ]);
+    const res = mockRes();
+    await listAgentsHandler({} as Request, res);
+    expect(res._json[0].contact_name).toBeNull();
+  });
+
   it("attaches drift_detected_at when agent_versions has a recent auto_sync entry", async () => {
     const driftAt = new Date("2026-04-01T12:00:00Z");
     mockGetAllClientDocuments.mockResolvedValue([makeDoc()]);

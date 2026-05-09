@@ -57,6 +57,11 @@ export async function listAgentsHandler(_req: Request, res: Response): Promise<v
     folder_id: doc.folder_id ?? null,
     outbound_from_number: doc.outbound_from_number ?? null,
     drift_detected_at: driftBySlug[doc._id] ?? null,
+    // Surface the client POC name so the agent list can show a toggleable
+    // "Client name" column. Stored flat on the JsonClientEntry (the API
+    // accepts CreateAgentBody.client.contact_name nested, but agent-from-config
+    // unnests it into the top-level field — see agent-from-config.ts:315).
+    contact_name: doc.contact_name ?? null,
   }));
   res.json(summaries);
 }

@@ -1638,6 +1638,7 @@
     { key: 'status', label: 'Status' },
     { key: 'mtd_cogs', label: 'MTD COGS' },
     { key: 'phone', label: 'Phone' },
+    { key: 'contact_name', label: 'Client name' },
   ];
   let agentVisibleColumns = new Set(AGENT_COLUMNS.map(c => c.key));
   function isColumnVisible(key) {
@@ -2022,6 +2023,16 @@
           else r = cmpStr(pa, pb);
           break;
         }
+        case 'contact_name': {
+          // Empty client name sorts after any name regardless of direction.
+          const ca = a.contact_name || '';
+          const cb = b.contact_name || '';
+          if (!ca && !cb) r = 0;
+          else if (!ca) r = 1;
+          else if (!cb) r = -1;
+          else r = cmpStr(ca, cb);
+          break;
+        }
         default:
           r = 0;
       }
@@ -2193,12 +2204,16 @@
           ' — a snapshot was taken in version history.">drift</span>'
       : '';
 
+    const contactNameHtml = a.contact_name
+      ? '<span style="color:#444">' + esc(a.contact_name) + '</span>'
+      : '<span style="color:#aaa">—</span>';
     const cells = {
       name: '<td><strong>' + esc(a.display_name || a.name) + '</strong></td>',
       trial: '<td>' + trialHtml + '</td>',
       status: '<td><span class="badge ' + sc + '" data-status>' + sl + '</span>' + driftHtml + '</td>',
       mtd_cogs: '<td style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>',
       phone: '<td style="font-variant-numeric:tabular-nums;color:#444">' + phoneHtml + '</td>',
+      contact_name: '<td style="font-size:0.85rem;">' + contactNameHtml + '</td>',
     };
     const checkboxCell = bulkSelectMode
       ? '<td style="width:1px;padding-right:0.4rem;" onclick="event.stopPropagation()">' +
