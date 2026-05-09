@@ -7,7 +7,7 @@ const {
   mockFetchRetellAgent, mockExtractVariables,
   mockParseConversationFlow, mockValidateConversationFlow,
   mockCreateVersionSnapshot, mockLogAudit,
-  mockDeriveNotificationConfig,
+  mockDeriveNotificationConfig, mockDeriveMultiPathNotificationConfig,
   mockGetDataPointDefaults, mockResolveDataPoints,
   mockRegenerateDataChain, mockApplyRegeneratedChain,
 } = vi.hoisted(() => ({
@@ -22,6 +22,7 @@ const {
   mockCreateVersionSnapshot: vi.fn(),
   mockLogAudit: vi.fn(),
   mockDeriveNotificationConfig: vi.fn(),
+  mockDeriveMultiPathNotificationConfig: vi.fn(),
   mockGetDataPointDefaults: vi.fn(),
   mockResolveDataPoints: vi.fn(),
   mockRegenerateDataChain: vi.fn(),
@@ -55,6 +56,8 @@ vi.mock("../../../lib/agent-versions.js", () => ({
 vi.mock("../../../lib/audit.js", () => ({ logAudit: (...a: any[]) => mockLogAudit(...a) }));
 vi.mock("../../../lib/notification-config.js", () => ({
   deriveNotificationConfig: (...a: any[]) => mockDeriveNotificationConfig(...a),
+  deriveMultiPathNotificationConfig: (...a: any[]) => mockDeriveMultiPathNotificationConfig(...a),
+  toLabel: (n: string) => n.replace(/_/g, " "),
 }));
 vi.mock("../../../middleware/require-role.js", () => ({
   requireRoot: (req: Request, res: Response, next: NextFunction) => next(),
@@ -69,7 +72,10 @@ vi.mock("../../../lib/data-point-defaults.js", () => ({
 vi.mock("../../../lib/agent-generator/generate-agent.js", () => ({
   resolveDataPoints: (...a: any[]) => mockResolveDataPoints(...a),
 }));
-vi.mock("../../../lib/agent-generator/data-point-registry.js", () => ({ PATH_TAKEN_VAR: "path_taken" }));
+vi.mock("../../../lib/agent-generator/data-point-registry.js", () => ({
+  PATH_TAKEN_VAR: "path_taken",
+  INTERNAL_VARS: new Set(["path_taken", "phone_number_collected"]),
+}));
 vi.mock("../../../lib/agent-generator/node-builders.js", () => ({
   makeIdFactory: vi.fn(), buildTransitionNode: vi.fn(),
   buildDataChain: vi.fn(), buildWarmTransferOption: vi.fn(),
@@ -116,7 +122,8 @@ beforeEach(() => {
     mockGetClientDocument, mockLoadClientsFromDb, mockGetDb, mockUpdateOne,
     mockFetchRetellAgent, mockExtractVariables, mockParseConversationFlow,
     mockValidateConversationFlow, mockCreateVersionSnapshot, mockLogAudit,
-    mockDeriveNotificationConfig, mockGetDataPointDefaults, mockResolveDataPoints,
+    mockDeriveNotificationConfig, mockDeriveMultiPathNotificationConfig,
+    mockGetDataPointDefaults, mockResolveDataPoints,
     mockRegenerateDataChain, mockApplyRegeneratedChain,
   ]) m.mockReset();
 
@@ -125,6 +132,7 @@ beforeEach(() => {
   mockLoadClientsFromDb.mockResolvedValue(undefined);
   mockExtractVariables.mockReturnValue([]);
   mockDeriveNotificationConfig.mockReturnValue({ message_types: {}, default_message_type: null });
+  mockDeriveMultiPathNotificationConfig.mockReturnValue({ message_types: {}, default_message_type: null });
   mockValidateConversationFlow.mockReturnValue([]);
   mockCreateVersionSnapshot.mockResolvedValue({});
   mockLogAudit.mockResolvedValue({});
@@ -273,6 +281,68 @@ describe("POST /:agentId/add-data-point", () => {
       makeReq({ params: { slug: "acme", agentId: "agent_1" }, body: { dataPointKey: "email" } }), res);
     expect(res._status).toBe(400);
     expect(res._json.error).toMatch(/Validation failed/);
+  });
+
+  // ── Regression for the "test-notify shows scheduling instead of preferred_day/preferred_time" bug ──
+  it("multi-path agents call deriveMultiPathNotificationConfig (not single-path)", async () => {
+    // Pre-fix: storeCanonical always called the single-path derivation,
+    // which produced "service_request" as the message_types key. The
+    // doc had multi-path keys ("service_call", "emergency_call", …),
+    // so the existingKeys===newKeys overwrite-guard skipped the update —
+    // message_types stayed stale forever, holding the old field keys
+    // (e.g. "scheduling" instead of preferred_day / preferred_time).
+    mockGetClientDocument.mockResolvedValue(makeDoc());
+    mockResolveDataPoints.mockReturnValue([{ variableName: "email", label: "Email" }]);
+    mockFetchRetellAgent.mockResolvedValue({
+      canonicalJson: { conversationFlow: {} }, conversationFlowId: "f1", agentName: "A",
+    });
+    // Two paths → multi-path → should use deriveMultiPath, not the single-path version.
+    const pathA = makePath("service_call", ["full_name"]);
+    pathA.frontExtractNode = {
+      ...pathA.frontExtractNode,
+      raw: { variables: [{ name: "full_name" }, { name: "preferred_day" }, { name: "preferred_time" }] },
+    } as any;
+    const pathB = makePath("emergency_call", ["full_name"]);
+    pathB.frontExtractNode = {
+      ...pathB.frontExtractNode,
+      raw: { variables: [{ name: "full_name" }, { name: "phone" }] },
+    } as any;
+    mockParseConversationFlow.mockReturnValue({ paths: [pathA, pathB], closeNode: { id: "close" } });
+
+    const res = makeRes();
+    await runRoute("post", "/:agentId/add-data-point",
+      makeReq({ params: { slug: "acme", agentId: "agent_1" }, body: { dataPointKey: "email" } }), res);
+    expect(res._status).toBe(200);
+
+    // Multi-path version called with one entry per path
+    expect(mockDeriveMultiPathNotificationConfig).toHaveBeenCalled();
+    const [pathVariables] = mockDeriveMultiPathNotificationConfig.mock.calls[0];
+    expect(pathVariables).toHaveLength(2);
+    expect(pathVariables[0].name).toBe("service_call");
+    expect(pathVariables[0].variables.map((v: any) => v.key))
+      .toEqual(["full_name", "preferred_day", "preferred_time"]);
+    expect(pathVariables[1].name).toBe("emergency_call");
+    // Single-path version NOT called for multi-path agents
+    expect(mockDeriveNotificationConfig).not.toHaveBeenCalled();
+  });
+
+  it("single-path agents still use deriveNotificationConfig (no regression)", async () => {
+    mockGetClientDocument.mockResolvedValue(makeDoc());
+    mockResolveDataPoints.mockReturnValue([{ variableName: "email", label: "Email" }]);
+    mockFetchRetellAgent.mockResolvedValue({
+      canonicalJson: { conversationFlow: {} }, conversationFlowId: "f1", agentName: "A",
+    });
+    mockExtractVariables.mockReturnValue([{ key: "full_name", label: "Full Name" }]);
+    mockParseConversationFlow.mockReturnValue({
+      paths: [makePath("Default", ["full_name"])],
+      closeNode: { id: "close" },
+    });
+    const res = makeRes();
+    await runRoute("post", "/:agentId/add-data-point",
+      makeReq({ params: { slug: "acme", agentId: "agent_1" }, body: { dataPointKey: "email" } }), res);
+    expect(res._status).toBe(200);
+    expect(mockDeriveNotificationConfig).toHaveBeenCalled();
+    expect(mockDeriveMultiPathNotificationConfig).not.toHaveBeenCalled();
   });
 });
 

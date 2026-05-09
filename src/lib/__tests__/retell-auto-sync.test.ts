@@ -35,6 +35,22 @@ vi.mock("../retell-sync.js", () => ({
 
 vi.mock("../notification-config.js", () => ({
   deriveNotificationConfig: (...a: any[]) => mockDeriveNotificationConfig(...a),
+  // Multi-path agents call this; we use the same mock so existing
+  // single-path-mock-based tests keep working.
+  deriveMultiPathNotificationConfig: (...a: any[]) => mockDeriveNotificationConfig(...a),
+  toLabel: (n: string) => n.replace(/_/g, " "),
+}));
+
+// retell-auto-sync now imports parseConversationFlow + INTERNAL_VARS.
+vi.mock("../node-parser.js", () => ({
+  // Default to a single-path parse so the existing single-path tests
+  // route through deriveNotificationConfig as before.
+  parseConversationFlow: () => ({
+    paths: [{ name: "Default", frontExtractNode: { raw: { variables: [] } } }],
+  }),
+}));
+vi.mock("../agent-generator/data-point-registry.js", () => ({
+  INTERNAL_VARS: new Set(["_path_taken", "phone_number_collected"]),
 }));
 
 vi.mock("../agent-versions.js", () => ({

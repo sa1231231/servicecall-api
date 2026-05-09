@@ -91,6 +91,8 @@ vi.mock("../../../lib/audit.js", () => ({
 
 vi.mock("../../../lib/notification-config.js", () => ({
   deriveNotificationConfig: (...a: any[]) => mockDeriveNotificationConfig(...a),
+  deriveMultiPathNotificationConfig: (...a: any[]) => mockDeriveNotificationConfig(...a),
+  toLabel: (n: string) => n.replace(/_/g, " "),
 }));
 
 vi.mock("../../../middleware/require-role.js", () => ({
@@ -114,6 +116,7 @@ vi.mock("../../../lib/agent-generator/generate-agent.js", () => ({
 
 vi.mock("../../../lib/agent-generator/data-point-registry.js", () => ({
   PATH_TAKEN_VAR: "path_taken",
+  INTERNAL_VARS: new Set(["path_taken", "phone_number_collected"]),
 }));
 
 vi.mock("../../../lib/agent-generator/node-builders.js", () => ({

@@ -16,8 +16,13 @@ import { logAudit } from "../../lib/audit.js";
 import { requireRoot } from "../../middleware/require-role.js";
 import {
   deriveNotificationConfig,
+  deriveMultiPathNotificationConfig,
+  toLabel,
   type ClientInfo,
+  type PathVariables,
+  type VariableEntry,
 } from "../../lib/notification-config.js";
+import { INTERNAL_VARS } from "../../lib/agent-generator/data-point-registry.js";
 import { regenerateDataChain, applyRegeneratedChain } from "../../lib/node-regenerator.js";
 import { getDataPointDefaults } from "../../lib/data-point-defaults.js";
 import { resolveDataPoints } from "../../lib/agent-generator/generate-agent.js";
@@ -77,8 +82,27 @@ async function storeCanonical(
       $inc: { _version: 1 } as never,
     });
 
-  // Re-derive notification config if variables changed
-  const variables = extractVariables(canonicalJson);
+  // Re-derive notification config if variables changed.
+  //
+  // Multi-path agents need the per-path derivation (one message_type per
+  // path keyed by the path name) — the single-path version produces a
+  // generic "service_request" key that won't match the existing
+  // doc.message_types keys, which causes the overwrite-guard below to
+  // skip the update entirely. Pre-fix, multi-path agents would silently
+  // keep stale fields forever (e.g. a composite removed + re-added would
+  // leave the parent var name in fields instead of the sub-vars).
+  // Tolerate a malformed canonical defensively: tests sometimes mock
+  // parseConversationFlow loosely, and a real-world parse failure should
+  // not break the message_types update — fall back to single-path.
+  let parsed: ReturnType<typeof parseConversationFlow> | null = null;
+  try {
+    parsed = parseConversationFlow(canonicalJson);
+  } catch (err) {
+    console.warn(
+      `[node-editor] parseConversationFlow failed in storeCanonical (slug=${slug}); falling back to single-path notification config:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
   const clientInfo: ClientInfo = {
     slug,
     name: doc.name,
@@ -92,7 +116,24 @@ async function storeCanonical(
     hide_not_mentioned: doc.hide_not_mentioned,
     shadow_mode: doc.shadow_mode,
   };
-  const derived = deriveNotificationConfig(variables, clientInfo, agentId);
+  let derived: JsonClientEntry;
+  if (parsed && parsed.paths && parsed.paths.length > 1) {
+    const pathVariables: PathVariables[] = parsed.paths.map((p) => {
+      const rawVars = ((p.frontExtractNode?.raw as Record<string, unknown> | undefined)
+        ?.variables as Array<Record<string, unknown>> | undefined) ?? [];
+      const entries: VariableEntry[] = [];
+      for (const v of rawVars) {
+        const name = v.name as string | undefined;
+        if (!name || INTERNAL_VARS.has(name)) continue;
+        entries.push({ key: name, label: toLabel(name) });
+      }
+      return { name: p.name, variables: entries };
+    });
+    derived = deriveMultiPathNotificationConfig(pathVariables, clientInfo, agentId);
+  } else {
+    const variables = extractVariables(canonicalJson);
+    derived = deriveNotificationConfig(variables, clientInfo, agentId);
+  }
 
   // Preserve existing field customizations
   if (doc.message_types) {

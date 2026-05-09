@@ -69,6 +69,8 @@ vi.mock("../../../lib/agent-versions.js", () => ({
 vi.mock("../../../lib/audit.js", () => ({ logAudit: (...a: any[]) => mockLogAudit(...a) }));
 vi.mock("../../../lib/notification-config.js", () => ({
   deriveNotificationConfig: (...a: any[]) => mockDeriveNotificationConfig(...a),
+  deriveMultiPathNotificationConfig: (...a: any[]) => mockDeriveNotificationConfig(...a),
+  toLabel: (n: string) => n.replace(/_/g, " "),
 }));
 vi.mock("../../../middleware/require-role.js", () => ({
   requireRoot: (req: Request, res: Response, next: NextFunction) => mockRequireRoot(req, res, next),
@@ -82,7 +84,10 @@ vi.mock("../../../lib/data-point-defaults.js", () => ({
 vi.mock("../../../lib/agent-generator/generate-agent.js", () => ({
   resolveDataPoints: (...a: any[]) => mockResolveDataPoints(...a),
 }));
-vi.mock("../../../lib/agent-generator/data-point-registry.js", () => ({ PATH_TAKEN_VAR: "path_taken" }));
+vi.mock("../../../lib/agent-generator/data-point-registry.js", () => ({
+  PATH_TAKEN_VAR: "path_taken",
+  INTERNAL_VARS: new Set(["path_taken", "phone_number_collected"]),
+}));
 vi.mock("../../../lib/agent-generator/node-builders.js", () => ({
   makeIdFactory: (...a: any[]) => mockMakeIdFactory(...a),
   buildTransitionNode: (...a: any[]) => mockBuildTransitionNode(...a),

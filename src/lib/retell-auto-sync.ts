@@ -7,8 +7,14 @@ import {
 import { fetchRetellAgent } from "./retell-sync.js";
 import {
   deriveNotificationConfig,
+  deriveMultiPathNotificationConfig,
+  toLabel,
   type ClientInfo,
+  type PathVariables,
+  type VariableEntry,
 } from "./notification-config.js";
+import { parseConversationFlow } from "./node-parser.js";
+import { INTERNAL_VARS } from "./agent-generator/data-point-registry.js";
 import { getDb } from "./db.js";
 import type { JsonClientEntry } from "../config/client-store.js";
 import { createVersionSnapshot } from "./agent-versions.js";
@@ -82,11 +88,37 @@ async function runAutoSync(): Promise<void> {
           shadow_mode: doc.shadow_mode,
         };
 
-        const jsonEntry = deriveNotificationConfig(
-          snapshot.variables,
-          clientInfo,
-          agentId,
-        );
+        // Multi-path agents need per-path derivation so message_types
+        // keys match the existing keyed-by-path-name doc — otherwise the
+        // overwrite-guard below skips the update and fields stay stale.
+        // Tolerate a parse failure by falling back to single-path so a
+        // malformed canonical doesn't break the periodic sync.
+        let parsed: ReturnType<typeof parseConversationFlow> | null = null;
+        try {
+          parsed = parseConversationFlow(snapshot.canonicalJson);
+        } catch (err) {
+          console.warn(
+            `[auto-sync] parseConversationFlow failed for slug=${slug}, falling back to single-path:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+        let jsonEntry: JsonClientEntry;
+        if (parsed && parsed.paths && parsed.paths.length > 1) {
+          const pathVariables: PathVariables[] = parsed.paths.map((p) => {
+            const rawVars = ((p.frontExtractNode?.raw as Record<string, unknown> | undefined)
+              ?.variables as Array<Record<string, unknown>> | undefined) ?? [];
+            const entries: VariableEntry[] = [];
+            for (const v of rawVars) {
+              const name = v.name as string | undefined;
+              if (!name || INTERNAL_VARS.has(name)) continue;
+              entries.push({ key: name, label: toLabel(name) });
+            }
+            return { name: p.name, variables: entries };
+          });
+          jsonEntry = deriveMultiPathNotificationConfig(pathVariables, clientInfo, agentId);
+        } else {
+          jsonEntry = deriveNotificationConfig(snapshot.variables, clientInfo, agentId);
+        }
 
         // Preserve field-level customizations (show, label, required) from existing config.
         // Build a global map from ALL existing message types so customizations
