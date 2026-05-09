@@ -116,6 +116,27 @@ describe("lintDataPoint", () => {
       dp.conversationPrompt = "";
       expect(lintDataPoint(dp).map((e) => e.code)).not.toContain("NO_CONVERSATION_PROMPT");
     });
+
+    it("does not flag forwardCondition for orphan dps (they're not in the router)", () => {
+      const dp = goodString("passive_var");
+      dp.orphan = true;
+      dp.forwardCondition = "";
+      expect(lintDataPoint(dp).map((e) => e.code)).not.toContain("NO_FORWARD_CONDITION");
+    });
+
+    it("does not flag DESCRIPTION_MISSING_SENTINEL for orphan dps (LLM never has to default)", () => {
+      const dp = goodString("passive_var");
+      dp.orphan = true;
+      dp.description = "Just a plain description with no sentinel reference.";
+      expect(lintDataPoint(dp).map((e) => e.code)).not.toContain("DESCRIPTION_MISSING_SENTINEL");
+    });
+
+    it("still flags NO_DESCRIPTION even on orphan dps (description is always required)", () => {
+      const dp = goodString("passive_var");
+      dp.orphan = true;
+      dp.description = "";
+      expect(lintDataPoint(dp).map((e) => e.code)).toContain("NO_DESCRIPTION");
+    });
   });
 
   describe("enum data points", () => {
@@ -133,6 +154,13 @@ describe("lintDataPoint", () => {
       const dp = goodEnum();
       dp.choices = ["Semi", "Box truck"];
       expect(lintDataPoint(dp).map((e) => e.code)).toContain("ENUM_MISSING_NOT_MENTIONED");
+    });
+
+    it("does not flag missing NOT_MENTIONED on orphan dps (LLM never extracts)", () => {
+      const dp = goodEnum();
+      dp.orphan = true;
+      dp.choices = ["maintenance", "repair", "replacement"];
+      expect(lintDataPoint(dp).map((e) => e.code)).not.toContain("ENUM_MISSING_NOT_MENTIONED");
     });
 
     it("flags duplicate choices", () => {

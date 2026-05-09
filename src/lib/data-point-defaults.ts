@@ -128,6 +128,10 @@ export async function createDataPointDefault(
     forwardCondition?: string;
     composite?: boolean;
     variables?: VariableDef[];
+    /** Mark as extract-only (no Collect/Confirm node, not in router). The
+     *  agent picks this variable up passively from caller's free-form
+     *  input or it's set programmatically — it's never explicitly asked. */
+    orphan?: boolean;
   },
 ): Promise<StoredDataPoint> {
   const existing = await collection().findOne({ _id: key } as any);
@@ -171,6 +175,7 @@ export async function createDataPointDefault(
     category,
     sortOrder: maxOrder + 1,
     ...(isComposite && { composite: true, variables: data.variables }),
+    ...(data.orphan === true && { orphan: true }),
   };
 
   await collection().insertOne(dp as any);

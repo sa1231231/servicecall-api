@@ -1305,10 +1305,16 @@
             </div>
             <label>Description</label>
             <textarea id="newDpDescription" placeholder="Optional — what this field means and how to handle missing values."></textarea>
-            <label>Conversation Prompt</label>
-            <textarea id="newDpConvPrompt" placeholder="Optional — how the agent should ask for this field."></textarea>
-            <label>Forward Condition</label>
-            <input type="text" id="newDpFwdCondition" placeholder="Optional — when to move to the next question.">
+            <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-top:0.5rem;">
+              <input type="checkbox" id="newDpOrphan" onchange="document.getElementById('newDpPromptFields').style.display = this.checked ? 'none' : 'block';" style="margin:0;">
+              <span>Extract only <span style="font-weight:400;color:#888;font-size:0.78rem;">— hidden value: agent never asks; set programmatically or extracted passively</span></span>
+            </label>
+            <div id="newDpPromptFields">
+              <label>Conversation Prompt</label>
+              <textarea id="newDpConvPrompt" placeholder="Optional — how the agent should ask for this field."></textarea>
+              <label>Forward Condition</label>
+              <input type="text" id="newDpFwdCondition" placeholder="Optional — when to move to the next question.">
+            </div>
             <div class="dp-card-actions">
               <button type="button" class="dp-btn-save" onclick="createNewDpDefault()">Create Data Point</button>
             </div>
@@ -6331,10 +6337,16 @@
         </div>
         <label>Description</label>
         <textarea class="dp-description" maxlength="4000">${esc(dp.description || '')}</textarea>
-        <label>Conversation Prompt</label>
-        <textarea class="dp-conv-prompt" maxlength="4000" style="min-height:100px;">${esc(dp.conversationPrompt || '')}</textarea>
-        <label>Forward Condition</label>
-        <input type="text" class="dp-fwd-condition" value="${esc(dp.forwardCondition || '')}">
+        <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;margin-top:0.5rem;">
+          <input type="checkbox" class="dp-orphan" ${dp.orphan ? 'checked' : ''} onchange="toggleDpOrphan(this)" style="margin:0;">
+          <span>Extract only <span style="font-weight:400;color:#888;font-size:0.78rem;">— hidden value: agent never asks; set programmatically or extracted passively</span></span>
+        </label>
+        <div class="dp-prompt-fields" style="display:${dp.orphan ? 'none' : 'block'};">
+          <label>Conversation Prompt</label>
+          <textarea class="dp-conv-prompt" maxlength="4000" style="min-height:100px;">${esc(dp.conversationPrompt || '')}</textarea>
+          <label>Forward Condition</label>
+          <input type="text" class="dp-fwd-condition" value="${esc(dp.forwardCondition || '')}">
+        </div>
         <label>Finetune Examples</label>
         <div class="dp-ft-list">${ftHtml}</div>
         <button type="button" class="ft-add-example" onclick="addFtExample('${esc(key)}')">+ Add Finetune Example</button>
@@ -6683,18 +6695,26 @@
     wrap.style.display = sel.value === 'enum' ? 'block' : 'none';
   }
 
+  function toggleDpOrphan(checkbox) {
+    const promptFields = checkbox.closest('.dp-card-body').querySelector('.dp-prompt-fields');
+    if (promptFields) promptFields.style.display = checkbox.checked ? 'none' : 'block';
+  }
+
   function collectDpCard(key) {
     const card = document.querySelector(`.dp-card[data-dp-key="${key}"]`);
     const newKey = card.querySelector('.dp-key').value.trim();
     const label = card.querySelector('.dp-label').value.trim();
     const composite = card.querySelector('.dp-composite').checked;
+    const orphan = card.querySelector('.dp-orphan')?.checked || false;
     const type = card.querySelector('.dp-type').value;
     const choicesRaw = card.querySelector('.dp-choices').value;
     const choices = !composite && type === 'enum' ? choicesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
     const variables = composite ? collectSubVars(card) : undefined;
     const description = card.querySelector('.dp-description').value;
-    const conversationPrompt = card.querySelector('.dp-conv-prompt').value;
-    const forwardCondition = card.querySelector('.dp-fwd-condition').value;
+    // When orphan is checked, prompt fields are hidden — send empty so the
+    // dp doesn't carry stale auto-fill text from a prior non-orphan state.
+    const conversationPrompt = orphan ? '' : (card.querySelector('.dp-conv-prompt')?.value ?? '');
+    const forwardCondition = orphan ? '' : (card.querySelector('.dp-fwd-condition')?.value ?? '');
     const finetuneExamples = [];
     card.querySelectorAll('.ft-example').forEach(ex => {
       const type = ex.querySelector('.ft-type').value;
@@ -6706,7 +6726,7 @@
       });
       if (transcript.length > 0) finetuneExamples.push({ type, transcript });
     });
-    const out = { newKey, label, type, choices, description, conversationPrompt, forwardCondition, finetuneExamples, composite };
+    const out = { newKey, label, type, choices, description, conversationPrompt, forwardCondition, finetuneExamples, composite, orphan };
     if (composite) out.variables = variables;
     return out;
   }
@@ -6779,6 +6799,7 @@
     const dpType = document.getElementById('newDpType').value;
     const choicesRaw = document.getElementById('newDpChoices').value;
     const choices = dpType === 'enum' ? choicesRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const isOrphan = document.getElementById('newDpOrphan').checked;
     const body = {
       key,
       label,
@@ -6786,8 +6807,12 @@
       type: dpType,
       choices,
       description: document.getElementById('newDpDescription').value,
-      conversationPrompt: document.getElementById('newDpConvPrompt').value,
-      forwardCondition: document.getElementById('newDpFwdCondition').value,
+      // Empty strings are intentional when Extract only is checked — server
+      // preserves them rather than auto-filling boilerplate. See the
+      // typeof-string check in createDataPointDefault.
+      conversationPrompt: isOrphan ? '' : document.getElementById('newDpConvPrompt').value,
+      forwardCondition: isOrphan ? '' : document.getElementById('newDpFwdCondition').value,
+      orphan: isOrphan || undefined,
     };
     try {
       const res = await fetch('/dashboard/api/data-point-defaults', {
@@ -6806,6 +6831,8 @@
       document.getElementById('newDpType').value = 'string';
       document.getElementById('newDpChoices').value = '';
       document.getElementById('newDpChoicesWrap').style.display = 'none';
+      document.getElementById('newDpOrphan').checked = false;
+      document.getElementById('newDpPromptFields').style.display = 'block';
       document.getElementById('newDpDescription').value = '';
       document.getElementById('newDpConvPrompt').value = '';
       document.getElementById('newDpFwdCondition').value = '';

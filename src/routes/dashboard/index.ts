@@ -593,13 +593,13 @@ dashboardApiRouter.patch("/data-point-defaults/:key", requireFeature("data_point
 
 dashboardApiRouter.post("/data-point-defaults", requireFeature("data_point_defaults", "write"), async (req, res) => {
   try {
-    const { key, label, category, type, choices, description, conversationPrompt, forwardCondition, composite, variables } = req.body;
+    const { key, label, category, type, choices, description, conversationPrompt, forwardCondition, composite, variables, orphan } = req.body;
     if (!key || !label) {
       res.status(400).json({ error: "key and label are required" });
       return;
     }
     const dp = await createDataPointDefault(key, {
-      label, category, type, choices, description, conversationPrompt, forwardCondition, composite, variables,
+      label, category, type, choices, description, conversationPrompt, forwardCondition, composite, variables, orphan,
     });
     await logAudit(req, "create_data_point", key);
     alertRootIfNeeded(req, "create_data_point", key);

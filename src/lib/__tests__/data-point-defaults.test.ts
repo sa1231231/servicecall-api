@@ -253,6 +253,20 @@ describe("createDataPointDefault", () => {
     expect(inserted.forwardCondition).toContain("default case");
   });
 
+  it("stores orphan flag when set to true (extract-only / hidden-value variable)", async () => {
+    await createDataPointDefault("hidden_var", {
+      label: "Hidden Var",
+      orphan: true,
+    });
+    expect(mockInsertOne.mock.calls[0][0].orphan).toBe(true);
+  });
+
+  it("does not stamp orphan: false on the doc when omitted (keeps the flag absent)", async () => {
+    await createDataPointDefault("normal_var", { label: "Normal" });
+    const inserted = mockInsertOne.mock.calls[0][0];
+    expect("orphan" in inserted).toBe(false);
+  });
+
   it("places new item at end of category (sortOrder = max+1)", async () => {
     mockFind.mockReturnValue({
       toArray: vi.fn().mockResolvedValue([

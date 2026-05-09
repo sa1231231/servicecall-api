@@ -41,7 +41,11 @@ export function lintDataPoint(dp: DataPoint): LintError[] {
     }
   } else {
     if (!dp.description?.trim()) push("NO_DESCRIPTION", `"${v}" has empty description`);
-    else if (!mentionsSentinel(dp.description))
+    // Orphan dps are extracted passively. The agent never asks about them
+    // and the LLM never has to "default to Not Mentioned" — they're either
+    // captured from caller's free-form input or set programmatically. The
+    // sentinel rule doesn't apply.
+    else if (!dp.orphan && !mentionsSentinel(dp.description))
       push(
         "DESCRIPTION_MISSING_SENTINEL",
         `"${v}" description should reference "${NOT_MENTIONED}" so the LLM has a default sink`,
@@ -51,10 +55,12 @@ export function lintDataPoint(dp: DataPoint): LintError[] {
 
   if (!dp.orphan && !dp.conversationPrompt?.trim())
     push("NO_CONVERSATION_PROMPT", `"${v}" has no conversationPrompt`);
-  if (!dp.forwardCondition?.trim())
+  // Orphan dps aren't in the variables router (see node-builders.ts:882),
+  // so the forwardCondition is never used — empty is fine.
+  if (!dp.orphan && !dp.forwardCondition?.trim())
     push("NO_FORWARD_CONDITION", `"${v}" has no forwardCondition`);
 
-  if (dp.type === "enum") errors.push(...lintEnumChoices(v, dp.choices));
+  if (dp.type === "enum") errors.push(...lintEnumChoices(v, dp.choices, dp.orphan));
 
   if (Array.isArray(dp.finetuneExamples))
     dp.finetuneExamples.forEach((ex, i) => errors.push(...lintFinetuneExample(v, ex, i)));
@@ -101,7 +107,7 @@ function lintCompositeVariable(
   return errors;
 }
 
-function lintEnumChoices(name: string, choices?: string[]): LintError[] {
+function lintEnumChoices(name: string, choices?: string[], isOrphan?: boolean): LintError[] {
   if (!Array.isArray(choices) || choices.length === 0) {
     return [
       {
@@ -112,7 +118,11 @@ function lintEnumChoices(name: string, choices?: string[]): LintError[] {
     ];
   }
   const errors: LintError[] = [];
-  if (!choices.includes(NOT_MENTIONED)) {
+  // Orphan dps are extract-only — the LLM never has to extract from a
+  // missing answer because the agent doesn't ask. Skip the Not Mentioned
+  // requirement so an enum like ["Active", "Connected", "Booked"] doesn't
+  // need to carry a sentinel that would never be returned.
+  if (!isOrphan && !choices.includes(NOT_MENTIONED)) {
     errors.push({
       code: "ENUM_MISSING_NOT_MENTIONED",
       message: `"${name}" enum choices must include "${NOT_MENTIONED}" so the LLM has a fallback`,
