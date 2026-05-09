@@ -112,10 +112,21 @@ export function regenerateDataChain(
     removedNodeIds.add(dp.confirmNode.id);
   }
 
-  // Pre-allocate IDs: reuse existing where possible, generate new otherwise
+  // Pre-allocate IDs: reuse existing where possible, generate new otherwise.
+  //
+  // Orphan dps (extract-only) don't actually get Collect/Confirm nodes
+  // built — the loop below returns early on `dp.orphan`. But chainIds is
+  // 1:1 with newDataPoints, so we still allocate a slot. We must NOT reuse
+  // existing.collectNode.id here when the existing dp was parsed as orphan,
+  // because in that case collectNode === frontExtractNode (placeholder per
+  // node-parser.ts:327). Reusing it would put the placeholder id into a
+  // chain slot, and if downstream code ever pushed a Collect node with
+  // that id it would collide with the front-extract node — emitting the
+  // "Duplicate node id" validation error we hit. Allocating a fresh id
+  // for orphan slots keeps the ids disjoint regardless.
   const chainIds: Array<{ convId: string; confirmId: string }> = newDataPoints.map((dp) => {
     const existing = existingByVar.get(dp.variableName);
-    if (existing) {
+    if (existing && !existing.orphan && !dp.orphan) {
       return {
         convId: existing.collectNode.id,
         confirmId: existing.confirmNode.id,
@@ -251,8 +262,15 @@ export function regenerateDataChain(
     const ids = chainIds[i];
     const existing = existingByVar.get(dp.variableName);
 
-    // Tapered variable list: this variable + all remaining
-    const remainingVarDefs = newDataPoints.slice(i).flatMap(toVarDefs);
+    // Variable list for this Confirm extract:
+    //   • Non-orphan dps taper down the chain (already-collected vars drop off)
+    //   • Orphan dps persist in every Confirm — the agent never asks for them,
+    //     so the only chance to capture one is when the caller spontaneously
+    //     mentions it. Keeping them live across the whole chain maximizes
+    //     that capture window. Mirrors node-builders.ts:989.
+    const taperedNonOrphans = newDataPoints.slice(i).filter((d) => !d.orphan);
+    const persistentOrphans = newDataPoints.filter((d) => d.orphan);
+    const remainingVarDefs = [...taperedNonOrphans, ...persistentOrphans].flatMap(toVarDefs);
 
     // Layout position: reuse existing or compute new
     const convPos = existing

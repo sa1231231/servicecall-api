@@ -1223,7 +1223,7 @@ function findPath(
  * Reconstructs DataPoint[] from a parsed path's data chain.
  * Uses the confirm node's variables and collect node's prompts.
  */
-function buildDataPointsFromChain(
+export function buildDataPointsFromChain(
   path: ParsedPath,
   defaults: Record<string, DataPoint>,
 ): DataPoint[] {
@@ -1247,6 +1247,15 @@ function buildDataPointsFromChain(
         { left: `{{${dp.variableName}}}`, operator: "!=", right: "Not Mentioned" },
       ],
     };
+
+    // Propagate the orphan flag from either the parser's detection (placeholder
+    // node case at node-parser.ts:309-340) or the current global default.
+    // Without this, a dp that was previously normal but flipped to orphan in
+    // global settings keeps generating Collect/Confirm nodes — and worse,
+    // when the parser already sees it as orphan, the regenerator reuses the
+    // placeholder frontExtractNode.id for the new Collect, causing a duplicate
+    // node id collision plus an empty-instruction-text validation failure.
+    if (dp.orphan || defaultDp?.orphan) result.orphan = true;
 
     // For composite data points: the collect node name == label (no "Collect " prefix)
     const isComposite = !dp.collectNode.name.startsWith("Collect ");

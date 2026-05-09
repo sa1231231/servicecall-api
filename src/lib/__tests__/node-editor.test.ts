@@ -10,6 +10,7 @@ import {
 import { parseConversationFlow, getPathVariableNames, getPathNodeIds, isStructuralNode } from "../node-parser.js";
 import { validateConversationFlow, type ValidationError } from "../node-validator.js";
 import { regenerateDataChain, applyRegeneratedChain } from "../node-regenerator.js";
+import { buildDataPointsFromChain } from "../../routes/dashboard/node-editor.js";
 
 // ── Test Data ────────────────────────────────────────────────────────────────
 
@@ -372,6 +373,78 @@ describe("orphan data points", () => {
     expect(reParsed.paths[0].dataChain).toHaveLength(2);
     const reOrphan = reParsed.paths[0].dataChain.find((dp) => dp.variableName === "is_loaded");
     expect(reOrphan?.orphan).toBe(true);
+  });
+});
+
+describe("buildDataPointsFromChain — orphan flag propagation (regression)", () => {
+  it("propagates orphan from the parser-detected orphan dp", () => {
+    // Build an agent where `is_loaded` is orphan from the start. Parse it,
+    // then run buildDataPointsFromChain — the orphan flag must survive.
+    const { agent } = generateAgent(baseConfig, [
+      "full_name",
+      { variableName: "is_loaded", type: "boolean" as const, description: "Is loaded", orphan: true,
+        label: "Is Loaded", conversationPrompt: "", forwardCondition: "",
+        finetuneExamples: [], extractSuccessEquation: [{ left: "{{is_loaded}}", operator: "exists" }] },
+    ], undefined, TEST_DEFAULTS);
+    const parsed = parseConversationFlow(agent);
+    const dps = buildDataPointsFromChain(parsed.paths[0], TEST_DEFAULTS);
+    const isLoadedDp = dps.find((d) => d.variableName === "is_loaded");
+    expect(isLoadedDp?.orphan).toBe(true);
+  });
+
+  it("propagates orphan from the global default even when the parsed chain still has Collect/Confirm (the user's bug)", () => {
+    // Scenario: dp was originally generated as normal (full Collect/Confirm),
+    // then the operator flipped it to orphan in global settings. Parser still
+    // sees a normal chain dp (no orphan flag on it), so without this fix the
+    // resulting DataPoint would have orphan=undefined and the regenerator
+    // would (a) generate a Collect with empty instruction text, (b) reuse
+    // the placeholder front-extract id for it → "Duplicate node id" plus
+    // "empty instruction text" validation failures.
+    const normalThenOrphan: DataPoint = {
+      label: "Service Type",
+      variableName: "hvac_service_type",
+      type: "enum",
+      choices: ["maintenance", "repair", NOT_MENTIONED],
+      description: `hvac_service_type. If not mentioned, set to "${NOT_MENTIONED}".`,
+      conversationPrompt: "Ask about HVAC type.",
+      forwardCondition: "Caller provided HVAC type.",
+      finetuneExamples: [],
+      extractSuccessEquation: defaultExtractEquation("hvac_service_type"),
+    };
+    const { agent } = generateAgent(baseConfig, ["full_name", "hvac_service_type"], undefined, {
+      ...TEST_DEFAULTS,
+      hvac_service_type: normalThenOrphan,
+    });
+    const parsed = parseConversationFlow(agent);
+
+    // Now the operator marks it orphan in global settings — defaults reflect that.
+    const updatedDefaults: Record<string, DataPoint> = {
+      ...TEST_DEFAULTS,
+      hvac_service_type: { ...normalThenOrphan, orphan: true },
+    };
+    const dps = buildDataPointsFromChain(parsed.paths[0], updatedDefaults);
+    const hvacDp = dps.find((d) => d.variableName === "hvac_service_type");
+    expect(hvacDp?.orphan).toBe(true);
+
+    // End-to-end: feed back into the regenerator and confirm the canonical
+    // validates clean (no duplicate ids, no empty Collect text).
+    const result = regenerateDataChain(parsed.paths[0], dps, parsed.closeNode!.id);
+    applyRegeneratedChain(agent, result);
+    expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
+    // And: there should NOT be a Collect node for hvac_service_type after regen.
+    const reParsed = parseConversationFlow(agent);
+    const reChainDp = reParsed.paths[0].dataChain.find((d) => d.variableName === "hvac_service_type");
+    expect(reChainDp?.orphan).toBe(true);
+    const allNodes = (agent.conversationFlow as any).nodes as Array<Record<string, unknown>>;
+    const collectForHvac = allNodes.find((n) => n.name === "Collect Service Type" || n.name === "Collect HVAC Service Type" || n.name === "Collect Hvac Service Type");
+    expect(collectForHvac).toBeUndefined();
+  });
+
+  it("leaves orphan: undefined when neither parser nor defaults mark it orphan", () => {
+    const { agent } = generateAgent(baseConfig, ["full_name", "phone_number"], undefined, TEST_DEFAULTS);
+    const parsed = parseConversationFlow(agent);
+    const dps = buildDataPointsFromChain(parsed.paths[0], TEST_DEFAULTS);
+    expect(dps.every((d) => !d.orphan)).toBe(true);
   });
 });
 
