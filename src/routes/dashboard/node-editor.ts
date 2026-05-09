@@ -1223,6 +1223,33 @@ function findPath(
  * Reconstructs DataPoint[] from a parsed path's data chain.
  * Uses the confirm node's variables and collect node's prompts.
  */
+/**
+ * Drop later-occurrence duplicates from a path's dataPointKeys list.
+ *
+ * Without this dedup, a path that lists the same variable twice — possible
+ * when the frontend Add-filter misses an existing entry, when a page-cache
+ * race lets the operator add a dp that's actually still there, or when an
+ * external API call is malformed — produces a regeneration where every
+ * Confirm extract carries duplicate variable definitions, which the
+ * validator then rejects ("Duplicate variable …" errors block the save).
+ *
+ * Items can be either plain string keys or `{ variableName: string, ... }`
+ * objects; both are deduped by the resolved variableName.
+ */
+export function dedupDataPointKeys<T>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    const key = typeof item === "string" ? item : (item as any)?.variableName;
+    if (typeof key === "string") {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    out.push(item);
+  }
+  return out;
+}
+
 export function buildDataPointsFromChain(
   path: ParsedPath,
   defaults: Record<string, DataPoint>,
@@ -2263,8 +2290,11 @@ async function saveAndPublishHandler(
           return;
         }
 
-        // pathChanges.dataPointKeys = ordered list of data point keys for this path
+        // pathChanges.dataPointKeys = ordered list of data point keys for this path.
+        // Dedup defensively (see dedupDataPointKeys for the rationale).
         if (Array.isArray(pathChanges.dataPointKeys)) {
+          pathChanges.dataPointKeys = dedupDataPointKeys(pathChanges.dataPointKeys);
+
           const newDataPoints: DataPoint[] = [];
           for (const item of pathChanges.dataPointKeys) {
             if (typeof item === "string") {

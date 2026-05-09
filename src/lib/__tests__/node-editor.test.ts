@@ -10,7 +10,7 @@ import {
 import { parseConversationFlow, getPathVariableNames, getPathNodeIds, isStructuralNode } from "../node-parser.js";
 import { validateConversationFlow, type ValidationError } from "../node-validator.js";
 import { regenerateDataChain, applyRegeneratedChain } from "../node-regenerator.js";
-import { buildDataPointsFromChain } from "../../routes/dashboard/node-editor.js";
+import { buildDataPointsFromChain, dedupDataPointKeys } from "../../routes/dashboard/node-editor.js";
 
 // ── Test Data ────────────────────────────────────────────────────────────────
 
@@ -373,6 +373,32 @@ describe("orphan data points", () => {
     expect(reParsed.paths[0].dataChain).toHaveLength(2);
     const reOrphan = reParsed.paths[0].dataChain.find((dp) => dp.variableName === "is_loaded");
     expect(reOrphan?.orphan).toBe(true);
+  });
+});
+
+describe("dedupDataPointKeys (regression for `Duplicate variable` save bug)", () => {
+  it("drops later-occurrence duplicate string keys, preserving order", () => {
+    expect(dedupDataPointKeys(["a", "b", "a", "c", "b"])).toEqual(["a", "b", "c"]);
+  });
+
+  it("dedups object items by variableName", () => {
+    expect(
+      dedupDataPointKeys([
+        { variableName: "a" },
+        { variableName: "b", _branchConditions: [] },
+        { variableName: "a", _branchConditions: [{}] },
+      ]),
+    ).toEqual([{ variableName: "a" }, { variableName: "b", _branchConditions: [] }]);
+  });
+
+  it("leaves a list with no duplicates unchanged", () => {
+    const input = ["a", "b", "c"];
+    expect(dedupDataPointKeys(input)).toEqual(input);
+  });
+
+  it("passes through items missing a variableName (no-op for branch nodes)", () => {
+    const branch = { _branch: true, variable: "x", operator: "==", value: "y" };
+    expect(dedupDataPointKeys(["a", branch, "a", branch])).toEqual(["a", branch, branch]);
   });
 });
 
