@@ -376,6 +376,79 @@ describe("orphan data points", () => {
   });
 });
 
+describe("composite parsing with orphan persistence (regression)", () => {
+  it("composite Confirm doesn't include persistent orphan vars (sub-var lumping bug)", () => {
+    // The user's bug: an orphan dp (hvac_service_type) following a
+    // composite dp (scheduling) was getting injected into the composite's
+    // Confirm extract (orphan persistence) and then parsed as a 3rd sub-var
+    // of "Day / Time Preference". Fix: composites skip orphan persistence
+    // so the parser keeps treating Confirm.variables as the canonical
+    // sub-var list.
+    const orphanDp: DataPoint = {
+      label: "HVAC Service Type",
+      variableName: "hvac_service_type",
+      type: "enum",
+      choices: ["maintenance", "repair", NOT_MENTIONED],
+      description: `hvac_service_type. If not mentioned, set to "${NOT_MENTIONED}".`,
+      conversationPrompt: "",
+      forwardCondition: "",
+      finetuneExamples: [],
+      extractSuccessEquation: defaultExtractEquation("hvac_service_type"),
+      orphan: true,
+    };
+    const { agent } = generateAgent(
+      baseConfig,
+      ["full_name", "scheduling", "hvac_service_type"],
+      undefined,
+      { ...TEST_DEFAULTS, hvac_service_type: orphanDp },
+    );
+    const parsed = parseConversationFlow(agent);
+    const path = parsed.paths[0];
+
+    const scheduling = path.dataChain.find((d) => d.collectNode.name === "Day / Time Preference");
+    expect(scheduling).toBeDefined();
+    const subVarNames = scheduling!.variableDefs.map((v) => v.name);
+    expect(subVarNames).toEqual(["preferred_day", "preferred_time"]);
+    expect(subVarNames).not.toContain("hvac_service_type");
+
+    const hvac = path.dataChain.find((d) => d.variableName === "hvac_service_type");
+    expect(hvac).toBeDefined();
+    expect(hvac!.orphan).toBe(true);
+  });
+
+  it("non-composite Confirm extracts still persist orphan vars across the chain", () => {
+    // The flip side: orphan persistence MUST still work for non-composite
+    // dps so the agent has the maximum capture window for spontaneously-
+    // mentioned values.
+    const orphanDp: DataPoint = {
+      label: "Loaded?",
+      variableName: "is_loaded",
+      type: "boolean",
+      choices: [],
+      description: `is_loaded. If not mentioned, set to "${NOT_MENTIONED}".`,
+      conversationPrompt: "",
+      forwardCondition: "",
+      finetuneExamples: [],
+      extractSuccessEquation: defaultExtractEquation("is_loaded"),
+      orphan: true,
+    };
+    const { agent } = generateAgent(
+      baseConfig,
+      ["full_name", "phone_number", "is_loaded"],
+      undefined,
+      { ...TEST_DEFAULTS, is_loaded: orphanDp },
+    );
+    // Find the phone_number Confirm node — its variables list should
+    // include is_loaded (persistent orphan) alongside phone_number itself.
+    const flow = agent.conversationFlow as { nodes: Array<Record<string, unknown>> };
+    const confirmPhone = flow.nodes.find((n) => n.name === "Confirm Phone Number");
+    expect(confirmPhone).toBeDefined();
+    const vars = (confirmPhone!.variables as Array<{ name: string }>).map((v) => v.name);
+    expect(vars).toContain("phone_number");
+    expect(vars).toContain("is_loaded");
+  });
+});
+
 describe("buildDataPointsFromChain — orphan flag propagation (regression)", () => {
   it("propagates orphan from the parser-detected orphan dp", () => {
     // Build an agent where `is_loaded` is orphan from the start. Parse it,

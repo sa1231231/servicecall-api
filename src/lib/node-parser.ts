@@ -285,6 +285,12 @@ function buildParsedPath(
   const routerEdges = routerNode.raw.edges as Array<Record<string, unknown>> | undefined;
   const dataChain: ParsedDataPoint[] = [];
 
+  // Track each pair's primary variable name so non-composite Confirm parsing
+  // can ignore the persistent orphan vars we now inject into every Confirm
+  // (orphans are suffixed onto remainingVarDefs by the builder/regenerator;
+  // for composites we DON'T persist orphans — see comments in
+  // node-builders.ts buildDataChain — so composite sub-var parsing stays
+  // correct without per-pair filtering).
   if (Array.isArray(routerEdges)) {
     for (const edge of routerEdges) {
       const collectNodeId = edge.destination_node_id as string;
@@ -392,13 +398,11 @@ function parseDataPointFromNodes(
   let variableDefs: Array<{ name: string; type: string; description: string; choices?: string[] }>;
 
   if (isComposite) {
-    // For composite: the confirm node's variables include this composite's vars
-    // plus remaining tapered vars. We take variables until we hit one that
-    // doesn't share the composite's pattern. Heuristic: use the front-extract
-    // node to find all vars, or just include all vars that aren't the primary
-    // variable of a subsequent "Confirm {X}" node.
-    // Simplest: take all vars from the confirm node — the regenerator's toVarDefs
-    // handles composites via the DataPoint.variables field.
+    // For composite: the confirm node's variables include this composite's
+    // sub-vars plus any tapered following dps. (Persistent orphans are
+    // intentionally NOT injected into composite Confirms — see the build
+    // logic in node-builders.ts buildDataChain — so the parser doesn't
+    // need to filter them out here.)
     variableDefs = (confirmVars as Array<Record<string, unknown>>).map((v) => ({
       name: v.name as string,
       type: (v.type as string) ?? "string",

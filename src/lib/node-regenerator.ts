@@ -264,12 +264,12 @@ export function regenerateDataChain(
 
     // Variable list for this Confirm extract:
     //   • Non-orphan dps taper down the chain (already-collected vars drop off)
-    //   • Orphan dps persist in every Confirm — the agent never asks for them,
-    //     so the only chance to capture one is when the caller spontaneously
-    //     mentions it. Keeping them live across the whole chain maximizes
-    //     that capture window. Mirrors node-builders.ts:989.
+    //   • Orphan dps persist in every NON-composite Confirm extract. Composites
+    //     skip orphan persistence so the parser can keep treating their
+    //     Confirm.variables as the canonical sub-var list (see the comment
+    //     in node-builders.ts buildDataChain for the full rationale).
     const taperedNonOrphans = newDataPoints.slice(i).filter((d) => !d.orphan);
-    const persistentOrphans = newDataPoints.filter((d) => d.orphan);
+    const persistentOrphans = dp.composite ? [] : newDataPoints.filter((d) => d.orphan);
     const remainingVarDefs = [...taperedNonOrphans, ...persistentOrphans].flatMap(toVarDefs);
 
     // Layout position: reuse existing or compute new

@@ -989,13 +989,16 @@ export function buildDataChain(
     //   • Non-orphan dps taper down the chain — once a normal var has been
     //     collected, it falls off subsequent extracts so the LLM doesn't
     //     re-prompt for it.
-    //   • Orphan (extract-only) dps persist in every Confirm extract because
-    //     the agent never asks for them — the only chance to capture one is
-    //     when the caller spontaneously mentions it, which can happen at any
-    //     point in the conversation. Keeping them live across the whole
-    //     chain maximizes that capture window.
+    //   • Orphan (extract-only) dps persist in every NON-composite Confirm
+    //     extract. The agent never asks for them, so we want to give the
+    //     caller every chance to surface one — but we exclude composite
+    //     Confirms from this persistence because the parser can't otherwise
+    //     distinguish a composite's true sub-vars from injected orphans
+    //     (they live in the same variables array). Composites are usually
+    //     atomic (one prompt covers a tightly-scoped Q&A) so the lost
+    //     capture window is minor.
     const taperedNonOrphans = resolvedDataPoints.slice(i).filter((d) => !d.orphan);
-    const persistentOrphans = resolvedDataPoints.filter((d) => d.orphan);
+    const persistentOrphans = dp.composite ? [] : resolvedDataPoints.filter((d) => d.orphan);
     const remainingVarDefs = [...taperedNonOrphans, ...persistentOrphans].flatMap(toVarDefs);
 
     // Collect node — ask for the variable
