@@ -230,6 +230,11 @@
   .folder-header-actions button.danger:hover { color: #991b1b; border-color: #fca5a5; }
   .clickable-row[draggable="true"] { cursor: pointer; }
   .clickable-row.dragging { opacity: 0.4; }
+  /* Drag-to-reorder agent-list columns. The drop-target's inset box-shadow
+     draws a vertical line on its left edge — visual cue for "the dragged
+     column will land here". */
+  th.dragging-column { opacity: 0.4; }
+  th.column-drop-target { box-shadow: inset 2px 0 0 0 #2563eb; }
   /* Visual focus from j/k keyboard navigation. Higher specificity than
      :hover so the focused row stays distinct even while the mouse moves. */
   .clickable-row.focused-row td { background: #dbeafe !important; box-shadow: inset 2px 0 0 0 #2563eb; }
@@ -1641,10 +1646,23 @@
     { key: 'contact_name', label: 'Client name' },
   ];
   let agentVisibleColumns = new Set(AGENT_COLUMNS.map(c => c.key));
+  // Display order for the visible columns. Default = AGENT_COLUMNS order.
+  // Reordered by drag-and-drop on table headers; persisted in localStorage.
+  let agentColumnOrder = AGENT_COLUMNS.map(c => c.key);
+  // Suppression flag: dragstart sets it, dragend clears after a tick so the
+  // synthetic click after drag-end doesn't trigger setAgentSort.
+  let columnWasDragged = false;
   function isColumnVisible(key) {
     const def = AGENT_COLUMNS.find(c => c.key === key);
     if (!def) return false;
     return def.locked || agentVisibleColumns.has(key);
+  }
+  /** Resolve the column defs for the visible columns in user-chosen order.
+   *  Single source of truth for both the <thead> and <tbody> render paths. */
+  function visibleColumnsInOrder() {
+    return agentColumnOrder
+      .map(key => AGENT_COLUMNS.find(c => c.key === key))
+      .filter(c => c && isColumnVisible(c.key));
   }
   // Folders for grouping agents on the dashboard. Loaded once alongside the
   // agent list. Always includes an implicit "Unfiled" pseudo-folder rendered
@@ -2073,23 +2091,31 @@
       const isActive = agentSortKey === key && agentSortDir;
       const cls = 'sortable' + (isActive ? ' sort-' + agentSortDir : '');
       const arrow = isActive ? (agentSortDir === 'asc' ? '▲' : '▼') : '⇅';
-      return '<th class="' + cls + '" onclick="setAgentSort(\'' + key + '\')"' + (attrs || '') +
+      return '<th class="' + cls + '"' +
+        ' draggable="true"' +
+        ' ondragstart="onColumnDragStart(event, \'' + key + '\')"' +
+        ' ondragover="onColumnDragOver(event)"' +
+        ' ondragleave="onColumnDragLeave(event)"' +
+        ' ondragend="onColumnDragEnd(event)"' +
+        ' ondrop="onColumnDrop(event, \'' + key + '\')"' +
+        ' onclick="setAgentSort(\'' + key + '\')"' +
+        (attrs || '') +
         '>' + label + ' <span class="sort-indicator">' + arrow + '</span></th>';
     };
 
     const colAttrs = {
       mtd_cogs: ' title="Month-to-date cost of goods sold"',
     };
+    const orderedCols = visibleColumnsInOrder();
     let html = '<table><thead><tr>' +
       (bulkSelectMode ? '<th style="width:1px;"></th>' : '') +
-      AGENT_COLUMNS
-        .filter(c => isColumnVisible(c.key))
+      orderedCols
         .map(c => headerCell(c.key, c.label, colAttrs[c.key] || ''))
         .join('') +
       (canEdit ? '<th style="width:1px;"></th>' : '') +
       '</tr></thead>';
     const visibleColCount =
-      AGENT_COLUMNS.filter(c => isColumnVisible(c.key)).length +
+      orderedCols.length +
       (canEdit ? 1 : 0) +
       (bulkSelectMode ? 1 : 0);
 
@@ -2232,7 +2258,7 @@
       (canEdit && !bulkSelectMode ? ' draggable="true" ondragstart="onAgentDragStart(event)" ondragend="onAgentDragEnd(event)"' : '') +
       '>' +
       checkboxCell +
-      AGENT_COLUMNS.filter(c => isColumnVisible(c.key)).map(c => cells[c.key]).join('') +
+      visibleColumnsInOrder().map(c => cells[c.key]).join('') +
       '</tr>';
   }
 
@@ -2268,7 +2294,11 @@
     const menu = document.getElementById('columnPickerMenu');
     if (!menu) return;
     let html = '<div class="cp-title">Show columns</div>';
-    for (const c of AGENT_COLUMNS) {
+    // Iterate in user-chosen display order so the picker mirrors the table.
+    const orderedDefs = agentColumnOrder
+      .map(key => AGENT_COLUMNS.find(c => c.key === key))
+      .filter(Boolean);
+    for (const c of orderedDefs) {
       const checked = isColumnVisible(c.key);
       const lockedCls = c.locked ? ' class="locked"' : '';
       const lockedAttr = c.locked ? ' disabled' : '';
@@ -2312,6 +2342,9 @@
   }
 
   function setAgentSort(key) {
+    // Suppress the synthetic click that fires after a column-header drag-end.
+    // Without this guard, dragging a header to reorder also flips the sort.
+    if (columnWasDragged) return;
     if (agentSortKey !== key) {
       agentSortKey = key;
       agentSortDir = 'asc';
@@ -2322,6 +2355,56 @@
       agentSortKey = null;
       agentSortDir = null;
     }
+    saveAgentListState();
+    renderAgentList();
+  }
+
+  // ── Column drag-and-drop reorder ──────────────────────────────────────
+  // The column-picker handles show/hide; these handlers handle order. Both
+  // states persist together via saveAgentListState. Mirror the existing
+  // folder/row drag patterns for visual consistency (opacity on the source,
+  // box-shadow drop indicator on the target).
+  function onColumnDragStart(event, key) {
+    event.dataTransfer.setData('text/plain', key);
+    event.dataTransfer.effectAllowed = 'move';
+    if (event.target instanceof HTMLElement) {
+      event.target.classList.add('dragging-column');
+    }
+    columnWasDragged = true;
+  }
+  function onColumnDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    const th = event.target.closest && event.target.closest('th');
+    if (!th || !th.hasAttribute('draggable')) return;
+    document.querySelectorAll('th.column-drop-target').forEach((el) => {
+      if (el !== th) el.classList.remove('column-drop-target');
+    });
+    th.classList.add('column-drop-target');
+  }
+  function onColumnDragLeave(event) {
+    const th = event.target.closest && event.target.closest('th');
+    if (th) th.classList.remove('column-drop-target');
+  }
+  function onColumnDragEnd() {
+    document.querySelectorAll('th.dragging-column').forEach((el) => el.classList.remove('dragging-column'));
+    document.querySelectorAll('th.column-drop-target').forEach((el) => el.classList.remove('column-drop-target'));
+    // Clear the drag flag after the synthetic click has had a chance to fire
+    // and be ignored. 50ms is enough for any browser's click dispatch.
+    setTimeout(() => { columnWasDragged = false; }, 50);
+  }
+  function onColumnDrop(event, targetKey) {
+    event.preventDefault();
+    const sourceKey = event.dataTransfer.getData('text/plain');
+    if (!sourceKey || sourceKey === targetKey) return;
+    const order = agentColumnOrder.slice();
+    const sourceIdx = order.indexOf(sourceKey);
+    if (sourceIdx === -1) return;
+    order.splice(sourceIdx, 1);
+    const insertIdx = order.indexOf(targetKey);
+    if (insertIdx === -1) return;
+    order.splice(insertIdx, 0, sourceKey);
+    agentColumnOrder = order;
     saveAgentListState();
     renderAgentList();
   }
@@ -2338,6 +2421,7 @@
         chips: agentSearchChips,
         expandedFolders: [...agentExpandedFolders],
         visibleColumns: [...agentVisibleColumns],
+        columnOrder: [...agentColumnOrder],
       };
       localStorage.setItem(AGENT_LIST_STATE_KEY, JSON.stringify(state));
     } catch (_) { /* storage unavailable — ignore */ }
@@ -2372,6 +2456,20 @@
             agentVisibleColumns = new Set(
               state.visibleColumns.filter(k => typeof k === 'string' && validKeys.has(k)),
             );
+          }
+          if (Array.isArray(state.columnOrder)) {
+            // Validate every entry is a known column key, then append any
+            // AGENT_COLUMNS keys missing from the saved order. The append
+            // hedge means a column added in code later doesn't disappear
+            // for users with an older saved order — it shows up at the end.
+            const allKeys = AGENT_COLUMNS.map(c => c.key);
+            const known = new Set(allKeys);
+            const cleaned = state.columnOrder.filter(k => typeof k === 'string' && known.has(k));
+            const seen = new Set(cleaned);
+            for (const k of allKeys) {
+              if (!seen.has(k)) cleaned.push(k);
+            }
+            agentColumnOrder = cleaned;
           }
         }
       }
