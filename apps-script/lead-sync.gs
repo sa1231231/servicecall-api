@@ -180,9 +180,10 @@ function postLead(baseUrl, token, payload) {
  * function dropdown → Run. Idempotent — safe to re-run; existing checkboxes
  * survive and matching conditional rules get replaced.
  *
- * Update FOLLOWUP_SHEET_NAME below if the lead tab is ever renamed.
+ * Operates on the tab named in the SHEET_NAME script property (same one
+ * syncNewLeads reads from), so renaming the tab only requires updating
+ * that single property — no code change.
  */
-const FOLLOWUP_SHEET_NAME = 'Default Lead V2';
 const FOLLOWUP_FIRST_COL = 24;          // first column we append (after Notes at 23)
 const FOLLOWUP_LAST_DATA_ROW = 1000;    // pre-populate this many rows with checkboxes
 const FOLLOWUP_HEADERS = [
@@ -199,10 +200,17 @@ const FOLLOWUP_HEADERS = [
 const FOLLOWUP_OUTCOMES = ['Active', 'Connected', 'Booked', 'Lost', 'DNC'];
 
 function setupFollowupColumns() {
+  const sheetName = PropertiesService.getScriptProperties().getProperty('SHEET_NAME');
+  if (!sheetName) {
+    const msg = 'SHEET_NAME script property is not set. Configure it in Project Settings → Script Properties (same value syncNewLeads uses).';
+    Logger.log(msg);
+    try { SpreadsheetApp.getUi().alert(msg); } catch (_) {}
+    return;
+  }
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(FOLLOWUP_SHEET_NAME);
+  const sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
-    const msg = 'Tab "' + FOLLOWUP_SHEET_NAME + '" not found. Update FOLLOWUP_SHEET_NAME in lead-sync.gs and re-push.';
+    const msg = 'Tab "' + sheetName + '" not found. Check the SHEET_NAME value in Project Settings → Script Properties.';
     Logger.log(msg);
     try { SpreadsheetApp.getUi().alert(msg); } catch (_) {}
     return;
@@ -269,10 +277,10 @@ function setupFollowupColumns() {
   sheet.setConditionalFormatRules(kept.concat([redRule, yellowRule]));
 
   Logger.log('Follow-up columns ready. Cols ' + FOLLOWUP_FIRST_COL + '-' + lastCol +
-    ' on tab "' + FOLLOWUP_SHEET_NAME + '". Red = 5-min missed; yellow = Day 1 incomplete + day passed.');
+    ' on tab "' + sheetName + '". Red = 5-min missed; yellow = Day 1 incomplete + day passed.');
   try {
     SpreadsheetApp.getUi().alert(
-      'Follow-up columns ready on "' + FOLLOWUP_SHEET_NAME + '" (cols ' +
+      'Follow-up columns ready on "' + sheetName + '" (cols ' +
       FOLLOWUP_FIRST_COL + '-' + lastCol + '). ' +
       'Red rows = 5-min SLA missed. Yellow = Day 1 incomplete after a day has passed.'
     );
