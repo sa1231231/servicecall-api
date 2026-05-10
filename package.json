@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "test:system": "SYSTEM_TEST_URL=$BASE_URL vitest run src/__tests__/system.test.ts",
+    "test:system:all": "SYSTEM_TEST_URL=$BASE_URL vitest run 'src/__tests__/system*.test.ts'",
     "test:paths": "SYSTEM_TEST_URL=$BASE_URL vitest run src/__tests__/conversation-paths.test.ts",
     "test:lint": "vitest run src/lib/__tests__/data-point-lint.test.ts",
     "test:e2e": "playwright test",
