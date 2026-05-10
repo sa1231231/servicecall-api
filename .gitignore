@@ -2,6 +2,8 @@ node_modules
 dist/
 .env
 .env.example
+.env.bak
+.env.*.bak
 src/lib/agent-generator/output/
 .DS_Store
 coverage/
