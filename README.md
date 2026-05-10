@@ -32,7 +32,7 @@ For each operator-managed client (a small service business — HVAC, plumbing, e
 2. **Dispatches every completed call** as SMS + email to the client's contact list, with per-path overrides (e.g. emergency vs. quote calls go to different phones).
 3. **Lets the operator edit the conversation flow** in a node editor — global prompt, intro/FAQ/close text, per-path data points, branches, transitions — with versioning and one-click rollback.
 4. **Auto-syncs** Retell-side edits back into MongoDB every 3 minutes, snapshotting drift.
-5. **Ingests leads** from a Google Sheet (Apps Script), enriches them via Anthropic web_search/web_fetch + Google Places + Custom Search + Yelp, and lets the operator promote any lead into a real agent in one click.
+5. **Ingests leads** from a Google Sheet (Apps Script), enriches them via Anthropic web_search/web_fetch + Google Places + Brave Search + Yelp, and lets the operator promote any lead into a real agent in one click.
 6. **Exposes a self-serve portal** so each client can review call history and update their own dispatch routing without involving the operator.
 7. **Sends scheduled weekly reports**, SMS blasts, review-request links, payment links, and instructions templates from the dashboard.
 
@@ -184,7 +184,7 @@ Pull–edit–push cycle with versioning. The dashboard fetches the parsed struc
 
 ### 3. Lead intake + enrichment (`src/routes/leads/`, `src/lib/enrich-lead.ts`)
 
-Pipeline: **Apps Script → POST /api/leads/intake → Mongo (queued) → background enrichment → ready/failed → operator promote → real agent.** Enrichment runs an Anthropic skill (`skills/onboarding-to-config/`) with `web_search` + `web_fetch` tool use, augmented by Google Places, Google Custom Search (if configured), and Yelp pre-searches.
+Pipeline: **Apps Script → POST /api/leads/intake → Mongo (queued) → background enrichment → ready/failed → operator promote → real agent.** Enrichment runs an Anthropic skill (`skills/onboarding-to-config/`) with `web_search` + `web_fetch` tool use, augmented by Google Places, Brave Search (if configured), and Yelp pre-searches.
 
 - `POST   /api/leads/intake` — bearer-token, idempotent on `externalId`, dedup-aware
 - `GET    /api/leads` — list (default excludes terminal statuses)
@@ -290,7 +290,7 @@ The **canonical JSON** for a Retell agent has the shape `{ agent: {...}, convers
 | **MongoDB** | All persistent state | `MONGODB_URL` |
 | **Anthropic** | Lead enrichment (web_search + web_fetch tool use) | `ANTHROPIC_API_KEY` |
 | **Google Places (New)** | Phone-number-to-business resolution | `GOOGLE_PLACES_API_KEY` |
-| **Google Programmable Search** | Long-tail web context (Yelp, Nextdoor, BBB) for enrichment | `GOOGLE_CUSTOM_SEARCH_API_KEY`, `GOOGLE_CUSTOM_SEARCH_CX` |
+| **Brave Search** | Long-tail web context (Yelp, Nextdoor, BBB) for enrichment | `BRAVE_API_KEY` |
 | **Yelp Fusion** | Phone reverse-lookup for service businesses | `YELP_API_KEY` |
 | **GoHighLevel (LeadConnector)** | Calendar slot lookup + appointment creation | `GHL_API_KEY` |
 | **Cloudflare R2 / S3** | Canonical JSON backups | `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` |
@@ -333,7 +333,7 @@ The **canonical JSON** for a Retell agent has the shape `{ agent: {...}, convers
 | `R2_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | unset | Cloudflare R2 (or S3) for canonical JSON backups |
 | `R2_BUCKET` | `scs-mongo-backup` | Bucket name |
 | `ANTHROPIC_API_KEY` | unset | Lead enrichment (when unset, leads land in `failed` status) |
-| `GOOGLE_CUSTOM_SEARCH_API_KEY` / `GOOGLE_CUSTOM_SEARCH_CX` | unset | Programmable Search Engine for enrichment |
+| `BRAVE_API_KEY` | unset | Brave Search API for enrichment (long-tail web context) |
 | `YELP_API_KEY` | unset | Yelp pre-search for enrichment |
 | `LEAD_INTAKE_TOKEN` | unset | Apps Script lead-sync bearer token (when unset, headless intake returns 401 for everyone) |
 | `SYSTEM_TEST_URL` | `BASE_URL` | Target for `npm run test:system*` |

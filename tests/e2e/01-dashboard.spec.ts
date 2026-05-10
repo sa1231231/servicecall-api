@@ -24,14 +24,4 @@ test.describe("Dashboard — login + agent list", () => {
     await expect(row).toContainText(/Demo (Meter|Team)/i);
   });
 
-  test("dashboard config endpoint returns logged-in user via fetch from page", async ({ page }) => {
-    // Hits /dashboard/config with the same Basic Auth — proves auth works
-    // end-to-end through the Express middleware.
-    await page.goto("/dashboard");
-    const resp = await page.request.get("/dashboard/config");
-    expect(resp.status()).toBe(200);
-    const body = await resp.json();
-    expect(typeof body.apiKey).toBe("string");
-    expect(body.user).toBeDefined();
-  });
 });

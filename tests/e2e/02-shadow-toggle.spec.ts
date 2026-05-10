@@ -15,48 +15,47 @@ test.describe("Shadow mode toggle — UI flips state and persists", () => {
   let originalShadowMode: boolean | undefined;
 
   test.beforeAll(async () => {
-    // Capture original so afterAll can restore it.
     const doc = await apiGet<AgentDoc>(env, `/dashboard/api/agents/${DEMO_METER.slug}`);
     originalShadowMode = doc.shadow_mode;
   });
 
   test.afterAll(async () => {
-    // Restore. Skip if we never read original (e.g. beforeAll failed).
     if (typeof originalShadowMode !== "boolean") return;
     await apiPatch(env, `/dashboard/api/agents/${DEMO_METER.slug}/shadow`, {
       shadow_mode: originalShadowMode,
     });
   });
 
-  test("clicking the shadow toggle in the dashboard row flips the DB value", async ({ page }) => {
+  test("flipping shadow mode in the agent detail Settings tab persists to the DB", async ({ page }) => {
     await page.goto("/dashboard");
 
-    // Wait for agents list to populate.
+    // Wait for the agent list to populate, then click the demo-meter row.
+    // The row is the click target — `agentRowClick` calls `showDetail(slug)`
+    // which renders the detail view with the Settings tab active by default.
     const row = page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`);
     await expect(row).toBeVisible({ timeout: 15_000 });
+    await row.click();
 
-    // Find the shadow checkbox inside the row. The row has TWO toggles
-    // (active + shadow); we identify the shadow one by its onchange handler.
-    // Note: the input itself is visually hidden by the toggle CSS — the
-    // <span class="slider"> is what's painted. We don't assert visibility
-    // on the input; we just attach to its state and click the wrapping label.
-    const shadowCheckbox = row.locator('input[onchange*="toggleShadow"]');
-    await expect(shadowCheckbox).toBeAttached();
+    // Settings tab is the default; scope everything to the agent-detail
+    // Settings pane since the workspace-level Settings page also has a
+    // #btnSaveSettings button living elsewhere in the DOM.
+    const settingsPane = page.locator("#tab-settings");
+    const shadowCheckbox = settingsPane.locator("#edit-shadow-mode");
+    await expect(shadowCheckbox).toBeAttached({ timeout: 10_000 });
 
     const before = await shadowCheckbox.isChecked();
 
-    // Click the surrounding label — the input is hidden but the label is
-    // the visible/clickable target.
+    // The <input> is visually hidden by the toggle CSS; click the wrapping
+    // <label class="toggle"> instead.
     const toggleLabel = shadowCheckbox.locator("xpath=ancestor::label[1]");
     await toggleLabel.click();
-
-    // Wait for the toast confirmation that toggleShadow's PATCH succeeded.
-    await expect(page.locator("#toast")).toBeVisible({ timeout: 10_000 });
-
-    // Verify checkbox state inverted in the DOM.
     await expect(shadowCheckbox).toBeChecked({ checked: !before, timeout: 5_000 });
 
-    // Verify in MongoDB by re-reading via the API.
+    // Save and wait for the toast confirmation that the PATCH succeeded.
+    await settingsPane.locator("#btnSaveSettings").click();
+    await expect(page.locator("#toast")).toBeVisible({ timeout: 10_000 });
+
+    // Verify the DB picked up the change via the API.
     const doc = await apiGet<AgentDoc>(env, `/dashboard/api/agents/${DEMO_METER.slug}`);
     expect(doc.shadow_mode).toBe(!before);
   });

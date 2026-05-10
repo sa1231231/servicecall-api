@@ -37,7 +37,7 @@ Every prompt for this skill arrives with up to four pre-search blocks generated 
 1. **`## Google Places results (authoritative)`** — Google Business Profile listings. If Places returned a business for the phone number, that's the business. Period. Strongest signal.
 2. **`## Yelp phone-search results`** *(may be absent)* — Yelp Fusion phone-match. Strong signal for B2B service businesses (handyman, HVAC, plumbing, etc.) — Yelp's listings are well-curated and the categories field maps directly to a service vertical. When Yelp returns a hit, treat the listing name as canonical. Block is omitted when YELP_API_KEY isn't configured.
 3. **`## Twilio caller-name (CNAM)`** *(may be absent)* — carrier-registered name. For B2B landlines this is sometimes the actual business name (e.g. "MR FIX IT" for a handyman); for cell/consumer lines it's typically the owner's personal name. The caller_type flag is unreliable — read the name itself. **Use it for identity, not as the authoritative business name.** Block is omitted on phone-less leads or non-US numbers.
-4. **`## Google Custom Search results`** *(may be absent)* — general web hits via PSE. Supplementary context. Block is omitted when GOOGLE_CUSTOM_SEARCH_* env vars aren't configured.
+4. **`## Brave Search results`** *(may be absent)* — long-tail web hits via Brave's index (Nextdoor, Facebook, BBB, the business's own site). Supplementary context — useful for filling in hours/services and for catching small businesses that don't show up in Places or Yelp. Block is omitted when BRAVE_API_KEY isn't configured.
 
 **Read those blocks first.** Do not rely on internal knowledge of phone-number-to-business mappings; you don't have it. The pre-search blocks do — and you have `web_search` / `web_fetch` tools when they don't.
 
@@ -47,12 +47,12 @@ Every prompt for this skill arrives with up to four pre-search blocks generated 
 2. **Use Places' `primaryType` to pick the template.** Places returns a `primaryType` (e.g., `car_repair`, `hvac_contractor`, `plumber`) plus other `types`. Map that to a template name from `references/templates.md`. If no template matches, set `templateName: ""` — don't pick a wrong one.
 3. **If Places is empty, Yelp phone-match is the next strongest.** Yelp returns canonical business name + categories + address + rating. The `categories` field maps cleanly to a template (e.g. "HVAC" → `hvac`, "Plumbing"/"Handyman" → no current template, set `templateName: ""`).
 4. **Twilio CNAM helps with identity, not necessarily the business name.** If CNAM returns "MR FIX IT" (looks like a business), it's a usable name. If it returns a person's name like "CHARLES DAVIES", treat that as confirming the lead's owner identity — useful as a search input for `web_search`, not as the businessName output.
-5. **If Places, Yelp, and CNAM are all empty, check Custom Search.** A hit in the right area code (973 = NJ, 415 = SF, etc.) with a plausibly-related name is a usable match — just flag the verification gap inside the FAQ.
-6. **Cross-reference for FAQ details.** Hours from Places. Services from Yelp categories / Custom Search snippets / business website / fetched listing pages. Reviews-derived "what they're known for" from either.
+5. **If Places, Yelp, and CNAM are all empty, check Brave.** A hit in the right area code (973 = NJ, 415 = SF, etc.) with a plausibly-related name is a usable match — just flag the verification gap inside the FAQ.
+6. **Cross-reference for FAQ details.** Hours from Places. Services from Yelp categories / Brave snippets / business website / fetched listing pages. Reviews-derived "what they're known for" from either.
 
 ### Falling back to web_search
 
-When Places is empty (or every hit is irrelevant — wrong city, wrong vertical, generic directories with no business name) AND the Custom Search block is also empty / absent / thin, **call `web_search`** before considering DRAFT.
+When Places is empty (or every hit is irrelevant — wrong city, wrong vertical, generic directories with no business name) AND the Brave block is also empty / absent / thin, **call `web_search`** before considering DRAFT.
 
 #### Query order is mandatory — do not deviate
 
@@ -134,7 +134,7 @@ The hint is self-reported and can be wrong — Places phone-match still wins on 
 
 Reserve the DRAFT path **only after**:
 
-1. Every pre-search channel (Places, Yelp, CNAM, Custom Search) is empty or returns only personal names / unrelated businesses, AND
+1. Every pre-search channel (Places, Yelp, CNAM, Brave) is empty or returns only personal names / unrelated businesses, AND
 2. `web_search` was called with multiple phone formats AND with the CNAM personal name + area-code-state, AND
 3. Every plausible-looking title-only URL from those searches has been **`web_fetch`-ed** and either 404'd or turned out to be unrelated.
 

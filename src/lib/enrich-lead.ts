@@ -4,10 +4,10 @@ import { fileURLToPath } from "url";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config.js";
 import {
-  preSearchLeadCustom,
-  formatCustomPreSearch,
-  type CustomPreSearchResult,
-} from "./google-custom-search.js";
+  preSearchLeadBrave,
+  formatBravePreSearch,
+  type BravePreSearchResult,
+} from "./brave-search.js";
 import {
   preSearchLeadPlaces,
   formatPlacesPreSearch,
@@ -155,7 +155,7 @@ const SKILL_NAME = "onboarding-to-config";
  */
 export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResult> {
   // Pre-search runs on every call. Four parallel channels — each has a
-  // different sweet spot, so we hit all four and let the model pick the
+  // different sweet spot, so we hit them all and let the model pick the
   // strongest signal:
   //
   //   1. Google Places (New)     — phone-match against Google Business
@@ -167,20 +167,22 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
   //                                 business name; otherwise the owner's
   //                                 personal name (still useful for
   //                                 cross-referencing the lead form).
-  //   4. Google Custom Search     — long-tail web hits via PSE. Disabled
-  //                                 in deployments without API key/cx.
+  //   4. Brave Search             — long-tail web hits (Nextdoor, Facebook,
+  //                                 Yelp, BBB) for businesses that don't
+  //                                 surface in Places/Yelp. Disabled when
+  //                                 BRAVE_API_KEY unset.
   //
-  // If all four miss, the skill falls back on its `web_search` tool —
-  // see SKILL.md. Twilio + Yelp gate on `input.phone` so they don't
-  // fire on phone-less leads.
-  let customSearch: CustomPreSearchResult = { searches: [] };
+  // If every channel misses, the skill falls back on its `web_search`
+  // tool — see SKILL.md. Twilio + Yelp gate on `input.phone` so they
+  // don't fire on phone-less leads.
   let placesSearch: PlacesPreSearchResult = { searches: [] };
+  let braveSearch: BravePreSearchResult = { searches: [] };
   let callerName: CallerNameResult | undefined;
   let yelpSearch: YelpPhoneSearchResult | undefined;
   try {
-    [customSearch, placesSearch, callerName, yelpSearch] = await Promise.all([
-      preSearchLeadCustom(input),
+    [placesSearch, braveSearch, callerName, yelpSearch] = await Promise.all([
       preSearchLeadPlaces(input),
+      preSearchLeadBrave(input),
       input.phone ? lookupCallerName(input.phone) : Promise.resolve(undefined),
       input.phone ? yelpPhoneSearch(input.phone) : Promise.resolve(undefined),
     ]);
@@ -191,10 +193,10 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
   }
   const userMessage = formatLeadAsUserMessage(
     input,
-    customSearch,
     placesSearch,
     callerName,
     yelpSearch,
+    braveSearch,
   );
 
   if (!config.ANTHROPIC_API_KEY) {
@@ -269,7 +271,7 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
     const yelpHits = yelpSearch?.ok ? yelpSearch.hits.length : "n/a";
     const cnam = callerName?.ok ? callerName.lookup?.callerName ?? "(empty)" : "n/a";
     console.log(
-      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, places=${placesSearch.searches.length}, yelp=${yelpHits}, cnam=${cnam}, custom=${customSearch.searches.length}`,
+      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, places=${placesSearch.searches.length}, yelp=${yelpHits}, cnam=${cnam}, brave=${braveSearch.searches.length}`,
     );
     return parseEnrichmentResponse(rawResponse, userMessage, systemPrompt, rawContentBlocks);
   } catch (err) {
@@ -286,16 +288,16 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
 
 /** Hand-shaped user message that matches the skill's trigger phrasing.
  *  Bakes in every pre-search channel that returned data: Places, Yelp,
- *  Twilio CNAM, Custom Search. Order in the prompt matches strength of
- *  signal — Places first (authoritative when it hits), then Yelp (also
- *  strong for B2B services), then CNAM (sometimes the business name),
- *  then Custom Search (broadest, weakest individual hit). */
+ *  Twilio CNAM, Brave. Order in the prompt matches strength of signal —
+ *  Places first (authoritative when it hits), then Yelp (also strong
+ *  for B2B services), then CNAM (sometimes the business name), then
+ *  Brave (broadest long-tail web context, weakest individual hits). */
 export function formatLeadAsUserMessage(
   input: EnrichmentInput,
-  customSearch?: CustomPreSearchResult,
   placesSearch?: PlacesPreSearchResult,
   callerName?: CallerNameResult,
   yelpSearch?: YelpPhoneSearchResult,
+  braveSearch?: BravePreSearchResult,
 ): string {
   const lines = [
     "Onboard this client and produce a Service Call Saver config.",
@@ -317,8 +319,8 @@ export function formatLeadAsUserMessage(
   if (callerName) {
     lines.push("", formatCallerName(callerName));
   }
-  if (customSearch && customSearch.searches.length > 0) {
-    lines.push("", formatCustomPreSearch(customSearch));
+  if (braveSearch && braveSearch.searches.length > 0) {
+    lines.push("", formatBravePreSearch(braveSearch));
   }
 
   lines.push(
@@ -327,7 +329,7 @@ export function formatLeadAsUserMessage(
     "1. **Google Places phone-match** — strongest signal; use the listing's name verbatim.",
     "2. **Yelp phone-match** — also strong for B2B service businesses; categories map directly to a template.",
     "3. **Twilio CNAM** — sometimes the registered business name, sometimes the owner's personal name. When the name looks like a person, treat it as identity-confirming for the lead, not as the business name.",
-    "4. **Google Custom Search** — supplementary web context (hours, services).",
+    "4. **Brave Search** — supplementary web context (hours, services, long-tail listings on Nextdoor / Facebook / BBB).",
     "",
     "The lead-form `name` is often the owner or a partial business name; trust Places/Yelp-derived names when they conflict. If all pre-search blocks are empty or inconclusive, **call `web_search`** with the phone number (multiple formats) before resorting to DRAFT. Once a business is resolved, **call `web_fetch`** on the strongest listing or website to extract concrete FAQ facts. Reserve DRAFT for when every pre-search channel AND web_search all came back empty.",
     "",

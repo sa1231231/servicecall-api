@@ -72,17 +72,14 @@ export const config = {
   // user message before the skill is called. Required at boot.
   GOOGLE_PLACES_API_KEY: requireEnv("GOOGLE_PLACES_API_KEY"),
 
-  // Google Programmable Search Engine — optional long-tail web context
-  // for lead enrichment (Yelp, Nextdoor, Facebook, BBB). Both the API
-  // key (with Custom Search API enabled on the Cloud project) and the
-  // cx id of a Programmable Search Engine are required to enable it.
-  // When either is unset, the Custom Search pre-search short-circuits
-  // and the model falls back on its `web_search` tool — which covers
-  // the same long-tail listings, just without the deterministic pre-
-  // search prefetch. Google has been gating the "search the entire web"
-  // toggle on new PSEs, so leaving these blank is a reasonable default.
-  GOOGLE_CUSTOM_SEARCH_API_KEY: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY ?? "",
-  GOOGLE_CUSTOM_SEARCH_CX: process.env.GOOGLE_CUSTOM_SEARCH_CX ?? "",
+  // Brave Search API — long-tail web context (Yelp, Nextdoor, Facebook,
+  // BBB) for lead enrichment. Google retired the standalone Programmable
+  // Search Engine path (it now sits behind the Gemini API), so Brave is
+  // the dedicated long-tail web channel. When unset, the Brave pre-
+  // search short-circuits and the model falls back on its `web_search`
+  // tool — covers the same long-tail listings, just without the
+  // deterministic pre-search prefetch.
+  BRAVE_API_KEY: process.env.BRAVE_API_KEY ?? "",
 
   // Yelp Fusion API — optional pre-search channel for B2B service
   // businesses. The /businesses/search/phone endpoint reverse-resolves a

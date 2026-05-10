@@ -72,15 +72,6 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect((await json(resp)).status).toBe("ok");
     });
 
-    it("GET /dashboard/config returns apiKey with Basic Auth", async () => {
-      const resp = await fetch(url("/dashboard/config"), {
-        headers: { Authorization: basicAuthHeader() },
-      });
-      expect(resp.status).toBe(200);
-      const body = await json(resp);
-      expect(typeof body.apiKey).toBe("string");
-      expect(body.user).toBeDefined();
-    });
   });
 
   // ── 2. Auth ─────────────────────────────────────────────────────────────

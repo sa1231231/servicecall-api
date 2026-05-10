@@ -7,7 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const {
   mockMessagesCreate,
-  mockPreSearchLeadCustom,
+  mockPreSearchLeadBrave,
   mockPreSearchLeadPlaces,
   mockLookupCallerName,
   mockYelpPhoneSearch,
@@ -16,7 +16,7 @@ const {
   mockConfig,
 } = vi.hoisted(() => ({
   mockMessagesCreate: vi.fn(),
-  mockPreSearchLeadCustom: vi.fn(),
+  mockPreSearchLeadBrave: vi.fn(),
   mockPreSearchLeadPlaces: vi.fn(),
   mockLookupCallerName: vi.fn(),
   mockYelpPhoneSearch: vi.fn(),
@@ -34,9 +34,9 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 vi.mock("../../config.js", () => ({ config: mockConfig }));
 
-vi.mock("../google-custom-search.js", () => ({
-  preSearchLeadCustom: (...a: any[]) => mockPreSearchLeadCustom(...a),
-  formatCustomPreSearch: () => "CUSTOM_PRE_SEARCH_BLOCK",
+vi.mock("../brave-search.js", () => ({
+  preSearchLeadBrave: (...a: any[]) => mockPreSearchLeadBrave(...a),
+  formatBravePreSearch: () => "BRAVE_PRE_SEARCH_BLOCK",
 }));
 
 vi.mock("../google-places.js", () => ({
@@ -81,7 +81,7 @@ const {
 beforeEach(() => {
   for (const m of [
     mockMessagesCreate,
-    mockPreSearchLeadCustom,
+    mockPreSearchLeadBrave,
     mockPreSearchLeadPlaces,
     mockLookupCallerName,
     mockYelpPhoneSearch,
@@ -92,7 +92,7 @@ beforeEach(() => {
   }
   mockConfig.ANTHROPIC_API_KEY = "test_key";
   // Default: every pre-search channel returns empty/undefined.
-  mockPreSearchLeadCustom.mockResolvedValue({ searches: [] });
+  mockPreSearchLeadBrave.mockResolvedValue({ searches: [] });
   mockPreSearchLeadPlaces.mockResolvedValue({ searches: [] });
   mockLookupCallerName.mockResolvedValue({ ok: false, phone: "x", error: "test default" });
   mockYelpPhoneSearch.mockResolvedValue({ ok: true, phone: "x", hits: [] });
@@ -310,7 +310,7 @@ describe("extractText", () => {
 
 // ── enrichLead orchestrator ─────────────────────────────────────────────────
 //
-// Covers the path: pre-search (Custom Search + Places) → skill load →
+// Covers the path: pre-search (Brave + Places) → skill load →
 // Anthropic call → parse. The AI Feed transcript (systemPrompt / userMessage
 // / rawResponse / rawContentBlocks) is what the dashboard's AI Feed panel
 // renders, so every branch must populate it.
@@ -432,8 +432,8 @@ describe("enrichLead — orchestrator", () => {
     expect(mockYelpPhoneSearch).toHaveBeenCalledWith("+15551112222");
   });
 
-  it("does NOT abort enrichment when the pre-search (Custom Search/Places) fails", async () => {
-    mockPreSearchLeadCustom.mockRejectedValue(new Error("custom search down"));
+  it("does NOT abort enrichment when the pre-search (Brave/Places) fails", async () => {
+    mockPreSearchLeadBrave.mockRejectedValue(new Error("brave down"));
     mockPreSearchLeadPlaces.mockRejectedValue(new Error("places down"));
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: "text", text: JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "ok" }) }],
@@ -446,8 +446,8 @@ describe("enrichLead — orchestrator", () => {
     spy.mockRestore();
   });
 
-  it("includes Places block before Custom Search block in the user message (Places is authoritative)", async () => {
-    mockPreSearchLeadCustom.mockResolvedValue({ searches: [{ query: "x", hits: [{}] }] });
+  it("includes Places block before Brave block in the user message (Places is authoritative)", async () => {
+    mockPreSearchLeadBrave.mockResolvedValue({ searches: [{ query: "x", hits: [{}] }] });
     mockPreSearchLeadPlaces.mockResolvedValue({ searches: [{ query: "y", hits: [{}] }] });
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: "text", text: JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "ok" }) }],
@@ -456,10 +456,10 @@ describe("enrichLead — orchestrator", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       const placesIdx = result.userMessage.indexOf("PLACES_PRE_SEARCH_BLOCK");
-      const customIdx = result.userMessage.indexOf("CUSTOM_PRE_SEARCH_BLOCK");
+      const braveIdx = result.userMessage.indexOf("BRAVE_PRE_SEARCH_BLOCK");
       expect(placesIdx).toBeGreaterThan(-1);
-      expect(customIdx).toBeGreaterThan(-1);
-      expect(placesIdx).toBeLessThan(customIdx);
+      expect(braveIdx).toBeGreaterThan(-1);
+      expect(placesIdx).toBeLessThan(braveIdx);
     }
   });
 
