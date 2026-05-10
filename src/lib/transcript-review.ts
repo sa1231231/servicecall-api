@@ -41,6 +41,9 @@ const MIN_DURATION_MS = 15_000;
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
+/** Post-hook orchestrator: runs all the precondition gates before invoking
+ *  the analyzer. Skipped silently when the agent isn't opted in or the
+ *  call is too short. Used as fire-and-forget from src/routes/retell/post-hook.ts. */
 export async function runTranscriptReview(input: TranscriptReviewInput): Promise<void> {
   const { callId, agentId, call, isShadowOrTest } = input;
 
@@ -50,15 +53,8 @@ export async function runTranscriptReview(input: TranscriptReviewInput): Promise
   }
 
   const clientSlug = agentIdToSlug[agentId];
-  if (!clientSlug) {
-    // No client config means notifications already short-circuited;
-    // there's nothing to suggest fixes for.
-    return;
-  }
-  // Read the full client doc so we get fields not held in the in-memory
-  // ClientNotificationConfig cache (transcript_review_enabled, source_draft,
-  // retell_agents). Adds one Mongo read per analyzed call — cheap relative
-  // to the Anthropic round-trip we're about to make.
+  if (!clientSlug) return;
+
   const clientDoc = await getClientDocument(clientSlug);
   if (!clientDoc) return;
 
@@ -79,51 +75,95 @@ export async function runTranscriptReview(input: TranscriptReviewInput): Promise
     return;
   }
 
-  // Build agent context from the canonical JSON. Best-effort: if the parse
-  // fails we still run the analyzer, just without targeting node ids.
+  const result = await analyzeAndPersist({
+    callId,
+    agentId,
+    clientSlug,
+    sourceDraft: clientDoc.source_draft,
+    canonicalJson: clientDoc.retell_agents?.[agentId],
+    call,
+  });
+  if (result.ok) {
+    console.log(`[transcript-review] ${callId} produced ${result.suggestionsCreated} suggestion(s)`);
+  } else {
+    console.warn(`[transcript-review] analyzer failed for ${callId}: ${result.error}`);
+  }
+}
+
+// ── Lower-level helper (manual-trigger entry point) ─────────────────────────
+
+export interface AnalyzeAndPersistInput {
+  callId: string;
+  agentId: string;
+  clientSlug: string;
+  sourceDraft?: string;
+  /** Canonical JSON for the agent, if available — used to build the
+   *  per-node agent context the analyzer can target. */
+  canonicalJson?: Record<string, unknown>;
+  call: TranscriptReviewInput["call"];
+}
+
+export interface AnalyzeAndPersistSuccess {
+  ok: true;
+  suggestionsCreated: number;
+  /** IDs of the suggestion documents created. */
+  suggestionIds: string[];
+}
+
+export interface AnalyzeAndPersistFailure {
+  ok: false;
+  error: string;
+}
+
+export type AnalyzeAndPersistResult = AnalyzeAndPersistSuccess | AnalyzeAndPersistFailure;
+
+/** Bypasses the orchestrator's precondition gates (opt-in, duration,
+ *  transcript length). Used by the manual-trigger endpoint to backfill
+ *  analysis on calls that completed before the operator opted in. */
+export async function analyzeAndPersist(input: AnalyzeAndPersistInput): Promise<AnalyzeAndPersistResult> {
+  const { callId, agentId, clientSlug, sourceDraft, canonicalJson, call } = input;
+
+  const transcript = (call.transcript ?? "").trim();
+  if (!transcript) return { ok: false, error: "Call has no transcript — cannot analyze." };
+
   let agentContext: string | undefined;
-  try {
-    const canonical = clientDoc.retell_agents?.[agentId];
-    if (canonical) {
-      const parsed = parseConversationFlow(canonical);
+  if (canonicalJson) {
+    try {
+      const parsed = parseConversationFlow(canonicalJson);
       agentContext = buildAgentContext(parsed);
+    } catch (err) {
+      console.warn(`[transcript-review] could not parse canonical for ${agentId}:`, err);
     }
-  } catch (err) {
-    console.warn(`[transcript-review] could not parse canonical for ${agentId}:`, err);
   }
 
   const analyzerResult = await analyzeTranscript({
     callId,
     agentId,
     clientSlug,
-    sourceDraft: clientDoc.source_draft,
+    sourceDraft,
     transcript,
     transcriptObject: call.transcript_object,
     collectedVars: call.collected_dynamic_variables ?? {},
     dynamicVars: call.retell_llm_dynamic_variables ?? {},
     disconnectionReason: call.disconnection_reason ?? "unknown",
-    durationMs,
+    durationMs: call.duration_ms ?? 0,
     agentContext,
   });
 
   if (!analyzerResult.ok) {
-    console.warn(`[transcript-review] analyzer failed for ${callId}: ${analyzerResult.error}`);
-    return;
+    return { ok: false, error: analyzerResult.error };
   }
 
   if (analyzerResult.findings.length === 0) {
-    console.log(`[transcript-review] ${callId} clean (no findings)`);
-    return;
+    return { ok: true, suggestionsCreated: 0, suggestionIds: [] };
   }
 
-  // Persist findings + 1:1 suggestions. Stamp the AI trace onto every
-  // finding so the operator can audit what the model saw.
   const trace = analyzerResult.trace;
   const findingDocs: CallFindingDoc[] = analyzerResult.findings.map((f) => ({
     call_id: callId,
     agent_id: agentId,
     client_slug: clientSlug,
-    source_draft: clientDoc.source_draft,
+    source_draft: sourceDraft,
     type: f.type,
     severity: f.severity,
     transcript_span: f.transcript_span,
@@ -134,9 +174,9 @@ export async function runTranscriptReview(input: TranscriptReviewInput): Promise
   }));
 
   const inserted = await insertFindings(findingDocs);
-
+  const suggestionIds: string[] = [];
   for (const finding of inserted) {
-    await createSuggestion({
+    const sugg = await createSuggestion({
       agent_id: finding.agent_id,
       client_slug: finding.client_slug,
       finding_ids: [finding._id],
@@ -148,7 +188,8 @@ export async function runTranscriptReview(input: TranscriptReviewInput): Promise
       excerpt: finding.transcript_span.excerpt,
       description: finding.description,
     });
+    suggestionIds.push(sugg._id.toString());
   }
 
-  console.log(`[transcript-review] ${callId} produced ${inserted.length} suggestion(s)`);
+  return { ok: true, suggestionsCreated: inserted.length, suggestionIds };
 }

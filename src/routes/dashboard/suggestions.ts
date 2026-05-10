@@ -9,6 +9,8 @@
 import { Router, type Request, type Response } from "express";
 import express from "express";
 import { ObjectId } from "mongodb";
+import Retell from "retell-sdk";
+import { config } from "../../config.js";
 import { requireFeature } from "../../middleware/require-role.js";
 import {
   getSuggestion,
@@ -25,6 +27,7 @@ import { logAudit } from "../../lib/audit.js";
 import { saveAndPublishHandler } from "./node-editor.js";
 import { getLatestVersion } from "../../lib/agent-versions.js";
 import { loadDraft, updateDraftExportConfig } from "../../lib/agent-from-draft.js";
+import { analyzeAndPersist } from "../../lib/transcript-review.js";
 
 export const suggestionsRouter = Router();
 suggestionsRouter.use(express.json());
@@ -336,6 +339,80 @@ suggestionsRouter.post(
       note,
     });
     res.json({ success: true, suggestion: updated });
+  },
+);
+
+// ── Manual analyze (backfill / on-demand) ───────────────────────────────────
+//
+// Runs the analyzer on a specific completed call regardless of the agent's
+// transcript_review_enabled flag. Operator-driven; gated by the same write
+// permission as approvals. The post-hook orchestrator only fires on new
+// calls, so this is the path for re-analyzing or for the initial backfill
+// when an agent first opts in.
+
+suggestionsRouter.post(
+  "/agents/:slug/calls/:callId/analyze",
+  requireFeature("transcript_review", "write"),
+  async (req, res) => {
+    const slug = String(req.params.slug);
+    const callId = String(req.params.callId);
+
+    const clientDoc = await getClientDocument(slug);
+    if (!clientDoc) {
+      res.status(404).json({ error: `Client "${slug}" not found` });
+      return;
+    }
+    if (!clientDoc.agent_id) {
+      res.status(400).json({ error: `Client "${slug}" has no agent_id` });
+      return;
+    }
+
+    // Fetch the full call from Retell so we get the transcript +
+    // transcript_object. The locally-cached call_logs row may not have the
+    // transcript yet (it's populated async by owner-monitor) and we don't
+    // want to fail-open on stale data.
+    let retellCall: Record<string, unknown>;
+    try {
+      const retell = new Retell({ apiKey: config.RETELL_API_KEY });
+      retellCall = (await retell.call.retrieve(callId)) as unknown as Record<string, unknown>;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      res.status(502).json({ error: `Failed to fetch call from Retell: ${msg}` });
+      return;
+    }
+
+    const result = await analyzeAndPersist({
+      callId,
+      agentId: clientDoc.agent_id,
+      clientSlug: slug,
+      sourceDraft: clientDoc.source_draft,
+      canonicalJson: clientDoc.retell_agents?.[clientDoc.agent_id],
+      call: {
+        call_id: callId,
+        transcript: retellCall.transcript as string | undefined,
+        transcript_object: retellCall.transcript_object as Array<Record<string, unknown>> | undefined,
+        collected_dynamic_variables: retellCall.collected_dynamic_variables as Record<string, unknown> | undefined,
+        retell_llm_dynamic_variables: retellCall.retell_llm_dynamic_variables as Record<string, unknown> | undefined,
+        disconnection_reason: retellCall.disconnection_reason as string | undefined,
+        duration_ms: retellCall.duration_ms as number | undefined,
+      },
+    });
+
+    if (!result.ok) {
+      res.status(500).json({ error: result.error });
+      return;
+    }
+
+    await logAudit(req, "manual_analyze_call", slug, {
+      callId,
+      suggestionsCreated: result.suggestionsCreated,
+    });
+
+    res.json({
+      success: true,
+      suggestions_created: result.suggestionsCreated,
+      suggestion_ids: result.suggestionIds,
+    });
   },
 );
 
