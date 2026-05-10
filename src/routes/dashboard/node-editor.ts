@@ -43,6 +43,18 @@ import { replaceBusinessName } from "../../lib/replace-business-name.js";
 
 export const nodeEditorRouter = Router({ mergeParams: true });
 
+// Agent-level fields the dashboard is allowed to edit AND that the rollback
+// path must restore. Shared between the edit-settings route and the rollback
+// route so a new field added in one place can't drift from the other.
+export const EDITABLE_AGENT_SETTINGS = new Set<string>([
+  "agent_name", "voice_id", "voice_speed", "voice_temperature",
+  "volume", "enable_backchannel", "backchannel_frequency",
+  "interruption_sensitivity", "ambient_sound", "ambient_sound_volume",
+  "responsiveness", "begin_message_delay_ms", "reminder_trigger_ms",
+  "reminder_max_count", "end_call_after_silence_ms", "max_call_duration_ms",
+  "language", "webhook_url",
+]);
+
 function retell() {
   return new Retell({ apiKey: config.RETELL_API_KEY });
 }
@@ -685,24 +697,15 @@ nodeEditorRouter.post("/:agentId/edit-agent-settings", async (req, res) => {
   const slug = p.slug;
   const agentId = p.agentId;
 
-  const ALLOWED_SETTINGS = new Set([
-    "agent_name", "voice_id", "voice_speed", "voice_temperature",
-    "volume", "enable_backchannel", "backchannel_frequency",
-    "interruption_sensitivity", "ambient_sound", "ambient_sound_volume",
-    "responsiveness", "begin_message_delay_ms", "reminder_trigger_ms",
-    "reminder_max_count", "end_call_after_silence_ms", "max_call_duration_ms",
-    "language", "webhook_url",
-  ]);
-
   const updates: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(req.body)) {
-    if (ALLOWED_SETTINGS.has(key)) {
+    if (EDITABLE_AGENT_SETTINGS.has(key)) {
       updates[key] = value;
     }
   }
 
   if (Object.keys(updates).length === 0) {
-    res.status(400).json({ error: "No valid settings provided", allowed: [...ALLOWED_SETTINGS] });
+    res.status(400).json({ error: "No valid settings provided", allowed: [...EDITABLE_AGENT_SETTINGS] });
     return;
   }
 
@@ -834,7 +837,13 @@ nodeEditorRouter.post("/:agentId/rename-business", async (req, res) => {
 
 // ── POST /:agentId/rollback — Restore From Version Snapshot ──────────────────
 
-nodeEditorRouter.post("/:agentId/rollback", async (req, res) => {
+// Exported so the suggestion-rollback route can delegate without forking the
+// publish/restore logic. Same shape as saveAndPublishHandler — caller is
+// responsible for setting req.params (slug, agentId) and req.body.versionId.
+export async function rollbackToVersionHandler(
+  req: Parameters<Parameters<typeof nodeEditorRouter.post>[1]>[0],
+  res: Parameters<Parameters<typeof nodeEditorRouter.post>[1]>[1],
+): Promise<void> {
   const p = req.params as Record<string, string>;
   const slug = p.slug;
   const agentId = p.agentId;
@@ -882,11 +891,17 @@ nodeEditorRouter.post("/:agentId/rollback", async (req, res) => {
     // Push old version to Retell
     await pushFlowToRetell(retell(), currentSnapshot.conversationFlowId, version.canonicalJson);
 
-    // Check if agent-level settings differ
+    // Restore agent-level settings (voice, backchannel, language, webhook,
+    // call-control timing, etc.) by diffing the snapshot against the live
+    // state. The conversation-flow push above only restores flow content —
+    // agent.update is a separate Retell API call. Anything in
+    // EDITABLE_AGENT_SETTINGS that differs gets restored to its snapshot
+    // value; missing keys on the snapshot are left alone (don't have
+    // anything to roll back to).
     const oldAgent = version.canonicalJson;
     const currentAgent = currentSnapshot.canonicalJson;
     const agentUpdates: Record<string, unknown> = {};
-    for (const key of ["agent_name", "voice_id", "voice_speed", "voice_temperature", "volume"]) {
+    for (const key of EDITABLE_AGENT_SETTINGS) {
       if (oldAgent[key] !== undefined && oldAgent[key] !== currentAgent[key]) {
         agentUpdates[key] = oldAgent[key];
       }
@@ -944,7 +959,9 @@ nodeEditorRouter.post("/:agentId/rollback", async (req, res) => {
     console.error(`[node-editor] rollback error:`, msg);
     res.status(500).json({ error: msg });
   }
-});
+}
+
+nodeEditorRouter.post("/:agentId/rollback", (req, res) => rollbackToVersionHandler(req, res));
 
 // ── POST /:agentId/add-data-point — Add Data Collection Question ─────────────
 

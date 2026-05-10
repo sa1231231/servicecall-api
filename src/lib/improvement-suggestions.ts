@@ -13,7 +13,7 @@ import type {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type SuggestionStatus = "pending" | "approved" | "rejected" | "applied";
+export type SuggestionStatus = "pending" | "approved" | "rejected" | "applied" | "rolled_back";
 
 export type SuggestionScope = "agent" | "draft";
 
@@ -36,6 +36,10 @@ export interface SuggestionDoc {
   applied_at?: Date;
   /** ID of the agent_versions snapshot created when the change was published. */
   applied_version_id?: string;
+  /** When this suggestion was rolled back (status="rolled_back"). */
+  rolled_back_at?: Date;
+  /** ID of the agent_versions snapshot we restored to. */
+  rolled_back_to_version_id?: string;
   decided_by?: string;
   decision_note?: string;
 }

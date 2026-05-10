@@ -376,8 +376,7 @@
     margin-bottom: 0.4rem;
   }
   .suggestion-card .sg-desc { margin: 0 0 0.6rem; font-size: 0.88rem; }
-  .suggestion-card pre.sg-excerpt,
-  .suggestion-card pre.sg-diff {
+  .suggestion-card pre.sg-excerpt {
     background: #f8fafc;
     border: 1px solid #e2e8f0;
     border-radius: 6px;
@@ -390,6 +389,29 @@
     overflow-y: auto;
     margin: 0;
   }
+  .suggestion-card .sg-diff {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.78rem;
+    color: #334155;
+    max-height: 14rem;
+    overflow: auto;
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    line-height: 1.45;
+  }
+  .suggestion-card .sg-diff > div {
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 0 0.2rem;
+    min-height: 1.1em;
+  }
+  .suggestion-card .sg-diff-add { background: #dcfce7; color: #166534; }
+  .suggestion-card .sg-diff-rem { background: #fee2e2; color: #991b1b; }
+  .suggestion-card .sg-diff-eq  { color: #475569; }
+  .suggestion-card .sg-diff-blank { background: #f1f5f9; color: transparent; user-select: none; }
   .suggestion-card .sg-component {
     margin: 0.5rem 0 0.4rem;
     padding: 0.4rem 0.65rem;
@@ -438,6 +460,9 @@
   .suggestion-card .sg-reject {
     background: #fff; color: #b91c1c; border-color: #fecaca;
   }
+  .suggestion-card .sg-rollback {
+    background: #fff; color: #92400e; border-color: #fde68a;
+  }
   .suggestion-card .sg-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
   .sg-badge {
     display: inline-block;
@@ -454,6 +479,7 @@
   .sg-badge.applied  { background: #dcfce7; color: #166534; }
   .sg-badge.pending  { background: #dbeafe; color: #1d4ed8; }
   .sg-badge.rejected { background: #f1f5f9; color: #475569; }
+  .sg-badge.rolled_back { background: #fef3c7; color: #92400e; }
   @media (max-width: 768px) {
     .agent-tabs-shell { grid-template-columns: 1fr; gap: 0.5rem; }
     .agent-tabs-nav {
@@ -1557,6 +1583,7 @@
             <button class="range-btn active" data-suggestion-status="pending" onclick="switchSuggestionsFilter('pending')">Pending</button>
             <button class="range-btn" data-suggestion-status="applied" onclick="switchSuggestionsFilter('applied')">Applied</button>
             <button class="range-btn" data-suggestion-status="rejected" onclick="switchSuggestionsFilter('rejected')">Rejected</button>
+            <button class="range-btn" data-suggestion-status="rolled_back" onclick="switchSuggestionsFilter('rolled_back')">Rolled back</button>
           </div>
         </div>
         <div id="suggestionsBubbleNote" style="display:none;font-size:0.82rem;color:#475569;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:#f1f5f9;border-radius:6px;border:1px solid #e2e8f0;"></div>
@@ -3379,7 +3406,7 @@
   function renderSuggestions(target, items) {
     if (!items || items.length === 0) {
       target.innerHTML = '<div style="padding:1.5rem;text-align:center;color:#64748b;border:1px dashed #e2e8f0;border-radius:8px;">'
-        + 'No ' + esc(suggestionsCurrentStatus) + ' suggestions.'
+        + 'No ' + esc(String(suggestionsCurrentStatus).replace(/_/g, ' ')) + ' suggestions.'
         + (suggestionsCurrentStatus === 'pending'
             ? '<br><span style="font-size:0.78rem;">New suggestions appear here automatically after each completed call (when transcript review is enabled for this agent).</span>'
             : '')
@@ -3420,12 +3447,24 @@
         : '';
       const rejectBtn = '<button data-sg-action="reject" data-sg-id="' + esc(s._id) + '" class="sg-reject">Reject</button>';
       actionsHtml = '<div class="sg-actions">' + approveAgentBtn + approveTemplateBtn + rejectBtn + '</div>';
+    } else if (status === 'applied' && s.applied_version_id) {
+      // Roll back is the inverse of approve — only offered when there's an
+      // applied_version_id to derive the prior snapshot from. Advisory
+      // approvals (no version) skip this button.
+      const rollbackBtn = '<button data-sg-action="rollback" data-sg-id="' + esc(s._id) + '" class="sg-rollback">Roll back</button>';
+      actionsHtml = '<div class="sg-actions">' + rollbackBtn + '</div>';
     }
 
     const appliedNote = s.applied_version_id
       ? '<div class="sg-meta">Applied as version <code>' + esc(s.applied_version_id) + '</code>'
         + (s.decided_by ? ' by ' + esc(s.decided_by) : '')
         + (s.decision_note ? ' — ' + esc(s.decision_note) : '')
+        + '</div>'
+      : '';
+    const rolledBackNote = s.rolled_back_to_version_id
+      ? '<div class="sg-meta">Rolled back to version <code>' + esc(s.rolled_back_to_version_id) + '</code>'
+        + (s.rolled_back_at ? ' on ' + new Date(s.rolled_back_at).toLocaleString() : '')
+        + (s.decided_by ? ' by ' + esc(s.decided_by) : '')
         + '</div>'
       : '';
 
@@ -3438,11 +3477,14 @@
       + '<strong>Editing:</strong> ' + esc(componentLabel)
       + '</div>';
 
+    const sbs = _sgSideBySideDiff(diff.before, diff.after);
+
+    const statusLabel = String(status).replace(/_/g, ' ');
     return '<article class="suggestion-card" data-sg-card="' + esc(s._id) + '">'
       + '<h4>'
         + '<span class="sg-badge ' + esc(sev) + '">' + esc(sev) + '</span>'
         + '<span>' + esc(typeLabel) + '</span>'
-        + '<span class="sg-badge ' + esc(status) + '">' + esc(status) + '</span>'
+        + '<span class="sg-badge ' + esc(status) + '">' + esc(statusLabel) + '</span>'
       + '</h4>'
       + '<div class="sg-meta">' + new Date(s.created_at).toLocaleString() + '</div>'
       + '<p class="sg-desc">' + esc(s.description || '') + '</p>'
@@ -3451,10 +3493,11 @@
       + '</details>'
       + componentBanner
       + '<div class="sg-diff-grid">'
-        + '<div><h5>Before</h5><pre class="sg-diff">' + esc(diff.before || '—') + '</pre></div>'
-        + '<div><h5>After</h5><pre class="sg-diff">' + esc(diff.after || '—') + '</pre></div>'
+        + '<div><h5>Before</h5><div class="sg-diff">' + _sgRenderDiffSide(sbs.leftRows) + '</div></div>'
+        + '<div><h5>After</h5><div class="sg-diff">' + _sgRenderDiffSide(sbs.rightRows) + '</div></div>'
       + '</div>'
       + appliedNote
+      + rolledBackNote
       + actionsHtml
       + '</article>';
   }
@@ -3472,6 +3515,18 @@
     if (action === 'reject') {
       const note = window.prompt('Optional rejection note:') || '';
       body.note = note.trim();
+    } else if (action === 'rollback') {
+      // Confirm because rollback re-publishes to Retell and supersedes any
+      // edits made after the suggestion was applied. The pre-rollback
+      // snapshot is auto-created by the node-editor handler, so this is
+      // recoverable, but the operator should know they're republishing.
+      const ok = window.confirm(
+        'Roll back this suggestion?\n\n'
+        + 'This will restore the agent to the version that existed before '
+        + 'this suggestion was applied, and republish it to Retell. '
+        + 'A pre-rollback snapshot is saved automatically.'
+      );
+      if (!ok) return;
     } else if (action === 'approve' && scope) {
       body.scope = scope;
     }
@@ -3493,6 +3548,8 @@
       let msg;
       if (action === 'reject') {
         msg = 'Rejected.';
+      } else if (action === 'rollback') {
+        msg = 'Rolled back to version ' + (data.restored_version ?? '?') + '.';
       } else if (data.draft_propagation && data.draft_propagation.ok) {
         msg = 'Published to agent + template (' + data.draft_propagation.draftName + ').';
       } else if (data.draft_propagation && !data.draft_propagation.ok) {
@@ -8996,6 +9053,52 @@
     while (i < m) out.push({ type: 'rem', text: aLines[i++] });
     while (j < n) out.push({ type: 'add', text: bLines[j++] });
     return out;
+  }
+
+  // Build aligned left/right rows for the suggestion-card side-by-side diff.
+  // Consecutive rem/add lines are paired up so the two columns visually line
+  // up; the shorter side gets blank rows so equal context still renders on
+  // the same baseline across both columns.
+  function _sgSideBySideDiff(before, after) {
+    const aLines = String(before == null ? '' : before).split('\n');
+    const bLines = String(after  == null ? '' : after ).split('\n');
+    const diff = _neLineDiff(aLines, bLines);
+    const leftRows = [];
+    const rightRows = [];
+    let pendRem = [];
+    let pendAdd = [];
+    const flush = () => {
+      const max = Math.max(pendRem.length, pendAdd.length);
+      for (let k = 0; k < max; k++) {
+        leftRows.push(k < pendRem.length ? { type: 'rem', text: pendRem[k] } : { type: 'blank' });
+        rightRows.push(k < pendAdd.length ? { type: 'add', text: pendAdd[k] } : { type: 'blank' });
+      }
+      pendRem = [];
+      pendAdd = [];
+    };
+    for (const ln of diff) {
+      if (ln.type === 'rem') pendRem.push(ln.text);
+      else if (ln.type === 'add') pendAdd.push(ln.text);
+      else {
+        flush();
+        leftRows.push({ type: 'eq', text: ln.text });
+        rightRows.push({ type: 'eq', text: ln.text });
+      }
+    }
+    flush();
+    return { leftRows, rightRows };
+  }
+
+  function _sgRenderDiffSide(rows) {
+    if (!rows || rows.length === 0) return '<div class="sg-diff-eq">—</div>';
+    return rows.map((r) => {
+      if (r.type === 'blank') return '<div class="sg-diff-blank"> </div>';
+      const cls = r.type === 'add' ? 'sg-diff-add'
+                : r.type === 'rem' ? 'sg-diff-rem'
+                : 'sg-diff-eq';
+      const text = r.text == null || r.text === '' ? ' ' : esc(r.text);
+      return '<div class="' + cls + '">' + text + '</div>';
+    }).join('');
   }
 
   function _renderVersionDiffModal({ aLabel, bLabel, aLines, bLines }) {

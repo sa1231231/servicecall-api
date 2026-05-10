@@ -134,6 +134,29 @@ export async function getLatestVersion(
   );
 }
 
+// Find the snapshot taken just before a given version. Used by the
+// suggestion-rollback path: an applied suggestion stores `applied_version_id`
+// pointing at the post-apply snapshot, and rollback wants the version that
+// existed *before* that publish.
+//
+// Returns null if `versionId` doesn't exist, refers to a different
+// slug+agent, or is the very first version (nothing to roll back to).
+export async function getPreviousVersion(
+  versionId: string,
+): Promise<WithId<AgentVersionDoc> | null> {
+  if (!ObjectId.isValid(versionId)) return null;
+  const target = await col().findOne({ _id: new ObjectId(versionId) });
+  if (!target) return null;
+  return col().findOne(
+    {
+      slug: target.slug,
+      agentId: target.agentId,
+      version: { $lt: target.version },
+    },
+    { sort: { version: -1 } },
+  );
+}
+
 async function getNextVersionNumber(
   slug: string,
   agentId: string,

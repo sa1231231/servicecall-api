@@ -24,8 +24,8 @@ import {
 import { applyToDraft } from "../../lib/draft-applier.js";
 import { getClientDocument } from "../../config/client-store.js";
 import { logAudit } from "../../lib/audit.js";
-import { saveAndPublishHandler } from "./node-editor.js";
-import { getLatestVersion } from "../../lib/agent-versions.js";
+import { saveAndPublishHandler, rollbackToVersionHandler } from "./node-editor.js";
+import { getLatestVersion, getPreviousVersion } from "../../lib/agent-versions.js";
 import { loadDraft, updateDraftExportConfig } from "../../lib/agent-from-draft.js";
 import { analyzeAndPersist } from "../../lib/transcript-review.js";
 
@@ -342,6 +342,112 @@ suggestionsRouter.post(
   },
 );
 
+// ── Rollback ────────────────────────────────────────────────────────────────
+//
+// Restores the agent to the state immediately before this suggestion was
+// applied. Same trust level as approve: an applied change is a publish, so
+// undoing one is also a publish — gated by transcript_review:write.
+//
+// Mechanics: applied_version_id points at the post-apply snapshot. We look
+// up the version *before* it (getPreviousVersion) and delegate to the
+// existing node-editor rollback path. The suggestion itself flips to
+// status="rolled_back" so the dashboard can hide it from the applied list
+// and a future analyzer can use the rollback as a negative training signal.
+
+suggestionsRouter.post(
+  "/suggestions/:id/rollback",
+  requireFeature("transcript_review", "write"),
+  async (req, res) => {
+    const id = String(req.params.id);
+    if (!ObjectId.isValid(id)) {
+      res.status(400).json({ error: "Invalid suggestion id" });
+      return;
+    }
+    const suggestion = await getSuggestion(id);
+    if (!suggestion) {
+      res.status(404).json({ error: "Suggestion not found" });
+      return;
+    }
+    if (suggestion.status !== "applied") {
+      res.status(409).json({
+        error: `Only applied suggestions can be rolled back (got status=${suggestion.status})`,
+      });
+      return;
+    }
+    if (!suggestion.applied_version_id) {
+      // Advisory approvals don't create a version snapshot, so they can't be
+      // rolled back this way — operator has to undo the manual edit by hand.
+      res.status(400).json({
+        error: "Suggestion has no applied_version_id (likely advisory) — nothing to roll back to",
+      });
+      return;
+    }
+
+    const previous = await getPreviousVersion(suggestion.applied_version_id);
+    if (!previous) {
+      res.status(400).json({
+        error:
+          "No prior version found — applied snapshot may be the very first one, "
+          + "or the prior snapshot was pruned by the 90-day TTL",
+      });
+      return;
+    }
+
+    // Delegate to the node-editor rollback handler (captured-response
+    // proxy, same shape as approve uses for save-and-publish). Failures
+    // there bubble back as the captured status; the suggestion stays
+    // "applied" so the operator can retry.
+    const captured: { status: number; body: unknown } = { status: 200, body: undefined };
+    const proxyRes = makeCapturedResponse(captured);
+    const proxyReq = req as unknown as Request & {
+      params: Record<string, string>;
+      body: Record<string, unknown>;
+    };
+    proxyReq.params = { slug: suggestion.client_slug, agentId: suggestion.agent_id };
+    proxyReq.body = { versionId: previous._id.toString() };
+
+    try {
+      await rollbackToVersionHandler(
+        proxyReq as Parameters<typeof rollbackToVersionHandler>[0],
+        proxyRes,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      res.status(500).json({ error: `rollback threw: ${msg}` });
+      return;
+    }
+
+    if (captured.status >= 400) {
+      res.status(captured.status).json(captured.body);
+      return;
+    }
+
+    const note = typeof req.body?.note === "string" ? req.body.note.trim() : undefined;
+    const updated = await updateSuggestion(id, {
+      status: "rolled_back",
+      rolled_back_at: new Date(),
+      rolled_back_to_version_id: previous._id.toString(),
+      decided_by: req.user?.username,
+      decision_note: note || `Rolled back to version ${previous.version}`,
+    });
+
+    await logAudit(req, "rollback_transcript_suggestion", suggestion.client_slug, {
+      suggestionId: id,
+      type: suggestion.type,
+      applied_version_id: suggestion.applied_version_id,
+      rolled_back_to_version_id: previous._id.toString(),
+      restored_version: previous.version,
+    });
+
+    res.json({
+      success: true,
+      suggestion: updated,
+      restored_version: previous.version,
+      restored_version_id: previous._id.toString(),
+    });
+  },
+);
+
 // ── Manual analyze (backfill / on-demand) ───────────────────────────────────
 //
 // Runs the analyzer on a specific completed call regardless of the agent's
@@ -470,9 +576,12 @@ suggestionsRouter.post(
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function parseStatus(raw: unknown): "pending" | "approved" | "rejected" | "applied" | undefined {
+function parseStatus(raw: unknown): import("../../lib/improvement-suggestions.js").SuggestionStatus | undefined {
   if (typeof raw !== "string") return undefined;
-  if (raw === "pending" || raw === "approved" || raw === "rejected" || raw === "applied") {
+  if (
+    raw === "pending" || raw === "approved" || raw === "rejected"
+    || raw === "applied" || raw === "rolled_back"
+  ) {
     return raw;
   }
   return undefined;

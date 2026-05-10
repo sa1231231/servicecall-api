@@ -356,6 +356,80 @@ describe("POST /:agentId/rollback", () => {
     );
   });
 
+  it("restores the broader agent settings (backchannel, language, webhook_url, …) — not just the original 5", async () => {
+    // Regression for the rollback gap: the handler used to hardcode a 5-field
+    // list, leaving things like webhook_url, language, and backchannel drift
+    // in place after rollback even though the snapshot contained them. The
+    // shared EDITABLE_AGENT_SETTINGS constant now drives both edit-settings
+    // and rollback so this test covers the full set.
+    mockGetClientDocument.mockResolvedValue(makeDoc());
+    mockGetVersion.mockResolvedValue({
+      _id: "v123",
+      slug: "acme",
+      agentId: "agent_1",
+      version: 5,
+      canonicalJson: {
+        conversationFlow: { nodes: [] },
+        agent_name: "Old",
+        webhook_url: "https://old.example.com/hook",
+        language: "en-US",
+        enable_backchannel: true,
+        backchannel_frequency: 0.4,
+        interruption_sensitivity: 0.7,
+        ambient_sound: "coffee-shop",
+        responsiveness: 0.9,
+        end_call_after_silence_ms: 30000,
+      },
+    });
+    mockFetchRetellAgent
+      .mockResolvedValueOnce({
+        canonicalJson: {
+          conversationFlow: {},
+          agent_name: "New",
+          webhook_url: "https://new.example.com/hook",
+          language: "es-ES",
+          enable_backchannel: false,
+          backchannel_frequency: 0.1,
+          interruption_sensitivity: 0.2,
+          ambient_sound: null,
+          responsiveness: 0.5,
+          end_call_after_silence_ms: 5000,
+        },
+        conversationFlowId: "flow_1",
+        agentName: "New",
+      })
+      .mockResolvedValueOnce({
+        canonicalJson: { conversationFlow: {} },
+        conversationFlowId: "flow_1",
+        agentName: "Old",
+      });
+    mockParseConversationFlow.mockReturnValue({ paths: [] });
+
+    const req = makeReq({
+      params: { slug: "acme", agentId: "agent_1" },
+      body: { versionId: "v123" },
+    });
+    const res = makeRes();
+    await runRoute("post", "/:agentId/rollback", req, res);
+
+    expect(res._status).toBe(200);
+    expect(mockAgentUpdate).toHaveBeenCalledTimes(1);
+    const restored = mockAgentUpdate.mock.calls[0][1];
+    // Every field that differed must be in the restore payload — not just
+    // the legacy 5.
+    expect(restored).toEqual(expect.objectContaining({
+      agent_name: "Old",
+      webhook_url: "https://old.example.com/hook",
+      language: "en-US",
+      enable_backchannel: true,
+      backchannel_frequency: 0.4,
+      interruption_sensitivity: 0.7,
+      ambient_sound: "coffee-shop",
+      responsiveness: 0.9,
+      end_call_after_silence_ms: 30000,
+    }));
+  });
+
   it("skips agent.update when no agent-level settings differ", async () => {
     mockGetClientDocument.mockResolvedValue(makeDoc());
     mockGetVersion.mockResolvedValue({
