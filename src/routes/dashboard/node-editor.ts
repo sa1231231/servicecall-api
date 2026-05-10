@@ -2049,7 +2049,7 @@ nodeEditorRouter.post("/:agentId/edit-path-end-mode", async (req, res) => {
 // On validation failure the response is identical for both routes:
 // `400 { error: "Validation failed", errors: [...] }`.
 
-async function saveAndPublishHandler(
+export async function saveAndPublishHandler(
   req: Parameters<Parameters<typeof nodeEditorRouter.post>[1]>[0],
   res: Parameters<Parameters<typeof nodeEditorRouter.post>[1]>[1],
   dryRun: boolean,

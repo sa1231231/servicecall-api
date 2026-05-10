@@ -367,6 +367,37 @@ export const FEATURES: Feature[] = [
       },
     },
   },
+  {
+    key: "transcript_review",
+    label: "Transcript Review",
+    description: "AI-generated suggestions from call transcripts (unanswered questions, misheard confirmations, etc.). Approving a suggestion publishes the change to Retell.",
+    available: ["none", "read", "write", "manage"],
+    levels: {
+      read: {
+        ui: ["Suggestions tab on agent page", "Suggestions inbox"],
+        routes: [
+          "GET /dashboard/api/agents/:slug/suggestions",
+          "GET /dashboard/api/suggestions",
+          "GET /dashboard/api/suggestions/:id",
+        ],
+      },
+      write: {
+        ui: ["Approve / Edit / Reject buttons on suggestion cards"],
+        routes: [
+          "POST /dashboard/api/suggestions/:id/approve",
+          "POST /dashboard/api/suggestions/:id/edit",
+          "POST /dashboard/api/suggestions/:id/reject",
+        ],
+      },
+      manage: {
+        ui: ["Per-agent transcript_review_enabled toggle", "Per-draft is_template toggle"],
+        routes: [
+          "PATCH /dashboard/api/agents/:slug (transcript_review_enabled field)",
+          "PUT /form/drafts/:id (is_template field)",
+        ],
+      },
+    },
+  },
 ];
 
 export const FEATURE_KEYS: string[] = FEATURES.map((f) => f.key);

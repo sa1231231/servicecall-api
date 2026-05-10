@@ -86,6 +86,16 @@ export interface JsonClientEntry {
   // ID of the agent_folders document this client belongs to. Null/missing
   // means the client lives in the "Unfiled" pseudo-folder on the dashboard.
   folder_id?: string | null;
+  // Per-client opt-in: when true, every completed call enqueues an
+  // Anthropic-driven transcript review that surfaces approval-gated
+  // suggestions in the dashboard. Default off (cost guard). Inherited
+  // automatically from the source draft when that draft is `is_template`.
+  transcript_review_enabled?: boolean;
+  // Name of the draft this agent was created from (via /agents/from-draft).
+  // Used by the transcript-review system to scope suggestions back to a
+  // shared template — when set AND the draft is `is_template`, an approval
+  // can propagate to the draft and its sibling agents (Phase 3).
+  source_draft?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -249,6 +259,8 @@ const EDITABLE_FIELDS = new Set([
   "message_types",
   "resolve_rules",
   "folder_id",
+  "transcript_review_enabled",
+  "source_draft",
 ]);
 
 /** Thrown when an `expectedVersion` guard fails (someone else wrote first). */

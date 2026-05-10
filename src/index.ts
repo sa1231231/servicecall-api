@@ -11,6 +11,7 @@ import { retellRouter } from "./routes/retell/index.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
 import { dashboardRouter, dashboardApiRouter, backupRouter } from "./routes/dashboard/index.js";
+import { suggestionsRouter } from "./routes/dashboard/suggestions.js";
 import { qaRouter } from "./routes/qa.js";
 import { leadsRouter, leadsIntakeRouter } from "./routes/leads/index.js";
 import { portalRouter } from "./routes/portal/index.js";
@@ -28,6 +29,8 @@ import { SEED_FEATURE_DEFAULTS } from "./lib/feature-permissions.js";
 import { ensureAuditIndex } from "./lib/audit.js";
 import { ensureVersionIndexes } from "./lib/agent-versions.js";
 import { ensurePendingLeadIndexes, resetStaleEnrichingLeads } from "./lib/pending-leads.js";
+import { ensureCallFindingIndexes } from "./lib/call-findings.js";
+import { ensureSuggestionIndexes } from "./lib/improvement-suggestions.js";
 import { requireFeature } from "./middleware/require-role.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -383,11 +386,15 @@ formRouter.post("/drafts", async (req, res) => {
 
 formRouter.put("/drafts/:id", async (req, res) => {
   try {
-    const { name, formData, exportConfig } = req.body;
+    const { name, formData, exportConfig, is_template } = req.body;
     const updates: any = { updatedAt: new Date() };
     if (name) updates.name = name;
     if (formData) updates.formData = formData;
     if (exportConfig) updates.exportConfig = exportConfig;
+    // Marks this draft as a reusable template — agents created from it
+    // auto-inherit transcript_review_enabled. Boolean-typed and explicit so
+    // `false` clears the flag.
+    if (typeof is_template === "boolean") updates.is_template = is_template;
     const result = await draftsCollection().findOneAndUpdate(
       { _id: new ObjectId(req.params.id) },
       { $set: updates },
@@ -441,6 +448,7 @@ app.post("/dashboard/logout", (_req, res) => {
 app.use("/dashboard", sessionAuth);
 app.use("/dashboard", dashboardRouter);
 app.use("/dashboard/api", dashboardApiRouter);
+app.use("/dashboard/api", suggestionsRouter);
 app.use("/api/backup", sessionAuth, requireFeature("backups", "write"), backupRouter);
 app.use("/qa", sessionAuth, qaRouter);
 // Intake mounts BEFORE the session-protected leadsRouter so its bearer-token
@@ -477,6 +485,8 @@ await initDb();
 await ensureAuditIndex();
 await ensureVersionIndexes();
 await ensurePendingLeadIndexes();
+await ensureCallFindingIndexes();
+await ensureSuggestionIndexes();
 await resetStaleEnrichingLeads();
 await purgeExpiredClients();
 await loadClientsFromDb();

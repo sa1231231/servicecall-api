@@ -12,6 +12,7 @@ import { triggerDispatchCall } from "../../lib/dispatch-call.js";
 import { saveCallLog, type CallLogDocument } from "../../lib/call-log.js";
 import { resolveDispatch } from "../../lib/resolve-dispatch.js";
 import { checkAgentAlerts } from "../../lib/agent-alerts.js";
+import { runTranscriptReview } from "../../lib/transcript-review.js";
 
 // Retell disconnection_reason values that mean the caller was live-transferred
 // to the dispatch human. When set, suppress the redundant dispatch outbound call.
@@ -339,6 +340,19 @@ export async function postHookHandler(req: Request, res: Response) {
     email_count: dispatch.email?.length ?? 0,
   })).catch(() => {});
   sendOwnerCallMonitor(call, clientConfig, "dispatched").catch(() => {});
+
+  // Fire-and-forget: transcript review (opt-in per client). Surfaces
+  // approval-gated suggestions in the dashboard from recurring failure
+  // patterns (unanswered Q, misheard confirmation, etc.). Skipped at the
+  // orchestrator level when transcript_review_enabled is unset.
+  runTranscriptReview({
+    callId: call.call_id ?? "unknown",
+    agentId,
+    call,
+    isShadowOrTest: (clientConfig.shadow_mode ?? false) || isTestMode,
+  }).catch((err) => {
+    console.error(`[transcript-review] crashed for ${call.call_id}: ${err?.message ?? err}`);
+  });
 
   // Fire-and-forget: webhook
   if (clientConfig.webhook_url) {

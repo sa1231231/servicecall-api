@@ -76,6 +76,7 @@ import { FEATURES, SEED_FEATURE_DEFAULTS } from "../../lib/feature-permissions.j
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dashboardHtmlPath = path.join(__dirname, "../../../public/dashboard.html");
+const suggestionsHtmlPath = path.join(__dirname, "../../../public/suggestions.html");
 
 // Public routes (no auth): serves HTML and config
 export const dashboardRouter = Router();
@@ -86,6 +87,15 @@ dashboardRouter.get("/", (_req, res) => {
   } catch (err) {
     console.error("[dashboard] failed to read dashboard.html:", dashboardHtmlPath, err);
     res.status(500).send("Dashboard not found");
+  }
+});
+
+dashboardRouter.get("/suggestions", (_req, res) => {
+  try {
+    res.type("html").send(fs.readFileSync(suggestionsHtmlPath, "utf8"));
+  } catch (err) {
+    console.error("[dashboard] failed to read suggestions.html:", suggestionsHtmlPath, err);
+    res.status(500).send("Suggestions page not found");
   }
 });
 

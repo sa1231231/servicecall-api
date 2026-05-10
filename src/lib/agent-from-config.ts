@@ -71,6 +71,11 @@ export interface CreateAgentBody {
     contact_email?: string | null;
     contact_timezone?: string | null;
     contact_notes?: string | null;
+    /** Lineage + per-client opt-in for the transcript-review system.
+     *  Set by the from-draft route when the source draft is `is_template`,
+     *  but operators can also set them directly via the agent edit endpoint. */
+    transcript_review_enabled?: boolean;
+    source_draft?: string;
   };
 }
 
@@ -317,6 +322,10 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
     if (body.client.contact_email !== undefined) jsonEntry.contact_email = body.client.contact_email;
     if (body.client.contact_timezone !== undefined) jsonEntry.contact_timezone = body.client.contact_timezone;
     if (body.client.contact_notes !== undefined) jsonEntry.contact_notes = body.client.contact_notes;
+    if (body.client.source_draft !== undefined) jsonEntry.source_draft = body.client.source_draft;
+    if (body.client.transcript_review_enabled !== undefined) {
+      jsonEntry.transcript_review_enabled = body.client.transcript_review_enabled;
+    }
 
     // Auto-populate Client Contact timezone from the dispatch number's area
     // code so the operator gets a sensible default in the Billing tab. Only

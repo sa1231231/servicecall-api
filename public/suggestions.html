@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Suggestions — Service Call Saver</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --card: #181b22;
+      --border: #2a2e38;
+      --text: #e7e9ee;
+      --muted: #8a93a4;
+      --accent: #4f9cff;
+      --good: #5dca8a;
+      --warn: #ecbf5b;
+      --bad: #e96c6c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    }
+    header {
+      padding: 18px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+    header nav a {
+      color: var(--muted);
+      text-decoration: none;
+      margin-right: 12px;
+      font-size: 13px;
+    }
+    header nav a:hover { color: var(--text); }
+    main { max-width: 920px; margin: 0 auto; padding: 24px; }
+    .filters { display: flex; gap: 8px; margin-bottom: 16px; }
+    .filters button {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .filters button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .empty {
+      padding: 48px 24px;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      margin-bottom: 12px;
+    }
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge.high { background: rgba(233, 108, 108, 0.18); color: var(--bad); }
+    .badge.medium { background: rgba(236, 191, 91, 0.18); color: var(--warn); }
+    .badge.low { background: rgba(93, 202, 138, 0.18); color: var(--good); }
+    .badge.applied { background: rgba(93, 202, 138, 0.18); color: var(--good); }
+    .badge.rejected { background: rgba(138, 147, 164, 0.18); color: var(--muted); }
+    .badge.pending { background: rgba(79, 156, 255, 0.18); color: var(--accent); }
+    .meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    .desc { margin: 0 0 12px; }
+    pre {
+      background: #0a0c10;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px;
+      overflow-x: auto;
+      font-size: 12px;
+      color: #cfd4dc;
+      white-space: pre-wrap;
+    }
+    .diff {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 8px 0;
+    }
+    .diff-cell h5 {
+      margin: 0 0 4px;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .actions { display: flex; gap: 8px; margin-top: 12px; }
+    .actions button {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .actions .approve { background: var(--good); border-color: var(--good); color: #0c2014; }
+    .actions .reject { background: transparent; color: var(--bad); border-color: rgba(233, 108, 108, 0.4); }
+    .actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 18px;
+      border-radius: 6px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      max-width: 360px;
+    }
+    .toast.error { border-color: var(--bad); }
+    .toast.ok { border-color: var(--good); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Suggestions</h1>
+    <nav>
+      <a href="/dashboard">← Dashboard</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="filters">
+      <button data-status="pending" class="active">Pending</button>
+      <button data-status="applied">Applied</button>
+      <button data-status="rejected">Rejected</button>
+    </div>
+    <div id="list" aria-live="polite"></div>
+  </main>
+
+  <script>
+    const list = document.getElementById("list");
+    const filterButtons = document.querySelectorAll(".filters button");
+    let currentStatus = "pending";
+
+    filterButtons.forEach((b) => {
+      b.addEventListener("click", () => {
+        filterButtons.forEach((x) => x.classList.remove("active"));
+        b.classList.add("active");
+        currentStatus = b.dataset.status;
+        load();
+      });
+    });
+
+    async function load() {
+      list.innerHTML = '<div class="empty">Loading…</div>';
+      try {
+        const res = await fetch(`/dashboard/api/suggestions?status=${encodeURIComponent(currentStatus)}&limit=100`, {
+          credentials: "same-origin",
+        });
+        if (!res.ok) {
+          if (res.status === 401) {
+            list.innerHTML = '<div class="empty">Not signed in. Visit <a href="/dashboard">the dashboard</a> first.</div>';
+            return;
+          }
+          throw new Error(`${res.status} ${await res.text()}`);
+        }
+        const body = await res.json();
+        render(body.suggestions || []);
+      } catch (err) {
+        list.innerHTML = `<div class="empty">Failed to load: ${escapeHtml(String(err))}</div>`;
+      }
+    }
+
+    function render(items) {
+      if (items.length === 0) {
+        list.innerHTML = '<div class="empty">Nothing here.</div>';
+        return;
+      }
+      list.innerHTML = items.map((s) => card(s)).join("");
+      list.querySelectorAll("[data-action]").forEach((btn) => {
+        btn.addEventListener("click", (e) => onAction(e, btn));
+      });
+    }
+
+    function card(s) {
+      const sev = s.severity || "medium";
+      const status = s.status || "pending";
+      const diff = s.proposed_change?.diff_preview || {};
+      const actions = status === "pending"
+        ? `
+          <div class="actions">
+            <button data-action="approve" data-id="${s._id}" class="approve">Approve & publish</button>
+            <button data-action="reject" data-id="${s._id}" class="reject">Reject</button>
+          </div>
+        `
+        : "";
+      const appliedNote = s.applied_version_id
+        ? `<div class="meta">Applied as version <code>${escapeHtml(s.applied_version_id)}</code></div>`
+        : "";
+      return `
+        <article class="card" data-id="${s._id}">
+          <h3>
+            <span class="badge ${sev}">${sev}</span>
+            <span>${escapeHtml(s.type.replaceAll("_", " "))}</span>
+            <span class="badge ${status}">${status}</span>
+            <span style="margin-left:auto;color:var(--muted);font-weight:400;font-size:12px;">
+              ${escapeHtml(s.client_slug)} / ${escapeHtml(s.agent_id)}
+            </span>
+          </h3>
+          <div class="meta">${new Date(s.created_at).toLocaleString()}</div>
+          <p class="desc">${escapeHtml(s.description || "")}</p>
+          <pre>${escapeHtml(s.excerpt || "")}</pre>
+          <div class="diff">
+            <div class="diff-cell">
+              <h5>Before</h5>
+              <pre>${escapeHtml(diff.before || "—")}</pre>
+            </div>
+            <div class="diff-cell">
+              <h5>After</h5>
+              <pre>${escapeHtml(diff.after || "—")}</pre>
+            </div>
+          </div>
+          ${appliedNote}
+          ${actions}
+        </article>
+      `;
+    }
+
+    async function onAction(e, btn) {
+      e.preventDefault();
+      const id = btn.dataset.id;
+      const action = btn.dataset.action;
+      const card = list.querySelector(`[data-id="${id}"]`);
+      if (!card) return;
+
+      let body = "";
+      if (action === "reject") {
+        const note = window.prompt("Optional rejection note:") ?? null;
+        if (note === null) return;
+        body = JSON.stringify({ note });
+      }
+
+      card.querySelectorAll("button").forEach((b) => (b.disabled = true));
+      try {
+        const res = await fetch(`/dashboard/api/suggestions/${id}/${action}`, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: body || "{}",
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          toast("error", `${res.status}: ${text.slice(0, 200)}`);
+          card.querySelectorAll("button").forEach((b) => (b.disabled = false));
+          return;
+        }
+        toast("ok", action === "approve" ? "Published." : "Rejected.");
+        load();
+      } catch (err) {
+        toast("error", String(err));
+        card.querySelectorAll("button").forEach((b) => (b.disabled = false));
+      }
+    }
+
+    function toast(kind, msg) {
+      const el = document.createElement("div");
+      el.className = `toast ${kind}`;
+      el.textContent = msg;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 4000);
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    load();
+  </script>
+</body>
+</html>
