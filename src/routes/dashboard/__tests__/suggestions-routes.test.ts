@@ -23,6 +23,7 @@ const {
   mockRollbackToVersionHandler,
   mockGetLatestVersion,
   mockGetPreviousVersion,
+  mockGetFindingRateMetrics,
   mockLoadDraft, mockUpdateDraftExportConfig,
   mockAnalyzeAndPersist,
   mockLogAudit,
@@ -39,6 +40,7 @@ const {
   mockRollbackToVersionHandler: vi.fn(),
   mockGetLatestVersion: vi.fn(),
   mockGetPreviousVersion: vi.fn(),
+  mockGetFindingRateMetrics: vi.fn(),
   mockLoadDraft: vi.fn(),
   mockUpdateDraftExportConfig: vi.fn(),
   mockAnalyzeAndPersist: vi.fn(),
@@ -83,6 +85,10 @@ vi.mock("../node-editor.js", () => ({
 vi.mock("../../../lib/agent-versions.js", () => ({
   getLatestVersion: (...a: unknown[]) => mockGetLatestVersion(...a),
   getPreviousVersion: (...a: unknown[]) => mockGetPreviousVersion(...a),
+}));
+
+vi.mock("../../../lib/finding-rates.js", () => ({
+  getFindingRateMetrics: (...a: unknown[]) => mockGetFindingRateMetrics(...a),
 }));
 
 vi.mock("../../../lib/agent-from-draft.js", () => ({
@@ -212,7 +218,7 @@ beforeEach(() => {
     mockGetSuggestion, mockListSuggestions, mockUpdateSuggestion,
     mockGetClientDocument, mockBuildPublishPayload, mockBuildSnapshotFromCanonical,
     mockApplyToDraft, mockSaveAndPublishHandler, mockRollbackToVersionHandler,
-    mockGetLatestVersion, mockGetPreviousVersion,
+    mockGetLatestVersion, mockGetPreviousVersion, mockGetFindingRateMetrics,
     mockLoadDraft, mockUpdateDraftExportConfig, mockAnalyzeAndPersist,
     mockLogAudit, mockRetellRetrieve,
   ]) m.mockReset();
@@ -854,6 +860,67 @@ describe("POST /suggestions/:id/rollback", () => {
     });
     const res = makeRes();
     await runRoute("post", "/suggestions/:id/rollback", req, res);
+    expect(res._status).toBe(403);
+  });
+});
+
+// ── GET /agents/:slug/finding-rates ─────────────────────────────────────────
+
+describe("GET /agents/:slug/finding-rates", () => {
+  it("returns metrics with the agent's resolved id and default 8 weeks", async () => {
+    mockGetClientDocument.mockResolvedValue(clientDoc());
+    mockGetFindingRateMetrics.mockResolvedValue({
+      agent_id: "agent_1", weeks: 8, window_start: "2026-03-15T00:00:00.000Z",
+      buckets: [], totals: { calls: 0, by_type: {} },
+    });
+
+    const req = makeReq({ user: userWith("read"), params: { slug: "acme" } });
+    const res = makeRes();
+    await runRoute("get", "/agents/:slug/finding-rates", req, res);
+
+    expect(res._status).toBe(200);
+    expect(mockGetFindingRateMetrics).toHaveBeenCalledWith("agent_1", 8);
+    expect(res._json.metrics.agent_id).toBe("agent_1");
+  });
+
+  it("clamps the weeks query param to 1..12", async () => {
+    mockGetClientDocument.mockResolvedValue(clientDoc());
+    mockGetFindingRateMetrics.mockResolvedValue({
+      agent_id: "agent_1", weeks: 12, window_start: "2026-02-15T00:00:00.000Z",
+      buckets: [], totals: { calls: 0, by_type: {} },
+    });
+
+    const req = makeReq({ user: userWith("read"), params: { slug: "acme" }, query: { weeks: "999" } });
+    const res = makeRes();
+    await runRoute("get", "/agents/:slug/finding-rates", req, res);
+    expect(mockGetFindingRateMetrics).toHaveBeenCalledWith("agent_1", 12);
+  });
+
+  it("404s when the client doesn't exist", async () => {
+    mockGetClientDocument.mockResolvedValue(null);
+    const req = makeReq({ user: userWith("read"), params: { slug: "missing" } });
+    const res = makeRes();
+    await runRoute("get", "/agents/:slug/finding-rates", req, res);
+    expect(res._status).toBe(404);
+    expect(mockGetFindingRateMetrics).not.toHaveBeenCalled();
+  });
+
+  it("400s when the client has no agent_id", async () => {
+    mockGetClientDocument.mockResolvedValue(clientDoc({ agent_id: undefined }));
+    const req = makeReq({ user: userWith("read"), params: { slug: "acme" } });
+    const res = makeRes();
+    await runRoute("get", "/agents/:slug/finding-rates", req, res);
+    expect(res._status).toBe(400);
+    expect(mockGetFindingRateMetrics).not.toHaveBeenCalled();
+  });
+
+  it("403s when the user lacks transcript_review:read", async () => {
+    const req = makeReq({
+      user: userWith("none"),
+      params: { slug: "acme" },
+    });
+    const res = makeRes();
+    await runRoute("get", "/agents/:slug/finding-rates", req, res);
     expect(res._status).toBe(403);
   });
 });

@@ -26,6 +26,7 @@ import { getClientDocument } from "../../config/client-store.js";
 import { logAudit } from "../../lib/audit.js";
 import { saveAndPublishHandler, rollbackToVersionHandler } from "./node-editor.js";
 import { getLatestVersion, getPreviousVersion } from "../../lib/agent-versions.js";
+import { getFindingRateMetrics } from "../../lib/finding-rates.js";
 import { loadDraft, updateDraftExportConfig } from "../../lib/agent-from-draft.js";
 import { analyzeAndPersist } from "../../lib/transcript-review.js";
 
@@ -52,6 +53,37 @@ suggestionsRouter.get(
       computeBubbleUpEligibility(slug),
     ]);
     res.json({ suggestions, bubble_up: bubbleUp });
+  },
+);
+
+// ── Finding-rate metrics ────────────────────────────────────────────────────
+//
+// Outcome metric for the suggestions tab — answers "are the findings I'm
+// approving fixes for actually decreasing?" Per agent, per FindingType,
+// bucketed by week. The dashboard renders this as an aggregate header tile
+// + a per-suggestion-card sparkline keyed on the card's finding type.
+//
+// Read-only; same gate as the list endpoint.
+
+suggestionsRouter.get(
+  "/agents/:slug/finding-rates",
+  requireFeature("transcript_review", "read"),
+  async (req, res) => {
+    const slug = String(req.params.slug);
+    const weeks = clamp(Number(req.query.weeks) || 8, 1, 12);
+
+    const doc = await getClientDocument(slug);
+    if (!doc) {
+      res.status(404).json({ error: `Client "${slug}" not found` });
+      return;
+    }
+    if (!doc.agent_id) {
+      res.status(400).json({ error: `Client "${slug}" has no agent_id` });
+      return;
+    }
+
+    const metrics = await getFindingRateMetrics(doc.agent_id, weeks);
+    res.json({ metrics });
   },
 );
 

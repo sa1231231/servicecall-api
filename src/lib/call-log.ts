@@ -85,6 +85,15 @@ export async function getCallLogById(
   return callLogs().findOne({ _id: callId }) as any;
 }
 
+/** Ensure indexes for call_logs. Currently powers the finding-rates metric
+ *  (groups completed calls per agent per week) and any future per-agent
+ *  call browsing. No TTL — call_logs are long-term billing/audit records. */
+export async function ensureCallLogIndexes(): Promise<void> {
+  await callLogs().createIndex({ agent_id: 1, created_at: -1 });
+  await callLogs().createIndex({ client_slug: 1, created_at: -1 });
+  console.log("[call-log] indexes ensured");
+}
+
 /** Get call logs for a client, sorted newest first. */
 export async function getCallLogsByClient(
   clientSlug: string,

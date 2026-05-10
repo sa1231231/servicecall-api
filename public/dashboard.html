@@ -480,6 +480,36 @@
   .sg-badge.pending  { background: #dbeafe; color: #1d4ed8; }
   .sg-badge.rejected { background: #f1f5f9; color: #475569; }
   .sg-badge.rolled_back { background: #fef3c7; color: #92400e; }
+
+  /* Finding-rate metrics tile + sparklines */
+  .sg-metrics {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) 2fr;
+    gap: 0.85rem;
+    padding: 0.7rem 0.85rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    align-items: center;
+  }
+  .sg-metrics-summary { display: flex; flex-direction: column; gap: 0.15rem; }
+  .sg-metrics-summary .sg-metrics-label {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b;
+  }
+  .sg-metrics-summary .sg-metrics-value { font-size: 1.15rem; font-weight: 600; color: #0f172a; }
+  .sg-metrics-summary .sg-metrics-delta { font-size: 0.78rem; }
+  .sg-metrics-delta.up   { color: #b91c1c; }   /* worse: more findings */
+  .sg-metrics-delta.down { color: #166534; }   /* better: fewer findings */
+  .sg-metrics-delta.flat { color: #64748b; }
+  .sg-metrics-low-volume { font-size: 0.74rem; color: #92400e; }
+  .sg-spark { display: inline-block; vertical-align: middle; }
+  .sg-spark-bar { fill: #cbd5e1; }
+  .sg-spark-bar.recent { fill: #475569; }
+  .sg-spark-empty { color: #94a3b8; font-size: 0.74rem; }
+  .suggestion-card .sg-card-spark {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    margin-left: 0.5rem; font-size: 0.72rem; color: #64748b;
+  }
   @media (max-width: 768px) {
     .agent-tabs-shell { grid-template-columns: 1fr; gap: 0.5rem; }
     .agent-tabs-nav {
@@ -1587,6 +1617,7 @@
           </div>
         </div>
         <div id="suggestionsBubbleNote" style="display:none;font-size:0.82rem;color:#475569;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:#f1f5f9;border-radius:6px;border:1px solid #e2e8f0;"></div>
+        <div id="suggestionsMetrics" style="display:none;margin-bottom:0.75rem;"></div>
         <div id="suggestionsContent"><div class="loading">Loading suggestions...</div></div>
       </div>
       <div id="tab-billing" class="agent-tab-pane" data-feature="billing" data-feature-level="read">
@@ -1842,6 +1873,7 @@
   let callsLoaded = false;
   let suggestionsLoaded = false;
   let suggestionsBubbleUp = { eligible: false }; // populated by loadSuggestions
+  let suggestionsMetrics = null; // populated by loadFindingRates; per-card sparklines read this
   let suggestionsCurrentStatus = 'pending';
 
   // ── Cmd+S / Ctrl+S to save ──────────────────────────────────────
@@ -3344,6 +3376,12 @@
       suggestionsBubbleUp = body.bubble_up || { eligible: false };
       suggestionsLoaded = true;
       renderSuggestionsBubbleNote(note, suggestionsBubbleUp);
+      // Fetch metrics in parallel with the render — sparklines on the cards
+      // need them, but we don't want to block the suggestion list on the
+      // metrics call. The card render runs first (showing the cards without
+      // sparklines), then loadFindingRates() patches the metric tile and
+      // re-renders the cards once the data lands.
+      loadFindingRates(slug, target);
       renderSuggestions(target, body.suggestions || []);
       // Refresh the pending-count badge separately (we just listed by status).
       if (suggestionsCurrentStatus === 'pending') {
@@ -3356,6 +3394,177 @@
     } catch (err) {
       target.innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
     }
+  }
+
+  // Min calls/week below which the per-call rate is too noisy to display —
+  // we fall back to absolute counts. Tuneable; matches the threshold in the
+  // backend's UX recommendation.
+  const SG_MIN_VOLUME_PER_WEEK = 20;
+
+  // Display labels for the 6 FindingType enum values. Kept in lockstep with
+  // FINDING_TYPES in src/lib/finding-rates.ts.
+  const SG_TYPE_LABELS = {
+    unanswered_question:    'Unanswered question',
+    misheard_confirmation:  'Misheard confirmation',
+    repeated_data:          'Repeated data',
+    frustration_signal:     'Frustration signal',
+    premature_termination:  'Premature termination',
+    path_misroute:          'Path misroute',
+  };
+
+  async function loadFindingRates(slug, suggestionsTarget) {
+    const tile = document.getElementById('suggestionsMetrics');
+    if (!tile) return;
+    try {
+      const res = await fetch(
+        '/dashboard/api/agents/' + encodeURIComponent(slug) + '/finding-rates?weeks=8',
+        { credentials: 'same-origin' },
+      );
+      if (!res.ok) {
+        // Permission denied or transient error — hide the tile silently
+        // (the suggestions list works without it).
+        suggestionsMetrics = null;
+        tile.style.display = 'none';
+        return;
+      }
+      const body = await res.json();
+      suggestionsMetrics = body.metrics;
+      renderFindingRateTile(tile, suggestionsMetrics);
+      // Re-render the suggestion cards so per-card sparklines pick up the
+      // metrics we just fetched (the first render fired before this resolved).
+      if (suggestionsTarget) {
+        const cards = suggestionsTarget.querySelectorAll('[data-sg-card]');
+        if (cards.length) {
+          // Cheap path: re-run the render with whatever the cards already
+          // know. We don't have the original suggestion list in scope here,
+          // so just patch each card's spark slot in place.
+          patchPerCardSparklines(suggestionsTarget);
+        }
+      }
+    } catch (_) {
+      suggestionsMetrics = null;
+      tile.style.display = 'none';
+    }
+  }
+
+  function renderFindingRateTile(tile, metrics) {
+    if (!metrics || !metrics.buckets || metrics.buckets.length === 0) {
+      tile.style.display = 'none';
+      return;
+    }
+    const buckets = metrics.buckets;
+    const recent = buckets[buckets.length - 1];
+    const prior  = buckets.length > 1 ? buckets[buckets.length - 2] : null;
+    const recentTotal = sumByType(recent.by_type);
+    const priorTotal  = prior ? sumByType(prior.by_type) : 0;
+
+    let summaryHtml;
+    if (recent.calls < SG_MIN_VOLUME_PER_WEEK) {
+      // Low-volume agent: per-call rate would be noisy — show absolute
+      // counts instead, with a hint about why.
+      summaryHtml =
+        '<div class="sg-metrics-label">Findings this week</div>'
+        + '<div class="sg-metrics-value">' + recentTotal + '</div>'
+        + '<div class="sg-metrics-low-volume">'
+          + recent.calls + ' calls — rate hidden under '
+          + SG_MIN_VOLUME_PER_WEEK + ' calls/week'
+        + '</div>';
+    } else {
+      const recentRate = (recentTotal / recent.calls) * 100;
+      const priorRate  = prior && prior.calls > 0 ? (priorTotal / prior.calls) * 100 : null;
+      let deltaHtml = '<div class="sg-metrics-delta flat">No prior week to compare</div>';
+      if (priorRate !== null) {
+        const diff = recentRate - priorRate;
+        const cls  = Math.abs(diff) < 0.05 ? 'flat' : (diff > 0 ? 'up' : 'down');
+        const arrow = cls === 'up' ? '▲' : cls === 'down' ? '▼' : '◆';
+        deltaHtml =
+          '<div class="sg-metrics-delta ' + cls + '">'
+            + arrow + ' ' + Math.abs(diff).toFixed(1) + ' / 100 calls vs prior week'
+          + '</div>';
+      }
+      summaryHtml =
+        '<div class="sg-metrics-label">Findings per 100 calls (this week)</div>'
+        + '<div class="sg-metrics-value">' + recentRate.toFixed(1) + '</div>'
+        + deltaHtml;
+    }
+
+    // Sparkline: total findings per week across the window. Bars are scaled
+    // to the max observed value; if every bar is 0 we show a placeholder
+    // instead of a flat row of zero-height rectangles.
+    const totals = buckets.map((b) => sumByType(b.by_type));
+    const sparkHtml = renderSparkline(totals, { width: 160, height: 38, recentIdx: totals.length - 1 });
+
+    tile.innerHTML =
+      '<div class="sg-metrics">'
+        + '<div class="sg-metrics-summary">' + summaryHtml + '</div>'
+        + '<div>' + sparkHtml + '<div style="font-size:0.7rem;color:#64748b;margin-top:0.15rem;">Findings per week — last ' + buckets.length + ' weeks</div></div>'
+      + '</div>';
+    tile.style.display = 'block';
+  }
+
+  function sumByType(byType) {
+    if (!byType) return 0;
+    let s = 0;
+    for (const k in byType) s += byType[k] || 0;
+    return s;
+  }
+
+  // Inline-SVG sparkline. Bars instead of a line because at low values
+  // (1, 0, 2, 0) bars are easier to read than a polyline that bounces to
+  // the floor. The most recent bar is darker so the operator's eye lands
+  // there first.
+  function renderSparkline(values, opts) {
+    opts = opts || {};
+    const width  = opts.width  || 120;
+    const height = opts.height || 32;
+    const recentIdx = opts.recentIdx == null ? -1 : opts.recentIdx;
+    if (!values || values.length === 0) {
+      return '<span class="sg-spark-empty">no data</span>';
+    }
+    const max = Math.max(...values);
+    if (max === 0) {
+      return '<span class="sg-spark-empty">0 across window</span>';
+    }
+    const n = values.length;
+    const gap = 2;
+    const barW = Math.max(1, (width - gap * (n - 1)) / n);
+    let bars = '';
+    for (let i = 0; i < n; i++) {
+      const h = Math.max(1, Math.round((values[i] / max) * (height - 2)));
+      const x = i * (barW + gap);
+      const y = height - h;
+      const cls = i === recentIdx ? 'sg-spark-bar recent' : 'sg-spark-bar';
+      bars += '<rect class="' + cls + '" x="' + x.toFixed(2) + '" y="' + y + '" width="' + barW.toFixed(2) + '" height="' + h + '"></rect>';
+    }
+    return '<svg class="sg-spark" width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">' + bars + '</svg>';
+  }
+
+  function patchPerCardSparklines(target) {
+    if (!suggestionsMetrics) return;
+    target.querySelectorAll('[data-sg-spark-for]').forEach((slot) => {
+      const type = slot.getAttribute('data-sg-spark-for');
+      slot.innerHTML = renderCardSparkContent(type);
+    });
+  }
+
+  // Per-card content: tiny bar chart + a "X this wk vs Y prior" hint for
+  // the specific finding type the card is targeting.
+  function renderCardSparkContent(type) {
+    if (!suggestionsMetrics || !type) return '';
+    const buckets = suggestionsMetrics.buckets || [];
+    if (buckets.length === 0) return '';
+    const series = buckets.map((b) => (b.by_type && b.by_type[type]) || 0);
+    const spark = renderSparkline(series, { width: 80, height: 18, recentIdx: series.length - 1 });
+    const recentVal = series[series.length - 1];
+    const priorVal  = series.length > 1 ? series[series.length - 2] : null;
+    let trend = '';
+    if (priorVal !== null) {
+      const diff = recentVal - priorVal;
+      const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '◆';
+      const cls   = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat';
+      trend = ' <span class="sg-metrics-delta ' + cls + '">' + arrow + ' ' + Math.abs(diff) + '</span>';
+    }
+    return spark + '<span>' + recentVal + ' this wk' + trend + '</span>';
   }
 
   async function fetchSuggestionsPendingCount(slug, badge) {
@@ -3480,11 +3689,20 @@
     const sbs = _sgSideBySideDiff(diff.before, diff.after);
 
     const statusLabel = String(status).replace(/_/g, ' ');
+    // Slot for the per-finding-type sparkline. Filled in by
+    // patchPerCardSparklines() after loadFindingRates resolves; left blank
+    // when metrics haven't loaded yet so the card layout doesn't jump.
+    const sparkSlot = s.type
+      ? '<span class="sg-card-spark" data-sg-spark-for="' + esc(s.type) + '">'
+        + (suggestionsMetrics ? renderCardSparkContent(s.type) : '')
+        + '</span>'
+      : '';
     return '<article class="suggestion-card" data-sg-card="' + esc(s._id) + '">'
       + '<h4>'
         + '<span class="sg-badge ' + esc(sev) + '">' + esc(sev) + '</span>'
         + '<span>' + esc(typeLabel) + '</span>'
         + '<span class="sg-badge ' + esc(status) + '">' + esc(statusLabel) + '</span>'
+        + sparkSlot
       + '</h4>'
       + '<div class="sg-meta">' + new Date(s.created_at).toLocaleString() + '</div>'
       + '<p class="sg-desc">' + esc(s.description || '') + '</p>'

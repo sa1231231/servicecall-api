@@ -31,6 +31,7 @@ import { ensureVersionIndexes } from "./lib/agent-versions.js";
 import { ensurePendingLeadIndexes, resetStaleEnrichingLeads } from "./lib/pending-leads.js";
 import { ensureCallFindingIndexes } from "./lib/call-findings.js";
 import { ensureSuggestionIndexes } from "./lib/improvement-suggestions.js";
+import { ensureCallLogIndexes } from "./lib/call-log.js";
 import { requireFeature } from "./middleware/require-role.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -487,6 +488,7 @@ await ensureVersionIndexes();
 await ensurePendingLeadIndexes();
 await ensureCallFindingIndexes();
 await ensureSuggestionIndexes();
+await ensureCallLogIndexes();
 await resetStaleEnrichingLeads();
 await purgeExpiredClients();
 await loadClientsFromDb();
