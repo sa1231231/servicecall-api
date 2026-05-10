@@ -1,6 +1,5 @@
 import type { Request, Response } from "express";
 import { config } from "../../config.js";
-import { verifyRetellWebhookOr401 } from "../../lib/verify-retell.js";
 import { sendSmsFrom } from "../../lib/notify-sms.js";
 import { agentIdToClient, agentIdToSlug } from "../../_cache/clients.js";
 import { saveOutboundMessage } from "../../lib/outbound-messages.js";
@@ -8,24 +7,36 @@ import { saveOutboundMessage } from "../../lib/outbound-messages.js";
 const E164 = /^\+\d{8,15}$/;
 const MAX_BODY = 1600;
 
+// Retell custom-function calls (unlike agent webhooks like post-hook) are not
+// HMAC-signed by Retell. Instead, the tool config in Retell carries a static
+// `headers` map that's sent on every invocation. We require either a Bearer
+// token in Authorization, or x-api-key — both matching API_KEY. Configure the
+// matching header in the Retell tool's `headers` field.
+function isAuthorized(req: Request): boolean {
+  if (req.headers["x-api-key"] === config.API_KEY) return true;
+
+  const auth = req.headers["authorization"];
+  if (typeof auth === "string" && auth.startsWith("Bearer ")) {
+    const token = auth.slice("Bearer ".length).trim();
+    if (token && token === config.API_KEY) return true;
+  }
+  return false;
+}
+
 export async function sendSmsHandler(req: Request, res: Response) {
   console.log("retell-send-sms: received request");
 
-  const agentId = req.body?.call?.agent_id ?? null;
-  const isTestClient = agentIdToClient[agentId]?.name === "Test Client";
-  const isInternalCall = req.headers["x-api-key"] === config.API_KEY;
-
-  if (!isTestClient && !isInternalCall) {
-    const sig = (req.headers["x-retell-signature"] as string) ?? "";
-    const rawBody = (req as any).rawBody as string;
-
-    if (!verifyRetellWebhookOr401(rawBody, sig, config.RETELL_SIGNATURE_KEY, res))
-      return;
-  } else {
-    console.log(
-      `retell-send-sms: skipping signature verification (${isTestClient ? "test client" : "internal call"})`,
-    );
+  if (!isAuthorized(req)) {
+    console.warn("retell-send-sms: unauthorized — missing/invalid Bearer or x-api-key");
+    res.status(401).json({
+      success: false,
+      error:
+        "Unauthorized. Add 'Authorization: Bearer <API_KEY>' to the Retell tool's headers config.",
+    });
+    return;
   }
+
+  const agentId = req.body?.call?.agent_id ?? null;
 
   const call = req.body?.call ?? null;
   const args = req.body?.args ?? {};

@@ -3,28 +3,21 @@ import type { Request, Response } from "express";
 
 vi.mock("../../../config.js", () => ({
   config: {
-    RETELL_SIGNATURE_KEY: "sig-key",
     API_KEY: "internal-api-key",
     TWILIO_PHONE_NUMBER: "+15550000000",
   },
 }));
 
 const {
-  mockVerify,
   mockSendSmsFrom,
   mockSaveOutboundMessage,
   mockAgentIdToClient,
   mockAgentIdToSlug,
 } = vi.hoisted(() => ({
-  mockVerify: vi.fn(),
   mockSendSmsFrom: vi.fn(),
   mockSaveOutboundMessage: vi.fn(),
   mockAgentIdToClient: {} as Record<string, any>,
   mockAgentIdToSlug: {} as Record<string, string>,
-}));
-
-vi.mock("../../../lib/verify-retell.js", () => ({
-  verifyRetellWebhookOr401: (...a: any[]) => mockVerify(...a),
 }));
 
 vi.mock("../../../lib/notify-sms.js", () => ({
@@ -44,8 +37,7 @@ const { sendSmsHandler } = await import("../send-sms.js");
 
 function makeReq(body: any, headers: Record<string, string> = {}): Request {
   return {
-    headers: { "x-retell-signature": "sig", ...headers },
-    rawBody: JSON.stringify(body),
+    headers: { "x-api-key": "internal-api-key", ...headers },
     body,
   } as any;
 }
@@ -83,33 +75,64 @@ function makeClient(overrides: Record<string, any> = {}) {
 beforeEach(() => {
   for (const k of Object.keys(mockAgentIdToClient)) delete mockAgentIdToClient[k];
   for (const k of Object.keys(mockAgentIdToSlug)) delete mockAgentIdToSlug[k];
-  mockVerify.mockReset();
   mockSendSmsFrom.mockReset();
   mockSaveOutboundMessage.mockReset();
-  mockVerify.mockReturnValue(true);
   mockSendSmsFrom.mockResolvedValue({ sid: "SM123", status: "queued" });
   mockSaveOutboundMessage.mockResolvedValue(undefined);
 });
 
 describe("sendSmsHandler", () => {
-  it("returns 401 when signature verification fails", async () => {
-    mockAgentIdToClient["agent_1"] = makeClient();
-    mockVerify.mockImplementation((_a, _b, _c, res: Response) => {
-      res.status(401).json({ ok: false });
-      return false;
-    });
+  it("returns 401 when no auth header is present", async () => {
+    const req = {
+      headers: {},
+      body: {
+        name: "send_sms",
+        args: { message: "hi" },
+        call: { agent_id: "agent_1", from_number: "+13015551234" },
+      },
+    } as any;
+    const res = makeRes();
+    await sendSmsHandler(req, res);
 
-    const req = makeReq({
-      name: "send_sms",
-      args: { message: "hi" },
-      call: { agent_id: "agent_1", from_number: "+13015551234" },
-    });
+    expect(res._status).toBe(401);
+    expect(res._json.error).toMatch(/unauthor/i);
+    expect(mockSendSmsFrom).not.toHaveBeenCalled();
+    expect(mockSaveOutboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("accepts Authorization: Bearer <API_KEY>", async () => {
+    mockAgentIdToClient["agent_1"] = makeClient();
+    mockAgentIdToSlug["agent_1"] = "acme";
+
+    const req = {
+      headers: { authorization: "Bearer internal-api-key" },
+      body: {
+        name: "send_sms",
+        args: { message: "hi" },
+        call: { agent_id: "agent_1", from_number: "+13015551234" },
+      },
+    } as any;
+    const res = makeRes();
+    await sendSmsHandler(req, res);
+
+    expect(res._status).toBe(200);
+    expect(mockSendSmsFrom).toHaveBeenCalled();
+  });
+
+  it("rejects wrong Bearer token with 401", async () => {
+    const req = {
+      headers: { authorization: "Bearer wrong-token" },
+      body: {
+        name: "send_sms",
+        args: { message: "hi" },
+        call: { agent_id: "agent_1", from_number: "+13015551234" },
+      },
+    } as any;
     const res = makeRes();
     await sendSmsHandler(req, res);
 
     expect(res._status).toBe(401);
     expect(mockSendSmsFrom).not.toHaveBeenCalled();
-    expect(mockSaveOutboundMessage).not.toHaveBeenCalled();
   });
 
   it("returns 404 when agent_id has no client config", async () => {
@@ -268,25 +291,6 @@ describe("sendSmsHandler", () => {
         error: "Twilio is down",
       }),
     );
-  });
-
-  it("bypasses signature verification for internal x-api-key calls", async () => {
-    mockAgentIdToClient["agent_1"] = makeClient();
-    mockAgentIdToSlug["agent_1"] = "acme";
-
-    const req = makeReq(
-      {
-        name: "send_sms",
-        args: { message: "hi" },
-        call: { agent_id: "agent_1", from_number: "+13015551234" },
-      },
-      { "x-api-key": "internal-api-key" },
-    );
-    const res = makeRes();
-    await sendSmsHandler(req, res);
-
-    expect(mockVerify).not.toHaveBeenCalled();
-    expect(res._status).toBe(200);
   });
 
   it("returns 400 for messages over 1600 chars", async () => {
