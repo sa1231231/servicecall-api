@@ -20,7 +20,7 @@ function url(path: string): string {
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
     "x-api-key": API_KEY!,
-    Authorization: "Basic " + Buffer.from(`admin:${ROOT_PASSWORD}`).toString("base64"),
+    Authorization: "Basic " + Buffer.from(`sam_admin:${ROOT_PASSWORD}`).toString("base64"),
     "Content-Type": "application/json",
     ...extra,
   };

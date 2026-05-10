@@ -16,7 +16,7 @@ function url(path: string): string {
 }
 
 function rootBasic(): string {
-  return "Basic " + Buffer.from(`admin:${ROOT_PASSWORD}`).toString("base64");
+  return "Basic " + Buffer.from(`sam_admin:${ROOT_PASSWORD}`).toString("base64");
 }
 
 function userBasic(username: string, password: string): string {

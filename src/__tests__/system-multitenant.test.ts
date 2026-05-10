@@ -18,7 +18,7 @@ function url(path: string): string {
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
     "x-api-key": API_KEY!,
-    Authorization: "Basic " + Buffer.from(`admin:${ROOT_PASSWORD}`).toString("base64"),
+    Authorization: "Basic " + Buffer.from(`sam_admin:${ROOT_PASSWORD}`).toString("base64"),
     "Content-Type": "application/json",
     ...extra,
   };
@@ -52,19 +52,28 @@ describe.skipIf(!hasConfig)("System tests — Multi-tenant isolation", { timeout
     if (!other) throw new Error("Need at least 2 agents for cross-tenant tests; found < 2");
     slugB = (other.slug ?? other._id) as string;
 
-    // Generate a portal token for slug A.
-    const tokResp = await fetch(url(`/dashboard/api/agents/${SLUG_A}/portal-token`), {
-      method: "POST",
+    // Reuse the existing portal token for slug A if one is set; only mint a
+    // new one when there isn't. Minting rotates the live token and would
+    // invalidate any magic links already in customer inboxes.
+    const getResp = await fetch(url(`/dashboard/api/agents/${SLUG_A}/portal-token`), {
       headers: authHeaders(),
     });
-    if (!tokResp.ok) {
-      throw new Error(`Failed to generate portal token for ${SLUG_A}: ${tokResp.status}`);
+    if (getResp.ok) {
+      const getBody = await json(getResp);
+      tokenA = String(getBody.portal_url ?? "").match(/[?&]token=([^&]+)/)?.[1] ?? "";
     }
-    const tokBody = await json(tokResp);
-    // POST returns { success, portal_url: ".../portal/{slug}?token=<token>" }.
-    const portalUrl = String(tokBody.portal_url ?? "");
-    tokenA = portalUrl.match(/[?&]token=([^&]+)/)?.[1] ?? "";
-    if (!tokenA) throw new Error("Could not extract portal token from response: " + JSON.stringify(tokBody));
+    if (!tokenA) {
+      const tokResp = await fetch(url(`/dashboard/api/agents/${SLUG_A}/portal-token`), {
+        method: "POST",
+        headers: authHeaders(),
+      });
+      if (!tokResp.ok) {
+        throw new Error(`Failed to generate portal token for ${SLUG_A}: ${tokResp.status}`);
+      }
+      const tokBody = await json(tokResp);
+      tokenA = String(tokBody.portal_url ?? "").match(/[?&]token=([^&]+)/)?.[1] ?? "";
+      if (!tokenA) throw new Error("Could not extract portal token from response: " + JSON.stringify(tokBody));
+    }
   });
 
   describe("Bearer header path", () => {
