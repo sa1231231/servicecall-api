@@ -1094,6 +1094,11 @@ export function buildCloseNode(
     id: overrides?.nodeId ?? ids.closeId,
     type: "conversation",
     display_position: overrides?.displayPosition ?? pos.close,
+    // Block interruption on the Close node so the closing acknowledgement
+    // ("thank you for the info, our technician will reach out…") plays
+    // through cleanly even if the caller speaks. Retell treats this as a
+    // per-node override of the agent-level global; 0 = no interruption.
+    interruption_sensitivity: 0,
   };
 }
 

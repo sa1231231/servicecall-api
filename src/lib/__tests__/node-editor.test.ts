@@ -402,6 +402,28 @@ describe("dedupDataPointKeys (regression for `Duplicate variable` save bug)", ()
   });
 });
 
+describe("Close node defaults", () => {
+  it("single-path Close node has interruption_sensitivity: 0 (no interruption)", () => {
+    const { agent } = generateSinglePath(["full_name"]);
+    const flow = agent.conversationFlow as { nodes: Array<Record<string, unknown>> };
+    const closeNodes = flow.nodes.filter((n) => n.name === "Close");
+    expect(closeNodes.length).toBe(1);
+    expect(closeNodes[0].interruption_sensitivity).toBe(0);
+  });
+
+  it("multi-path agents emit interruption_sensitivity: 0 on every per-path Close node", () => {
+    const { agent } = generateMultiPath();
+    const flow = agent.conversationFlow as { nodes: Array<Record<string, unknown>> };
+    const closeNodes = flow.nodes.filter((n) =>
+      typeof n.name === "string" && (n.name as string).startsWith("Close (")
+    );
+    expect(closeNodes.length).toBe(2); // Residential + Commercial
+    for (const close of closeNodes) {
+      expect(close.interruption_sensitivity, `${close.name} should block interruption`).toBe(0);
+    }
+  });
+});
+
 describe("composite parsing with orphan persistence (regression)", () => {
   it("composite Confirm doesn't include persistent orphan vars (sub-var lumping bug)", () => {
     // The user's bug: an orphan dp (hvac_service_type) following a
