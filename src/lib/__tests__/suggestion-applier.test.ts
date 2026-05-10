@@ -7,22 +7,36 @@ import type { ProposedChange } from "../call-findings.js";
 
 function snapshot(overrides: Partial<ApplierSnapshot> = {}): ApplierSnapshot {
   return {
+    globalPrompt: "Be helpful.",
     faqKnowledgeBase: "Hours: 8 to 5 weekdays.",
+    introNodeId: "node-intro",
+    introPrompt: "Hi, this is the receptionist.",
+    introFinetuneExamples: [],
     paths: [
       {
         name: "dispatch",
+        transitionNodeId: "node-transition-dispatch",
+        transitionPrompt: "User wants service",
         closePrompt: "Thank you for calling. Goodbye.",
         dataPoints: [
           {
             variableName: "full_name",
+            label: "Full Name",
             collectNodeId: "node-collect-name",
             conversationPrompt: "Ask for the caller's full name.",
             finetuneExamples: [
-              { transcript: "[user]: hi\n[agent]: hello", type: "negative" },
+              {
+                transcript: [
+                  { content: "hi", role: "user" as const },
+                  { content: "hello", role: "agent" as const },
+                ],
+                type: "negative" as const,
+              },
             ],
           },
           {
             variableName: "phone_number",
+            label: "Phone Number",
             collectNodeId: "node-collect-phone",
             conversationPrompt: "Ask for the best callback number.",
             finetuneExamples: [],
@@ -38,7 +52,12 @@ function pc(overrides: Partial<ProposedChange>): ProposedChange {
   return {
     kind: "add_faq_entry",
     payload: { entry: "After hours: $50 trip charge applies." },
-    diff_preview: { before: "—", after: "After hours: $50 trip charge applies." },
+    diff_preview: {
+      component_kind: "faq_knowledge_base" as const,
+      component_label: "FAQ knowledge base",
+      before: "—",
+      after: "After hours: $50 trip charge applies.",
+    },
     ...overrides,
   };
 }
@@ -84,7 +103,12 @@ describe("edit_collect_prompt", () => {
     kind: "edit_collect_prompt",
     target_variable_name: "full_name",
     payload: { append: "If the caller restarts, capture only the final spelling." },
-    diff_preview: { before: "Ask for…", after: "Ask for…\n\nIf the caller restarts…" },
+    diff_preview: {
+      component_kind: "conversation_prompt" as const,
+      component_label: "Collect Full Name — conversation prompt",
+      before: "Ask for…",
+      after: "Ask for…\n\nIf the caller restarts…",
+    },
   });
 
   it("targets the collect node id and merges the prompt", () => {
@@ -118,7 +142,12 @@ describe("add_finetune_example", () => {
     kind: "add_finetune_example",
     target_variable_name: "full_name",
     payload: { user: "R-I-C-K-S-E-C-O-R", agent: "Got it, Rick Secor." },
-    diff_preview: { before: "—", after: "added one positive example" },
+    diff_preview: {
+      component_kind: "finetune_examples" as const,
+      component_label: "Collect Full Name — finetune examples",
+      before: "(no examples yet)",
+      after: "added one positive example",
+    },
   });
 
   it("appends a positive example to the existing array", () => {
@@ -128,8 +157,14 @@ describe("add_finetune_example", () => {
     const ft = (r.payload.changes as any).dataPointFinetunes as Record<string, any[]>;
     const arr = ft["node-collect-name"];
     expect(arr).toHaveLength(2);
-    expect(arr[0].transcript).toContain("hi"); // existing
-    expect(arr[1].transcript).toContain("R-I-C-K");
+    expect(arr[0].transcript).toEqual([
+      { content: "hi", role: "user" },
+      { content: "hello", role: "agent" },
+    ]);
+    expect(arr[1].transcript).toEqual([
+      { content: "R-I-C-K-S-E-C-O-R", role: "user" },
+      { content: "Got it, Rick Secor.", role: "agent" },
+    ]);
     expect(arr[1].type).toBe("positive");
   });
 
@@ -141,8 +176,11 @@ describe("add_finetune_example", () => {
   it("skips when an equivalent example already exists", () => {
     const snap = snapshot();
     snap.paths[0].dataPoints[0].finetuneExamples.push({
-      transcript: "[user]: R-I-C-K-S-E-C-O-R\n[agent]: Got it, Rick Secor.",
-      type: "positive",
+      transcript: [
+        { content: "R-I-C-K-S-E-C-O-R", role: "user" as const },
+        { content: "Got it, Rick Secor.", role: "agent" as const },
+      ],
+      type: "positive" as const,
     });
     const r = buildPublishPayload(change, snap);
     expect(r.ok).toBe(false);
@@ -156,7 +194,12 @@ describe("edit_close_transition", () => {
     kind: "edit_close_transition",
     target_path_name: "dispatch",
     payload: { append: "Before we wrap up, is there anything else you'd like to know?" },
-    diff_preview: { before: "Thank you…", after: "Thank you…\n\nBefore we wrap up…" },
+    diff_preview: {
+      component_kind: "conversation_prompt" as const,
+      component_label: "Close (dispatch) — conversation prompt",
+      before: "Thank you…",
+      after: "Thank you…\n\nBefore we wrap up…",
+    },
   });
 
   it("appends to the path's existing close prompt", () => {

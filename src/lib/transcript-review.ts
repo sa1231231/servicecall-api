@@ -13,6 +13,7 @@ import { analyzeTranscript, buildAgentContext } from "./transcript-analyzer.js";
 import { insertFindings, type CallFindingDoc } from "./call-findings.js";
 import { createSuggestion } from "./improvement-suggestions.js";
 import { parseConversationFlow } from "./node-parser.js";
+import { buildPublishPayload, buildSnapshotFromCanonical } from "./suggestion-applier.js";
 
 // ── Input ────────────────────────────────────────────────────────────────────
 
@@ -158,20 +159,38 @@ export async function analyzeAndPersist(input: AnalyzeAndPersistInput): Promise<
     return { ok: true, suggestionsCreated: 0, suggestionIds: [] };
   }
 
+  // Compute a real diff_preview for each finding by running the applier
+  // against the current snapshot. This replaces the analyzer-emitted
+  // placeholder with structured before/after of THE specific component
+  // being edited, so the dashboard can render an unambiguous diff.
+  const snapshot = canonicalJson ? buildSnapshotFromCanonical(canonicalJson) : null;
+
   const trace = analyzerResult.trace;
-  const findingDocs: CallFindingDoc[] = analyzerResult.findings.map((f) => ({
-    call_id: callId,
-    agent_id: agentId,
-    client_slug: clientSlug,
-    source_draft: sourceDraft,
-    type: f.type,
-    severity: f.severity,
-    transcript_span: f.transcript_span,
-    description: f.description,
-    proposed_change: f.proposed_change,
-    created_at: new Date(),
-    ai_trace: trace,
-  }));
+  const findingDocs: CallFindingDoc[] = analyzerResult.findings.map((f) => {
+    let proposed = f.proposed_change;
+    if (snapshot) {
+      const applied = buildPublishPayload(proposed, snapshot);
+      // Overwrite diff_preview only when the applier produced a real one;
+      // advisory / errored cases keep the placeholder so the operator still
+      // sees the suggestion (the dashboard renders advisory cards distinctly).
+      if (applied.ok) {
+        proposed = { ...proposed, diff_preview: applied.diff_preview };
+      }
+    }
+    return {
+      call_id: callId,
+      agent_id: agentId,
+      client_slug: clientSlug,
+      source_draft: sourceDraft,
+      type: f.type,
+      severity: f.severity,
+      transcript_span: f.transcript_span,
+      description: f.description,
+      proposed_change: proposed,
+      created_at: new Date(),
+      ai_trace: trace,
+    };
+  });
 
   const inserted = await insertFindings(findingDocs);
   const suggestionIds: string[] = [];

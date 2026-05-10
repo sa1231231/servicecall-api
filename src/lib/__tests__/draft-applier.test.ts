@@ -22,7 +22,12 @@ function pc(overrides: Partial<ProposedChange>): ProposedChange {
   return {
     kind: "add_faq_entry",
     payload: { entry: "After hours: $50 trip charge applies." },
-    diff_preview: { before: "—", after: "After hours: $50 trip charge applies." },
+    diff_preview: {
+      component_kind: "faq_knowledge_base" as const,
+      component_label: "FAQ knowledge base",
+      before: "—",
+      after: "After hours: $50 trip charge applies.",
+    },
     ...overrides,
   };
 }
@@ -74,7 +79,12 @@ describe("applyToDraft — edit_close_transition", () => {
     kind: "edit_close_transition",
     target_path_name: "dispatch",
     payload: { append: "Before we wrap up, anything else you'd like to know?" },
-    diff_preview: { before: "Thank you…", after: "Thank you…\n\nBefore we wrap up…" },
+    diff_preview: {
+      component_kind: "conversation_prompt" as const,
+      component_label: "Close (dispatch) — conversation prompt",
+      before: "Thank you…",
+      after: "Thank you…\n\nBefore we wrap up…",
+    },
   });
 
   it("writes pathClosePrompts for the targeted path", () => {

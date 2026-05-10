@@ -21,25 +21,82 @@ export type FindingType =
 
 export type FindingSeverity = "low" | "medium" | "high";
 
+// Each kind targets exactly ONE component on ONE specific node. The
+// component_kind in the diff_preview matches 1:1 with the kind so the
+// dashboard can render an unambiguous "Editing {component} on {node}" header.
+//
+// Naming convention: <verb>_<node>_<component>
+//   edit_*_prompt          → conversation prompt text
+//   add_*_finetune         → append finetune example
+//   edit_*_transition      → transition condition text on an edge
+//
+// Old kind names (`add_finetune_example`, `edit_close_transition`) are
+// aliased to the new ones in the applier so existing suggestions in Mongo
+// keep working.
 export type ProposedChangeKind =
-  | "add_faq_entry"
-  | "edit_collect_prompt"
-  | "add_finetune_example"
-  | "edit_close_transition"
+  // Agent-global
+  | "edit_global_prompt"        // flow.global_prompt
+  | "add_faq_entry"             // append to FAQ knowledge base node instruction.text
+  // Intro node (greeting + path routing)
+  | "edit_intro_prompt"         // intro node instruction.text
+  | "edit_intro_transition"     // intro→path edge transition_condition.prompt
+  | "add_intro_finetune"        // intro node finetune_transition_examples
+  // Per-path Collect node (data point capture)
+  | "edit_collect_prompt"       // Collect node instruction.text
+  | "add_collect_finetune"      // Collect node finetune_transition_examples
+  // Per-path Close node (callback paths only)
+  | "edit_close_prompt"         // Close node instruction.text
+  // Advisory only — not auto-applicable
   | "edit_router_branch"
-  | "split_data_point";
+  | "split_data_point"
+  // Backwards-compatible aliases (existing suggestions in Mongo)
+  | "add_finetune_example"      // → add_collect_finetune
+  | "edit_close_transition";    // → edit_close_prompt
+
+/** Which component on which node a `proposed_change` targets. Drives the UI's
+ *  "Editing {component} on {node}" header so the operator never has to guess
+ *  what the diff applies to. */
+export type ComponentKind =
+  | "global_prompt"
+  | "faq_knowledge_base"
+  | "conversation_prompt"
+  | "transition_condition"
+  | "finetune_examples";
+
+export interface DiffPreview {
+  /** Plain-English label for this kind of edit, e.g. "Conversation prompt". */
+  component_kind: ComponentKind;
+  /** Human-readable component label including the node, e.g.
+   *  "Collect Phone Number — conversation prompt" or
+   *  "Intro node — finetune examples (routes to FAQ)". */
+  component_label: string;
+  /** Just the node name, e.g. "Collect Phone Number" or "Intro". */
+  node_label?: string;
+  /** Full text or serialized list of the component BEFORE the change.
+   *  For finetune examples this is the existing array, formatted as
+   *  "[user]: …\n[agent]: …" blocks separated by blank lines. */
+  before: string;
+  /** Full text or serialized list AFTER applying the change. */
+  after: string;
+}
 
 export interface ProposedChange {
   kind: ProposedChangeKind;
   /** Node id when the change targets a specific node. */
   target_node_id?: string;
-  /** Path name when the change targets a specific path (close prompts, router edges). */
+  /** Path name when the change targets a specific path (close prompts, intro
+   *  transitions, router edges). */
   target_path_name?: string;
-  /** Variable name when the change targets a specific data point (collect prompt, finetune). */
+  /** Variable name when the change targets a specific data point (collect
+   *  prompt, collect finetune). */
   target_variable_name?: string;
   /** Shape varies per kind; the suggestion-applier knows how to translate. */
   payload: Record<string, unknown>;
-  diff_preview: { before: string; after: string };
+  /** Computed by the suggestion-applier from the current parsed-flow snapshot
+   *  at the moment the suggestion is created. The applier reads the actual
+   *  current value of the targeted component to build a real before/after the
+   *  operator can scan, instead of relying on the analyzer's guess. */
+  diff_preview: DiffPreview;
 }
 
 export interface CallFindingDoc {

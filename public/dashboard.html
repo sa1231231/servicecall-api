@@ -390,6 +390,24 @@
     overflow-y: auto;
     margin: 0;
   }
+  .suggestion-card .sg-component {
+    margin: 0.5rem 0 0.4rem;
+    padding: 0.4rem 0.65rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    color: #1f2937;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+  }
+  .suggestion-card .sg-excerpt-wrap {
+    margin: 0 0 0.5rem;
+    font-size: 0.78rem;
+  }
+  .suggestion-card .sg-excerpt-wrap summary {
+    cursor: pointer;
+    color: #64748b;
+    user-select: none;
+  }
+  .suggestion-card .sg-excerpt-wrap[open] summary { margin-bottom: 0.35rem; }
   .suggestion-card .sg-diff-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -3377,8 +3395,18 @@
   function suggestionCardHtml(s) {
     const sev = s.severity || 'medium';
     const status = s.status || 'pending';
-    const diff = (s.proposed_change && s.proposed_change.diff_preview) || {};
+    const pc = s.proposed_change || {};
+    const diff = pc.diff_preview || {};
     const typeLabel = String(s.type || 'finding').replace(/_/g, ' ');
+    // Component badge color hints — finetune examples are the preferred
+    // remediation type; highlight them so the operator sees them at a glance.
+    const componentColor = ({
+      finetune_examples:    '#dbeafe',
+      conversation_prompt:  '#fef3c7',
+      transition_condition: '#fce7f3',
+      faq_knowledge_base:   '#dcfce7',
+      global_prompt:        '#e0e7ff',
+    })[diff.component_kind] || '#f1f5f9';
 
     let actionsHtml = '';
     if (status === 'pending') {
@@ -3401,6 +3429,15 @@
         + '</div>'
       : '';
 
+    // "Editing X on Y" component banner — answers the operator's first
+    // question (what does this change actually touch?) before they read the
+    // diff. Falls back to a placeholder when the applier couldn't compute a
+    // diff (advisory kinds, errored apply, legacy suggestions).
+    const componentLabel = diff.component_label || '(advisory — no auto-apply path)';
+    const componentBanner = '<div class="sg-component" style="background:' + componentColor + ';">'
+      + '<strong>Editing:</strong> ' + esc(componentLabel)
+      + '</div>';
+
     return '<article class="suggestion-card" data-sg-card="' + esc(s._id) + '">'
       + '<h4>'
         + '<span class="sg-badge ' + esc(sev) + '">' + esc(sev) + '</span>'
@@ -3409,7 +3446,10 @@
       + '</h4>'
       + '<div class="sg-meta">' + new Date(s.created_at).toLocaleString() + '</div>'
       + '<p class="sg-desc">' + esc(s.description || '') + '</p>'
-      + '<pre class="sg-excerpt">' + esc(s.excerpt || '') + '</pre>'
+      + '<details class="sg-excerpt-wrap"><summary>Transcript excerpt</summary>'
+        + '<pre class="sg-excerpt">' + esc(s.excerpt || '') + '</pre>'
+      + '</details>'
+      + componentBanner
       + '<div class="sg-diff-grid">'
         + '<div><h5>Before</h5><pre class="sg-diff">' + esc(diff.before || '—') + '</pre></div>'
         + '<div><h5>After</h5><pre class="sg-diff">' + esc(diff.after || '—') + '</pre></div>'

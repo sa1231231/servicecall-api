@@ -65,12 +65,19 @@ const VALID_TYPES: ReadonlySet<FindingType> = new Set([
 ]);
 
 const VALID_KINDS: ReadonlySet<ProposedChangeKind> = new Set([
+  "edit_global_prompt",
   "add_faq_entry",
+  "edit_intro_prompt",
+  "edit_intro_transition",
+  "add_intro_finetune",
   "edit_collect_prompt",
-  "add_finetune_example",
-  "edit_close_transition",
+  "add_collect_finetune",
+  "edit_close_prompt",
   "edit_router_branch",
   "split_data_point",
+  // Legacy aliases retained so old findings still validate
+  "add_finetune_example",
+  "edit_close_transition",
 ]);
 
 const VALID_SEVERITIES: ReadonlySet<FindingSeverity> = new Set(["low", "medium", "high"]);
@@ -95,16 +102,41 @@ Look for these six patterns ONLY:
 
 Return zero findings if the call went well. Be conservative — every finding becomes an operator-facing suggestion they have to review. Aim for high precision over high recall.
 
-For each finding, propose ONE remediation. Available remediation kinds:
+For each finding, propose ONE remediation. **Strong preference order:**
 
-- **add_faq_entry** — add a short FAQ entry to the global FAQ knowledge base. Use when the caller asked a recurring question (fees, hours, scope of service). Payload: \`{ entry: "Question? Short answer." }\`.
-- **edit_collect_prompt** — adjust the conversation prompt for a specific Collect <X> node. Use when the agent's prompt led to a misheard or fragmented value. Requires \`target_variable_name\`. Payload: \`{ append: "..." }\` — text to append to the existing prompt; never replace.
-- **add_finetune_example** — add one finetune conversation example to a specific Collect node. Use to teach the agent how to handle a specific user pattern (restarts during spelling, etc.). Requires \`target_variable_name\`. Payload: \`{ user: "...", agent: "..." }\`.
-- **edit_close_transition** — add an "anything else?" beat to the close transition prompt for a specific path. Requires \`target_path_name\`. Payload: \`{ append: "..." }\`.
-- **edit_router_branch** — adjust the router's branch condition for a specific path. Requires \`target_path_name\`. Payload: \`{ note: "human-readable description of the rule change" }\` — operator will translate to equation manually (Phase 1 doesn't auto-apply).
-- **split_data_point** — advisory only; describe what should be split. Payload: \`{ note: "..." }\`.
+1. **add_*_finetune** kinds first — finetune examples teach the agent the right pattern without hardcoding text. The operator prefers these because they shape behavior naturally. Reach for them whenever a single example transcript would teach the agent the right move.
+2. **edit_*_prompt** kinds only when no finetune example would express the rule (e.g. you need to restate a constraint, add an explicit instruction, or fix a question that the prompt itself asks wrongly).
+3. **edit_*_transition** only when the issue is the path-routing logic at the intro layer.
+4. **add_faq_entry** when the caller asked a question that should have a stock answer.
+5. Advisory kinds last.
 
-For \`diff_preview\`, show the operator a short before/after they can scan. \`before\` = the existing text excerpt or "—" if adding net-new; \`after\` = the proposed final text.
+The kind names below identify the EXACT component being edited. Each suggestion targets one component on one node so the dashboard can render an unambiguous "Editing X on Y" diff.
+
+**Available kinds**
+
+Agent-global:
+- **edit_global_prompt** — appends to the agent's top-level system prompt. Use only for behaviors that should apply across every path. Payload: \`{ append: "..." }\`.
+- **add_faq_entry** — appends an entry to the FAQ knowledge base node. Use when the caller asked a recurring informational question. Payload: \`{ entry: "Question? Short answer." }\`.
+
+Intro node (greeting + path routing):
+- **edit_intro_prompt** — appends to the intro node's conversation prompt (the greeting / triage script). Payload: \`{ append: "..." }\`.
+- **edit_intro_transition** — adjusts the routing prompt on the intro→path edge. Use when the agent picked the wrong path because the routing condition was too loose or too strict. Requires \`target_path_name\`. Payload: \`{ append: "..." }\` — text appended to the existing transition prompt.
+- **add_intro_finetune** — adds one finetune example to the intro node. Best tool for path-routing fixes (the analyzer's preferred remediation for path_misroute). Payload: \`{ user: "...", agent: "...", routes_to: "<path-name>" | "faq" | "negative" }\`. Use \`routes_to: "faq"\` to teach the agent to redirect admin-style questions to the FAQ node; use a path name to teach path selection; \`"negative"\` for "this is none of these".
+
+Per-routing-path Collect node (data-point capture):
+- **edit_collect_prompt** — appends to a Collect node's conversation prompt. Last resort when no finetune would express the fix. Requires \`target_variable_name\`. Payload: \`{ append: "..." }\`.
+- **add_collect_finetune** — adds one finetune example to a Collect node. Preferred fix for misheard/fragmented values (spelling restarts, partial answers, etc.). Requires \`target_variable_name\`. Payload: \`{ user: "...", agent: "..." }\`.
+
+Per-routing-path Close node (callback paths only):
+- **edit_close_prompt** — appends to the Close node's conversation prompt for a specific path. Use to add an "anything else?" beat or to soften a hard close. Requires \`target_path_name\`. Payload: \`{ append: "..." }\`.
+
+Advisory only (cannot auto-apply):
+- **edit_router_branch** — describes a rule change for a router branch equation. Requires \`target_path_name\`. Payload: \`{ note: "..." }\`.
+- **split_data_point** — describes splitting a composite data point into pieces. Payload: \`{ note: "..." }\`.
+
+**Targeting tip:** when the agent context lists node ids, set \`target_node_id\` so the operator knows exactly which node will change. Always set the relevant \`target_*\` field for the kind you choose.
+
+**Do NOT include diff_preview in your output.** The system computes the actual before/after from the live agent state — your job is the kind + payload + targets.
 
 Output ONLY a JSON object — no prose, no fences. Schema:
 
@@ -121,8 +153,7 @@ Output ONLY a JSON object — no prose, no fences. Schema:
         "target_node_id": "<optional, when known from the agent context>",
         "target_path_name": "<optional, when applicable>",
         "target_variable_name": "<optional, when applicable>",
-        "payload": { ... },
-        "diff_preview": { "before": "...", "after": "..." }
+        "payload": { ... }
       }
     }
   ]
@@ -255,15 +286,20 @@ function validateFinding(raw: unknown): AnalyzerSuccess["findings"][number] | nu
   if (!VALID_KINDS.has(kind as ProposedChangeKind)) return null;
 
   const payload = p.payload && typeof p.payload === "object" ? (p.payload as Record<string, unknown>) : {};
-  const diff = p.diff_preview && typeof p.diff_preview === "object" ? (p.diff_preview as Record<string, unknown>) : {};
-  const before = typeof diff.before === "string" ? diff.before : "";
-  const after = typeof diff.after === "string" ? diff.after : "";
-  if (!after) return null;
 
+  // The analyzer no longer emits diff_preview — the orchestrator computes it
+  // by running the applier against the live snapshot. We stash a placeholder
+  // here so the type stays satisfied; analyzeAndPersist overwrites it before
+  // persisting the finding.
   const change: ProposedChange = {
     kind: kind as ProposedChangeKind,
     payload,
-    diff_preview: { before, after },
+    diff_preview: {
+      component_kind: "conversation_prompt",
+      component_label: "(pending — applier fills this in)",
+      before: "",
+      after: "",
+    },
   };
   if (typeof p.target_node_id === "string") change.target_node_id = p.target_node_id;
   if (typeof p.target_path_name === "string") change.target_path_name = p.target_path_name;

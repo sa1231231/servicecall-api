@@ -129,20 +129,25 @@ describe("parseAnalyzerResponse — strict validation", () => {
     expect(r.findings).toHaveLength(0);
   });
 
-  it("drops a finding missing diff_preview.after", () => {
+  it("accepts a finding without diff_preview (computed downstream by the applier)", () => {
+    // Updated contract: the analyzer no longer emits diff_preview — the
+    // orchestrator runs the applier against the live snapshot to compute
+    // the structured before/after. The parser stamps a placeholder so the
+    // type stays valid until analyzeAndPersist overwrites it.
     const findings = [
       rawFinding({
         proposed_change: {
           kind: "add_faq_entry",
           payload: { entry: "x" },
-          diff_preview: { before: "—" },
         },
       }),
     ];
     const r = parseAnalyzerResponse(JSON.stringify({ findings }), trace);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.findings).toHaveLength(0);
+    expect(r.findings).toHaveLength(1);
+    // Placeholder is the literal we set in validateFinding.
+    expect(r.findings[0].proposed_change.diff_preview.component_label).toMatch(/pending/i);
   });
 
   it("drops a finding missing transcript_excerpt or description", () => {
