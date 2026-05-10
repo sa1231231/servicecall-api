@@ -43,6 +43,27 @@ export async function loadDraft(name: string): Promise<DraftDoc | null> {
   return (doc as DraftDoc | null) ?? null;
 }
 
+/**
+ * Replace the exportConfig on the most-recently-updated draft with the given
+ * name. Used by the transcript-suggestion bubble-up flow when an operator
+ * approves a change with scope=agent_and_draft. Returns true when a doc was
+ * matched and updated.
+ */
+export async function updateDraftExportConfig(
+  name: string,
+  exportConfig: CreateAgentBody,
+): Promise<boolean> {
+  const existing = await loadDraft(name);
+  if (!existing || !existing._id) return false;
+  const result = await getDb()
+    .collection("agent_drafts")
+    .updateOne(
+      { _id: existing._id as any },
+      { $set: { exportConfig, updatedAt: new Date() } },
+    );
+  return result.matchedCount > 0;
+}
+
 export function applyOverrides(
   exportConfig: CreateAgentBody,
   overrides: FromDraftOverrides,

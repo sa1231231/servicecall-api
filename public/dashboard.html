@@ -342,6 +342,100 @@
   .agent-tab-pane { display: none; }
   .agent-tab-pane.active { display: block; }
   .agent-tab-pane h2:first-child { margin-top: 0; }
+  /* Suggestions tab */
+  .suggestions-badge {
+    display: inline-block;
+    margin-left: 0.35rem;
+    padding: 0 0.4rem;
+    border-radius: 999px;
+    background: #1e40af;
+    color: #fff;
+    font-size: 0.7rem;
+    line-height: 1.4;
+    min-width: 1.1rem;
+    text-align: center;
+  }
+  .suggestion-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.75rem;
+  }
+  .suggestion-card h4 {
+    margin: 0 0 0.4rem;
+    font-size: 0.92rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .suggestion-card .sg-meta {
+    color: #64748b;
+    font-size: 0.78rem;
+    margin-bottom: 0.4rem;
+  }
+  .suggestion-card .sg-desc { margin: 0 0 0.6rem; font-size: 0.88rem; }
+  .suggestion-card pre.sg-excerpt,
+  .suggestion-card pre.sg-diff {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.78rem;
+    color: #334155;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 12rem;
+    overflow-y: auto;
+    margin: 0;
+  }
+  .suggestion-card .sg-diff-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.75rem;
+  }
+  .suggestion-card .sg-diff-grid h5 {
+    margin: 0 0 0.25rem;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    color: #64748b;
+    letter-spacing: 0.04em;
+  }
+  .suggestion-card .sg-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .suggestion-card .sg-actions button {
+    padding: 0.4rem 0.85rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .suggestion-card .sg-approve {
+    background: #16a34a; color: #fff; border-color: #16a34a;
+  }
+  .suggestion-card .sg-approve-template {
+    background: #2563eb; color: #fff; border-color: #2563eb;
+  }
+  .suggestion-card .sg-reject {
+    background: #fff; color: #b91c1c; border-color: #fecaca;
+  }
+  .suggestion-card .sg-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .sg-badge {
+    display: inline-block;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .sg-badge.high   { background: #fee2e2; color: #b91c1c; }
+  .sg-badge.medium { background: #fef3c7; color: #b45309; }
+  .sg-badge.low    { background: #dcfce7; color: #166534; }
+  .sg-badge.applied  { background: #dcfce7; color: #166534; }
+  .sg-badge.pending  { background: #dbeafe; color: #1d4ed8; }
+  .sg-badge.rejected { background: #f1f5f9; color: #475569; }
   @media (max-width: 768px) {
     .agent-tabs-shell { grid-template-columns: 1fr; gap: 0.5rem; }
     .agent-tabs-nav {
@@ -1428,6 +1522,7 @@
       <button class="agent-tab active" data-tab="settings" role="tab" onclick="switchAgentTab('settings')">Agent Settings</button>
       <button class="agent-tab" data-tab="dispatch" role="tab" onclick="switchAgentTab('dispatch')">Dispatch</button>
       <button class="agent-tab" data-tab="nodes"    role="tab" onclick="switchAgentTab('nodes')">Node Editor</button>
+      <button class="agent-tab" data-tab="suggestions" role="tab" data-feature="transcript_review" data-feature-level="read" onclick="switchAgentTab('suggestions')">Suggestions <span id="suggestionsTabBadge" class="suggestions-badge" hidden>0</span></button>
       <button class="agent-tab" data-tab="billing"  role="tab" data-feature="billing" data-feature-level="read" onclick="switchAgentTab('billing')">Billing</button>
       <button class="agent-tab" data-tab="calls"    role="tab" onclick="switchAgentTab('calls')">Call Log</button>
     </nav>
@@ -1436,6 +1531,18 @@
       <div id="tab-dispatch" class="agent-tab-pane"></div>
       <div id="tab-nodes"    class="agent-tab-pane">
         <div id="nodeEditorContainer"></div>
+      </div>
+      <div id="tab-suggestions" class="agent-tab-pane" data-feature="transcript_review" data-feature-level="read">
+        <div id="suggestionsHeader" style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;">
+          <h3 style="margin:0;flex:1;">Transcript Suggestions</h3>
+          <div id="suggestionsFilters" class="range-toggle">
+            <button class="range-btn active" data-suggestion-status="pending" onclick="switchSuggestionsFilter('pending')">Pending</button>
+            <button class="range-btn" data-suggestion-status="applied" onclick="switchSuggestionsFilter('applied')">Applied</button>
+            <button class="range-btn" data-suggestion-status="rejected" onclick="switchSuggestionsFilter('rejected')">Rejected</button>
+          </div>
+        </div>
+        <div id="suggestionsBubbleNote" style="display:none;font-size:0.82rem;color:#475569;margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:#f1f5f9;border-radius:6px;border:1px solid #e2e8f0;"></div>
+        <div id="suggestionsContent"><div class="loading">Loading suggestions...</div></div>
       </div>
       <div id="tab-billing" class="agent-tab-pane" data-feature="billing" data-feature-level="read">
         <div id="billingTrialStart" style="margin-bottom:0.75rem;"></div>
@@ -1683,11 +1790,14 @@
   // ── Per-tab state ──────────────────────────────────────────────────
   // The agent detail page is split into 5 tabs: settings, dispatch, nodes,
   // billing, calls. Per-tab dirty flags and lazy-load flags live here.
-  const VALID_TABS = ['settings', 'dispatch', 'nodes', 'billing', 'calls'];
+  const VALID_TABS = ['settings', 'dispatch', 'nodes', 'suggestions', 'billing', 'calls'];
   let activeTab = 'settings';
   const tabDirty = { settings: false, dispatch: false }; // nodes uses neDirty
   let billingLoaded = false;
   let callsLoaded = false;
+  let suggestionsLoaded = false;
+  let suggestionsBubbleUp = { eligible: false }; // populated by loadSuggestions
+  let suggestionsCurrentStatus = 'pending';
 
   // ── Cmd+S / Ctrl+S to save ──────────────────────────────────────
   document.addEventListener('keydown', (e) => {
@@ -3117,6 +3227,10 @@
       loadCalls(true);
       callsLoaded = true;
     }
+    if (tabId === 'suggestions' && currentSlug) {
+      // Always reload on activation — counts go stale otherwise.
+      loadSuggestions(currentSlug);
+    }
   }
 
   function currentTabDirty() {
@@ -3161,6 +3275,209 @@
   function clearTabDirty(tab) {
     tabDirty[tab] = false;
   }
+
+  // ── Transcript suggestions tab ─────────────────────────────────────
+  async function loadSuggestions(slug) {
+    const target = document.getElementById('suggestionsContent');
+    const note = document.getElementById('suggestionsBubbleNote');
+    const badge = document.getElementById('suggestionsTabBadge');
+    if (!target) return;
+    target.innerHTML = '<div class="loading">Loading suggestions...</div>';
+    try {
+      const url = '/dashboard/api/agents/' + encodeURIComponent(slug)
+        + '/suggestions?status=' + encodeURIComponent(suggestionsCurrentStatus)
+        + '&limit=100';
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) {
+        if (res.status === 403) {
+          target.innerHTML = '<div class="error-msg">You don\'t have permission to view suggestions.</div>';
+          return;
+        }
+        throw new Error('Failed: ' + res.status);
+      }
+      const body = await res.json();
+      suggestionsBubbleUp = body.bubble_up || { eligible: false };
+      suggestionsLoaded = true;
+      renderSuggestionsBubbleNote(note, suggestionsBubbleUp);
+      renderSuggestions(target, body.suggestions || []);
+      // Refresh the pending-count badge separately (we just listed by status).
+      if (suggestionsCurrentStatus === 'pending') {
+        updateSuggestionsBadge(badge, (body.suggestions || []).length);
+      } else {
+        // Fetch pending count out-of-band so the badge stays accurate when
+        // the operator is browsing Applied/Rejected.
+        fetchSuggestionsPendingCount(slug, badge);
+      }
+    } catch (err) {
+      target.innerHTML = '<div class="error-msg">' + esc(err.message) + '</div>';
+    }
+  }
+
+  async function fetchSuggestionsPendingCount(slug, badge) {
+    try {
+      const res = await fetch(
+        '/dashboard/api/agents/' + encodeURIComponent(slug) + '/suggestions?status=pending&limit=1',
+        { credentials: 'same-origin' },
+      );
+      if (!res.ok) return;
+      const body = await res.json();
+      updateSuggestionsBadge(badge, (body.suggestions || []).length);
+    } catch (_) { /* badge stays as-is */ }
+  }
+
+  function updateSuggestionsBadge(badge, count) {
+    if (!badge) return;
+    if (count > 0) {
+      badge.textContent = String(count);
+      badge.hidden = false;
+    } else {
+      badge.hidden = true;
+    }
+  }
+
+  function renderSuggestionsBubbleNote(el, bubble) {
+    if (!el) return;
+    if (bubble.eligible) {
+      el.style.display = 'block';
+      el.innerHTML = '<strong>Template-linked agent.</strong> Approving with "Apply to template" '
+        + 'will also write the change to <code>' + esc(bubble.source_draft) + '</code>, '
+        + 'so future agents built from it inherit the fix.';
+    } else if (bubble.reason === 'no_source_draft') {
+      el.style.display = 'none';
+    } else if (bubble.source_draft) {
+      el.style.display = 'block';
+      const reasonLabel = ({
+        not_template: 'is not flagged as a template',
+        draft_missing: 'no longer exists',
+        draft_lacks_export_config: 'has no programmatic exportConfig — re-save it from the form',
+      })[bubble.reason] || 'is not eligible';
+      el.innerHTML = '<strong>Source draft <code>' + esc(bubble.source_draft) + '</code> ' + reasonLabel + '.</strong> '
+        + 'Approvals will apply to this agent only.';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+
+  function renderSuggestions(target, items) {
+    if (!items || items.length === 0) {
+      target.innerHTML = '<div style="padding:1.5rem;text-align:center;color:#64748b;border:1px dashed #e2e8f0;border-radius:8px;">'
+        + 'No ' + esc(suggestionsCurrentStatus) + ' suggestions.'
+        + (suggestionsCurrentStatus === 'pending'
+            ? '<br><span style="font-size:0.78rem;">New suggestions appear here automatically after each completed call (when transcript review is enabled for this agent).</span>'
+            : '')
+        + '</div>';
+      return;
+    }
+    target.innerHTML = items.map((s) => suggestionCardHtml(s)).join('');
+    target.querySelectorAll('[data-sg-action]').forEach((btn) => {
+      btn.addEventListener('click', (e) => onSuggestionAction(e, btn));
+    });
+  }
+
+  function suggestionCardHtml(s) {
+    const sev = s.severity || 'medium';
+    const status = s.status || 'pending';
+    const diff = (s.proposed_change && s.proposed_change.diff_preview) || {};
+    const typeLabel = String(s.type || 'finding').replace(/_/g, ' ');
+
+    let actionsHtml = '';
+    if (status === 'pending') {
+      const approveAgentBtn = '<button data-sg-action="approve" data-sg-scope="agent" data-sg-id="' + esc(s._id) + '" class="sg-approve">'
+        + (suggestionsBubbleUp.eligible ? 'Apply to agent only' : 'Approve & publish')
+        + '</button>';
+      const approveTemplateBtn = suggestionsBubbleUp.eligible
+        ? '<button data-sg-action="approve" data-sg-scope="agent_and_draft" data-sg-id="' + esc(s._id) + '" class="sg-approve-template">'
+            + 'Apply to agent + template'
+          + '</button>'
+        : '';
+      const rejectBtn = '<button data-sg-action="reject" data-sg-id="' + esc(s._id) + '" class="sg-reject">Reject</button>';
+      actionsHtml = '<div class="sg-actions">' + approveAgentBtn + approveTemplateBtn + rejectBtn + '</div>';
+    }
+
+    const appliedNote = s.applied_version_id
+      ? '<div class="sg-meta">Applied as version <code>' + esc(s.applied_version_id) + '</code>'
+        + (s.decided_by ? ' by ' + esc(s.decided_by) : '')
+        + (s.decision_note ? ' — ' + esc(s.decision_note) : '')
+        + '</div>'
+      : '';
+
+    return '<article class="suggestion-card" data-sg-card="' + esc(s._id) + '">'
+      + '<h4>'
+        + '<span class="sg-badge ' + esc(sev) + '">' + esc(sev) + '</span>'
+        + '<span>' + esc(typeLabel) + '</span>'
+        + '<span class="sg-badge ' + esc(status) + '">' + esc(status) + '</span>'
+      + '</h4>'
+      + '<div class="sg-meta">' + new Date(s.created_at).toLocaleString() + '</div>'
+      + '<p class="sg-desc">' + esc(s.description || '') + '</p>'
+      + '<pre class="sg-excerpt">' + esc(s.excerpt || '') + '</pre>'
+      + '<div class="sg-diff-grid">'
+        + '<div><h5>Before</h5><pre class="sg-diff">' + esc(diff.before || '—') + '</pre></div>'
+        + '<div><h5>After</h5><pre class="sg-diff">' + esc(diff.after || '—') + '</pre></div>'
+      + '</div>'
+      + appliedNote
+      + actionsHtml
+      + '</article>';
+  }
+
+  async function onSuggestionAction(e, btn) {
+    e.preventDefault();
+    const id = btn.dataset.sgId;
+    const action = btn.dataset.sgAction;
+    const scope = btn.dataset.sgScope; // present on approve, undefined on reject
+    if (!id) return;
+    const card = document.querySelector('[data-sg-card="' + CSS.escape(id) + '"]');
+    const buttons = card ? card.querySelectorAll('button') : [];
+
+    let body = {};
+    if (action === 'reject') {
+      const note = window.prompt('Optional rejection note:') || '';
+      body.note = note.trim();
+    } else if (action === 'approve' && scope) {
+      body.scope = scope;
+    }
+
+    buttons.forEach((b) => (b.disabled = true));
+    try {
+      const res = await fetch('/dashboard/api/suggestions/' + encodeURIComponent(id) + '/' + action, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast('Failed: ' + (data.error || res.status), 'error');
+        buttons.forEach((b) => (b.disabled = false));
+        return;
+      }
+      let msg;
+      if (action === 'reject') {
+        msg = 'Rejected.';
+      } else if (data.draft_propagation && data.draft_propagation.ok) {
+        msg = 'Published to agent + template (' + data.draft_propagation.draftName + ').';
+      } else if (data.draft_propagation && !data.draft_propagation.ok) {
+        msg = 'Published to agent. Template skipped: ' + data.draft_propagation.reason;
+      } else if (data.advisory) {
+        msg = 'Marked applied (advisory). ' + (data.message || '');
+      } else {
+        msg = 'Published.';
+      }
+      showToast(msg, 'success');
+      loadSuggestions(currentSlug);
+    } catch (err) {
+      showToast('Failed: ' + err.message, 'error');
+      buttons.forEach((b) => (b.disabled = false));
+    }
+  }
+
+  function switchSuggestionsFilter(status) {
+    suggestionsCurrentStatus = status;
+    document.querySelectorAll('#suggestionsFilters [data-suggestion-status]').forEach((b) => {
+      b.classList.toggle('active', b.dataset.suggestionStatus === status);
+    });
+    if (currentSlug) loadSuggestions(currentSlug);
+  }
+  window.switchSuggestionsFilter = switchSuggestionsFilter;
 
   async function loadCogs(slug) {
     const target = document.getElementById('cogsContent');
@@ -3882,6 +4199,11 @@
     tabDirty.dispatch = false;
     billingLoaded = false;
     callsLoaded = false;
+    suggestionsLoaded = false;
+    suggestionsBubbleUp = { eligible: false };
+    suggestionsCurrentStatus = 'pending';
+    const sgBadge = document.getElementById('suggestionsTabBadge');
+    if (sgBadge) sgBadge.hidden = true;
   }
 
   function renderTabSettings(doc) {

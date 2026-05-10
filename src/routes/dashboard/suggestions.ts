@@ -19,15 +19,21 @@ import {
   buildPublishPayload,
   buildSnapshotFromCanonical,
 } from "../../lib/suggestion-applier.js";
+import { applyToDraft } from "../../lib/draft-applier.js";
 import { getClientDocument } from "../../config/client-store.js";
 import { logAudit } from "../../lib/audit.js";
 import { saveAndPublishHandler } from "./node-editor.js";
 import { getLatestVersion } from "../../lib/agent-versions.js";
+import { loadDraft, updateDraftExportConfig } from "../../lib/agent-from-draft.js";
 
 export const suggestionsRouter = Router();
 suggestionsRouter.use(express.json());
 
 // ── List for an agent ───────────────────────────────────────────────────────
+//
+// Includes a `bubble_up` envelope describing whether approvals on this
+// agent can also write to the source draft. The UI uses it to decide
+// whether to render the "apply to template" button next to "apply to agent".
 
 suggestionsRouter.get(
   "/agents/:slug/suggestions",
@@ -38,15 +44,40 @@ suggestionsRouter.get(
     const limit = clamp(Number(req.query.limit) || 50, 1, 200);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
 
-    const suggestions = await listSuggestions({
-      clientSlug: slug,
-      status,
-      limit,
-      offset,
-    });
-    res.json({ suggestions });
+    const [suggestions, bubbleUp] = await Promise.all([
+      listSuggestions({ clientSlug: slug, status, limit, offset }),
+      computeBubbleUpEligibility(slug),
+    ]);
+    res.json({ suggestions, bubble_up: bubbleUp });
   },
 );
+
+async function computeBubbleUpEligibility(slug: string): Promise<{
+  eligible: boolean;
+  source_draft?: string;
+  reason?: string;
+}> {
+  const doc = await getClientDocument(slug);
+  if (!doc) return { eligible: false, reason: "client_not_found" };
+  if (!doc.source_draft) {
+    return { eligible: false, reason: "no_source_draft" };
+  }
+  const draft = await loadDraft(doc.source_draft);
+  if (!draft) {
+    return { eligible: false, source_draft: doc.source_draft, reason: "draft_missing" };
+  }
+  if (!draft.is_template) {
+    return { eligible: false, source_draft: doc.source_draft, reason: "not_template" };
+  }
+  if (!draft.exportConfig) {
+    return {
+      eligible: false,
+      source_draft: doc.source_draft,
+      reason: "draft_lacks_export_config",
+    };
+  }
+  return { eligible: true, source_draft: doc.source_draft };
+}
 
 // ── Inbox (cross-agent) ─────────────────────────────────────────────────────
 
@@ -103,10 +134,18 @@ suggestionsRouter.post(
       return;
     }
     if (suggestion.scope !== "agent") {
-      // Phase 1: only agent-scope is supported. Draft propagation is Phase 3.
-      res.status(400).json({ error: `Only agent-scoped suggestions are supported in Phase 1 (got scope=${suggestion.scope})` });
+      res.status(400).json({ error: `Only agent-scoped suggestions are supported (got scope=${suggestion.scope})` });
       return;
     }
+
+    // The operator chooses scope per approval:
+    //   "agent" (default) — apply to this agent only
+    //   "agent_and_draft" — also write the change into the source draft so
+    //                       every future agent built from it inherits the fix
+    // Anything else, or "agent_and_draft" without a valid template-marked
+    // source draft, falls back to "agent" with a warning so the approve
+    // never silently no-ops.
+    const requestedScope = req.body?.scope === "agent_and_draft" ? "agent_and_draft" : "agent";
 
     const clientDoc = await getClientDocument(suggestion.client_slug);
     if (!clientDoc) {
@@ -176,12 +215,27 @@ suggestionsRouter.post(
     // Look up the version snapshot the publish just created so we can link
     // it on the suggestion (for audit / rollback).
     const latestVersion = await getLatestVersion(suggestion.client_slug, suggestion.agent_id);
+
+    // Bubble-up: if requested AND lineage qualifies, mutate the source
+    // draft's exportConfig. We *never* fail the operator's approve action
+    // because the draft step missed — the agent already got the change, so
+    // we record what bubbled up and what didn't and respond accordingly.
+    let draftOutcome:
+      | { ok: true; draftName: string; description: string }
+      | { ok: false; draftName?: string; reason: string }
+      | null = null;
+    if (requestedScope === "agent_and_draft") {
+      draftOutcome = await tryBubbleUpToDraft(clientDoc.source_draft, suggestion.proposed_change);
+    }
+
     const updated = await updateSuggestion(id, {
       status: "applied",
       applied_at: new Date(),
       applied_version_id: latestVersion?._id?.toString(),
       decided_by: req.user?.username,
-      decision_note: applied.description,
+      decision_note: draftOutcome?.ok
+        ? `${applied.description} (also: ${draftOutcome.description})`
+        : applied.description,
     });
 
     await logAudit(req, "approve_transcript_suggestion", suggestion.client_slug, {
@@ -189,11 +243,65 @@ suggestionsRouter.post(
       type: suggestion.type,
       applied_version_id: latestVersion?._id?.toString(),
       description: applied.description,
+      scope: requestedScope,
+      draft_outcome: draftOutcome ?? "not_requested",
     });
 
-    res.json({ success: true, suggestion: updated, version_id: latestVersion?._id?.toString() });
+    res.json({
+      success: true,
+      suggestion: updated,
+      version_id: latestVersion?._id?.toString(),
+      draft_propagation: draftOutcome,
+    });
   },
 );
+
+// ── Bubble-up helper ────────────────────────────────────────────────────────
+
+async function tryBubbleUpToDraft(
+  sourceDraftName: string | undefined,
+  proposed: import("../../lib/call-findings.js").ProposedChange,
+): Promise<
+  | { ok: true; draftName: string; description: string }
+  | { ok: false; draftName?: string; reason: string }
+> {
+  if (!sourceDraftName) {
+    return { ok: false, reason: "Agent has no source_draft — nothing to bubble up to." };
+  }
+  const draft = await loadDraft(sourceDraftName);
+  if (!draft) {
+    return { ok: false, draftName: sourceDraftName, reason: `Source draft "${sourceDraftName}" not found.` };
+  }
+  if (!draft.is_template) {
+    return {
+      ok: false,
+      draftName: sourceDraftName,
+      reason: `Source draft "${sourceDraftName}" is not flagged as a template — bubble-up disabled.`,
+    };
+  }
+  if (!draft.exportConfig) {
+    return {
+      ok: false,
+      draftName: sourceDraftName,
+      reason: `Source draft "${sourceDraftName}" has no programmatic exportConfig — re-save the draft from the form to migrate it.`,
+    };
+  }
+
+  const result = applyToDraft(proposed, draft.exportConfig);
+  if (!result.ok) {
+    return { ok: false, draftName: sourceDraftName, reason: result.error };
+  }
+
+  const wrote = await updateDraftExportConfig(sourceDraftName, result.next);
+  if (!wrote) {
+    return {
+      ok: false,
+      draftName: sourceDraftName,
+      reason: "Draft update raced with another writer — bubble-up skipped.",
+    };
+  }
+  return { ok: true, draftName: sourceDraftName, description: result.description };
+}
 
 // ── Reject ──────────────────────────────────────────────────────────────────
 
