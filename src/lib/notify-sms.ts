@@ -4,19 +4,23 @@ import { withRetry } from "./retry.js";
 
 const twilioClient = Twilio(config.TWILIO_ACCOUNT_SID, config.TWILIO_AUTH_TOKEN);
 
-export async function sendSms(to: string, message: string) {
+export async function sendSmsFrom(from: string, to: string, message: string) {
   return withRetry(
     async () => {
       const result = await twilioClient.messages.create({
         to,
-        from: config.TWILIO_PHONE_NUMBER,
+        from,
         body: message,
       });
-      console.log(`notify-sms: sent to ${to}, sid=${result.sid}`);
+      console.log(`notify-sms: sent ${from} → ${to}, sid=${result.sid}`);
       return result;
     },
-    { label: `sms to ${to}` },
+    { label: `sms ${from} → ${to}` },
   );
+}
+
+export async function sendSms(to: string, message: string) {
+  return sendSmsFrom(config.TWILIO_PHONE_NUMBER, to, message);
 }
 
 export async function sendSmsToAll(numbers: string[], message: string) {
