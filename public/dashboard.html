@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#2563eb">
 <title>Agent Dashboard</title>
 <link rel="stylesheet" href="/assets/styles/tokens.css">
+<link rel="stylesheet" href="/assets/styles/mobile-shell.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; }
@@ -10144,6 +10145,80 @@
   loadAgents().then(renderFromHash);
   wireUrlValidation(document);
   refreshAllChipValidation(document);
+
+  // ── Mobile shell: active tab + badge sync ────────────────────────
+  // Drives the bottom-tab-bar active state from the URL hash and
+  // mirrors the pending-leads count from #leadsBadge into the mobile
+  // Inbox badge. Visible only on viewports ≤768px (CSS-gated).
+  function syncMobileTabs() {
+    const hash = window.location.hash;
+    let activeTab = 'agents';
+    if (hash === '#settings') activeTab = 'settings';
+    else if (hash === '#leads' || hash.startsWith('#leads/')) activeTab = 'inbox';
+    document.querySelectorAll('.mobile-tab').forEach((el) => {
+      el.classList.toggle('active', el.dataset.tab === activeTab);
+    });
+  }
+  function syncMobileInboxBadge() {
+    const src = document.getElementById('leadsBadge');
+    const dst = document.getElementById('mobileTabInboxBadge');
+    if (!src || !dst) return;
+    const visible = src.style.display !== 'none' && src.textContent && src.textContent !== '0';
+    if (visible) {
+      dst.textContent = src.textContent;
+      dst.style.display = 'flex';
+    } else {
+      dst.style.display = 'none';
+    }
+  }
+  window.addEventListener('hashchange', syncMobileTabs);
+  // Mutation observer keeps the mobile badge in sync with the desktop badge.
+  const _leadsBadgeEl = document.getElementById('leadsBadge');
+  if (_leadsBadgeEl) {
+    new MutationObserver(syncMobileInboxBadge).observe(_leadsBadgeEl, {
+      attributes: true, childList: true, characterData: true, subtree: true,
+    });
+  }
+  syncMobileTabs();
+  syncMobileInboxBadge();
 </script>
+
+<!-- Mobile bottom-tab navigation (visible only ≤768px). Calls the same
+     showXxx() / logout() functions the desktop header uses, so behavior is
+     identical. -->
+<nav class="mobile-tab-bar" aria-label="Mobile navigation">
+  <div class="mobile-tab-bar-inner">
+    <button class="mobile-tab" type="button" data-tab="agents" onclick="showList()" aria-label="Agents">
+      <svg class="mt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 12 12 3l9 9"/>
+        <path d="M5 10v10h14V10"/>
+      </svg>
+      <span>Agents</span>
+    </button>
+    <button class="mobile-tab" type="button" data-tab="inbox" onclick="showPendingLeads()" aria-label="Inbox">
+      <svg class="mt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+        <path d="M5 6h14l3 8v6H2v-6Z"/>
+      </svg>
+      <span>Inbox</span>
+      <span class="mobile-tab-badge" id="mobileTabInboxBadge">0</span>
+    </button>
+    <button class="mobile-tab" type="button" data-tab="settings" onclick="showSettings()" aria-label="Settings">
+      <svg class="mt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 0 1 4.21 16.96l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.21l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+      </svg>
+      <span>Settings</span>
+    </button>
+    <button class="mobile-tab" type="button" data-tab="logout" onclick="logout()" aria-label="Sign out">
+      <svg class="mt-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+        <path d="m16 17 5-5-5-5"/>
+        <path d="M21 12H9"/>
+      </svg>
+      <span>Sign out</span>
+    </button>
+  </div>
+</nav>
 </body>
 </html>

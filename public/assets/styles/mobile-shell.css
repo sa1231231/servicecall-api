@@ -1,0 +1,100 @@
+/* Mobile bottom-tab navigation.
+ *
+ * Visible only on viewports ≤ 768px. Desktop renders nothing, so this file
+ * is safe to include from every authed page even where mobile UX isn't
+ * a priority yet — it only takes effect at small widths.
+ *
+ * Tap targets meet the 44px floor declared in tokens.css (--tap-target).
+ * Honors iOS safe-area-inset-bottom so the bar clears the home indicator.
+ */
+
+.mobile-tab-bar {
+  display: none; /* desktop default — opted in below */
+}
+
+@media (max-width: 768px) {
+  .mobile-tab-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    display: block;
+    background: var(--bg, #fff);
+    border-top: 1px solid var(--border, #e5e7eb);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
+    padding: 0.25rem 0 calc(env(safe-area-inset-bottom, 0px) + 0.25rem);
+    /* Tab bar reserves its own space below the content. */
+  }
+
+  .mobile-tab-bar-inner {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-around;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  .mobile-tab {
+    flex: 1 1 0;
+    min-height: var(--tap-target, 44px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    background: none;
+    border: none;
+    color: var(--gray-600, #4b5563);
+    font-family: inherit;
+    font-size: 0.7rem;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 0.35rem 0.25rem;
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+    position: relative;
+  }
+
+  .mobile-tab:focus-visible {
+    outline: 2px solid var(--accent, #2563eb);
+    outline-offset: -2px;
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  .mobile-tab .mt-icon {
+    width: 22px;
+    height: 22px;
+    stroke-width: 1.75;
+  }
+
+  .mobile-tab.active {
+    color: var(--accent, #2563eb);
+  }
+
+  .mobile-tab-badge {
+    position: absolute;
+    top: 0.2rem;
+    left: 50%;
+    transform: translateX(2px);
+    background: var(--danger, #dc2626);
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 700;
+    line-height: 1;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    display: none; /* shown by JS when count > 0 */
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Reserve space at the bottom of every page so the fixed bar doesn't
+   * overlap content. Pages that need a different bottom padding (e.g.
+   * sticky save buttons) can override after this rule. */
+  body {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  }
+}
