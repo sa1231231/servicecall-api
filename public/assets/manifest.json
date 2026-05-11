@@ -1,0 +1,13 @@
+{
+  "name": "ServiceCall Saver — Operator Dashboard",
+  "short_name": "ServiceCall",
+  "description": "Operator console for ServiceCall Saver agents, pending leads, and call review.",
+  "start_url": "/dashboard",
+  "scope": "/dashboard",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#2563eb",
+  "background_color": "#f7f7f8",
+  "lang": "en",
+  "categories": ["business", "productivity"]
+}
