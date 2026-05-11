@@ -1313,13 +1313,97 @@
   /* Role-based visibility */
   .role-operator .admin-only { display: none !important; }
   .user-badge { float: right; font-size: 0.72rem; color: #888; margin-right: 0.5rem; line-height: 2.2; }
+
+  /* ── Desktop user menu (Q1) ──────────────────────────────────────────
+   * Replaces Settings / Logout / username-badge chrome in the agent list
+   * header with a single kebab popover. Default: hidden (so mobile and
+   * tests in legacy environments aren't affected). The min-width:769px
+   * rule below opts in on desktop. */
+  .user-menu-wrap {
+    position: relative;
+    display: none;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+  }
+  .user-menu-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    background: #fff;
+    border: 1px solid var(--border, #e5e7eb);
+    color: var(--gray-700, #374151);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .user-menu-btn:hover { background: var(--gray-100, #f3f4f6); }
+  .user-menu-btn[aria-expanded="true"] {
+    background: var(--gray-100, #f3f4f6);
+    border-color: var(--accent, #2563eb);
+  }
+  .user-menu-popover {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    right: 0;
+    min-width: 200px;
+    background: #fff;
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
+    box-shadow: var(--shadow-lg, 0 4px 12px rgba(0, 0, 0, 0.10));
+    padding: 0.35rem 0;
+    z-index: 200;
+  }
+  .user-menu-identity {
+    padding: 0.5rem 0.85rem 0.6rem;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin-bottom: 0.25rem;
+  }
+  .user-menu-identity strong { font-size: 0.88rem; color: #111; font-weight: 600; }
+  .user-menu-role {
+    font-size: 0.7rem;
+    color: var(--gray-500, #6b7280);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .user-menu-item {
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0.5rem 0.85rem;
+    font-size: 0.85rem;
+    color: #1f2937;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .user-menu-item:hover { background: var(--gray-100, #f3f4f6); }
+  .user-menu-item.user-menu-danger { color: var(--danger, #dc2626); }
+  .user-menu-item.user-menu-danger:hover { background: var(--danger-soft, #fee2e2); }
+
+  /* Desktop: show the user menu, hide the legacy chrome that the menu
+   * replaces. Mobile already hides those via mobile-shell.css plus the
+   * mobile-tab-bar carrying Settings + Sign out. */
+  @media (min-width: 769px) {
+    .user-menu-wrap { display: inline-flex; }
+    /* The first .btn-settings is Settings, the second is Logout (no id);
+     * both move into the user menu. Keep + Create as the primary action. */
+    #listView > h1 .btn-settings,
+    #listView > h1 .user-badge {
+      display: none;
+    }
+  }
 </style>
 </head>
 <body>
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
-  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-create" data-feature="agent_lifecycle" data-feature-level="write" onclick="showPendingLeads()" id="btnCreate" title="Build an agent — Advanced, Quick, or pick up a pending lead">+ Create<span id="leadsBadge" style="display:none;">0</span></button><button class="btn-settings" onclick="logout()" title="Sign out and clear session cookie" style="margin-left:0.4rem;">Logout</button><button type="button" class="btn-mobile-search" id="btnMobileSearch" onclick="openCommandPalette()" aria-label="Search agents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true" width="20" height="20"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button><span id="userBadge" class="user-badge"></span></h1>
+  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-create" data-feature="agent_lifecycle" data-feature-level="write" onclick="showPendingLeads()" id="btnCreate" title="Build an agent — Advanced, Quick, or pick up a pending lead">+ Create<span id="leadsBadge" style="display:none;">0</span></button><button class="btn-settings" onclick="logout()" title="Sign out and clear session cookie" style="margin-left:0.4rem;">Logout</button><button type="button" class="btn-mobile-search" id="btnMobileSearch" onclick="openCommandPalette()" aria-label="Search agents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true" width="20" height="20"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button><span id="userBadge" class="user-badge"></span><span class="user-menu-wrap" id="userMenuWrap"><button type="button" class="user-menu-btn" id="userMenuBtn" onclick="toggleUserMenu(event)" aria-haspopup="true" aria-expanded="false" aria-label="User menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true" width="20" height="20"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></button><div class="user-menu-popover" id="userMenuPopover" role="menu" hidden><div class="user-menu-identity"><strong id="userMenuName">…</strong><span id="userMenuRole" class="user-menu-role"></span></div><button type="button" class="user-menu-item" role="menuitem" onclick="closeUserMenu();showSettings()">Settings</button><button type="button" class="user-menu-item user-menu-danger" role="menuitem" onclick="closeUserMenu();logout()">Sign out</button></div></span></h1>
   <p class="subtitle">Click a client to view details and call history.</p>
   <div id="agentSearchBar" class="agent-search-bar" style="display:none;">
     <div class="agent-search-chips" id="agentSearchChips"></div>
@@ -2180,6 +2264,11 @@
       if (currentUser) {
         const badge = document.getElementById('userBadge');
         if (badge) badge.textContent = currentUser.username + ' (' + (currentUser.isRoot ? 'root' : currentUser.role) + ')';
+        // Populate the desktop user menu popover with the same identity.
+        const nameEl = document.getElementById('userMenuName');
+        const roleEl = document.getElementById('userMenuRole');
+        if (nameEl) nameEl.textContent = currentUser.username;
+        if (roleEl) roleEl.textContent = currentUser.isRoot ? 'root' : currentUser.role;
         // Hide elements based on permissions
         document.body.classList.remove('role-operator');
         if (currentUser.role !== 'admin' && currentUser.role !== 'super_admin' && !currentUser.isRoot) {
@@ -10365,6 +10454,51 @@
       el.classList.toggle('active', el.dataset.tab === activeTab);
     });
   }
+  // ── Desktop user menu (Q1) ─────────────────────────────────────────
+  // Replaces the header's Settings / Logout / user-badge chrome with a
+  // single kebab-button popover. Hidden on mobile (the bottom-tab bar
+  // already exposes Settings + Sign out).
+  function toggleUserMenu(ev) {
+    if (ev) ev.stopPropagation();
+    const pop = document.getElementById('userMenuPopover');
+    const btn = document.getElementById('userMenuBtn');
+    if (!pop || !btn) return;
+    const isOpen = !pop.hasAttribute('hidden');
+    if (isOpen) closeUserMenu();
+    else openUserMenu();
+  }
+  function openUserMenu() {
+    const pop = document.getElementById('userMenuPopover');
+    const btn = document.getElementById('userMenuBtn');
+    if (!pop || !btn) return;
+    pop.removeAttribute('hidden');
+    btn.setAttribute('aria-expanded', 'true');
+    setTimeout(() => {
+      document.addEventListener('click', _userMenuOutsideClick, { once: true });
+      document.addEventListener('keydown', _userMenuEscClose);
+    }, 0);
+  }
+  function closeUserMenu() {
+    const pop = document.getElementById('userMenuPopover');
+    const btn = document.getElementById('userMenuBtn');
+    if (!pop || !btn) return;
+    pop.setAttribute('hidden', '');
+    btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('keydown', _userMenuEscClose);
+  }
+  function _userMenuOutsideClick(ev) {
+    const wrap = document.getElementById('userMenuWrap');
+    if (wrap && wrap.contains(ev.target)) {
+      // Click inside the popover — re-arm the outside-click listener.
+      document.addEventListener('click', _userMenuOutsideClick, { once: true });
+      return;
+    }
+    closeUserMenu();
+  }
+  function _userMenuEscClose(ev) {
+    if (ev.key === 'Escape') closeUserMenu();
+  }
+
   function syncMobileInboxBadge() {
     const src = document.getElementById('leadsBadge');
     const dst = document.getElementById('mobileTabInboxBadge');
