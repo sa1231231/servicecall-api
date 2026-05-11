@@ -1329,6 +1329,42 @@
   .ft-add-row, .ft-add-example { font-size: 0.75rem; color: #2563eb; background: none; border: none; cursor: pointer; padding: 0.15rem 0; }
   .ft-add-row:hover, .ft-add-example:hover { text-decoration: underline; }
 
+  /* Q5 — inline section save (subordinate to the global Save Settings) */
+  .btn-section-save {
+    font-size: 0.78rem;
+    padding: 0.35rem 0.85rem;
+    background: #fff;
+    color: var(--success, #059669);
+    border: 1px solid var(--success, #059669);
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.12s;
+  }
+  .btn-section-save:hover {
+    background: var(--success-soft, #d1fae5);
+  }
+  .btn-section-save:disabled {
+    color: var(--gray-400, #9ca3af);
+    border-color: var(--gray-300, #d1d5db);
+    cursor: not-allowed;
+  }
+
+  /* Q5 — "Unsaved" pill next to the global Save Settings primary CTA */
+  .settings-unsaved-pill {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.5rem;
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .settings-unsaved-pill[hidden] { display: none; }
+
   /* Role-based visibility */
   .role-operator .admin-only { display: none !important; }
   .user-badge { float: right; font-size: 0.72rem; color: #888; margin-right: 0.5rem; line-height: 2.2; }
@@ -1589,7 +1625,7 @@
             <div id="settings-instructions-list"></div>
             <div style="display:flex;gap:0.5rem;margin-top:0.4rem;align-items:center;">
               <button type="button" onclick="settingsAddInstruction()" style="font-size:0.78rem;padding:0.35rem 0.7rem;background:#fff;border:1px dashed #2563eb;border-radius:5px;color:#2563eb;cursor:pointer;">+ Add Carrier</button>
-              <button type="button" id="btnSaveInstructions" onclick="saveSettingsInstructions()" style="font-size:0.78rem;padding:0.35rem 0.9rem;background:#059669;color:#fff;border:none;border-radius:5px;cursor:pointer;margin-left:auto;">Save Setup Instructions</button>
+              <button type="button" id="btnSaveInstructions" onclick="saveSettingsInstructions()" class="btn-section-save" style="margin-left:auto;">Save Setup Instructions</button>
             </div>
           </div>
         </div>
@@ -1773,7 +1809,7 @@
     </section>
   </div>
 
-  <button class="btn-save admin-only" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings</button>
+  <button class="btn-save admin-only" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings<span id="settingsUnsavedPill" class="settings-unsaved-pill" hidden>Unsaved</span></button>
 </div>
 
 <!-- ── Detail View ──────────────────────────────────────────────────── -->
@@ -6181,6 +6217,8 @@
       history.pushState(null, '', '#settings');
     }
     switchSettingsTab('general');
+    ensureSettingsDirtyListener();
+    markSettingsClean();
 
     try {
       const res = await fetch('/dashboard/api/settings');
@@ -6223,6 +6261,9 @@
 
       // Initialize template editors for settings SMS fields
       initSettingsTemplateEditors();
+      // Clear the "Unsaved" pill: programmatic population above triggered
+      // input/change events which flipped it on; the view is actually clean.
+      markSettingsClean();
     } catch (err) {
       showToast('Failed to load settings: ' + err.message, 'error');
     }
@@ -6312,11 +6353,41 @@
       globalSetupInstructions = saved;
       settingsRenderInstructions();
       showToast('Setup instructions saved', 'success');
+      markSettingsClean();
     } catch (err) {
       showToast('Save failed: ' + err.message, 'error');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = originalText; }
     }
+  }
+
+  // Q5 — settings dirty pill. Toggled by any input/change inside #settingsView.
+  // Save handlers (saveSettings + saveSettingsInstructions) call markSettingsClean()
+  // after a successful PATCH so the pill clears once the server confirms.
+  let _settingsDirtyListenerAttached = false;
+  function markSettingsDirty() {
+    const pill = document.getElementById('settingsUnsavedPill');
+    if (pill) pill.hidden = false;
+  }
+  function markSettingsClean() {
+    const pill = document.getElementById('settingsUnsavedPill');
+    if (pill) pill.hidden = true;
+  }
+  function ensureSettingsDirtyListener() {
+    if (_settingsDirtyListenerAttached) return;
+    const view = document.getElementById('settingsView');
+    if (!view) return;
+    view.addEventListener('input', (ev) => {
+      // Ignore inputs inside the SMS Blast / User Management Admin pane; those
+      // commit through their own endpoints, not the Save Settings button.
+      if (ev.target.closest('#settings-tab-admin')) return;
+      markSettingsDirty();
+    });
+    view.addEventListener('change', (ev) => {
+      if (ev.target.closest('#settings-tab-admin')) return;
+      markSettingsDirty();
+    });
+    _settingsDirtyListenerAttached = true;
   }
 
   async function saveSettings() {
@@ -6375,6 +6446,7 @@
         throw new Error(data.error || 'Failed: ' + res.status);
       }
       showToast('Settings saved', 'success');
+      markSettingsClean();
     } catch (err) {
       showToast('Save failed: ' + err.message, 'error');
     } finally {
