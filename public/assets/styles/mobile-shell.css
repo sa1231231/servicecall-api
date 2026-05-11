@@ -251,11 +251,16 @@
     margin-right: 0.4rem;
   }
 
-  /* ── Settings view — sticky Save Settings on mobile ───────────────────
-   * Categories and Admin panes can run 1000px+; without sticky, the
-   * save button is buried at the bottom. Stick it just above the
-   * mobile-tab-bar so it's always thumb-reachable. */
-  #settingsView #btnSaveSettings {
+  /* ── Sticky Save buttons on mobile (settings + agent detail) ───────────
+   * Categories/Admin/Dispatch tabs can run 1000px+; without sticky, the
+   * save button is buried at the bottom. Stick all primary save buttons
+   * just above the mobile-tab-bar so they're always thumb-reachable.
+   * Includes the global settings Save and the per-agent Settings/Dispatch
+   * Save buttons, plus the Node Editor "Save & Publish" button. */
+  #settingsView #btnSaveSettings,
+  #detailView #btnSaveSettings,
+  #detailView #btnSaveDispatch,
+  #detailView #ne-publish-btn {
     position: sticky;
     bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 0.5rem);
     width: 100%;
