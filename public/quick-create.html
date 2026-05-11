@@ -63,6 +63,32 @@
     margin-bottom: 1rem;
   }
   .empty-drafts a { color: #1d4ed8; }
+
+  /* Mobile polish: tap-target friendly inputs, 16px font (prevents iOS
+   * focus-zoom), edge-to-edge card, full-width primary action. */
+  @media (max-width: 768px) {
+    body { padding: 1.25rem 0.75rem; }
+    .card { padding: 1rem; border-radius: 10px; }
+    input[type="text"], select, textarea {
+      min-height: var(--tap-target, 44px);
+      font-size: 1rem;
+      padding: 0.7rem 0.85rem;
+    }
+    textarea { min-height: 160px; }
+    .actions { flex-direction: column; align-items: stretch; }
+    .btn-create {
+      width: 100%;
+      min-height: var(--tap-target, 44px);
+      font-size: 1rem;
+    }
+    .status { margin-left: 0; margin-top: 0.4rem; text-align: center; }
+    .nav-back {
+      min-height: var(--tap-target, 44px);
+      display: inline-flex;
+      align-items: center;
+      font-size: 0.95rem;
+    }
+  }
 </style>
 </head>
 <body>
