@@ -59,11 +59,15 @@
     background: #f9fafb;
     box-shadow: inset 0 -2px 0 #e5e7eb;
   }
-  /* Quick-copy buttons next to identifiers (slug, agent_id, phone). */
+  /* Quick-copy buttons next to identifiers (slug, agent_id, phone). Bumped
+   * from a 0.2rem-padding micro-button (~16px tall) to a tertiary tier
+   * (~26px) so the eye stops cataloguing it as a third distinct button
+   * size; still visibly subordinate to primary CTAs. */
   .copy-btn {
     display: inline-flex; align-items: center; justify-content: center;
-    padding: 0.2rem 0.4rem; border: 1px solid #d1d5db; border-radius: 4px;
-    background: #fff; font-size: 0.7rem; line-height: 1; color: #555;
+    min-height: 26px;
+    padding: 0.3rem 0.55rem; border: 1px solid #d1d5db; border-radius: 4px;
+    background: #fff; font-size: 0.72rem; line-height: 1; color: #555;
     cursor: pointer; vertical-align: middle; user-select: none;
   }
   .copy-btn:hover { background: #f3f4f6; border-color: #9ca3af; }
