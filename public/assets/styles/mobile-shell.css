@@ -98,6 +98,22 @@
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
 
+  /* ── Header: hide buttons that the bottom-tab-bar already covers ──────
+   * On phones the dashboard header carried Settings / + Create / Logout
+   * buttons that all duplicate functionality in the mobile-tab-bar. Hide
+   * them so the title isn't crammed against three buttons that compete
+   * with the tab bar for the same intents. */
+  #listView > h1 .btn-settings,
+  #listView > h1 .btn-create,
+  #listView > h1 .user-badge {
+    display: none;
+  }
+  /* The title can now breathe and stay legible. */
+  #listView > h1 {
+    font-size: 1.1rem;
+    margin: 0.25rem 0 0.5rem;
+  }
+
   /* ── Pending leads list — table → card layout ──────────────────────────
    * Mirrors the pattern the call log already uses at 640px. Each table
    * row becomes a self-contained card so the 7 columns of info don't
