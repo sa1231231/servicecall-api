@@ -12,6 +12,12 @@
   display: none; /* desktop default — opted in below */
 }
 
+/* The mobile-only search button is hidden on desktop where Cmd+K already
+ * works. The mobile @media block below restyles it to a visible circle. */
+.btn-mobile-search {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .mobile-tab-bar {
     position: fixed;
@@ -97,6 +103,39 @@
   body {
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
+
+  /* ── Mobile-only agent search button (opens the Cmd+K palette) ────────
+   * The keyboard-driven palette has no mobile entry. This adds a small
+   * circular icon to the agent-list header that fires the same
+   * openCommandPalette() function used on desktop. */
+  .btn-mobile-search {
+    width: var(--tap-target, 44px);
+    height: var(--tap-target, 44px);
+    border-radius: 999px;
+    background: var(--bg, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    color: var(--gray-700, #374151);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    vertical-align: middle;
+    margin-left: auto;
+    box-shadow: var(--shadow-sm);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-mobile-search:focus-visible {
+    outline: 2px solid var(--accent, #2563eb);
+    outline-offset: 2px;
+  }
+  /* Position the search button on the right of the title row. */
+  #listView > h1 { display: flex; align-items: center; gap: 0.5rem; }
+
+  /* Make the command palette input meet the 16px iOS-no-zoom floor, and
+   * hide the desktop-only keyboard hint row. */
+  .cmd-palette-input { font-size: 1rem !important; min-height: var(--tap-target, 44px); }
+  .cmd-palette-hint { display: none; }
+  .cmd-palette-results li { min-height: var(--tap-target, 44px); }
 
   /* ── Header: hide buttons that the bottom-tab-bar already covers ──────
    * On phones the dashboard header carried Settings / + Create / Logout
