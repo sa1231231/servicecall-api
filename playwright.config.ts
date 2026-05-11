@@ -12,7 +12,12 @@ export default defineConfig({
   grep: baseURL ? undefined : /__never_match__/,
   fullyParallel: false, // shadow-toggle test mutates state; serial is safer
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // Tests run against the deployed Railway URL — the rate-limiter and
+  // cold-starts can make a single suite run brush against transient
+  // network blips. One retry locally absorbs those without masking
+  // real failures (a deterministically broken test will still fail both
+  // attempts). CI keeps the higher count it always had.
+  retries: process.env.CI ? 2 : 1,
   workers: 1,
   reporter: [["list"], ["html", { open: "never" }]],
   timeout: 30_000,
