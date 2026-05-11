@@ -43,12 +43,20 @@ test.describe("Dashboard header — mobile dedup (≤768px)", () => {
   test.describe("at desktop viewport (1280x800)", () => {
     test.use({ viewport: { width: 1280, height: 800 } });
 
-    test("Settings/Create/Logout remain visible in the header on desktop", async ({ page }) => {
+    test("+ Create stays in the header; Settings/Logout moved into the user menu (Q1)", async ({ page }) => {
       await page.goto("/dashboard");
       await expect(page.locator("#listView")).toBeVisible({ timeout: 15_000 });
 
-      await expect(page.locator("#listView > h1 .btn-settings").first()).toBeVisible();
+      // + Create remains the primary header action on desktop.
       await expect(page.locator("#listView > h1 .btn-create")).toBeVisible();
+      // After Q1, the inline Settings + Logout buttons hide on desktop —
+      // their actions live inside the kebab user menu instead.
+      const settingsHidden = await page
+        .locator("#listView > h1 .btn-settings")
+        .first()
+        .evaluate((el) => window.getComputedStyle(el).display === "none");
+      expect(settingsHidden).toBe(true);
+      await expect(page.locator("#userMenuBtn")).toBeVisible();
     });
   });
 });
