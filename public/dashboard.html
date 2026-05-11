@@ -1135,6 +1135,52 @@
   .lead-status-failed    { background:#fee2e2; color:#991b1b; }
   .lead-status-promoted  { background:#dbeafe; color:#1e40af; }
   .lead-status-dismissed { background:#f3f4f6; color:#6b7280; }
+  /* Pending-leads filter chips — sits above the leads table/cards. */
+  .pending-lead-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0 0 0.85rem;
+  }
+  .pending-lead-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--bg, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    color: var(--gray-700, #374151);
+    border-radius: var(--radius-pill, 999px);
+    padding: 0.35rem 0.75rem;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    line-height: 1.2;
+    font-family: inherit;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .pending-lead-chip:hover { background: var(--gray-100, #f3f4f6); }
+  .pending-lead-chip.active {
+    background: var(--accent, #2563eb);
+    border-color: var(--accent, #2563eb);
+    color: #fff;
+  }
+  .pending-lead-chip-count {
+    background: rgba(0, 0, 0, 0.06);
+    color: inherit;
+    border-radius: 999px;
+    padding: 0 0.4rem;
+    min-width: 1.25rem;
+    text-align: center;
+    font-size: 0.72rem;
+    font-weight: 600;
+  }
+  .pending-lead-chip.active .pending-lead-chip-count {
+    background: rgba(255, 255, 255, 0.22);
+  }
+  @media (max-width: 768px) {
+    .pending-lead-chip { min-height: var(--tap-target, 44px); padding: 0.5rem 0.9rem; font-size: 0.88rem; }
+    .pending-lead-chip-count { font-size: 0.78rem; }
+  }
   .lead-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem; align-items:start; }
   @media (max-width: 760px) { .lead-detail-grid { grid-template-columns: 1fr; } }
   .lead-detail-section { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:0.85rem; }
@@ -9417,6 +9463,54 @@
   let pendingLeadDrafts = [];
   let pendingLeadActiveId = null;
   let pendingLeadsPollTimer = null;
+  // Filter chip state: 'all' | 'queued' | 'enriching' | 'ready' | 'failed' |
+  // 'promoted' | 'dismissed'. Module-level so silent polls + re-renders
+  // preserve the operator's current view.
+  let pendingLeadsFilter = 'all';
+
+  // Display labels for filter chips. 'failed' shows as 'Errored' for clarity.
+  const PENDING_LEAD_FILTERS = [
+    { key: 'all',       label: 'All' },
+    { key: 'queued',    label: 'Pending' },
+    { key: 'enriching', label: 'Enriching' },
+    { key: 'ready',     label: 'Ready' },
+    { key: 'failed',    label: 'Errored' },
+    { key: 'promoted',  label: 'Promoted' },
+    { key: 'dismissed', label: 'Dismissed' },
+  ];
+
+  function matchesPendingLeadFilter(lead) {
+    if (pendingLeadsFilter === 'all') return true;
+    return lead.status === pendingLeadsFilter;
+  }
+
+  function renderPendingLeadsFilterChips() {
+    if (!pendingLeadsCache.length) return '';
+    const counts = {};
+    for (const f of PENDING_LEAD_FILTERS) counts[f.key] = 0;
+    for (const l of pendingLeadsCache) {
+      counts.all++;
+      if (counts[l.status] !== undefined) counts[l.status]++;
+    }
+    const chips = PENDING_LEAD_FILTERS.map((f) => {
+      const active = f.key === pendingLeadsFilter ? ' active' : '';
+      const count = counts[f.key] || 0;
+      return '<button type="button" class="pending-lead-chip' + active + '"' +
+        ' onclick="setPendingLeadsFilter(\'' + f.key + '\')"' +
+        ' data-filter="' + f.key + '">' +
+        esc(f.label) + ' <span class="pending-lead-chip-count">' + count + '</span>' +
+        '</button>';
+    }).join('');
+    return '<div class="pending-lead-chips" role="tablist" aria-label="Filter by status">' + chips + '</div>';
+  }
+
+  function setPendingLeadsFilter(key) {
+    if (!PENDING_LEAD_FILTERS.some((f) => f.key === key)) return;
+    if (pendingLeadsFilter === key) return;
+    pendingLeadsFilter = key;
+    // Re-render the body (chips + list). Detail view is unaffected.
+    if (!pendingLeadActiveId) renderPendingLeadsList();
+  }
 
   function fmtLeadTime(iso) {
     if (!iso) return '';
@@ -9590,10 +9684,18 @@
       body.innerHTML = '<div style="padding:1rem;text-align:center;color:#888;">No pending leads. Click + Add Lead to drop one in.</div>';
       return;
     }
-    let html = '<table><thead><tr>' +
+    const filtered = pendingLeadsCache.filter(matchesPendingLeadFilter);
+    const chipsHtml = renderPendingLeadsFilterChips();
+    if (filtered.length === 0) {
+      const activeLabel = (PENDING_LEAD_FILTERS.find((f) => f.key === pendingLeadsFilter) || {}).label || pendingLeadsFilter;
+      body.innerHTML = chipsHtml +
+        '<div style="padding:1rem;text-align:center;color:#888;">No leads with status: ' + esc(activeLabel) + '.</div>';
+      return;
+    }
+    let html = chipsHtml + '<table><thead><tr>' +
       '<th>Name</th><th>Phone</th><th>Website</th><th>Type</th><th>Status</th><th>Updated</th><th></th>' +
       '</tr></thead><tbody>';
-    for (const l of pendingLeadsCache) {
+    for (const l of filtered) {
       const enrichedName = l.enriched?.business_name;
       const displayName = enrichedName || l.input?.name || '(no name)';
       const subtitle = enrichedName && l.input?.name && enrichedName !== l.input.name
