@@ -2304,7 +2304,7 @@
       const isActive = agentSortKey === key && agentSortDir;
       const cls = 'sortable' + (isActive ? ' sort-' + agentSortDir : '');
       const arrow = isActive ? (agentSortDir === 'asc' ? '▲' : '▼') : '⇅';
-      return '<th class="' + cls + '"' +
+      return '<th class="' + cls + '" data-col="' + esc(key) + '"' +
         ' draggable="true"' +
         ' ondragstart="onColumnDragStart(event, \'' + key + '\')"' +
         ' ondragover="onColumnDragOver(event)"' +
@@ -2447,12 +2447,12 @@
       ? '<span style="color:#444">' + esc(a.contact_name) + '</span>'
       : '<span style="color:#aaa">—</span>';
     const cells = {
-      name: '<td><strong>' + esc(a.display_name || a.name) + '</strong></td>',
-      trial: '<td>' + trialHtml + '</td>',
-      status: '<td><span class="badge ' + sc + '" data-status>' + sl + '</span>' + driftHtml + '</td>',
-      mtd_cogs: '<td style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>',
-      phone: '<td style="font-variant-numeric:tabular-nums;color:#444">' + phoneHtml + '</td>',
-      contact_name: '<td style="font-size:0.85rem;">' + contactNameHtml + '</td>',
+      name: '<td data-col="name"><strong>' + esc(a.display_name || a.name) + '</strong></td>',
+      trial: '<td data-col="trial">' + trialHtml + '</td>',
+      status: '<td data-col="status"><span class="badge ' + sc + '" data-status>' + sl + '</span>' + driftHtml + '</td>',
+      mtd_cogs: '<td data-col="mtd_cogs" style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>',
+      phone: '<td data-col="phone" style="font-variant-numeric:tabular-nums;color:#444">' + phoneHtml + '</td>',
+      contact_name: '<td data-col="contact_name" style="font-size:0.85rem;">' + contactNameHtml + '</td>',
     };
     const checkboxCell = bulkSelectMode
       ? '<td style="width:1px;padding-right:0.4rem;" onclick="event.stopPropagation()">' +

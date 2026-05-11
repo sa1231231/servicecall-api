@@ -146,6 +146,56 @@
     padding: 0.5rem 0.75rem !important;
   }
 
+  /* ── Agent list — hide noise + card layout ────────────────────────────
+   * Renders each agent as a card with name on top, trial + status as
+   * compact badges, and hides phone / MTD COGS / contact-name on mobile
+   * (operators can drill in to the agent detail for those). Keeps the
+   * existing sticky header behavior off — there is no header on mobile. */
+  #agentList thead {
+    display: none;
+  }
+  #agentList tbody tr.clickable-row {
+    display: block;
+    margin-bottom: 0.6rem;
+    background: var(--bg, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
+    padding: 0.75rem 0.85rem;
+    box-shadow: var(--shadow-md, 0 1px 3px rgba(0, 0, 0, 0.08));
+    min-height: var(--tap-target, 44px);
+  }
+  #agentList tbody tr.clickable-row td {
+    display: inline-block;
+    padding: 0;
+    border: none;
+    white-space: normal !important;
+    vertical-align: middle;
+  }
+  /* Hide secondary columns. The card already shows enough to scan — the
+   * agent detail view has everything else. */
+  #agentList tbody tr.clickable-row td[data-col="mtd_cogs"],
+  #agentList tbody tr.clickable-row td[data-col="phone"],
+  #agentList tbody tr.clickable-row td[data-col="contact_name"] {
+    display: none;
+  }
+  /* Name fills the first line. */
+  #agentList tbody tr.clickable-row td[data-col="name"] {
+    display: block;
+    font-size: 1rem;
+    margin-bottom: 0.35rem;
+  }
+  /* Trial + status sit side by side on the second line. */
+  #agentList tbody tr.clickable-row td[data-col="trial"],
+  #agentList tbody tr.clickable-row td[data-col="status"] {
+    margin-right: 0.5rem;
+    font-size: 0.78rem;
+  }
+  /* Bulk-select checkbox stays on the first line, before the name. */
+  #agentList tbody tr.clickable-row td:first-child input[type="checkbox"] {
+    transform: scale(1.2);
+    margin-right: 0.4rem;
+  }
+
   /* ── Pending lead detail — sticky promote/dismiss bar ─────────────────
    * Lifts the action row out of the document flow on mobile so Promote
    * is always thumb-reachable. Sits above the bottom-tab bar. */
