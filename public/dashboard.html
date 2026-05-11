@@ -276,6 +276,22 @@
     font-weight: 600;
     white-space: nowrap;
   }
+  /* Inline status badge next to the agent name in the list cell. Slightly
+   * smaller and less saturated than the standalone Status-column badge so
+   * it reads as supporting metadata rather than a primary signal. */
+  .agent-name-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .badge.badge-row-status {
+    font-size: 0.65rem;
+    padding: 0.1rem 0.45rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    opacity: 0.85;
+  }
   .badge-live { background: #dcfce7; color: #166534; }
   .badge-shadow { background: #fef3c7; color: #92400e; }
   .badge-expired { background: #fee2e2; color: #991b1b; }
@@ -1896,17 +1912,25 @@
   // Map of agent_id → array of bound phone-number entries from Retell.
   // Refreshed every time loadAgents() runs (live source of truth).
   let agentPhoneByAgent = {};
-  // Single source of truth for the agent-list table columns. `locked: true`
-  // means the column is always rendered and not toggleable from the UI.
+  // Single source of truth for the agent-list table columns.
+  //  - `locked`: always rendered, not toggleable from the column picker.
+  //  - `defaultVisible: false`: present in the picker but hidden by default.
+  //    The status badge moved inline into the Name cell so the standalone
+  //    Status column is off by default; operators who want a dedicated
+  //    column can still toggle it back on. Trial/Phone/Client are also
+  //    off by default — most operators scan Name + Cost first.
   const AGENT_COLUMNS = [
     { key: 'name', label: 'Name', locked: true },
-    { key: 'trial', label: 'Trial' },
-    { key: 'status', label: 'Status' },
+    { key: 'trial', label: 'Trial', defaultVisible: false },
+    { key: 'status', label: 'Status', defaultVisible: false },
     { key: 'mtd_cogs', label: 'MTD COGS' },
-    { key: 'phone', label: 'Phone' },
-    { key: 'contact_name', label: 'Client name' },
+    { key: 'phone', label: 'Phone', defaultVisible: false },
+    { key: 'contact_name', label: 'Client name', defaultVisible: false },
   ];
-  let agentVisibleColumns = new Set(AGENT_COLUMNS.map(c => c.key));
+  const DEFAULT_VISIBLE_AGENT_COLS = AGENT_COLUMNS
+    .filter(c => c.locked || c.defaultVisible !== false)
+    .map(c => c.key);
+  let agentVisibleColumns = new Set(DEFAULT_VISIBLE_AGENT_COLS);
   // Display order for the visible columns. Default = AGENT_COLUMNS order.
   // Reordered by drag-and-drop on table headers; persisted in localStorage.
   let agentColumnOrder = AGENT_COLUMNS.map(c => c.key);
@@ -2498,9 +2522,18 @@
     const contactNameHtml = a.contact_name
       ? '<span style="color:#444">' + esc(a.contact_name) + '</span>'
       : '<span style="color:#aaa">—</span>';
+    // Status badge renders inline next to the agent name so the dedicated
+    // Status column can stay off by default. Operators still get the live/
+    // shadow/disabled signal at a glance without spending a column for it.
+    const inlineStatusBadge = '<span class="badge badge-row-status ' + sc +
+      '" data-status>' + sl + '</span>' + driftHtml;
     const cells = {
-      name: '<td data-col="name"><strong>' + esc(a.display_name || a.name) + '</strong></td>',
+      name: '<td data-col="name"><div class="agent-name-cell"><strong>' +
+        esc(a.display_name || a.name) + '</strong>' + inlineStatusBadge +
+        '</div></td>',
       trial: '<td data-col="trial">' + trialHtml + '</td>',
+      // Kept as a separate cell for operators who toggle the Status column back
+      // on; renders the same badge but without the inline-Name version.
       status: '<td data-col="status"><span class="badge ' + sc + '" data-status>' + sl + '</span>' + driftHtml + '</td>',
       mtd_cogs: '<td data-col="mtd_cogs" style="font-variant-numeric:tabular-nums;text-align:right;' + (cogsCents > 10000 ? 'color:#991b1b;font-weight:600;' : '') + '">' + cogsHtml + '</td>',
       phone: '<td data-col="phone" style="font-variant-numeric:tabular-nums;color:#444">' + phoneHtml + '</td>',
@@ -2677,7 +2710,12 @@
   // Persist sort + chips across page reloads. Keep the key unscoped so the
   // state follows the user, not the device. Wrapped in try/catch — Safari
   // private mode and disabled storage throw on access.
-  const AGENT_LIST_STATE_KEY = 'agentListState.v1';
+  const AGENT_LIST_STATE_KEY = 'agentListState.v2';
+  // Legacy keys we read once (for migration) then leave alone. v1 had every
+  // column visible by default; v2 hides most of them so the table reads as
+  // a 2-column view (Name + Cost) at first paint, with the rest one click
+  // away in the column picker.
+  const LEGACY_AGENT_LIST_STATE_KEYS = ['agentListState.v1'];
   function saveAgentListState() {
     try {
       const state = {
@@ -2694,7 +2732,30 @@
   function loadAgentListState() {
     let restored = false;
     try {
-      const raw = localStorage.getItem(AGENT_LIST_STATE_KEY);
+      let raw = localStorage.getItem(AGENT_LIST_STATE_KEY);
+      // Migrate v1 → v2: copy non-column state (sort, chips, folders) but
+      // discard the v1 column defaults so the new minimal columns take effect.
+      // Users who explicitly customized columns under v1 lose that customization,
+      // which is the intended tradeoff for the desktop-density cleanup.
+      if (!raw) {
+        for (const legacy of LEGACY_AGENT_LIST_STATE_KEYS) {
+          const legacyRaw = localStorage.getItem(legacy);
+          if (!legacyRaw) continue;
+          try {
+            const legacyState = JSON.parse(legacyRaw);
+            const migrated = {
+              sortKey: legacyState?.sortKey ?? null,
+              sortDir: legacyState?.sortDir ?? null,
+              chips: Array.isArray(legacyState?.chips) ? legacyState.chips : [],
+              expandedFolders: Array.isArray(legacyState?.expandedFolders) ? legacyState.expandedFolders : [],
+              // Intentionally omit visibleColumns + columnOrder so v2 defaults apply.
+            };
+            raw = JSON.stringify(migrated);
+            localStorage.setItem(AGENT_LIST_STATE_KEY, raw);
+          } catch (_) { /* malformed legacy state — ignore */ }
+          break;
+        }
+      }
       if (raw) {
         const state = JSON.parse(raw);
         if (state && typeof state === 'object') {
