@@ -227,8 +227,9 @@
     vertical-align: middle;
   }
   /* Hide secondary columns. The card already shows enough to scan — the
-   * agent detail view has everything else. */
-  #agentList tbody tr.clickable-row td[data-col="mtd_cogs"],
+   * agent detail view has everything else. After Q2 made the desktop
+   * default just Name + Cost, mtd_cogs stays visible on mobile too since
+   * it's the headline metric; phone + contact_name keep hiding. */
   #agentList tbody tr.clickable-row td[data-col="phone"],
   #agentList tbody tr.clickable-row td[data-col="contact_name"] {
     display: none;
