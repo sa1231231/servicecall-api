@@ -97,4 +97,75 @@
   body {
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
+
+  /* ── Pending leads list — table → card layout ──────────────────────────
+   * Mirrors the pattern the call log already uses at 640px. Each table
+   * row becomes a self-contained card so the 7 columns of info don't
+   * crowd onto a phone-width row. */
+  #pendingLeadsBody table {
+    border-collapse: separate;
+  }
+  #pendingLeadsBody thead {
+    display: none;
+  }
+  #pendingLeadsBody tbody tr {
+    display: block;
+    margin-bottom: 0.75rem;
+    background: var(--bg, #fff);
+    border: 1px solid var(--border, #e5e7eb);
+    border-radius: var(--radius-lg, 8px);
+    padding: 0.75rem;
+    box-shadow: var(--shadow-md, 0 1px 3px rgba(0, 0, 0, 0.08));
+  }
+  #pendingLeadsBody tbody td {
+    display: block;
+    padding: 0.15rem 0;
+    border: none;
+    white-space: normal !important;
+  }
+  /* Name row — visual anchor. */
+  #pendingLeadsBody tbody td:nth-child(1) {
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
+  }
+  /* Status pill — pull onto its own line with extra breathing room. */
+  #pendingLeadsBody tbody td:nth-child(5) {
+    margin: 0.35rem 0 0.15rem;
+  }
+  /* The Dismiss action gets full-width so it's thumb-friendly. */
+  #pendingLeadsBody tbody td:last-child {
+    text-align: left !important;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border, #e5e7eb);
+  }
+  #pendingLeadsBody tbody td:last-child button {
+    width: 100%;
+    min-height: var(--tap-target, 44px);
+    font-size: 0.85rem !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+
+  /* ── Pending lead detail — sticky promote/dismiss bar ─────────────────
+   * Lifts the action row out of the document flow on mobile so Promote
+   * is always thumb-reachable. Sits above the bottom-tab bar. */
+  #pendingLeadsBody .lead-action-row {
+    position: sticky;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg, #fff);
+    margin: 0.75rem 0 0;
+    padding: 0.6rem 0;
+    border-top: 1px solid var(--border, #e5e7eb);
+    z-index: 50;
+  }
+  #pendingLeadsBody .lead-action-row button {
+    flex: 1 1 auto;
+    min-height: var(--tap-target, 44px);
+    font-size: 0.9rem;
+  }
+  /* Override desktop "push dismiss to the right" — on mobile we want
+   * the two buttons evenly sized as siblings. */
+  #pendingLeadsBody .lead-action-row .lead-btn-dismiss {
+    margin-left: 0;
+  }
 }
