@@ -113,9 +113,13 @@ export function parseConversationFlow(
     ?? allNodes.find((n) => n.name.startsWith("Close ("))
     ?? null;
 
-  // Find closing sequence nodes
+  // Find closing sequence nodes. Includes the "Close Question" node that
+  // sits between Close and Closing Remarks (it asks "anything else?" and
+  // routes to Closing Remarks on "no more questions"). Older agents
+  // generated before that node existed simply won't have it in this list.
   const closingNodes = allNodes.filter(
     (n) =>
+      n.name === "Close Question" ||
       n.name === "Closing Remarks" ||
       n.name === "Closing Statement",
   );

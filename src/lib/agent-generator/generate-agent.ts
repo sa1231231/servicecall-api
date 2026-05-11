@@ -19,6 +19,7 @@ import {
   buildHumanRequestNode,
   buildDataChain,
   buildCloseNode,
+  buildCloseQuestionNode,
   buildClosingSequence,
   buildIrrelevantGuardrailNode,
   buildEmergencyGuardrailNode,
@@ -367,6 +368,10 @@ When listing anything — services, time slots, examples, options — never list
   } else {
     allNodes.push(buildCloseNode(agentConfig, ids, pos, f));
   }
+  // Close Question sits between the (single or per-path) Close node(s) and
+  // the shared Closing Remarks. All Close nodes always_edge to this single
+  // node so the "anything else?" wording stays consistent across paths.
+  allNodes.push(buildCloseQuestionNode(agentConfig, ids, pos, f));
   allNodes.push(...buildClosingSequence(agentConfig, ids, pos, f));
   allNodes.push(buildIrrelevantGuardrailNode(ids, pos, f));
   allNodes.push(buildEmergencyGuardrailNode(ids, pos, f));

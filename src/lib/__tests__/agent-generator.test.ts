@@ -565,14 +565,65 @@ describe("per-path end mode", () => {
     const routerB = flow.nodes.find((n: any) => n.name === "Variables Router (B)");
     expect(routerA.else_edge.destination_node_id).toBe(closeA.id);
     expect(routerB.else_edge.destination_node_id).toBe(closeB.id);
-    // Both per-path Close nodes share Closing Remarks
+    // Both per-path Close nodes share the Close Question node, which in turn
+    // routes to Closing Remarks via its "no more questions" edge.
+    const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
     const closingRemarks = flow.nodes.find((n: any) => n.name === "Closing Remarks");
-    expect(closeA.always_edge.destination_node_id).toBe(closingRemarks.id);
-    expect(closeB.always_edge.destination_node_id).toBe(closingRemarks.id);
+    expect(closeQuestion).toBeDefined();
+    expect(closeA.always_edge.destination_node_id).toBe(closeQuestion.id);
+    expect(closeB.always_edge.destination_node_id).toBe(closeQuestion.id);
+    expect(closeQuestion.edges[0].destination_node_id).toBe(closingRemarks.id);
     // No legacy unsuffixed "Close" node in multi-path agents
     expect(flow.nodes.find((n: any) => n.name === "Close")).toBeUndefined();
     expect(flow.nodes.find((n: any) => n.name?.startsWith("Pre-Transfer"))).toBeUndefined();
     expect(flow.nodes.find((n: any) => n.type === "transfer_call")).toBeUndefined();
+  });
+
+  it("single-path agents wire Close → Close Question → Closing Remarks → Closing Statement", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const close = flow.nodes.find((n: any) => n.name === "Close");
+    const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+    const closingRemarks = flow.nodes.find((n: any) => n.name === "Closing Remarks");
+    const closingStatement = flow.nodes.find((n: any) => n.name === "Closing Statement");
+
+    expect(close).toBeDefined();
+    expect(closeQuestion).toBeDefined();
+    expect(closingRemarks).toBeDefined();
+    expect(closingStatement).toBeDefined();
+
+    // Chain: Close → Close Question → Closing Remarks → Closing Statement.
+    expect(close.always_edge.destination_node_id).toBe(closeQuestion.id);
+    // Close Question waits for the caller and routes to Closing Remarks when
+    // they say no — Admin/FAQ globally handles real questions via go-back.
+    expect(closeQuestion.edges).toHaveLength(1);
+    expect(closeQuestion.edges[0].destination_node_id).toBe(closingRemarks.id);
+    expect(closeQuestion.edges[0].transition_condition.prompt).toBe(
+      "The caller has no more questions",
+    );
+    expect(closingRemarks.always_edge.destination_node_id).toBe(closingStatement.id);
+
+    // Default prompt text is used when no override is provided.
+    expect(closeQuestion.instruction.text).toContain("anything else");
+  });
+
+  it("closeQuestionPrompt override propagates to the rendered Close Question node", () => {
+    const customPrompt = "Custom: any other concerns I can address before I let you go?";
+    const { agent } = generateAgent(
+      { ...baseConfig, closeQuestionPrompt: customPrompt },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+    expect(closeQuestion).toBeDefined();
+    expect(closeQuestion.instruction.text).toBe(customPrompt);
   });
 
   it("end_mode=transfer wires router → Pre-Transfer → Transfer Call (number baked in)", () => {

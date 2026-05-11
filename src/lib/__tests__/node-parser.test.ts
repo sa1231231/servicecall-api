@@ -125,6 +125,20 @@ describe("parseConversationFlow — minimal flow", () => {
     expect(result.closingNodes).toHaveLength(2);
   });
 
+  it("includes the Close Question node alongside Closing Remarks + Statement", () => {
+    const result = parseConversationFlow(buildMinimalFlow([
+      { id: "cq", type: "conversation", name: "Close Question" },
+      { id: "cr", type: "conversation", name: "Closing Remarks" },
+      { id: "cs", type: "conversation", name: "Closing Statement" },
+    ]));
+    expect(result.closingNodes).toHaveLength(3);
+    expect(result.closingNodes.map((n) => n.name)).toEqual([
+      "Close Question",
+      "Closing Remarks",
+      "Closing Statement",
+    ]);
+  });
+
   it("collects globalNodes (those with global_node_setting)", () => {
     const result = parseConversationFlow(buildMinimalFlow([
       { id: "g1", type: "conversation", name: "Global", global_node_setting: { name: "g" } },

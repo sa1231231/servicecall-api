@@ -219,6 +219,7 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
       ...body.business,
       humanRequestMode: humanMode,
       closePrompt: body.business.closePrompt?.trim() || undefined,
+      closeQuestionPrompt: body.business.closeQuestionPrompt?.trim() || undefined,
       closingRemarksPrompt: body.business.closingRemarksPrompt?.trim() || undefined,
       closingStatementText: body.business.closingStatementText?.trim() || undefined,
       liveTransferRecoveryPrompt: body.business.liveTransferRecoveryPrompt?.trim() || undefined,

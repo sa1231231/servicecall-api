@@ -6,8 +6,15 @@ import {
 } from "./data-point-registry.js";
 import { renderTemplate } from "../build-notification.js";
 
-// Default templates for the three closing nodes. Use {{business_name}} — substituted on the way to Retell.
+// Default templates for the four closing nodes. Use {{business_name}} — substituted on the way to Retell.
+//
+// Closing chain: Close → Close Question → Closing Remarks → Closing Statement → End.
+// Close says thanks only. Close Question asks "anything else?" and lets the
+// Admin/FAQ global node intercept real questions (then go-back returns here).
+// Closing Remarks delivers the final goodbye line. Closing Statement is
+// spoken verbatim and skips the response cycle into End.
 export const DEFAULT_CLOSE_PROMPT = `Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.`;
+export const DEFAULT_CLOSE_QUESTION_PROMPT = `Ask the caller exactly: "Is there anything else I can help you with?"`;
 export const DEFAULT_CLOSING_REMARKS_PROMPT = `You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. `;
 export const DEFAULT_CLOSING_STATEMENT_TEXT = `Alright, bye now!`;
 
@@ -78,6 +85,7 @@ interface Ids {
   politeHangupId: string;
   guardrailEndId: string;
   closeId: string;
+  closeQuestionId: string;
   closingRemarksId: string;
   closingStatementId: string;
   paths: PathIds[];
@@ -107,6 +115,7 @@ interface Positions {
   politeHangup: Position;
   guardrailEnd: Position;
   close: Position;
+  closeQuestion: Position;
   paths: PathPositions[];
 }
 
@@ -120,6 +129,11 @@ export interface AgentConfig {
   // Map keys are path names. Paths missing from the map fall back to
   // closePrompt (the global default).
   pathClosePrompts?: Record<string, string>;
+  // "Is there anything else…?" prompt spoken in the dedicated Close Question
+  // node that sits between Close and Closing Remarks. One per agent (not
+  // per-path) so caller-facing wording stays consistent regardless of how
+  // they entered the closing chain.
+  closeQuestionPrompt?: string;
   closingRemarksPrompt?: string;
   closingStatementText?: string;
   liveTransferRecoveryPrompt?: string;
@@ -226,6 +240,7 @@ export function generateIds(
     politeHangupId: f.nodeId(),
     guardrailEndId: f.nodeId(),
     closeId: f.nodeId(),
+    closeQuestionId: f.nodeId(),
     closingRemarksId: f.nodeId(),
     closingStatementId: f.nodeId(),
     paths,
@@ -277,6 +292,7 @@ export function layoutPositions(
     politeHangup: { x: -1026, y: -2394 },
     guardrailEnd: { x: -666, y: -2346 },
     close: { x: lastX, y: 894 + lastPathYBase },
+    closeQuestion: { x: lastX, y: 1038 + lastPathYBase },
     paths,
   };
 }
@@ -1085,7 +1101,9 @@ export function buildCloseNode(
       }),
     },
     always_edge: {
-      destination_node_id: ids.closingRemarksId,
+      // Close always flows to the Close Question node — Close just thanks the
+      // caller, Close Question asks "anything else?" and waits.
+      destination_node_id: ids.closeQuestionId,
       id: `always-edge-${f.nextTs()}-${randomSuffix(9)}`,
       transition_condition: { type: "prompt", prompt: "Always" },
     },
@@ -1099,6 +1117,41 @@ export function buildCloseNode(
     // through cleanly even if the caller speaks. Retell treats this as a
     // per-node override of the agent-level global; 0 = no interruption.
     interruption_sensitivity: 0,
+  };
+}
+
+// "Is there anything else I can help you with?" — sits between Close and
+// Closing Remarks. The Admin/FAQ global node intercepts real questions
+// automatically (its go_back_conditions returns the caller here once
+// answered). The single explicit edge below moves them on when they say no.
+export function buildCloseQuestionNode(
+  agentConfig: AgentConfig,
+  ids: Ids,
+  pos: Positions,
+  f: IdFactory,
+) {
+  const template = agentConfig.closeQuestionPrompt ?? DEFAULT_CLOSE_QUESTION_PROMPT;
+  return {
+    instruction: {
+      type: "prompt",
+      text: renderTemplate(template, {
+        business_name: agentConfig.businessName,
+      }),
+    },
+    name: "Close Question",
+    edges: [
+      {
+        destination_node_id: ids.closingRemarksId,
+        id: f.edgeId(),
+        transition_condition: {
+          type: "prompt",
+          prompt: "The caller has no more questions",
+        },
+      },
+    ],
+    id: ids.closeQuestionId,
+    type: "conversation",
+    display_position: pos.closeQuestion,
   };
 }
 

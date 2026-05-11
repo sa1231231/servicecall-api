@@ -792,6 +792,13 @@
     <h2>Closing Prompts</h2>
     <div class="field-hint" style="margin-top:0;">Run at the end of every call. Sensible defaults pre-filled. Type <code>{{</code> to insert <code>business_name</code> as a green pill. The <strong>Close prompt</strong> lives inside each routing path (Routing Paths tab) so it can differ per path.</div>
 
+    <label for="closeQuestionPrompt">Close Question Prompt</label>
+    <div class="tmpl-editor-wrap">
+      <div class="tmpl-editor" contenteditable="true" id="closeQuestionPromptEditor" data-placeholder='Ask the caller exactly: "Is there anything else I can help you with?"'></div>
+      <input type="hidden" id="closeQuestionPrompt">
+    </div>
+    <div class="field-hint">Spoken right before goodbye to invite final questions. Admin/FAQ globally handles real questions and returns the caller here.</div>
+
     <label for="closingRemarksPrompt">Closing Remarks Prompt</label>
     <div class="tmpl-editor-wrap">
       <div class="tmpl-editor" contenteditable="true" id="closingRemarksPromptEditor" data-placeholder="Thank them and wish them a great day…"></div>
@@ -993,6 +1000,7 @@
 
   // Default templates for the closing prompts (must match DEFAULT_* in src/lib/agent-generator/node-builders.ts).
   const DEFAULT_CLOSE_PROMPT = 'Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.';
+  const DEFAULT_CLOSE_QUESTION_PROMPT = 'Ask the caller exactly: "Is there anything else I can help you with?"';
   const DEFAULT_CLOSING_REMARKS_PROMPT = 'You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ';
   const DEFAULT_CLOSING_STATEMENT_TEXT = 'Alright, bye now!';
   const DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT = "Sorry about that. It looks like our staff members are on the floor helping customers. Let us give you a call back. We'll call you back as soon as possible.";
@@ -1000,6 +1008,7 @@
   // Pre-fill closing prompts on initial load (will be overwritten by
   // auto-save / draft / template restoration if present).
   // Note: the Close Prompt is per-path now and gets seeded inside addPathCard.
+  document.getElementById('closeQuestionPrompt').value = DEFAULT_CLOSE_QUESTION_PROMPT;
   document.getElementById('closingRemarksPrompt').value = DEFAULT_CLOSING_REMARKS_PROMPT;
   document.getElementById('closingStatementText').value = DEFAULT_CLOSING_STATEMENT_TEXT;
   document.getElementById('liveTransferRecoveryPrompt').value = DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
@@ -1017,6 +1026,11 @@
   // so we can update the visual editor whenever the hidden value changes
   // (default fill, draft restore, JSON import).
   const closingEditors = {
+    closeQuestionPrompt: initTemplateEditor(
+      document.getElementById('closeQuestionPromptEditor'),
+      document.getElementById('closeQuestionPrompt'),
+      ['business_name'],
+    ),
     closingRemarksPrompt: initTemplateEditor(
       document.getElementById('closingRemarksPromptEditor'),
       document.getElementById('closingRemarksPrompt'),
@@ -2368,6 +2382,7 @@
       // Summary Agent ID has no UI; persisted via summaryAgentIdValue var.
       summaryAgentId: summaryAgentIdValue || '',
       humanRequestMode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
+      closeQuestionPrompt: val('closeQuestionPrompt'),
       closingRemarksPrompt: val('closingRemarksPrompt'),
       closingStatementText: val('closingStatementText'),
       liveTransferRecoveryPrompt: val('liveTransferRecoveryPrompt'),
@@ -2414,6 +2429,7 @@
         human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
         // Close Prompt is per-path; export the map so a load → export cycle preserves it.
         pathClosePrompts: collectPathClosePrompts(),
+        closeQuestionPrompt: val('closeQuestionPrompt'),
         closingRemarksPrompt: val('closingRemarksPrompt'),
         closingStatementText: val('closingStatementText'),
         liveTransferRecoveryPrompt: val('liveTransferRecoveryPrompt'),
@@ -2483,6 +2499,7 @@
           faqKnowledgeBase: config.business?.faqKnowledgeBase || '',
           humanRequestMode: config.business?.human_request_mode || 'callback',
           closePrompt: legacyClose, // kept on state so loadFormState can fall back per-path
+          closeQuestionPrompt: config.business?.closeQuestionPrompt || '',
           closingRemarksPrompt: config.business?.closingRemarksPrompt || '',
           closingStatementText: config.business?.closingStatementText || '',
           liveTransferRecoveryPrompt: config.business?.liveTransferRecoveryPrompt || '',
@@ -2579,6 +2596,7 @@
   function loadFormState(state) {
     document.getElementById('businessName').value = state.businessName || '';
     document.getElementById('faqKnowledgeBase').value = state.faqKnowledgeBase || '';
+    setClosingPrompt('closeQuestionPrompt', state.closeQuestionPrompt || DEFAULT_CLOSE_QUESTION_PROMPT);
     setClosingPrompt('closingRemarksPrompt', state.closingRemarksPrompt || DEFAULT_CLOSING_REMARKS_PROMPT);
     setClosingPrompt('closingStatementText', state.closingStatementText || DEFAULT_CLOSING_STATEMENT_TEXT);
     document.getElementById('liveTransferRecoveryPrompt').value = state.liveTransferRecoveryPrompt || DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;

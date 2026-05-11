@@ -7999,11 +7999,15 @@
     // Close Prompts live inside each path's card above; only the *global*
     // closing prompts (remarks / statement / transfer recovery) live here.
     const hasClosingFields =
+      data.closeQuestionPrompt !== undefined ||
       data.closingRemarksPrompt !== undefined ||
       data.closingStatementText !== undefined ||
       data.liveTransferRecoveryPrompt !== undefined;
     if (hasClosingFields) {
       html += '<h3 style="margin-top:1.25rem;">Closing</h3>';
+      if (data.closeQuestionPrompt !== undefined) {
+        html += fieldBlock('Close Question Prompt', data.closeQuestionPrompt, 'openCloseQuestionPromptEdit()', { sub: '("anything else?" before goodbye)' });
+      }
       if (data.closingRemarksPrompt !== undefined) {
         html += fieldBlock('Closing Remarks Prompt', data.closingRemarksPrompt, 'openClosingRemarksPromptEdit()');
       }
@@ -8646,6 +8650,21 @@
     };
   }
 
+  function openCloseQuestionPromptEdit() {
+    if (!neData) return;
+    document.getElementById('promptModalTitle').textContent = 'Edit Close Question Prompt';
+    document.getElementById('promptModalDesc').textContent = 'Spoken right before goodbye to invite final questions. AI instruction (the agent paraphrases). Type {{ to insert business_name as a green pill.';
+    useTemplateEditor(['business_name'], neData.closeQuestionPrompt || '');
+    document.getElementById('promptModal').style.display = '';
+    promptModalCb = (text) => {
+      neData.closeQuestionPrompt = text;
+      markNeDirty();
+      closePromptModal();
+      renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+      showToast('Close question updated (save to publish)', 'success');
+    };
+  }
+
   function openClosingStatementEdit() {
     if (!neData) return;
     document.getElementById('promptModalTitle').textContent = 'Edit Closing Statement';
@@ -9071,6 +9090,7 @@
         changes.pathClosePrompts[p.name] = p.closePrompt || '';
       }
     }
+    changes.closeQuestionPrompt = neData.closeQuestionPrompt;
     changes.closingRemarksPrompt = neData.closingRemarksPrompt;
     changes.closingStatementText = neData.closingStatementText;
     if (neData.liveTransferRecoveryPrompt !== undefined) {

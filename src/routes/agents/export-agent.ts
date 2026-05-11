@@ -73,6 +73,10 @@ export async function exportAgentHandler(
     // (single-path agents). For multi-path agents the per-path map above is
     // the source of truth and the singleton field is omitted.
     const closePrompt = findInstructionText("Close");
+    // Optional: the Close Question node ("Is there anything else…?") sits
+    // between Close and Closing Remarks. Agents generated before this node
+    // existed return undefined and the import falls back to the default.
+    const closeQuestionPrompt = findInstructionText("Close Question");
     const closingRemarksPrompt = findInstructionText("Closing Remarks");
     const closingStatementText = findInstructionText("Closing Statement");
     // Live Transfer Recovery — only present on agents that have at least one
@@ -176,6 +180,7 @@ export async function exportAgentHandler(
         ...(Object.keys(pathClosePrompts).length > 0
           ? { pathClosePrompts }
           : (closePrompt !== undefined ? { closePrompt } : {})),
+        ...(closeQuestionPrompt !== undefined ? { closeQuestionPrompt } : {}),
         ...(closingRemarksPrompt !== undefined ? { closingRemarksPrompt } : {}),
         ...(closingStatementText !== undefined ? { closingStatementText } : {}),
         ...(liveTransferRecoveryPrompt !== undefined ? { liveTransferRecoveryPrompt } : {}),

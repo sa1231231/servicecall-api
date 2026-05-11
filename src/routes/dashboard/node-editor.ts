@@ -325,6 +325,10 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
     // returned in paths[].closePrompt below.
     const closePromptInstr = parsed.closeNode?.raw.instruction as Record<string, unknown> | undefined;
     const closePrompt = (closePromptInstr?.text as string) ?? "";
+    // The Close Question node ("anything else?") sits between Close and
+    // Closing Remarks. Agents generated before this node existed return ""
+    // here; the dashboard hides the field rather than persisting empty text.
+    const closeQuestionPrompt = findInstructionText("Close Question");
     const closingRemarksPrompt = findInstructionText("Closing Remarks");
     const closingStatementText = findInstructionText("Closing Statement");
 
@@ -355,6 +359,7 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       faqNodeId,
       faqKnowledgeBase,
       closePrompt,
+      ...(closeQuestionPrompt ? { closeQuestionPrompt } : {}),
       closingRemarksPrompt,
       closingStatementText,
       ...(liveTransferRecoveryPrompt !== undefined && { liveTransferRecoveryPrompt }),
@@ -2221,6 +2226,9 @@ export async function saveAndPublishHandler(
           (router.else_edge as Record<string, unknown>).destination_node_id = newClose.id as string;
         }
       });
+    }
+    if (typeof changes.closeQuestionPrompt === "string") {
+      applyClosingPrompt("Close Question", changes.closeQuestionPrompt);
     }
     if (typeof changes.closingRemarksPrompt === "string") {
       applyClosingPrompt("Closing Remarks", changes.closingRemarksPrompt);
