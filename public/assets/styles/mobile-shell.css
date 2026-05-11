@@ -212,6 +212,20 @@
     margin-right: 0.4rem;
   }
 
+  /* ── Settings view — sticky Save Settings on mobile ───────────────────
+   * Categories and Admin panes can run 1000px+; without sticky, the
+   * save button is buried at the bottom. Stick it just above the
+   * mobile-tab-bar so it's always thumb-reachable. */
+  #settingsView #btnSaveSettings {
+    position: sticky;
+    bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 0.5rem);
+    width: 100%;
+    min-height: var(--tap-target, 44px);
+    margin: 1rem 0 0;
+    box-shadow: var(--shadow-lg, 0 4px 12px rgba(0, 0, 0, 0.10));
+    z-index: 40;
+  }
+
   /* ── Pending lead detail — sticky promote/dismiss bar ─────────────────
    * Lifts the action row out of the document flow on mobile so Promote
    * is always thumb-reachable. Sits above the bottom-tab bar. */
