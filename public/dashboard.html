@@ -1458,7 +1458,7 @@
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
-  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-create" data-feature="agent_lifecycle" data-feature-level="write" onclick="showPendingLeads()" id="btnCreate" title="Build an agent — Advanced, Quick, or pick up a pending lead">+ Create<span id="leadsBadge" style="display:none;">0</span></button><button class="btn-settings" onclick="logout()" title="Sign out and clear session cookie" style="margin-left:0.4rem;">Logout</button><button type="button" class="btn-mobile-search" id="btnMobileSearch" onclick="openCommandPalette()" aria-label="Search agents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true" width="20" height="20"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button><span id="userBadge" class="user-badge"></span><span class="user-menu-wrap" id="userMenuWrap"><button type="button" class="user-menu-btn" id="userMenuBtn" onclick="toggleUserMenu(event)" aria-haspopup="true" aria-expanded="false" aria-label="User menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true" width="20" height="20"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></button><div class="user-menu-popover" id="userMenuPopover" role="menu" hidden><div class="user-menu-identity"><strong id="userMenuName">…</strong><span id="userMenuRole" class="user-menu-role"></span></div><button type="button" class="user-menu-item" role="menuitem" onclick="closeUserMenu();showSettings()">Settings</button><button type="button" class="user-menu-item user-menu-danger" role="menuitem" onclick="closeUserMenu();logout()">Sign out</button></div></span></h1>
+  <h1>Agent Dashboard <button class="btn-settings" onclick="showSettings()">Settings</button><button class="btn-create" data-feature="agent_lifecycle" data-feature-level="write" onclick="showPendingLeads()" id="btnCreate" title="Build an agent — Advanced, Quick, or pick up a pending lead">+ Create<span id="leadsBadge" style="display:none;">0</span></button><button class="btn-settings" onclick="logout()" title="Sign out and clear session cookie" style="margin-left:0.4rem;">Logout</button><button type="button" class="btn-mobile-search" id="btnMobileSearch" onclick="openCommandPalette()" aria-label="Search agents"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true" width="20" height="20"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg></button><span id="userBadge" class="user-badge"></span><span class="user-menu-wrap" id="userMenuWrap"><button type="button" class="user-menu-btn" id="userMenuBtn" onclick="toggleUserMenu(event)" aria-haspopup="true" aria-expanded="false" aria-label="User menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true" width="20" height="20"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg></button><div class="user-menu-popover" id="userMenuPopover" role="menu" hidden><div class="user-menu-identity"><strong id="userMenuName">…</strong><span id="userMenuRole" class="user-menu-role"></span></div><button type="button" class="user-menu-item" role="menuitem" onclick="closeUserMenu();showSettings()">Settings</button><button type="button" class="user-menu-item admin-only" role="menuitem" onclick="closeUserMenu();showAdmin()">Admin</button><button type="button" class="user-menu-item user-menu-danger" role="menuitem" onclick="closeUserMenu();logout()">Sign out</button></div></span></h1>
   <p class="subtitle">Click a client to view details and call history.</p>
   <div id="agentSearchBar" class="agent-search-bar" style="display:none;">
     <div class="agent-search-chips" id="agentSearchChips"></div>
@@ -1552,7 +1552,6 @@
       <button class="agent-tab"        data-settings-tab="templates"  role="tab" onclick="switchSettingsTab('templates')">Templates</button>
       <button class="agent-tab"        data-settings-tab="costs"      role="tab" onclick="switchSettingsTab('costs')">Costs</button>
       <button class="agent-tab"        data-settings-tab="categories" role="tab" onclick="switchSettingsTab('categories')">Categories</button>
-      <button class="agent-tab"        data-settings-tab="admin"      role="tab" onclick="switchSettingsTab('admin')">Admin</button>
     </nav>
 
     <section class="agent-tab-content">
@@ -1717,99 +1716,111 @@
         </details>
       </div>
 
-      <!-- ── Admin ────────────────────────────────────────────────────── -->
-      <div id="settings-tab-admin" class="agent-tab-pane">
-        <h2 style="margin-top:0;">SMS Blast</h2>
-        <p class="settings-hint" style="margin-bottom:0.75rem;">Send a one-time SMS to all active clients. Messages are sent one per second to avoid spam filters. Use <code>{{client_name}}</code> to personalize.</p>
-        <div style="background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1.5rem;">
-          <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.3rem;">Message</label>
-          <div class="tmpl-editor-wrap" data-counter="sms">
-            <div class="tmpl-editor" contenteditable="true" id="blast-message-editor" data-placeholder="Happy Mother's Day from ServiceCall Saver! We hope {{client_name}} has a wonderful weekend." style="min-height:5rem;"></div>
-            <input type="hidden" id="blast-message">
-          </div>
-          <p class="settings-hint" style="margin-top:0.3rem;">Type <code>{{</code> to insert <code>client_name</code> as a green pill.</p>
-          <div id="blast-preview-info" style="display:none;margin-top:0.5rem;padding:0.5rem;background:#f9fafb;border-radius:6px;font-size:0.82rem;">
-            <strong>Preview:</strong> <span id="blast-preview-count"></span><br>
-            <strong>Sample:</strong> <span id="blast-preview-sample" style="color:#374151;"></span>
-          </div>
-          <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
-            <button class="btn-save" style="background:#6b7280;" onclick="previewBlast()">Preview</button>
-            <button class="btn-save" id="btnBlastSend" onclick="confirmBlast()">Send Blast</button>
-          </div>
-          <div id="blast-result" style="display:none;margin-top:0.5rem;padding:0.5rem;border-radius:6px;font-size:0.82rem;"></div>
-        </div>
-
-        <div id="userManagementSection" data-super-admin-only>
-        <h2>User Management</h2>
-        <p class="settings-hint" style="margin-bottom:0.75rem;">Create accounts for team members and control what each user can do. Only Super Admins and Root can see this section.</p>
-
-        <details id="permissionReferenceWrap" style="margin-bottom:0.75rem;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 0.85rem;">
-          <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:#374151;">Permission reference — what each role and permission grants</summary>
-          <div id="permissionReferenceBody" style="margin-top:0.6rem;font-size:0.8rem;line-height:1.45;">
-            <div class="loading" style="color:#888;">Loading…</div>
-          </div>
-        </details>
-
-        <div id="userManagementContainer"><div class="loading">Loading...</div></div>
-        <div style="margin-top:1rem;background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1.5rem;">
-          <h3 style="margin:0 0 0.5rem;font-size:0.85rem;color:#555;">Add User</h3>
-          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end;">
-            <div>
-              <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Username</label>
-              <input type="text" id="newUserName" placeholder="sam" style="width:120px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
-            </div>
-            <div>
-              <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Password</label>
-              <input type="password" id="newUserPass" minlength="6" maxlength="200" placeholder="min 6 chars" style="width:140px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
-            </div>
-            <div>
-              <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Role</label>
-              <select id="newUserRole" onchange="updateNewUserPermDefaults()" style="padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
-                <option value="operator">Operator</option>
-                <option value="viewer">Viewer (read-only)</option>
-                <option value="admin">Admin</option>
-                <option value="super_admin" id="optSuperAdmin" style="display:none;">Super Admin</option>
-              </select>
-            </div>
-            <button onclick="createNewUser()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:0.4rem 0.8rem;font-size:0.82rem;cursor:pointer;font-weight:500;">Add</button>
-          </div>
-          <div id="newUserPermsContainer" style="margin-top:0.75rem;"></div>
-        </div>
-        </div><!-- /userManagementSection -->
-
-        <div id="deletedAgentsSection" style="display:none;" data-feature="permanent_delete" data-feature-level="read">
-          <h2>Recently Deleted Agents</h2>
-          <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them. Permanently deleting also releases the Twilio number and stops billing for it.</p>
-          <div id="deletedAgentsContainer"><div class="loading">Loading...</div></div>
-        </div>
-
-        <div id="auditLogSection" style="display:none;margin-top:1.5rem;" data-feature="audit_log" data-feature-level="read">
-          <h2>Activity Log</h2>
-          <p class="settings-hint" style="margin-bottom:0.5rem;">Every state-changing dashboard action (creates, edits, deletes, restores, sends) is recorded. Entries are kept for 90 days.</p>
-          <div id="auditLogFilters" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.6rem;">
-            <select id="auditFilterAction" style="padding:0.3rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
-              <option value="">All actions</option>
-            </select>
-            <select id="auditFilterUser" style="padding:0.3rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
-              <option value="">All users</option>
-            </select>
-            <input type="text" id="auditFilterTarget" placeholder="Target (slug prefix)" style="padding:0.3rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;width:170px;">
-            <input type="date" id="auditFilterSince" style="padding:0.25rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
-            <span style="font-size:0.78rem;color:#666;">to</span>
-            <input type="date" id="auditFilterUntil" style="padding:0.25rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
-            <button type="button" onclick="loadAuditLog(true)" style="padding:0.3rem 0.7rem;font-size:0.78rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;">Apply</button>
-            <button type="button" onclick="resetAuditLogFilters()" style="padding:0.3rem 0.7rem;font-size:0.78rem;background:#fff;color:#666;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Reset</button>
-          </div>
-          <div id="auditLogContainer"><div class="loading">Loading...</div></div>
-          <div style="margin-top:0.6rem;text-align:center;">
-            <button type="button" id="auditLoadMoreBtn" onclick="loadAuditLog(false)" style="display:none;padding:0.4rem 0.9rem;font-size:0.78rem;background:#fff;color:#2563eb;border:1px solid #2563eb;border-radius:4px;cursor:pointer;">Load more</button>
-          </div>
-        </div>
-      </div>
     </section>
   </div>
 
   <button class="btn-save admin-only" id="btnSaveSettings" onclick="saveSettings()" style="margin-top:1rem;">Save Settings<span id="settingsUnsavedPill" class="settings-unsaved-pill" hidden>Unsaved</span></button>
+</div>
+
+<!-- ── Admin View ────────────────────────────────────────────────────
+     Previously the 5th tab inside Global Settings; the Admin pane mashed
+     SMS Blast + User Management + Recently Deleted + Audit Log into one
+     35rem-tall scroll. Pulled out as its own top-level surface so the
+     Settings page only carries config (general/templates/costs/categories)
+     and Admin functions get their own focused space. -->
+<div id="adminView" class="admin-only" style="display:none;">
+  <button class="btn-back" onclick="hideAdmin()">&larr; Back to all agents</button>
+  <div id="adminHeader" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0 0.25rem;">
+    <h1 style="margin:0;display:flex;align-items:center;gap:0.5rem;">Admin <span class="badge badge-shadow" style="font-size:0.7rem;">Admin only</span></h1>
+  </div>
+  <p class="settings-hint" style="margin:0 0 1rem;">Workspace-wide admin actions: blast SMS, manage users, restore deleted agents, audit log.</p>
+
+  <h2 style="margin-top:0;">SMS Blast</h2>
+  <p class="settings-hint" style="margin-bottom:0.75rem;">Send a one-time SMS to all active clients. Messages are sent one per second to avoid spam filters. Use <code>{{client_name}}</code> to personalize.</p>
+  <div style="background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1.5rem;">
+    <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.3rem;">Message</label>
+    <div class="tmpl-editor-wrap" data-counter="sms">
+      <div class="tmpl-editor" contenteditable="true" id="blast-message-editor" data-placeholder="Happy Mother's Day from ServiceCall Saver! We hope {{client_name}} has a wonderful weekend." style="min-height:5rem;"></div>
+      <input type="hidden" id="blast-message">
+    </div>
+    <p class="settings-hint" style="margin-top:0.3rem;">Type <code>{{</code> to insert <code>client_name</code> as a green pill.</p>
+    <div id="blast-preview-info" style="display:none;margin-top:0.5rem;padding:0.5rem;background:#f9fafb;border-radius:6px;font-size:0.82rem;">
+      <strong>Preview:</strong> <span id="blast-preview-count"></span><br>
+      <strong>Sample:</strong> <span id="blast-preview-sample" style="color:#374151;"></span>
+    </div>
+    <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+      <button class="btn-save" style="background:#6b7280;" onclick="previewBlast()">Preview</button>
+      <button class="btn-save" id="btnBlastSend" onclick="confirmBlast()">Send Blast</button>
+    </div>
+    <div id="blast-result" style="display:none;margin-top:0.5rem;padding:0.5rem;border-radius:6px;font-size:0.82rem;"></div>
+  </div>
+
+  <div id="userManagementSection" data-super-admin-only>
+  <h2>User Management</h2>
+  <p class="settings-hint" style="margin-bottom:0.75rem;">Create accounts for team members and control what each user can do. Only Super Admins and Root can see this section.</p>
+
+  <details id="permissionReferenceWrap" style="margin-bottom:0.75rem;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:0.6rem 0.85rem;">
+    <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:#374151;">Permission reference — what each role and permission grants</summary>
+    <div id="permissionReferenceBody" style="margin-top:0.6rem;font-size:0.8rem;line-height:1.45;">
+      <div class="loading" style="color:#888;">Loading…</div>
+    </div>
+  </details>
+
+  <div id="userManagementContainer"><div class="loading">Loading...</div></div>
+  <div style="margin-top:1rem;background:#fff;border-radius:8px;padding:1rem;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:1.5rem;">
+    <h3 style="margin:0 0 0.5rem;font-size:0.85rem;color:#555;">Add User</h3>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:flex-end;">
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Username</label>
+        <input type="text" id="newUserName" placeholder="sam" style="width:120px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+      </div>
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Password</label>
+        <input type="password" id="newUserPass" minlength="6" maxlength="200" placeholder="min 6 chars" style="width:140px;padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+      </div>
+      <div>
+        <label style="display:block;font-size:0.75rem;font-weight:600;color:#666;margin-bottom:0.2rem;">Role</label>
+        <select id="newUserRole" onchange="updateNewUserPermDefaults()" style="padding:0.35rem 0.5rem;font-size:0.82rem;border:1px solid #d1d5db;border-radius:6px;">
+          <option value="operator">Operator</option>
+          <option value="viewer">Viewer (read-only)</option>
+          <option value="admin">Admin</option>
+          <option value="super_admin" id="optSuperAdmin" style="display:none;">Super Admin</option>
+        </select>
+      </div>
+      <button onclick="createNewUser()" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:0.4rem 0.8rem;font-size:0.82rem;cursor:pointer;font-weight:500;">Add</button>
+    </div>
+    <div id="newUserPermsContainer" style="margin-top:0.75rem;"></div>
+  </div>
+  </div><!-- /userManagementSection -->
+
+  <div id="deletedAgentsSection" style="display:none;" data-feature="permanent_delete" data-feature-level="read">
+    <h2>Recently Deleted Agents</h2>
+    <p class="settings-hint" style="margin-bottom:0.75rem;">Deleted agents are kept for 30 days. You can restore them or permanently delete them. Permanently deleting also releases the Twilio number and stops billing for it.</p>
+    <div id="deletedAgentsContainer"><div class="loading">Loading...</div></div>
+  </div>
+
+  <div id="auditLogSection" style="display:none;margin-top:1.5rem;" data-feature="audit_log" data-feature-level="read">
+    <h2>Activity Log</h2>
+    <p class="settings-hint" style="margin-bottom:0.5rem;">Every state-changing dashboard action (creates, edits, deletes, restores, sends) is recorded. Entries are kept for 90 days.</p>
+    <div id="auditLogFilters" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.6rem;">
+      <select id="auditFilterAction" style="padding:0.3rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
+        <option value="">All actions</option>
+      </select>
+      <select id="auditFilterUser" style="padding:0.3rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
+        <option value="">All users</option>
+      </select>
+      <input type="text" id="auditFilterTarget" placeholder="Target (slug prefix)" style="padding:0.3rem 0.4rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;width:170px;">
+      <input type="date" id="auditFilterSince" style="padding:0.25rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
+      <span style="font-size:0.78rem;color:#666;">to</span>
+      <input type="date" id="auditFilterUntil" style="padding:0.25rem;font-size:0.78rem;border:1px solid #d1d5db;border-radius:4px;">
+      <button type="button" onclick="loadAuditLog(true)" style="padding:0.3rem 0.7rem;font-size:0.78rem;background:#2563eb;color:#fff;border:none;border-radius:4px;cursor:pointer;">Apply</button>
+      <button type="button" onclick="resetAuditLogFilters()" style="padding:0.3rem 0.7rem;font-size:0.78rem;background:#fff;color:#666;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Reset</button>
+    </div>
+    <div id="auditLogContainer"><div class="loading">Loading...</div></div>
+    <div style="margin-top:0.6rem;text-align:center;">
+      <button type="button" id="auditLoadMoreBtn" onclick="loadAuditLog(false)" style="display:none;padding:0.4rem 0.9rem;font-size:0.78rem;background:#fff;color:#2563eb;border:1px solid #2563eb;border-radius:4px;cursor:pointer;">Load more</button>
+    </div>
+  </div>
 </div>
 
 <!-- ── Detail View ──────────────────────────────────────────────────── -->
@@ -3323,6 +3334,7 @@
     callOffset = 0;
     document.getElementById('listView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
+    { const av = document.getElementById('adminView'); if (av) av.style.display = 'none'; }
     document.getElementById('detailView').style.display = '';
 
     // Parse desired tab from URL hash (#agent=slug&tab=settings). If absent,
@@ -6207,9 +6219,40 @@
 
   // ── SETTINGS ─────────────────────────────────────────────────────────
 
+  // ── Admin view (M2: pulled out of Settings → its own surface) ─────
+  // Loads the same auxiliary data the in-Settings tab used to (users,
+  // deleted agents, audit log) so its content renders identically. Hides
+  // every other view so the page is dedicated to admin tasks while open.
+  async function showAdmin() {
+    document.getElementById('listView').style.display = 'none';
+    document.getElementById('detailView').style.display = 'none';
+    document.getElementById('settingsView').style.display = 'none';
+    const lv = document.getElementById('pendingLeadsView');
+    if (lv) lv.style.display = 'none';
+    document.getElementById('adminView').style.display = '';
+    if (window.location.hash !== '#admin') {
+      history.pushState(null, '', '#admin');
+    }
+    // Re-use the existing loaders that used to fire when the Admin tab
+    // opened inside Settings. Same containers (blast editor / users / audit
+    // log / deleted agents) — they just live under #adminView now.
+    if (typeof initSettingsTemplateEditors === 'function') initSettingsTemplateEditors();
+    if (typeof loadUsers === 'function') loadUsers();
+    if (typeof loadAuditLog === 'function' && (typeof hasFeature !== 'function' || hasFeature('audit_log', 'read'))) loadAuditLog(true);
+    if (typeof loadDeletedAgents === 'function' && (typeof hasFeature !== 'function' || hasFeature('permanent_delete', 'read'))) loadDeletedAgents();
+  }
+
+  function hideAdmin() {
+    document.getElementById('adminView').style.display = 'none';
+    document.getElementById('listView').style.display = '';
+    if (window.location.hash) history.pushState(null, '', '/dashboard/');
+  }
+
   async function showSettings() {
     document.getElementById('listView').style.display = 'none';
     document.getElementById('detailView').style.display = 'none';
+    const av = document.getElementById('adminView');
+    if (av) av.style.display = 'none';
     const lv = document.getElementById('pendingLeadsView');
     if (lv) lv.style.display = 'none';
     document.getElementById('settingsView').style.display = '';
@@ -9702,6 +9745,10 @@
       showSettings();
       return;
     }
+    if (hash === '#admin') {
+      showAdmin();
+      return;
+    }
     if (hash === '#leads') {
       showPendingLeads();
       return;
@@ -9721,6 +9768,8 @@
     // via browser navigation that already updated the URL.
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
+    const av = document.getElementById('adminView');
+    if (av) av.style.display = 'none';
     const lv = document.getElementById('pendingLeadsView');
     if (lv) lv.style.display = 'none';
     document.getElementById('listView').style.display = '';
@@ -9799,6 +9848,7 @@
     document.getElementById('listView').style.display = 'none';
     document.getElementById('detailView').style.display = 'none';
     document.getElementById('settingsView').style.display = 'none';
+    { const av = document.getElementById('adminView'); if (av) av.style.display = 'none'; }
     document.getElementById('pendingLeadsView').style.display = '';
     const desiredHash = focusId ? '#leads/' + encodeURIComponent(focusId) : '#leads';
     if (window.location.hash !== desiredHash) {
