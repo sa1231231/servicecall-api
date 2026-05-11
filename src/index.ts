@@ -121,6 +121,20 @@ app.use("/health", healthRouter);
 app.use("/retell", webhookLimiter, retellRouter);
 app.use("/portal", portalLimiter, portalRouter);
 
+// ── Public static assets (CSS, JS, images) ──────────────────────────────────
+// Only the /assets prefix is exposed — HTML files under /public stay
+// auth-gated through their named routes. Cache for a year since the path
+// versions naturally on file rename; long-lived clients pick up changes via
+// a new commit's new path.
+app.use(
+  "/assets",
+  express.static(path.join(__dirname, "..", "public", "assets"), {
+    maxAge: "1y",
+    immutable: false,
+    fallthrough: false,
+  }),
+);
+
 // ── Client login (public, no auth) ──────────────────────────────────────────
 const clientLoginHtmlPath = path.join(__dirname, "..", "public", "client-login.html");
 app.get("/client", (_req, res) => {
