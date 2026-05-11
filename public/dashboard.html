@@ -367,6 +367,21 @@
   .agent-tab-pane { display: none; }
   .agent-tab-pane.active { display: block; }
   .agent-tab-pane h2:first-child { margin-top: 0; }
+  /* Q6 — small activity dots that ride next to a tab label */
+  .tab-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    margin-left: 0.4rem;
+    vertical-align: middle;
+    background: var(--gray-400, #9ca3af);
+  }
+  .tab-dot[hidden] { display: none; }
+  .tab-dot-warn { background: var(--warning, #f59e0b); }
+  .tab-dot-danger { background: var(--danger, #dc2626); }
+  .tab-dot-success { background: var(--success, #059669); }
+
   /* Suggestions tab */
   .suggestions-badge {
     display: inline-block;
@@ -1767,7 +1782,7 @@
     <nav class="agent-tabs-nav" role="tablist">
       <button class="agent-tab active" data-tab="settings" role="tab" onclick="switchAgentTab('settings')">Agent Settings</button>
       <button class="agent-tab" data-tab="dispatch" role="tab" onclick="switchAgentTab('dispatch')">Dispatch</button>
-      <button class="agent-tab" data-tab="nodes"    role="tab" onclick="switchAgentTab('nodes')">Node Editor</button>
+      <button class="agent-tab" data-tab="nodes"    role="tab" onclick="switchAgentTab('nodes')">Node Editor<span class="tab-dot tab-dot-warn" id="nodesTabDot" hidden title="Mongo↔Retell drift detected — see Node Editor"></span></button>
       <button class="agent-tab" data-tab="suggestions" role="tab" data-feature="transcript_review" data-feature-level="read" onclick="switchAgentTab('suggestions')">Suggestions <span id="suggestionsTabBadge" class="suggestions-badge" hidden>0</span></button>
       <button class="agent-tab" data-tab="billing"  role="tab" data-feature="billing" data-feature-level="read" onclick="switchAgentTab('billing')">Billing</button>
       <button class="agent-tab" data-tab="calls"    role="tab" onclick="switchAgentTab('calls')">Call Log</button>
@@ -4741,6 +4756,12 @@
     suggestionsCurrentStatus = 'pending';
     const sgBadge = document.getElementById('suggestionsTabBadge');
     if (sgBadge) sgBadge.hidden = true;
+
+    // Q6: tab activity dots. Right now only the drift dot on Node Editor —
+    // surfaces detection from src/lib/retell-auto-sync.ts so operators see
+    // at a glance that something diverged without clicking through tabs.
+    const nodesDot = document.getElementById('nodesTabDot');
+    if (nodesDot) nodesDot.hidden = !doc.drift_detected_at;
   }
 
   function renderTabSettings(doc) {
