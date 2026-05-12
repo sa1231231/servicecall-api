@@ -1176,6 +1176,64 @@
   .lead-status-failed    { background:#fee2e2; color:#991b1b; }
   .lead-status-promoted  { background:#dbeafe; color:#1e40af; }
   .lead-status-dismissed { background:#f3f4f6; color:#6b7280; }
+  /* M3: lead detail tabs (Lead Info / AI Enrichment / Promote) */
+  .lead-tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+    margin: 0.5rem 0 0;
+  }
+  .lead-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 0.55rem 0.85rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--gray-600, #4b5563);
+    cursor: pointer;
+    font-family: inherit;
+    margin-bottom: -1px;
+  }
+  .lead-tab:hover { color: var(--gray-800, #1f2937); }
+  .lead-tab.active {
+    color: var(--accent, #2563eb);
+    border-bottom-color: var(--accent, #2563eb);
+    font-weight: 600;
+  }
+  .lead-tab-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    margin-top: 0.75rem;
+  }
+  .lead-tab-pane { display: none; }
+  .lead-tab-pane.active { display: flex; flex-direction: column; gap: 0.85rem; }
+  .lead-suggested-action {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    color: #1e40af;
+    border-radius: var(--radius-md, 6px);
+    margin: 0.5rem 0 0;
+    font-size: 0.85rem;
+  }
+  .lead-suggested-cta {
+    margin-left: auto;
+    background: var(--accent, #2563eb);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm, 4px);
+    padding: 0.3rem 0.7rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .lead-suggested-cta:hover { background: var(--accent-strong, #1d4ed8); }
   /* Pending-leads filter chips — sits above the leads table/cards. */
   .pending-lead-chips {
     display: flex;
@@ -9785,6 +9843,19 @@
   let pendingLeadDrafts = [];
   let pendingLeadActiveId = null;
   let pendingLeadsPollTimer = null;
+  // M3: which tab inside the lead detail is active. Persists across silent
+  // polls so the operator's selection isn't reset every 3.5s when the auto-
+  // poll re-renders. Null = use the default-by-status (defaultLeadTab below).
+  let pendingLeadDetailTab = null;
+  function defaultLeadTab(lead) {
+    if (lead.status === 'ready') return 'promote';
+    if (lead.status === 'enriching' || lead.status === 'queued') return 'enrich';
+    return 'info';
+  }
+  function setPendingLeadDetailTab(name) {
+    pendingLeadDetailTab = name;
+    renderPendingLeadsBody();
+  }
   // Filter chip state: 'all' | 'queued' | 'enriching' | 'ready' | 'failed' |
   // 'promoted' | 'dismissed'. Module-level so silent polls + re-renders
   // preserve the operator's current view.
@@ -10148,6 +10219,47 @@
         '</div>' +
       '</div>';
 
+    // M3: render the three panels as tab panes. Each tab pane wraps the
+    // existing panel HTML so the field-level handlers (Save, Promote,
+    // re-enrich, etc.) all keep working without modification.
+    const activeTab = pendingLeadDetailTab || defaultLeadTab(lead);
+    const tabDef = [
+      { key: 'info',    label: 'Lead Info' },
+      { key: 'enrich',  label: 'AI Enrichment' },
+      { key: 'promote', label: 'Promote' },
+    ];
+    const tabsHtml = '<nav class="lead-tabs" role="tablist">' +
+      tabDef.map((t) =>
+        '<button type="button" class="lead-tab' + (t.key === activeTab ? ' active' : '') +
+        '" role="tab" data-lead-tab="' + t.key + '"' +
+        ' onclick="setPendingLeadDetailTab(\'' + t.key + '\')">' + esc(t.label) +
+        '</button>'
+      ).join('') +
+      '</nav>';
+    // Smart-suggested-action pill: a one-tap nudge when the next-action tab
+    // isn't the one the operator is currently on. Skipped on terminal
+    // statuses where there's nothing to suggest.
+    const isTerminalLead = lead.status === 'promoted' || lead.status === 'dismissed';
+    const suggestion = isTerminalLead ? null
+      : lead.status === 'ready' && activeTab !== 'promote'
+        ? { msg: 'Enrichment complete. Promote?', target: 'promote', cta: 'Open Promote' }
+      : (lead.status === 'enriching' || lead.status === 'queued') && activeTab !== 'enrich'
+        ? { msg: 'Enrichment in progress.', target: 'enrich', cta: 'See AI Feed' }
+      : lead.status === 'failed' && activeTab !== 'info'
+        ? { msg: 'Enrichment failed — review the lead info.', target: 'info', cta: 'Open Lead Info' }
+      : null;
+    const suggestionHtml = suggestion
+      ? '<div class="lead-suggested-action">' +
+          '<span>' + esc(suggestion.msg) + '</span>' +
+          '<button type="button" class="lead-suggested-cta" ' +
+            'onclick="setPendingLeadDetailTab(\'' + suggestion.target + '\')">' +
+            esc(suggestion.cta) + '</button>' +
+        '</div>'
+      : '';
+    function wrap(key, html) {
+      return '<div class="lead-tab-pane' + (key === activeTab ? ' active' : '') +
+        '" data-lead-tab-pane="' + key + '">' + html + '</div>';
+    }
     body.innerHTML =
       '<div style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem;">' +
         '<button onclick="backToLeadsList()" class="btn-back" style="margin:0;">&larr; Back to leads</button>' +
@@ -10156,15 +10268,20 @@
       '</div>' +
       errorBlock +
       promotedSlug +
-      '<div style="display:flex;flex-direction:column;gap:0.85rem;margin-top:0.75rem;">' +
-        originalPanel +
-        aiFeedPanel +
-        enrichedPanel +
-        promotePanel +
+      suggestionHtml +
+      tabsHtml +
+      '<div class="lead-tab-content">' +
+        wrap('info', originalPanel) +
+        wrap('enrich', aiFeedPanel + enrichedPanel) +
+        wrap('promote', promotePanel) +
       '</div>';
   }
 
   function openLeadDetail(id) {
+    // New lead → reset to whichever tab matches the lead's status. The auto-
+    // poll path preserves the operator's selection; only this explicit open
+    // resets it so cross-lead jumps don't carry state.
+    if (pendingLeadActiveId !== id) pendingLeadDetailTab = null;
     pendingLeadActiveId = id;
     history.pushState(null, '', '#leads/' + encodeURIComponent(id));
     renderPendingLeadsBody();
