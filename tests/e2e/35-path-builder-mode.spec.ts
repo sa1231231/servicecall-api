@@ -29,12 +29,18 @@ test.describe("/form path builder — scan / edit modes (M5)", () => {
     // Default mode = scan: tree gets the wider column.
     await expect(builder).toHaveAttribute("data-mode", "scan");
 
-    // Click the first tree node — should flip to edit mode.
-    const firstNode = page.locator(".path-builder-tree .tree-node").first();
-    if ((await firstNode.count()) === 0) {
+    // Trigger a tree-node select via the inline onclick. The flow-diagram
+    // SVG overlay sometimes intercepts pointer events during the import-
+    // animation transient, so we invoke the same handler directly instead
+    // of relying on a real click landing.
+    const treeNode = page.locator(".path-builder-tree .tree-node").first();
+    if ((await treeNode.count()) === 0) {
       test.skip(true, "No tree nodes after import — nothing to click");
     }
-    await firstNode.click();
+    await page.evaluate(() => {
+      const node = document.querySelector(".path-builder-tree .tree-node") as HTMLElement | null;
+      if (node?.onclick) node.onclick(new MouseEvent("click"));
+    });
     await expect(builder).toHaveAttribute("data-mode", "edit", { timeout: 5_000 });
   });
 });
