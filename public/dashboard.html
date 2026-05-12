@@ -3647,6 +3647,11 @@
   }
 
   function setAgentDetailHash(slug, tab) {
+    // Guard against stale async callbacks. If currentSlug was cleared (the
+    // user navigated back/forward to the list view while showDetail's
+    // fetches were still resolving), a trailing switchAgentTab → here
+    // would otherwise stamp "#agent=null&tab=settings" onto the URL.
+    if (!slug || slug === 'null') return;
     const params = '#agent=' + encodeURIComponent(slug) + (tab ? '&tab=' + encodeURIComponent(tab) : '');
     if (window.location.hash === params) return;
     // Push a history entry when switching to a *different* agent so the
