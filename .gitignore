@@ -17,3 +17,12 @@ test-results/
 .clasp.json
 apps-script/.clasp.json
 .clasprc.json
+
+# QA-sim run artifacts. Each invocation of `tsx tools/qa-sim/run.ts ...`
+# writes per-scenario JSON + a REPORT.md under a timestamped dir. Don't
+# commit those — they're disposable R&D outputs. `baseline/` is the
+# exception: when an operator promotes a snapshot (cp -r runs/<ts>
+# runs/baseline), it lives in git so the diff section in subsequent
+# REPORT.md is reproducible across machines.
+tools/qa-sim/runs/*
+!tools/qa-sim/runs/baseline/

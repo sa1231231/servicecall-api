@@ -1,6 +1,6 @@
 # Test strategy
 
-Four layers of tests live in this repo. Each runs in a different environment with different cost / speed / blast-radius tradeoffs. **When adding a new test, pick the lowest layer that can prove the thing.**
+Five layers of tests live in this repo. Each runs in a different environment with different cost / speed / blast-radius tradeoffs. **When adding a new test, pick the lowest layer that can prove the thing.**
 
 ## TL;DR
 
@@ -10,8 +10,9 @@ Four layers of tests live in this repo. Each runs in a different environment wit
 | **System** | vitest | local against deployed URL | manual (`npm run test:system`) | server routes, DB-backed contracts, end-to-end through Express |
 | **Live-API** | vitest | local against deployed URL + real Retell/Twilio | manual (`npm run test:live-api`) | full agent lifecycle including external SDK calls |
 | **E2E (UI)** | Playwright | local against deployed URL | manual (`npm run test:e2e`) | browser-driven user flows on the dashboard / form / portal |
+| **QA-sim** | tsx CLI | local + Retell chat clones + Anthropic | manual, R&D loop (`tsx tools/qa-sim/run.ts ...`) | full synthetic call simulations against a voice agent (cloned to chat), LLM-graded against per-scenario acceptance criteria |
 
-Run counts as of the last update of this file: ~1,800 unit · ~250 system · ~10 live-api · ~80 e2e.
+Run counts as of the last update of this file: ~1,800 unit · ~250 system · ~10 live-api · ~80 e2e · ~10 scenarios per qa-sim run.
 
 ---
 
@@ -105,6 +106,35 @@ Every artifact (agent name, slug, Twilio friendly_name) is prefixed with `e2e-` 
 ### Tunables
 - `playwright.config.ts` has `retries: 1` locally (CI: 2). A test that flakes once retries; deterministic failures still fail both attempts.
 - `workers: 1` and `fullyParallel: false` — the global rate-limiter (5000 req / 15min) sits comfortably above the suite's request load, but serial execution keeps state-mutating tests from racing each other.
+
+---
+
+## 5. QA-sim (simulated calls + LLM-graded transcripts)
+
+**Where:** `tools/qa-sim/*.ts` + `tools/qa-sim/__tests__/*.test.ts`
+**Run:** `tsx tools/qa-sim/run.ts --slug=<slug> [--persona=ID] [--scenarios=ID,ID] [--against-baseline]`
+**Talks to:** Retell (clones the voice agent → chat agent, runs the conversation, deletes the clone) + Anthropic (Haiku 4.5 for the caller bot, Sonnet 4.6 for the grader passes). Mongo for `slug → agent_id` lookup only.
+**Triggered by:** humans during R&D, whenever a prompt / config / fine-tune change might move agent quality and you want hard feedback before shipping.
+
+### What goes here
+- New caller archetypes (`tools/qa-sim/personas.ts`).
+- New scenario definitions (`tools/qa-sim/scenarios.ts`) — when a real production call surfaces a pattern worth canonicalizing as a test, add it here.
+- Pure parsing logic in caller-bot + grader — `tools/qa-sim/__tests__/*.test.ts` covers these as standard unit tests so the eval pipeline can't be silently broken by a parser change.
+
+### What NOT to put here
+- Per-call behavioral assertions (use real transcript-analyzer findings to grade — don't reinvent the analyzer here).
+- Heavy mutation tests against production agents (the runner clones to a fresh chat agent and deletes it after; never operate on the production voice agent directly).
+
+### Cost
+Roughly $0.07 per scenario in chat mode. A full ~10-scenario run is < $1. Cheap enough to fire 30× per day during active R&D iteration.
+
+### Promoting a baseline
+The diff section of `REPORT.md` compares the current run to a "baseline" snapshot. To promote a run:
+```
+rm -rf tools/qa-sim/runs/baseline
+cp -r tools/qa-sim/runs/<timestamp> tools/qa-sim/runs/baseline
+```
+Subsequent runs with `--against-baseline` will then show the delta.
 
 ---
 
