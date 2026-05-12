@@ -1423,6 +1423,97 @@
   }
   .settings-unsaved-pill[hidden] { display: none; }
 
+  /* M1: desktop left nav rail. Default: hidden (no impact on mobile or
+   * legacy environments). Desktop @media block opts in below. */
+  .left-rail { display: none; }
+
+  @media (min-width: 769px) {
+    body {
+      padding-left: 60px;
+      transition: padding-left 0.18s ease;
+    }
+    .left-rail {
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 60px;
+      background: var(--bg, #fff);
+      border-right: 1px solid var(--border, #e5e7eb);
+      padding: 0.6rem 0;
+      gap: 0.2rem;
+      z-index: 90;
+      overflow: hidden;
+      transition: width 0.18s ease;
+    }
+    /* Expand on hover/focus — overlays content briefly (z-index:90), no
+     * body re-flow so the page doesn't shift around when the user grazes
+     * the rail with their cursor. */
+    .left-rail:hover,
+    .left-rail:focus-within {
+      width: 220px;
+      box-shadow: var(--shadow-lg, 0 4px 12px rgba(0, 0, 0, 0.10));
+    }
+    .left-rail-item {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      background: none;
+      border: none;
+      color: var(--gray-600, #4b5563);
+      padding: 0.5rem 1rem;
+      font-family: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      text-align: left;
+      min-height: 40px;
+      white-space: nowrap;
+      position: relative;
+    }
+    .left-rail-item:hover {
+      background: var(--gray-100, #f3f4f6);
+      color: var(--gray-900, #1a1a1a);
+    }
+    .left-rail-item.active {
+      background: #eef2ff;
+      color: var(--accent, #2563eb);
+      font-weight: 600;
+    }
+    .left-rail-item svg {
+      width: 22px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .left-rail-label {
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+    .left-rail:hover .left-rail-label,
+    .left-rail:focus-within .left-rail-label {
+      opacity: 1;
+    }
+    .left-rail-badge {
+      position: absolute;
+      top: 6px;
+      left: 26px;
+      background: var(--danger, #dc2626);
+      color: #fff;
+      font-size: 0.62rem;
+      font-weight: 700;
+      min-width: 16px;
+      height: 16px;
+      padding: 0 4px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .left-rail-badge[hidden] { display: none; }
+  }
+
   /* Role-based visibility */
   .role-operator .admin-only { display: none !important; }
   .user-badge { float: right; font-size: 0.72rem; color: #888; margin-right: 0.5rem; line-height: 2.2; }
@@ -1513,6 +1604,30 @@
 </style>
 </head>
 <body>
+
+<!-- M1: desktop left nav rail. Fixed 60px on the left edge, hidden on
+     mobile (the bottom-tab bar covers nav there). Each item calls the
+     same showXxx() functions the user menu / header use, so the
+     existing routing/JS is unchanged. -->
+<aside id="leftRail" class="left-rail" aria-label="Primary navigation">
+  <button type="button" class="left-rail-item" data-rail="agents" onclick="showList(); syncLeftRail();" aria-label="Agents">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true"><path d="M3 12 12 3l9 9"/><path d="M5 10v10h14V10"/></svg>
+    <span class="left-rail-label">Agents</span>
+  </button>
+  <button type="button" class="left-rail-item" data-rail="inbox" onclick="showPendingLeads(); syncLeftRail();" aria-label="Inbox">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5 6h14l3 8v6H2v-6Z"/></svg>
+    <span class="left-rail-label">Inbox</span>
+    <span class="left-rail-badge" id="leftRailInboxBadge" hidden>0</span>
+  </button>
+  <button type="button" class="left-rail-item" data-rail="settings" onclick="showSettings(); syncLeftRail();" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 0 1 4.21 16.96l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.04 4.21l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+    <span class="left-rail-label">Settings</span>
+  </button>
+  <button type="button" class="left-rail-item admin-only" data-rail="admin" onclick="showAdmin(); syncLeftRail();" aria-label="Admin">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    <span class="left-rail-label">Admin</span>
+  </button>
+</aside>
 
 <!-- ── Agent List View ──────────────────────────────────────────────── -->
 <div id="listView">
@@ -10718,6 +10833,36 @@
       el.classList.toggle('active', el.dataset.tab === activeTab);
     });
   }
+  // ── Desktop left nav rail (M1) ─────────────────────────────────────
+  // Drives the rail's active item from the URL hash. Called by each rail
+  // button after invoking the relevant showXxx() function, plus from
+  // popstate/hashchange so back/forward + direct hash navigation also
+  // light up the right item.
+  function syncLeftRail() {
+    const hash = window.location.hash;
+    let active = 'agents';
+    if (hash === '#settings') active = 'settings';
+    else if (hash === '#admin') active = 'admin';
+    else if (hash === '#leads' || hash.startsWith('#leads/')) active = 'inbox';
+    document.querySelectorAll('.left-rail-item').forEach((el) => {
+      el.classList.toggle('active', el.dataset.rail === active);
+    });
+  }
+  function syncLeftRailInboxBadge() {
+    const src = document.getElementById('leadsBadge');
+    const dst = document.getElementById('leftRailInboxBadge');
+    if (!src || !dst) return;
+    const visible = src.style.display !== 'none' && src.textContent && src.textContent !== '0';
+    if (visible) {
+      dst.textContent = src.textContent;
+      dst.hidden = false;
+    } else {
+      dst.hidden = true;
+    }
+  }
+  window.addEventListener('popstate', syncLeftRail);
+  window.addEventListener('hashchange', syncLeftRail);
+
   // ── Desktop user menu (Q1) ─────────────────────────────────────────
   // Replaces the header's Settings / Logout / user-badge chrome with a
   // single kebab-button popover. Hidden on mobile (the bottom-tab bar
@@ -10780,15 +10925,19 @@
   // directly after their navigation.
   window.addEventListener('popstate', syncMobileTabs);
   window.addEventListener('hashchange', syncMobileTabs);
-  // Mutation observer keeps the mobile badge in sync with the desktop badge.
+  // Mutation observer keeps the mobile bottom-tab badge AND the desktop
+  // left-rail badge in sync with the canonical #leadsBadge in the header.
   const _leadsBadgeEl = document.getElementById('leadsBadge');
   if (_leadsBadgeEl) {
-    new MutationObserver(syncMobileInboxBadge).observe(_leadsBadgeEl, {
+    const _onBadgeChange = () => { syncMobileInboxBadge(); syncLeftRailInboxBadge(); };
+    new MutationObserver(_onBadgeChange).observe(_leadsBadgeEl, {
       attributes: true, childList: true, characterData: true, subtree: true,
     });
   }
   syncMobileTabs();
   syncMobileInboxBadge();
+  syncLeftRail();
+  syncLeftRailInboxBadge();
 </script>
 
 <!-- Mobile bottom-tab navigation (visible only ≤768px). Calls the same
