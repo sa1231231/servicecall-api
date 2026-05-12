@@ -1253,19 +1253,29 @@ export function buildAgentRoot(
     handbook_config: {
       echo_verification: true,
       speech_normalization: true,
-      default_personality: false,
+      // Warmth defaults (propagated from Home Heating after live testing —
+      // operator found the cold baseline read as "rude" on real calls).
+      // Flipping these three on adds light personality + occasional empathy
+      // markers without making the agent verbose; the voice config below
+      // does the heavy lifting on perceived warmth.
+      default_personality: true,
       scope_boundaries: true,
-      natural_filler_words: false,
+      natural_filler_words: true,
       nato_phonetic_alphabet: false,
-      high_empathy: false,
+      high_empathy: true,
       ai_disclosure: true,
       smart_matching: true,
     },
-    voice_id: "11labs-Ethan",
+    voice_id: "11labs-Billy",
     voice_model: "eleven_turbo_v2",
     fallback_voice_ids: [],
-    voice_temperature: 0.44,
-    voice_speed: 1.02,
+    // Higher temperature = more expressive intonation. 0.98 was tuned
+    // against the post-warmth handbook flags above; lowering this back
+    // toward 0.5 with high_empathy on tends to sound monotone and clinical.
+    voice_temperature: 0.98,
+    // Sub-1 reads "deliberate"; the prior 1.02 default felt rushed in
+    // back-to-back data collection nodes.
+    voice_speed: 0.98,
     enable_dynamic_voice_speed: false,
     volume: 1.92,
     enable_backchannel: false,
@@ -1274,9 +1284,9 @@ export function buildAgentRoot(
     reminder_trigger_ms: 10000,
     reminder_max_count: 3,
     max_call_duration_ms: 655000,
-    interruption_sensitivity: 0.89,
+    interruption_sensitivity: 0.84,
     ambient_sound: "coffee-shop",
-    ambient_sound_volume: 0.95,
+    ambient_sound_volume: 0.86,
     responsiveness: 1,
     // Effectively gated by handbook_config.speech_normalization — Retell
     // coerces this to true when speech_normalization is on, which it is by
@@ -1287,9 +1297,14 @@ export function buildAgentRoot(
     stt_mode: "custom",
     custom_stt_config: {
       provider: "deepgram",
-      endpointing_ms: 1200,
+      // Longer endpointing = Deepgram waits more before deciding the caller
+      // stopped speaking. Pairs with the slower voice_speed: fewer mid-
+      // thought interruptions when callers pause to think.
+      endpointing_ms: 1540,
     },
-    allow_user_dtmf: false,
+    // Allows touch-tone input (e.g. caller pressing digits to confirm a
+    // phone number). Low-risk affordance; can be re-disabled per agent.
+    allow_user_dtmf: true,
     user_dtmf_options: {},
     post_call_analysis_data: [
       {
