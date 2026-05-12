@@ -3027,9 +3027,13 @@
       menu.innerHTML = '<div style="padding:0.6rem 0.75rem;font-size:0.78rem;color:#888;">No folders yet — create one from the "+ New Folder" button.</div>';
       return;
     }
+    // data-folder-name carries the name so the onclick avoids string-
+    // interpolation into the attribute (folder names with apostrophes or
+    // quotes would otherwise break the surrounding onclick="").
     menu.innerHTML = entries.map((e) =>
-      '<button type="button" class="folder-picker-item" onclick="addAgentSearchChip(' +
-      JSON.stringify(e.name) + ');toggleFolderPicker();">' +
+      '<button type="button" class="folder-picker-item" data-folder-name="' +
+        esc(e.name) +
+        '" onclick="addAgentSearchChip(this.dataset.folderName);toggleFolderPicker();">' +
         '<span class="folder-picker-name">' + esc(e.name) + '</span>' +
         '<span class="folder-picker-count">' + e.count + '</span>' +
       '</button>'
