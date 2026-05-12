@@ -22,8 +22,7 @@ test.describe("/form path builder — scan / edit modes (M5)", () => {
     });
 
     // Switch to the Routing Paths form-subtab so .path-builder is visible.
-    const routingTab = page.locator('button[data-form-pane="paths"]').first();
-    if ((await routingTab.count()) > 0) await routingTab.click();
+    await page.locator('button[data-form-tab="paths"]').first().click();
 
     const builder = page.locator(".path-builder").first();
     await expect(builder).toBeVisible({ timeout: 10_000 });
