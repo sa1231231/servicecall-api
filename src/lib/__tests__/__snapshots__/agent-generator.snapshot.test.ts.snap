@@ -375,9 +375,9 @@ Set a clear boundary by stating that you cannot continue unrelated conversations
   {
     "edges": [],
     "instruction": {
-      "text": "The caller stated their situation, and you're about to note down the details. You can say something like
+      "text": "Empathetically acknowledge the caller's situation, then say something like
 
-"alright let me grab the information"
+"let me grab the information"
 
 Do not ask any questions here.",
       "type": "prompt",
@@ -389,9 +389,9 @@ Do not ask any questions here.",
   {
     "edges": [],
     "instruction": {
-      "text": "The caller stated their situation, and you're about to note down the details. You can say something like
+      "text": "Empathetically acknowledge the caller's situation, then say something like
 
-"alright let me grab the information"
+"let me grab the information"
 
 Do not ask any questions here.",
       "type": "prompt",
@@ -551,9 +551,9 @@ Thank them and tell them to have a wonderful day. ",
   {
     "edges": [],
     "instruction": {
-      "text": "The caller stated their situation, and you're about to note down the details. You can say something like
+      "text": "Empathetically acknowledge the caller's situation, then say something like
 
-"alright let me grab the information"
+"let me grab the information"
 
 Do not ask any questions here.",
       "type": "prompt",

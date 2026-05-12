@@ -322,9 +322,9 @@ export function buildTransitionNode(
   return {
     instruction: {
       type: "prompt",
-      text: `The caller stated their situation, and you're about to note down the details. You can say something like
+      text: `Empathetically acknowledge the caller's situation, then say something like
 
-"alright let me grab the information"
+"let me grab the information"
 
 Do not ask any questions here.`,
     },

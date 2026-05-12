@@ -16,8 +16,8 @@
 //
 // Pushes are split:
 //   - Voice / STT / handbook → retell.agent.update(agent_id, {...})
-//   - global_prompt → retell.conversationFlow.update(flow_id, {...}) via
-//     pushFlowToRetell()
+//   - global_prompt + transition nodes → retell.conversationFlow.update(flow_id, {...})
+//     via pushFlowToRetell()
 //
 // Idempotent by construction (all the "only if matches old default"
 // guards). Dry-run by default; --apply to commit.
@@ -81,6 +81,20 @@ const OLD_GLOBAL_PROMPT_ACK_INTRO =
 const NEW_GLOBAL_PROMPT_ACK_INTRO =
   "When appropriate to acknowledge, only use short acknowledgments such as:";
 
+const OLD_TRANSITION_INSTRUCTION =
+  `The caller stated their situation, and you're about to note down the details. You can say something like
+
+"alright let me grab the information"
+
+Do not ask any questions here.`;
+
+const NEW_TRANSITION_INSTRUCTION =
+  `Empathetically acknowledge the caller's situation, then say something like
+
+"let me grab the information"
+
+Do not ask any questions here.`;
+
 // ── CLI ────────────────────────────────────────────────────────────────────
 
 const APPLY = process.argv.includes("--apply");
@@ -89,9 +103,9 @@ const LIMIT_FLAG = process.argv.find((a) => a.startsWith("--limit="))?.split("="
 const LIMIT = LIMIT_FLAG ? Math.max(1, Number(LIMIT_FLAG)) : undefined;
 const COMPONENT_FLAG = process.argv.find((a) => a.startsWith("--component="))?.split("=")[1];
 
-type Component = "voice" | "handbook" | "prompt";
+type Component = "voice" | "handbook" | "prompt" | "transition";
 function isComponent(s: string | undefined): s is Component {
-  return s === "voice" || s === "handbook" || s === "prompt";
+  return s === "voice" || s === "handbook" || s === "prompt" || s === "transition";
 }
 const COMPONENT_FILTER: Component | "all" = isComponent(COMPONENT_FLAG) ? COMPONENT_FLAG : "all";
 
@@ -255,6 +269,65 @@ function escapeForRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export interface TransitionNodeUpdate {
+  /** Node ids whose instruction.text was rewritten. */
+  rewrittenNodeIds: string[];
+  /** Per-node summary for logging. */
+  decisions: Array<{ nodeId: string; nodeName?: string; from: string; to: string; kept?: boolean }>;
+}
+
+/**
+ * Walk a conversation flow and rewrite the instruction.text of every
+ * "Transition" node whose text exactly matches the OLD generator default.
+ * Operator-customized text is preserved (logged with kept:true). Already-
+ * new text is silent.
+ *
+ * A "Transition" node here is any conversation-type node that carries a
+ * skip_response_edge — that's the structural marker buildTransitionNode()
+ * emits and what the Retell dashboard renders as the path-specific
+ * acknowledgment beat.
+ *
+ * MUTATES the passed-in flow.nodes entries in place when rewriting; the
+ * caller should pass a deep clone if it cares about the original.
+ */
+export function computeTransitionNodeUpdates(
+  flow: { nodes?: Array<Record<string, unknown>> } | undefined,
+): TransitionNodeUpdate {
+  const rewrittenNodeIds: string[] = [];
+  const decisions: TransitionNodeUpdate["decisions"] = [];
+  const nodes = flow?.nodes ?? [];
+
+  for (const node of nodes) {
+    if (node.type !== "conversation") continue;
+    if (!node.skip_response_edge) continue;
+
+    const instr = node.instruction as { type?: string; text?: string } | undefined;
+    const text = instr?.text;
+    const nodeId = node.id as string;
+    const nodeName = node.name as string | undefined;
+
+    if (text === NEW_TRANSITION_INSTRUCTION) {
+      // Already migrated — silent.
+      continue;
+    }
+    if (text === OLD_TRANSITION_INSTRUCTION) {
+      (node.instruction as { text: string }).text = NEW_TRANSITION_INSTRUCTION;
+      rewrittenNodeIds.push(nodeId);
+      decisions.push({ nodeId, nodeName, from: OLD_TRANSITION_INSTRUCTION, to: NEW_TRANSITION_INSTRUCTION });
+    } else {
+      decisions.push({
+        nodeId,
+        nodeName,
+        from: text ?? "",
+        to: NEW_TRANSITION_INSTRUCTION,
+        kept: true,
+      });
+    }
+  }
+
+  return { rewrittenNodeIds, decisions };
+}
+
 // ── Migration loop ─────────────────────────────────────────────────────────
 
 interface ClientDoc {
@@ -315,11 +388,17 @@ async function main(): Promise<void> {
               ?.global_prompt as string | undefined) ?? undefined,
           )
         : { newPrompt: null, notes: [] };
+      const transitionUpdates = COMPONENT_FILTER === "all" || COMPONENT_FILTER === "transition"
+        ? computeTransitionNodeUpdates(
+            draft.conversationFlow as { nodes?: Array<Record<string, unknown>> } | undefined,
+          )
+        : { rewrittenNodeIds: [], decisions: [] };
 
       const updatedComponents: string[] = [];
       if (Object.keys(rootUpdates.patch).length > 0) updatedComponents.push("voice");
       if (Object.keys(handbookUpdates.patch).length > 0) updatedComponents.push("handbook");
       if (promptUpdate.newPrompt !== null) updatedComponents.push("prompt");
+      if (transitionUpdates.rewrittenNodeIds.length > 0) updatedComponents.push("transition");
 
       if (updatedComponents.length === 0) {
         results.push({ slug: client._id, agentId, status: "skipped-already" });
@@ -340,6 +419,13 @@ async function main(): Promise<void> {
       for (const n of promptUpdate.notes) {
         if (n.includes("already")) continue;
         console.log(`    prompt     ${n}`);
+      }
+      for (const d of transitionUpdates.decisions) {
+        if (d.kept) {
+          console.log(`    transition ${d.nodeName ?? d.nodeId}: customized (kept)`);
+        } else {
+          console.log(`    transition ${d.nodeName ?? d.nodeId}: rewritten`);
+        }
       }
 
       if (!APPLY) {
@@ -363,14 +449,18 @@ async function main(): Promise<void> {
           await retell.agent.update(agentId, rootPatch as never);
         }
 
-        // 2. Global prompt push via conversation-flow update.
-        if (promptUpdate.newPrompt !== null) {
+        // 2. Conversation-flow push — covers global_prompt + transition-node
+        //    rewrites in one call. computeTransitionNodeUpdates already
+        //    mutated flow.nodes in place on draft.
+        if (promptUpdate.newPrompt !== null || transitionUpdates.rewrittenNodeIds.length > 0) {
           const flow = draft.conversationFlow as Record<string, unknown>;
           const flowId = flow?.conversation_flow_id as string | undefined;
           if (!flowId) {
-            throw new Error("missing conversation_flow_id — cannot push global_prompt");
+            throw new Error("missing conversation_flow_id — cannot push flow update");
           }
-          flow.global_prompt = promptUpdate.newPrompt;
+          if (promptUpdate.newPrompt !== null) {
+            flow.global_prompt = promptUpdate.newPrompt;
+          }
           await pushFlowToRetell(retell, flowId, draft);
         }
 

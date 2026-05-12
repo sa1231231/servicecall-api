@@ -3,6 +3,7 @@ import {
   computeAgentRootUpdates,
   computeHandbookUpdates,
   computeGlobalPromptUpdate,
+  computeTransitionNodeUpdates,
 } from "../migrate-agent-warmth.js";
 
 // Pure-logic tests for the three decision functions. The Retell + Mongo
@@ -213,5 +214,105 @@ The rest of the prompt is custom — operator wrote their own ack section.`;
     expect(newPrompt!).not.toContain("first name in the opening");
     // Custom section preserved verbatim.
     expect(newPrompt!).toContain("operator wrote their own ack section");
+  });
+});
+
+describe("computeTransitionNodeUpdates", () => {
+  const OLD_TEXT = `The caller stated their situation, and you're about to note down the details. You can say something like
+
+"alright let me grab the information"
+
+Do not ask any questions here.`;
+
+  const NEW_TEXT = `Empathetically acknowledge the caller's situation, then say something like
+
+"let me grab the information"
+
+Do not ask any questions here.`;
+
+  function transitionNode(id: string, text: string, name?: string) {
+    return {
+      id,
+      name,
+      type: "conversation",
+      instruction: { type: "prompt", text },
+      skip_response_edge: { destination_node_id: "next", id: "edge-1" },
+      edges: [],
+    };
+  }
+
+  it("rewrites every transition node whose text matches the OLD verbatim", () => {
+    const flow = {
+      nodes: [
+        transitionNode("n1", OLD_TEXT, "Transition (service_call)"),
+        transitionNode("n2", OLD_TEXT, "Transition (emergency_call)"),
+        transitionNode("n3", OLD_TEXT, "Transition (existing_customer)"),
+      ],
+    };
+    const { rewrittenNodeIds, decisions } = computeTransitionNodeUpdates(flow);
+    expect(rewrittenNodeIds).toEqual(["n1", "n2", "n3"]);
+    expect(decisions.every((d) => !d.kept)).toBe(true);
+    // Mutation: each node's instruction.text is now NEW_TEXT.
+    expect((flow.nodes[0].instruction as { text: string }).text).toBe(NEW_TEXT);
+    expect((flow.nodes[2].instruction as { text: string }).text).toBe(NEW_TEXT);
+  });
+
+  it("skips operator-customized text (any deviation) and logs kept:true", () => {
+    const customText = `Please warmly thank the caller, then say "let me note that down".`;
+    const flow = {
+      nodes: [
+        transitionNode("n1", OLD_TEXT, "Transition (service_call)"),
+        transitionNode("n2", customText, "Transition (emergency_call)"),
+      ],
+    };
+    const { rewrittenNodeIds, decisions } = computeTransitionNodeUpdates(flow);
+    expect(rewrittenNodeIds).toEqual(["n1"]);
+    const custom = decisions.find((d) => d.nodeId === "n2");
+    expect(custom?.kept).toBe(true);
+    expect(custom?.from).toBe(customText);
+    // n2's text untouched.
+    expect((flow.nodes[1].instruction as { text: string }).text).toBe(customText);
+  });
+
+  it("is silent (no decision entry) when a node is already on NEW_TEXT", () => {
+    const flow = {
+      nodes: [transitionNode("n1", NEW_TEXT)],
+    };
+    const { rewrittenNodeIds, decisions } = computeTransitionNodeUpdates(flow);
+    expect(rewrittenNodeIds).toEqual([]);
+    expect(decisions).toEqual([]);
+  });
+
+  it("handles HHC's mixed case: service_call already NEW; emergency_call + existing_customer on OLD", () => {
+    const flow = {
+      nodes: [
+        transitionNode("n1", NEW_TEXT, "Transition (service_call)"),
+        transitionNode("n2", OLD_TEXT, "Transition (emergency_call)"),
+        transitionNode("n3", OLD_TEXT, "Transition (existing_customer)"),
+      ],
+    };
+    const { rewrittenNodeIds, decisions } = computeTransitionNodeUpdates(flow);
+    expect(rewrittenNodeIds).toEqual(["n2", "n3"]);
+    // service_call doesn't appear in decisions — silent.
+    expect(decisions.find((d) => d.nodeId === "n1")).toBeUndefined();
+  });
+
+  it("does not throw on flows with no transition nodes", () => {
+    const flow = {
+      nodes: [
+        // A conversation node WITHOUT skip_response_edge isn't a transition.
+        { id: "x", type: "conversation", instruction: { type: "prompt", text: "hi" }, edges: [] },
+        { id: "y", type: "extract", edges: [] },
+      ],
+    };
+    const { rewrittenNodeIds, decisions } = computeTransitionNodeUpdates(flow);
+    expect(rewrittenNodeIds).toEqual([]);
+    expect(decisions).toEqual([]);
+  });
+
+  it("handles undefined / empty flow gracefully", () => {
+    expect(computeTransitionNodeUpdates(undefined).rewrittenNodeIds).toEqual([]);
+    expect(computeTransitionNodeUpdates({}).rewrittenNodeIds).toEqual([]);
+    expect(computeTransitionNodeUpdates({ nodes: [] }).rewrittenNodeIds).toEqual([]);
   });
 });
