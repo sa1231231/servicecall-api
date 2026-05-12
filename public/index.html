@@ -352,14 +352,26 @@
   .btn-add-path { display: none !important; }
 
   .path-builder {
-    display: grid; grid-template-columns: 280px 1fr;
+    display: grid;
+    /* Two-column default for backwards compat; data-mode flips the ratio
+     * based on whether the user is scanning the tree or editing a node. */
+    grid-template-columns: 280px 1fr;
     gap: 0.75rem; min-height: 420px;
     border: 1px solid #d4d4d8; border-radius: 8px; overflow: hidden;
     background: #fafafa;
     margin-bottom: 1rem;
+    transition: grid-template-columns 0.18s ease;
   }
+  /* M5 — "scan mode" gives the tree the breathing room it needs when the
+   * operator is just looking at flow shape (no node selected). The detail
+   * shrinks to a 240px hint column. "edit mode" (the default while a node
+   * is selected) restores the wider detail panel. */
+  .path-builder[data-mode="scan"] { grid-template-columns: 1fr 240px; }
+  .path-builder[data-mode="edit"] { grid-template-columns: 280px 1fr; }
   @media (max-width: 768px) {
-    .path-builder { grid-template-columns: 1fr; min-height: auto; }
+    .path-builder,
+    .path-builder[data-mode="scan"],
+    .path-builder[data-mode="edit"] { grid-template-columns: 1fr; min-height: auto; }
   }
   .path-builder-tree {
     background: #fff; border-right: 1px solid #e5e7eb;
@@ -758,7 +770,7 @@
     <!-- Tier 2 tree+detail editor. The hidden #routingPaths div below is the
          underlying source of truth (kept for collectFormState compatibility);
          the tree is a UI layer that reads from it and writes back. -->
-    <div class="path-builder">
+    <div class="path-builder" data-mode="scan">
       <aside class="path-builder-tree">
         <div class="path-builder-tree-header">
           <div class="tree-header-title">
@@ -3022,6 +3034,11 @@
   function renderDetailPanel(ref) {
     const detail = document.getElementById('pathTreeDetail');
     if (!detail) return;
+    // M5: flip the grid ratio so the tree gets full width while scanning
+    // and the detail gets full width while editing. The empty-state hint
+    // still renders, just in a tighter column.
+    const builder = detail.closest('.path-builder');
+    if (builder) builder.setAttribute('data-mode', ref ? 'edit' : 'scan');
     if (!ref) {
       detail.innerHTML = '<div class="detail-empty">Select a path or data point on the left to edit.</div>';
       return;
