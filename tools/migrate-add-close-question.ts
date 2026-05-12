@@ -19,6 +19,8 @@
 // Env: MONGODB_URL + RETELL_API_KEY (same as the API uses).
 
 import "dotenv/config";
+import path from "path";
+import { fileURLToPath } from "url";
 import Retell from "retell-sdk";
 import { config } from "../src/config.js";
 import { initDb, getDb } from "../src/lib/db.js";
@@ -64,7 +66,10 @@ interface MigrationResult {
   detail?: string;
 }
 
-function migrateOneFlow(
+// Exported so the unit test (tools/__tests__/migrate-add-close-question.test.ts)
+// can call this directly with synthetic flow JSON. The script's main() does
+// dry-run vs Mongo/Retell I/O; the pure mutation logic lives here.
+export function migrateOneFlow(
   canonical: Record<string, unknown>,
 ): { changed: boolean; reason: string; closeNodes?: number } {
   const flow = canonical.conversationFlow as Record<string, unknown> | undefined;
@@ -248,9 +253,17 @@ async function main(): Promise<void> {
   }
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+// Only run main() when invoked directly (tsx tools/migrate-add-close-question.ts),
+// not when this module is imported by a test or another tool. Without this
+// guard, importing migrateOneFlow from a unit test would also boot the
+// dry-run banner + try to connect to Mongo with the test env.
+const __thisFile = fileURLToPath(import.meta.url);
+const __entryFile = process.argv[1] ? path.resolve(process.argv[1]) : "";
+if (__thisFile === __entryFile) {
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}

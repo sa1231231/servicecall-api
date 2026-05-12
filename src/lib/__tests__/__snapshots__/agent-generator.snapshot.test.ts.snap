@@ -1,0 +1,745 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`agent-generator canonical JSON snapshot > multi-path agent: stable shape lock (one callback, one transfer) 1`] = `
+[
+  {
+    "edges": [
+      "→ Intro (You answered the caller's question.)",
+    ],
+    "global_node_setting": {
+      "condition": "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
+      "go_back_conditions": [
+        {
+          "transition_condition": {
+            "prompt": "You answered the caller's question.",
+            "type": "prompt",
+          },
+        },
+      ],
+      "negative_finetune_examples": [],
+      "positive_finetune_examples": [],
+    },
+    "instruction": {
+      "text": "Your goal is to answer administrative and general questions briefly and accurately.
+
+Snapshot FAQ knowledge base for testing.",
+      "type": "prompt",
+    },
+    "name": "Admin/FAQ",
+    "type": "conversation",
+  },
+  {
+    "always_edge": "→ Close Question (Always)",
+    "edges": [],
+    "instruction": {
+      "text": "Thank the caller for all the information, and let them know our team at Snapshot Co will reach out to get them set up as soon as possible.",
+      "type": "prompt",
+    },
+    "interruption_sensitivity": 0,
+    "name": "Close (Callback)",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Closing Remarks (The caller has no more questions)",
+    ],
+    "instruction": {
+      "text": "Ask the caller exactly: "Is there anything else I can help you with?"",
+      "type": "prompt",
+    },
+    "name": "Close Question",
+    "type": "conversation",
+  },
+  {
+    "always_edge": "→ Closing Statement (Always)",
+    "edges": [],
+    "instruction": {
+      "text": "You are about to end the call. Do not ask any questions.
+
+Thank them and tell them to have a wonderful day. ",
+      "type": "prompt",
+    },
+    "name": "Closing Remarks",
+    "type": "conversation",
+  },
+  {
+    "edges": [],
+    "instruction": {
+      "text": "Alright, bye now!",
+      "type": "static_text",
+    },
+    "name": "Closing Statement",
+    "skip_response_edge": "→ End Call (skip)",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Confirm City (The caller has given their city)",
+    ],
+    "finetune_conversation_examples": [],
+    "finetune_transition_examples": "[0 examples]",
+    "instruction": {
+      "text": "Ask for the city.",
+      "type": "prompt",
+    },
+    "name": "Collect City",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Confirm Full Name (The caller has given their name or indicated they don't know it)",
+    ],
+    "finetune_conversation_examples": [],
+    "finetune_transition_examples": "[0 examples]",
+    "instruction": {
+      "text": "Ask for the caller's name. If they don't know, move on.",
+      "type": "prompt",
+    },
+    "name": "Collect Full Name",
+    "type": "conversation",
+  },
+  {
+    "edges": [],
+    "else_edge": "→ Variables Router (Transfer) (else)",
+    "name": "Confirm City",
+    "type": "extract_dynamic_variables",
+    "variables": [
+      {
+        "description": "City. If not mentioned, set to "Not Mentioned".",
+        "name": "city",
+        "type": "string",
+      },
+    ],
+  },
+  {
+    "edges": [],
+    "else_edge": "→ Variables Router (Callback) (else)",
+    "name": "Confirm Full Name",
+    "type": "extract_dynamic_variables",
+    "variables": [
+      {
+        "description": "Full name. If not mentioned, set to "Not Mentioned". If they don't know, set to "Caller Doesn't Know".",
+        "name": "full_name",
+        "type": "string",
+      },
+    ],
+  },
+  {
+    "edges": [],
+    "global_node_setting": {
+      "condition": "The caller reveals an emergency situation which they are experiencing, including:
+• gas smell
+• carbon monoxide / CO
+• fire
+• smoke
+• sparks
+• dizziness from fumes
+• alarms related to gas or CO
+
+If any emergency is mentioned:
+• Do NOT ask follow-up questions",
+    },
+    "instruction": {
+      "text": "Tell the caller this sounds like an emergency, and if it is, please hang up and call nine, one, one immediately.",
+      "type": "prompt",
+    },
+    "name": "Emergency Gaurd Rail",
+    "skip_response_edge": "→ Polite Hangup (skip)",
+    "type": "conversation",
+  },
+  {
+    "name": "End Call",
+    "speak_during_execution": false,
+    "type": "end",
+  },
+  {
+    "name": "End Call",
+    "speak_during_execution": false,
+    "type": "end",
+  },
+  {
+    "edges": [],
+    "else_edge": "→ Variables Router (Callback) (else)",
+    "finetune_transition_examples": "[0 examples]",
+    "name": "Extract All Variables (Callback)",
+    "type": "extract_dynamic_variables",
+    "variables": [
+      {
+        "description": "Full name. If not mentioned, set to "Not Mentioned". If they don't know, set to "Caller Doesn't Know".",
+        "name": "full_name",
+        "type": "string",
+      },
+      {
+        "description": "Always set to "Callback".",
+        "name": "_path_taken",
+        "type": "string",
+      },
+    ],
+  },
+  {
+    "edges": [],
+    "else_edge": "→ Variables Router (Transfer) (else)",
+    "finetune_transition_examples": "[0 examples]",
+    "name": "Extract All Variables (Transfer)",
+    "type": "extract_dynamic_variables",
+    "variables": [
+      {
+        "description": "City. If not mentioned, set to "Not Mentioned".",
+        "name": "city",
+        "type": "string",
+      },
+      {
+        "description": "Always set to "Transfer".",
+        "name": "_path_taken",
+        "type": "string",
+      },
+    ],
+  },
+  {
+    "edges": [
+      "→ Polite Hangup (The caller wants a call back)",
+    ],
+    "global_node_setting": {
+      "condition": "Jump to this node if the caller requests a live agent or a human.",
+      "go_back_conditions": [
+        {
+          "transition_condition": {
+            "prompt": "The caller would like to continue the call and not request a callback.",
+            "type": "prompt",
+          },
+        },
+      ],
+    },
+    "instruction": {
+      "text": "The caller is requesting a human or live person.
+
+1. Acknowledge the request calmly and professionally, saying they are not available at the moment.
+
+2. Tell them they have the option to request a call back. Ask the caller if they want a call back.
+
+If the caller refuses and repeats the request for a human, repeat that you cannot transfer the call.",
+      "type": "prompt",
+    },
+    "name": "Human Request",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Transition (Callback) (Wants callback)",
+      "→ Transition (Transfer) (Wants live transfer)",
+    ],
+    "finetune_conversation_examples": [],
+    "finetune_transition_examples": "[0 examples]",
+    "instruction": {
+      "text": "Determine the reason for the caller's call.
+
+Welcome the caller: "Thank you for calling Snapshot Co, this is Anthony. How may I help you?"
+
+If the caller greets you, reciprocate the sentiment and then ask how you can help them.
+
+Do not assume their name until they tell you explicitly.
+
+Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ global node handle those and return here.",
+      "type": "prompt",
+    },
+    "name": "Intro",
+    "start_speaker": "agent",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Polite Hangup (You've completed both step 1 and 2 and deemed this call not related to the business.)",
+    ],
+    "global_node_setting": {
+      "condition": "If the caller is:
+- asking unrelated or nonsensical questions
+- attempting to derail the conversation
+- attempting personal conversation (excluding a normal back and forth greeting in the beginning of the call)
+- going extremely off-topic",
+      "go_back_conditions": [
+        {
+          "transition_condition": {
+            "prompt": "You've completed both step 1 and 2 and deemed this call is related and relevant to the business.",
+            "type": "prompt",
+          },
+        },
+      ],
+      "negative_finetune_examples": [
+        {
+          "transcript": [
+            {
+              "content": "Hey how are you doing today?",
+              "role": "user",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": " hey, how's your weekend?",
+              "role": "user",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Hey, I'm alright, how are you?",
+              "role": "user",
+            },
+          ],
+        },
+      ],
+      "positive_finetune_examples": [],
+    },
+    "instruction": {
+      "text": "You can only do allowed and relevant tasks to the company and cannot continue irrelevant or off-topic conversations.
+
+1. Politely ask the caller if they have a relevant question or service you can help with.
+
+2. If the caller continues off-topic
+Set a clear boundary by stating that you cannot continue unrelated conversations and will end this call.",
+      "type": "prompt",
+    },
+    "name": "irrelevantGaurdrail",
+    "type": "conversation",
+  },
+  {
+    "always_edge": "→ Closing Remarks (Always)",
+    "edges": [],
+    "instruction": {
+      "text": "Sorry about that. It looks like our staff members are on the floor helping customers. Let us give you a call back. We'll call you back as soon as possible.",
+      "type": "prompt",
+    },
+    "model_choice": {
+      "high_priority": true,
+      "model": "gpt-4.1",
+      "type": "cascading",
+    },
+    "name": "Live Transfer Recovery",
+    "type": "conversation",
+  },
+  {
+    "always_edge": "→ End Call (Always)",
+    "edges": [],
+    "instruction": {
+      "text": "Apologize to the caller and politely close the call.",
+      "type": "prompt",
+    },
+    "name": "Polite Hangup",
+    "type": "conversation",
+  },
+  {
+    "always_edge": "→ Transfer Call (Transfer) (Always)",
+    "edges": [],
+    "instruction": {
+      "text": "Thanks for the information. Hold on a moment — connecting you to our team at Snapshot Co now.",
+      "type": "prompt",
+    },
+    "name": "Pre-Transfer (Transfer)",
+    "type": "conversation",
+  },
+  {
+    "custom_sip_headers": {},
+    "edge": {
+      "destination_node_id": "Live Transfer Recovery",
+      "transition_condition": {
+        "prompt": "Transfer failed",
+        "type": "prompt",
+      },
+    },
+    "ignore_e164_validation": false,
+    "name": "Transfer Call (Transfer)",
+    "speak_during_execution": false,
+    "transfer_destination": {
+      "number": "+15555555555",
+      "type": "predefined",
+    },
+    "transfer_option": {
+      "agent_detection_timeout_ms": 10000,
+      "agentic_transfer_config": {
+        "action_on_timeout": "cancel_transfer",
+        "transfer_agent": {
+          "agent_id": "agent_1d0e26bb0cbe39bc9ea3214984",
+          "agent_version": 5,
+        },
+        "transfer_timeout_ms": 30000,
+      },
+      "enable_bridge_audio_cue": false,
+      "on_hold_music": "relaxing_sound",
+      "show_transferee_as_caller": false,
+      "type": "agentic_warm_transfer",
+    },
+    "type": "transfer_call",
+  },
+  {
+    "edges": [],
+    "instruction": {
+      "text": "The caller stated their situation, and you're about to note down the details. You can say something like
+
+"alright let me grab the information"
+
+Do not ask any questions here.",
+      "type": "prompt",
+    },
+    "name": "Transition (Callback)",
+    "skip_response_edge": "→ Extract All Variables (Callback) (skip)",
+    "type": "conversation",
+  },
+  {
+    "edges": [],
+    "instruction": {
+      "text": "The caller stated their situation, and you're about to note down the details. You can say something like
+
+"alright let me grab the information"
+
+Do not ask any questions here.",
+      "type": "prompt",
+    },
+    "name": "Transition (Transfer)",
+    "skip_response_edge": "→ Extract All Variables (Transfer) (skip)",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Collect Full Name (equation)",
+    ],
+    "else_edge": "→ Close (Callback) (else)",
+    "name": "Variables Router (Callback)",
+    "type": "branch",
+  },
+  {
+    "edges": [
+      "→ Collect City (equation)",
+    ],
+    "else_edge": "→ Pre-Transfer (Transfer) (else)",
+    "name": "Variables Router (Transfer)",
+    "type": "branch",
+  },
+]
+`;
+
+exports[`agent-generator canonical JSON snapshot > single-path agent: stable shape lock 1`] = `
+[
+  {
+    "edges": [
+      "→ Conversation (You answered the caller's question.)",
+    ],
+    "global_node_setting": {
+      "condition": "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
+      "go_back_conditions": [
+        {
+          "transition_condition": {
+            "prompt": "You answered the caller's question.",
+            "type": "prompt",
+          },
+        },
+      ],
+      "negative_finetune_examples": [],
+      "positive_finetune_examples": [],
+    },
+    "instruction": {
+      "text": "Your goal is to answer administrative and general questions briefly and accurately.
+
+Snapshot FAQ knowledge base for testing.",
+      "type": "prompt",
+    },
+    "name": "Admin/FAQ",
+    "type": "conversation",
+  },
+  {
+    "always_edge": "→ Close Question (Always)",
+    "edges": [],
+    "instruction": {
+      "text": "Thank the caller for all the information, and let them know our team at Snapshot Co will reach out to get them set up as soon as possible.",
+      "type": "prompt",
+    },
+    "interruption_sensitivity": 0,
+    "name": "Close",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Closing Remarks (The caller has no more questions)",
+    ],
+    "instruction": {
+      "text": "Ask the caller exactly: "Is there anything else I can help you with?"",
+      "type": "prompt",
+    },
+    "name": "Close Question",
+    "type": "conversation",
+  },
+  {
+    "always_edge": "→ Closing Statement (Always)",
+    "edges": [],
+    "instruction": {
+      "text": "You are about to end the call. Do not ask any questions.
+
+Thank them and tell them to have a wonderful day. ",
+      "type": "prompt",
+    },
+    "name": "Closing Remarks",
+    "type": "conversation",
+  },
+  {
+    "edges": [],
+    "instruction": {
+      "text": "Alright, bye now!",
+      "type": "static_text",
+    },
+    "name": "Closing Statement",
+    "skip_response_edge": "→ End Call (skip)",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Confirm City (The caller has given their city)",
+    ],
+    "finetune_conversation_examples": [],
+    "finetune_transition_examples": "[0 examples]",
+    "instruction": {
+      "text": "Ask for the city.",
+      "type": "prompt",
+    },
+    "name": "Collect City",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Confirm Full Name (The caller has given their name or indicated they don't know it)",
+    ],
+    "finetune_conversation_examples": [],
+    "finetune_transition_examples": "[0 examples]",
+    "instruction": {
+      "text": "Ask for the caller's name. If they don't know, move on.",
+      "type": "prompt",
+    },
+    "name": "Collect Full Name",
+    "type": "conversation",
+  },
+  {
+    "edges": [],
+    "else_edge": "→ Variables Router (else)",
+    "name": "Confirm City",
+    "type": "extract_dynamic_variables",
+    "variables": [
+      {
+        "description": "City. If not mentioned, set to "Not Mentioned".",
+        "name": "city",
+        "type": "string",
+      },
+    ],
+  },
+  {
+    "edges": [],
+    "else_edge": "→ Variables Router (else)",
+    "name": "Confirm Full Name",
+    "type": "extract_dynamic_variables",
+    "variables": [
+      {
+        "description": "Full name. If not mentioned, set to "Not Mentioned". If they don't know, set to "Caller Doesn't Know".",
+        "name": "full_name",
+        "type": "string",
+      },
+      {
+        "description": "City. If not mentioned, set to "Not Mentioned".",
+        "name": "city",
+        "type": "string",
+      },
+    ],
+  },
+  {
+    "edges": [],
+    "instruction": {
+      "text": "The caller stated their situation, and you're about to note down the details. You can say something like
+
+"alright let me grab the information"
+
+Do not ask any questions here.",
+      "type": "prompt",
+    },
+    "name": "Conversation",
+    "skip_response_edge": "→ Extract All Variables (skip)",
+    "type": "conversation",
+  },
+  {
+    "edges": [],
+    "global_node_setting": {
+      "condition": "The caller reveals an emergency situation which they are experiencing, including:
+• gas smell
+• carbon monoxide / CO
+• fire
+• smoke
+• sparks
+• dizziness from fumes
+• alarms related to gas or CO
+
+If any emergency is mentioned:
+• Do NOT ask follow-up questions",
+    },
+    "instruction": {
+      "text": "Tell the caller this sounds like an emergency, and if it is, please hang up and call nine, one, one immediately.",
+      "type": "prompt",
+    },
+    "name": "Emergency Gaurd Rail",
+    "skip_response_edge": "→ Polite Hangup (skip)",
+    "type": "conversation",
+  },
+  {
+    "name": "End Call",
+    "speak_during_execution": false,
+    "type": "end",
+  },
+  {
+    "name": "End Call",
+    "speak_during_execution": false,
+    "type": "end",
+  },
+  {
+    "edges": [],
+    "else_edge": "→ Variables Router (else)",
+    "finetune_transition_examples": "[0 examples]",
+    "name": "Extract All Variables",
+    "type": "extract_dynamic_variables",
+    "variables": [
+      {
+        "description": "Full name. If not mentioned, set to "Not Mentioned". If they don't know, set to "Caller Doesn't Know".",
+        "name": "full_name",
+        "type": "string",
+      },
+      {
+        "description": "City. If not mentioned, set to "Not Mentioned".",
+        "name": "city",
+        "type": "string",
+      },
+    ],
+  },
+  {
+    "edges": [
+      "→ Polite Hangup (The caller wants a call back)",
+    ],
+    "global_node_setting": {
+      "condition": "Jump to this node if the caller requests a live agent or a human.",
+      "go_back_conditions": [
+        {
+          "transition_condition": {
+            "prompt": "The caller would like to continue the call and not request a callback.",
+            "type": "prompt",
+          },
+        },
+      ],
+    },
+    "instruction": {
+      "text": "The caller is requesting a human or live person.
+
+1. Acknowledge the request calmly and professionally, saying they are not available at the moment.
+
+2. Tell them they have the option to request a call back. Ask the caller if they want a call back.
+
+If the caller refuses and repeats the request for a human, repeat that you cannot transfer the call.",
+      "type": "prompt",
+    },
+    "name": "Human Request",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Conversation (The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.)",
+    ],
+    "finetune_conversation_examples": [],
+    "finetune_transition_examples": "[0 examples]",
+    "instruction": {
+      "text": "Determine the reason for the caller's call.
+
+Welcome the caller: "Thank you for calling Snapshot Co, this is Anthony. How may I help you?"
+
+If the caller greets you, reciprocate the sentiment and then ask how you can help them.
+
+Do not assume their name until they tell you explicitly.
+
+Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ global node handle those and return here.",
+      "type": "prompt",
+    },
+    "name": "Intro",
+    "start_speaker": "agent",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Polite Hangup (You've completed both step 1 and 2 and deemed this call not related to the business.)",
+    ],
+    "global_node_setting": {
+      "condition": "If the caller is:
+- asking unrelated or nonsensical questions
+- attempting to derail the conversation
+- attempting personal conversation (excluding a normal back and forth greeting in the beginning of the call)
+- going extremely off-topic",
+      "go_back_conditions": [
+        {
+          "transition_condition": {
+            "prompt": "You've completed both step 1 and 2 and deemed this call is related and relevant to the business.",
+            "type": "prompt",
+          },
+        },
+      ],
+      "negative_finetune_examples": [
+        {
+          "transcript": [
+            {
+              "content": "Hey how are you doing today?",
+              "role": "user",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": " hey, how's your weekend?",
+              "role": "user",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Hey, I'm alright, how are you?",
+              "role": "user",
+            },
+          ],
+        },
+      ],
+      "positive_finetune_examples": [],
+    },
+    "instruction": {
+      "text": "You can only do allowed and relevant tasks to the company and cannot continue irrelevant or off-topic conversations.
+
+1. Politely ask the caller if they have a relevant question or service you can help with.
+
+2. If the caller continues off-topic
+Set a clear boundary by stating that you cannot continue unrelated conversations and will end this call.",
+      "type": "prompt",
+    },
+    "name": "irrelevantGaurdrail",
+    "type": "conversation",
+  },
+  {
+    "always_edge": "→ End Call (Always)",
+    "edges": [],
+    "instruction": {
+      "text": "Apologize to the caller and politely close the call.",
+      "type": "prompt",
+    },
+    "name": "Polite Hangup",
+    "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Collect Full Name (equation)",
+      "→ Collect City (equation)",
+    ],
+    "else_edge": "→ Close (else)",
+    "name": "Variables Router",
+    "type": "branch",
+  },
+]
+`;
