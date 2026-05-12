@@ -1514,6 +1514,34 @@
     .left-rail-badge[hidden] { display: none; }
   }
 
+  /* M4: folder picker dropdown items */
+  .folder-picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.82rem;
+    font-family: inherit;
+    color: #1f2937;
+    cursor: pointer;
+    text-align: left;
+  }
+  .folder-picker-item:hover { background: var(--gray-100, #f3f4f6); }
+  .folder-picker-name { font-weight: 500; }
+  .folder-picker-count {
+    background: var(--gray-200, #e5e7eb);
+    color: var(--gray-700, #374151);
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.05rem 0.45rem;
+    border-radius: 999px;
+    min-width: 1.5rem;
+    text-align: center;
+  }
+
   /* Role-based visibility */
   .role-operator .admin-only { display: none !important; }
   .user-badge { float: right; font-size: 0.72rem; color: #888; margin-right: 0.5rem; line-height: 2.2; }
@@ -1638,6 +1666,13 @@
     <input type="text" id="agentSearchInput" class="agent-search-input"
       placeholder="Search agents and folders — press Enter to add a chip (multiple chips = OR)"
       autocomplete="off">
+    <div class="column-picker-wrap" id="folderPickerWrap">
+      <button type="button" class="column-picker-btn" id="folderPickerBtn"
+        onclick="toggleFolderPicker(event)" title="Filter agents to a folder">
+        <span>Folders</span><span style="font-size:0.65rem;">▾</span>
+      </button>
+      <div class="column-picker-menu" id="folderPickerMenu" style="display:none;"></div>
+    </div>
     <div class="column-picker-wrap">
       <button type="button" class="column-picker-btn" id="columnPickerBtn"
         onclick="toggleColumnPicker(event)" title="Show or hide table columns">
@@ -2960,6 +2995,58 @@
       const onAway = (ev) => {
         if (menu.contains(ev.target)) return;
         if (ev.target.id === 'columnPickerBtn' || ev.target.closest('#columnPickerBtn')) return;
+        menu.style.display = 'none';
+        document.removeEventListener('click', onAway);
+      };
+      document.addEventListener('click', onAway);
+    }, 0);
+  }
+
+  // M4: folder picker dropdown. Lists folders (+ Unfiled) with their agent
+  // counts; clicking one adds the folder name as a search chip, which the
+  // existing agentMatchesChip pipeline (chip name match against folder name)
+  // picks up to filter the table. No new filter logic — pure shortcut UX.
+  function renderFolderPicker() {
+    const menu = document.getElementById('folderPickerMenu');
+    if (!menu) return;
+    // Count by folder_id. Unfiled covers any agent whose folder_id doesn't
+    // resolve to a known folder.
+    const knownIds = new Set(agentFolders.map(f => f._id));
+    const counts = { __unfiled__: 0 };
+    for (const f of agentFolders) counts[f._id] = 0;
+    for (const a of agentRows) {
+      const fid = a.folder_id && knownIds.has(a.folder_id) ? a.folder_id : '__unfiled__';
+      counts[fid] = (counts[fid] || 0) + 1;
+    }
+    const entries = [];
+    if (counts.__unfiled__ > 0) entries.push({ name: 'Unfiled', count: counts.__unfiled__ });
+    for (const f of agentFolders) {
+      entries.push({ name: f.name, count: counts[f._id] || 0 });
+    }
+    if (entries.length === 0) {
+      menu.innerHTML = '<div style="padding:0.6rem 0.75rem;font-size:0.78rem;color:#888;">No folders yet — create one from the "+ New Folder" button.</div>';
+      return;
+    }
+    menu.innerHTML = entries.map((e) =>
+      '<button type="button" class="folder-picker-item" onclick="addAgentSearchChip(' +
+      JSON.stringify(e.name) + ');toggleFolderPicker();">' +
+        '<span class="folder-picker-name">' + esc(e.name) + '</span>' +
+        '<span class="folder-picker-count">' + e.count + '</span>' +
+      '</button>'
+    ).join('');
+  }
+  function toggleFolderPicker(event) {
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('folderPickerMenu');
+    if (!menu) return;
+    const isOpen = menu.style.display !== 'none';
+    if (isOpen) { menu.style.display = 'none'; return; }
+    renderFolderPicker();
+    menu.style.display = 'block';
+    setTimeout(() => {
+      const onAway = (ev) => {
+        if (menu.contains(ev.target)) return;
+        if (ev.target.id === 'folderPickerBtn' || ev.target.closest('#folderPickerBtn')) return;
         menu.style.display = 'none';
         document.removeEventListener('click', onAway);
       };
