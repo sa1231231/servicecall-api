@@ -36,7 +36,9 @@ test.describe("Admin pulled out of Settings (M2)", () => {
     const pop = page.locator("#userMenuPopover");
     await expect(pop).toBeVisible();
     // Admin item is admin-only — at desktop the admin user can see it.
-    const adminItem = pop.locator('text=Admin');
+    // Use the role+name selector — the user-menu also shows the literal
+    // username "admin" elsewhere in the popover, so text=Admin is ambiguous.
+    const adminItem = pop.getByRole('menuitem', { name: 'Admin' });
     await expect(adminItem).toBeVisible();
     await adminItem.click();
     await expect(page.locator("#adminView")).toBeVisible({ timeout: 10_000 });

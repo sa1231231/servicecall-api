@@ -7,13 +7,13 @@ test.use({
   httpCredentials: httpCredentials(env),
 });
 
-test.describe("Admin tab — read-only smoke (no send/mutate)", () => {
+// After M2 the Admin functions moved out of Settings into their own top-level
+// surface at /dashboard#admin. The IDs of the contained elements
+// (#blast-message-editor, #userManagementContainer, etc.) are unchanged.
+test.describe("Admin view — read-only smoke (no send/mutate)", () => {
   test("SMS Blast editor renders and shows Send button (does not click)", async ({ page }) => {
-    await page.goto("/dashboard#settings");
-    await expect(page.locator("#settingsView")).toBeVisible({ timeout: 15_000 });
-
-    await page.locator('[data-settings-tab="admin"]').click();
-    await expect(page.locator("#settings-tab-admin")).toHaveClass(/active/);
+    await page.goto("/dashboard#admin");
+    await expect(page.locator("#adminView")).toBeVisible({ timeout: 15_000 });
 
     // SMS Blast editor + send button render. We do NOT click Send.
     await expect(page.locator("#blast-message-editor")).toBeVisible();
@@ -21,10 +21,9 @@ test.describe("Admin tab — read-only smoke (no send/mutate)", () => {
   });
 
   test("User Management container resolves (loads list or empty state)", async ({ page }) => {
-    await page.goto("/dashboard#settings");
-    await expect(page.locator("#settingsView")).toBeVisible({ timeout: 15_000 });
+    await page.goto("/dashboard#admin");
+    await expect(page.locator("#adminView")).toBeVisible({ timeout: 15_000 });
 
-    await page.locator('[data-settings-tab="admin"]').click();
     const container = page.locator("#userManagementContainer");
     await expect(container).toBeVisible({ timeout: 10_000 });
 
