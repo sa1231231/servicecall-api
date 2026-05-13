@@ -1463,17 +1463,29 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     // deduping, so a few consecutive publishes leave the flow in a
     // EXTRACT_VAR_DUPLICATE-failing state. Reproduces against demo-hvac
     // after 2-3 publishes; sometimes recovers via rollback, sometimes not.
-    // TODO(node-parser bug): chain-direction detection breaks on demo-hvac
-    // — after a reorder, the parser groups Confirm-node variables in
-    // reverse-tapered order (Confirm at chain-END holds all vars,
-    // Confirm at chain-START holds 2). Subsequent save-and-publish
-    // fails EXTRACT_VAR_DUPLICATE because regenerate sees the same DP
-    // multiple times across the malformed chain. Sync from Retell does
-    // not repair (the Retell side is structurally clean but the parser
-    // still misreads it once the chain has non-monotonic node IDs).
-    // Reproducer: send any save-and-publish payload after the reorder
-    // test runs; reset to canonical order also fails the same way.
-    describe.skip("save-and-publish integration", () => {
+    describe("save-and-publish integration", () => {
+      // Reset service_call to canonical state so the integration tests
+      // start from a known baseline regardless of leftover state from
+      // prior runs. Each test in this block is stateful by design (add
+      // then remove email), but a crashed prior run could leave email
+      // attached and break the precondition.
+      beforeAll(async () => {
+        await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            changes: {
+              description: "System test: reset service_call to canonical baseline",
+              paths: {
+                service_call: {
+                  dataPointKeys: ["full_name", "phone_number", "problem_description", "street_address", "preferred_day"],
+                  branchConditions: {},
+                },
+              },
+            },
+          }),
+        });
+      });
+
       it("adds email to service_call, publishes, and verifies", { timeout: 45_000 }, async () => {
         // Get current state
         const struct = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
@@ -1944,9 +1956,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
       // TODO: same EXTRACT_VAR_DUPLICATE accumulation bug — re-enable
       // once save-and-publish stops duplicating Extract node variables.
-      // TODO(node-parser bug): same root cause as save-and-publish
-      // integration above — chain-direction reverse-tapering bug.
-      it.skip("adds email to service_call and publishes to Retell", { timeout: 45_000 }, async () => {
+      it("adds email to service_call and publishes to Retell", { timeout: 45_000 }, async () => {
         const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
         const dm = before.paths.find((p: any) => p.name === "service_call");
         const currentVars = dm.dataPoints.map((d: any) => d.variableName);
@@ -1973,9 +1983,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       // TODO: same EXTRACT_VAR_DUPLICATE accumulation bug as the
       // `save-and-publish integration` describe block above — fails
       // after a sibling test publishes. Re-enable when that's fixed.
-      // TODO(node-parser bug): same chain-direction bug — and this test
-      // is the one that triggers the corruption (reverses DP order).
-      it.skip("reorders service_call and verifies in Retell", { timeout: 45_000 }, async () => {
+      it("reorders service_call and verifies in Retell", { timeout: 45_000 }, async () => {
         const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
         const dm = before.paths.find((p: any) => p.name === "service_call");
         const vars = dm.dataPoints.map((d: any) => d.variableName);
@@ -2001,8 +2009,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       // ── 3. Remove data point + publish + verify ────────────────
 
       // TODO: blocked by EXTRACT_VAR_DUPLICATE accumulation bug.
-      // TODO(node-parser bug): same chain-direction bug.
-      it.skip("removes email and verifies in Retell", { timeout: 45_000 }, async () => {
+      it("removes email and verifies in Retell", { timeout: 45_000 }, async () => {
         const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
         const dm = before.paths.find((p: any) => p.name === "service_call");
         const withoutEmail = dm.dataPoints.filter((d: any) => d.variableName !== "email").map((d: any) => d.variableName);
