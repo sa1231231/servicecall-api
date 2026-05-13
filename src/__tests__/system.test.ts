@@ -1593,28 +1593,48 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
     // ── edit-branch-condition ──────────────────────────────────────
 
-    // Demo HVAC has no branches today, so the branch-condition round-trip
-    // has nothing to clear/restore against. Re-enable when an HVAC flow
-    // with conditional collection is in place.
-    describe.skip("edit-branch-condition", () => {
-      it("clears the branch condition on truck_number end-to-end and restores", { timeout: 30_000 }, async () => {
-        // Capture the live branch state on truck_number — don't assume
-        // a specific shape (operator changes the matrix over time).
-        // Then clear it (branchConditions: null), verify, restore.
-        // Clearing is the cleanest round-trip because it's a no-op when
-        // already null AND when not, so the restore is safe to retry.
+    describe("edit-branch-condition", () => {
+      // Round-trip: demo-hvac's `preferred_day` is the only enum DP in the
+      // agent — branch on it. Set a temporary branch on `phone_number`
+      // (referencing preferred_day == "Monday") via beforeAll, then test
+      // the clear/restore round-trip, then strip the branch in afterAll
+      // so we leave the agent as we found it.
+      const TEST_BRANCH = [{ variable: "preferred_day", operator: "==", value: "Monday" }];
+      beforeAll(async () => {
+        await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            variableName: "phone_number", pathName: "service_call",
+            branchConditions: TEST_BRANCH,
+          }),
+        });
+      });
+      afterAll(async () => {
+        await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
+          method: "POST", headers: authHeaders(),
+          body: JSON.stringify({
+            variableName: "phone_number", pathName: "service_call",
+            branchConditions: null,
+          }),
+        });
+      });
+
+      it("clears the branch condition on phone_number end-to-end and restores", { timeout: 30_000 }, async () => {
+        // Capture the live branch state — beforeAll set one but we don't
+        // assume the exact shape. Clear → verify cleared → restore.
         const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
         const dm = before.paths.find((p: any) => p.name === "service_call");
-        const truck = dm?.dataPoints.find((d: any) => d.variableName === "truck_number");
-        expect(truck).toBeDefined();
-        const original = truck.branchConditions ?? null;
+        const phone = dm?.dataPoints.find((d: any) => d.variableName === "phone_number");
+        expect(phone).toBeDefined();
+        const original = phone.branchConditions ?? null;
+        expect(original).not.toBeNull();
 
         let mutated = false;
         try {
           const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
             method: "POST", headers: authHeaders(),
             body: JSON.stringify({
-              variableName: "truck_number", pathName: "service_call",
+              variableName: "phone_number", pathName: "service_call",
               branchConditions: null,
             }),
           });
@@ -1624,16 +1644,16 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
           const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
           const dm2 = after.paths.find((p: any) => p.name === "service_call");
-          const truck2 = dm2.dataPoints.find((d: any) => d.variableName === "truck_number");
+          const phone2 = dm2.dataPoints.find((d: any) => d.variableName === "phone_number");
           // After clearing, the variable should still exist but have no
           // branch attached.
-          expect(truck2.branchConditions ?? null).toBeNull();
+          expect(phone2.branchConditions ?? null).toBeNull();
         } finally {
           if (mutated && original !== null) {
             await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
               method: "POST", headers: authHeaders(),
               body: JSON.stringify({
-                variableName: "truck_number", pathName: "service_call",
+                variableName: "phone_number", pathName: "service_call",
                 branchConditions: original,
               }),
             });
@@ -1774,6 +1794,27 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     // ── edit-path-end-mode ────────────────────────────────────────
 
     describe("edit-path-end-mode", () => {
+      // The transfer-mode flip requires a `dispatch_call_number` to be
+      // configured (either per-path or client default). Demo HVAC ships
+      // without one, so install a test number for the duration of this
+      // suite and restore the original after.
+      const TEST_DISPATCH = "+13017872841";
+      let originalDispatchCall: string | null = null;
+      beforeAll(async () => {
+        const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
+        originalDispatchCall = (doc.dispatch_call_number as string | null) ?? null;
+        await fetch(url(`/dashboard/api/agents/${SLUG}`), {
+          method: "PATCH", headers: authHeaders(),
+          body: JSON.stringify({ dispatch_call_number: TEST_DISPATCH }),
+        });
+      });
+      afterAll(async () => {
+        await fetch(url(`/dashboard/api/agents/${SLUG}`), {
+          method: "PATCH", headers: authHeaders(),
+          body: JSON.stringify({ dispatch_call_number: originalDispatchCall }),
+        });
+      });
+
       it("rejects missing pathName", async () => {
         const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-path-end-mode`), {
           method: "POST", headers: authHeaders(),
@@ -1814,11 +1855,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         expect(resp.status).toBe(404);
       });
 
-      // TODO: re-enable once demo-hvac has a `dispatch_call_number`
-      // configured (either at the client default or per-path). The
-      // route correctly rejects "transfer" mode without a destination
-      // — flipping requires that config to be in place first.
-      it.skip("flips mode for emergency_call end-to-end and restores", { timeout: 45_000 }, async () => {
+      it("flips mode for emergency_call end-to-end and restores", { timeout: 45_000 }, async () => {
         // path-end-mode is the riskiest mutation in this suite — flipping
         // it adds/removes Pre-Transfer + Transfer Call nodes. The route
         // DOES push to Retell (unlike edit-path-name), so a fresh GET
@@ -2452,8 +2489,26 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
     it("captures original business name", async () => {
       const doc = await json(await fetch(url(`/dashboard/api/agents/${SLUG}`), { headers: authHeaders() }));
-      originalName = doc.name;
-      expect(typeof originalName).toBe("string");
+      let captured: string = doc.name;
+      expect(typeof captured).toBe("string");
+      // Defensive: if a prior interrupted run left TEMP- suffixes baked into
+      // the stored name, strip them before capturing as "original". Without
+      // this, each test run captures the polluted name and restores to it,
+      // and the polluted suffixes accumulate across runs (we saw 5 stacked).
+      if (/TEMP-\d+/.test(captured)) {
+        const stripped = captured.replace(/\s*TEMP-\d+/g, "").replace(/  +/g, " ").trim();
+        if (stripped && stripped !== captured) {
+          await fetch(
+            url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/rename-business`),
+            {
+              method: "POST", headers: authHeaders(),
+              body: JSON.stringify({ newName: stripped, oldName: captured }),
+            },
+          );
+          captured = stripped;
+        }
+      }
+      originalName = captured;
     });
 
     it("rename rewrites script + Mongo without reporting nickname work", async () => {

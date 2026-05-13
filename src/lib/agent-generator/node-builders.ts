@@ -511,15 +511,23 @@ export function buildIntroNode(
     finetune_conversation_examples: [],
     instruction: {
       type: "prompt",
-      text: `Determine the reason for the caller's call.
+      // Use the {{business_name}} placeholder + renderTemplate so the intro
+      // matches the same convention as Close / Pre-Transfer / Live-Transfer
+      // Recovery prompts. Keeps the substitution path uniform and lets the
+      // rename-business endpoint (replaceBusinessName) scrub the value
+      // consistently across every prompt site.
+      text: renderTemplate(
+        `Determine the reason for the caller's call.
 
-Welcome the caller: "Thank you for calling ${config.businessName}, this is Anthony. How may I help you?"
+Welcome the caller: "Thank you for calling {{business_name}}, this is Anthony. How may I help you?"
 
 If the caller greets you, reciprocate the sentiment and then ask how you can help them.
 
 Do not assume their name until they tell you explicitly.
 
 Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ global node handle those and return here.`,
+        { business_name: config.businessName },
+      ),
     },
     name: "Intro",
     edges,
