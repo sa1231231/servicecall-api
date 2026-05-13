@@ -8,6 +8,7 @@ import { initDb } from "./lib/db.js";
 import { loadClientsFromDb, purgeExpiredClients } from "./config/client-store.js";
 import { healthRouter } from "./routes/health.js";
 import { retellRouter } from "./routes/retell/index.js";
+import { mcpRouter } from "./routes/mcp.js";
 import { deckscienceRouter } from "./routes/deckscience/index.js";
 import { agentsRouter } from "./routes/agents/index.js";
 import { dashboardRouter, dashboardApiRouter, backupRouter } from "./routes/dashboard/index.js";
@@ -124,6 +125,11 @@ const portalLimiter = rateLimit({
 
 app.use("/health", healthRouter);
 app.use("/retell", webhookLimiter, retellRouter);
+
+// MCP (Model Context Protocol) server — JSON-RPC over HTTP. Currently
+// surfaces send_sms for mid-call Retell conversation-flow McpNode
+// invocations; designed to grow as we add more tools. Bearer-token auth.
+app.use("/mcp", webhookLimiter, mcpRouter);
 app.use("/portal", portalLimiter, portalRouter);
 
 // ── Public static assets (CSS, JS, images) ──────────────────────────────────

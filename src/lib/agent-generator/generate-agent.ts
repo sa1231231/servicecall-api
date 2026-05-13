@@ -32,7 +32,7 @@ import {
   buildLiveTransferRecoveryNode,
   buildPreTransferNode,
   buildPerPathTransferCallNode,
-  buildSendSmsTool,
+  buildMcpServerEntry,
   type AgentConfig,
   type HumanRequestMode,
 } from "./node-builders.js";
@@ -435,16 +435,18 @@ When listing anything — services, time slots, examples, options — never list
   allNodes.push(buildPoliteHangupNode(ids, pos, f));
   allNodes.push(buildGuardrailEndNode(ids, pos));
 
-  // Register the send_sms CustomTool only when a path actually uses it.
-  // Keeps the published flow lean for agents that don't fire SMS mid-call.
-  const flowTools = anySmsActions ? [buildSendSmsTool(config.API_KEY)] : [];
+  // Register the servicecall-mcp server only when a path actually fires SMS.
+  // McpNodes reference this entry by its `name`; without it, Retell rejects
+  // the flow ("nodes/N must have required property 'mcp_id'").
+  const flowMcps = anySmsActions ? [buildMcpServerEntry(config.API_KEY)] : [];
 
   const conversationFlow = {
     version: 1,
     global_prompt: globalPrompt,
     start_node_id: ids.introId,
     start_speaker: "agent",
-    tools: flowTools,
+    tools: [],
+    mcps: flowMcps,
     model_choice: {
       type: "cascading",
       model: "gpt-4.1",

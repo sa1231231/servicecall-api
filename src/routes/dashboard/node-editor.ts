@@ -33,8 +33,9 @@ import {
   buildTransitionNode,
   buildDataChain,
   buildWarmTransferOption,
-  buildSendSmsTool,
+  buildMcpServerEntry,
   DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT,
+  MCP_SERVER_NAME,
   SEND_SMS_TOOL_ID,
   type PathIds,
   type PathPositions,
@@ -2545,26 +2546,21 @@ export async function saveAndPublishHandler(
       }
     }
 
-    // Ensure send_sms CustomTool is registered when any node references it.
-    // Function nodes emitted for SMS actions carry tool_id: "send_sms", which
-    // would otherwise fail Retell validation if tools[] doesn't include it.
-    // Conversely, if no node references it anymore (operator removed every
-    // SMS step), prune it back out so the flow stays clean.
+    // Ensure the servicecall-mcp server entry is registered in flow.mcps[]
+    // when any McpNode references it. Without it, Retell rejects the flow
+    // because McpNode.mcp_id has nothing to bind to. Conversely, if all SMS
+    // steps were removed, prune the entry so the published flow stays clean.
     {
       const refreshedNodes = flow.nodes as Array<Record<string, unknown>>;
-      const hasSmsNode = refreshedNodes.some(
-        (n) => n.type === "function" && (n as any).tool_id === SEND_SMS_TOOL_ID,
+      const hasMcpNode = refreshedNodes.some(
+        (n) => n.type === "mcp" && (n as any).mcp_id === MCP_SERVER_NAME,
       );
-      const tools = (flow.tools as Array<Record<string, unknown>>) ?? [];
-      const hasSmsTool = tools.some(
-        (t) => (t as any).tool_id === SEND_SMS_TOOL_ID || (t as any).name === SEND_SMS_TOOL_ID,
-      );
-      if (hasSmsNode && !hasSmsTool) {
-        flow.tools = [...tools, buildSendSmsTool(config.API_KEY)];
-      } else if (!hasSmsNode && hasSmsTool) {
-        flow.tools = tools.filter(
-          (t) => (t as any).tool_id !== SEND_SMS_TOOL_ID && (t as any).name !== SEND_SMS_TOOL_ID,
-        );
+      const mcps = (flow.mcps as Array<Record<string, unknown>>) ?? [];
+      const hasMcpEntry = mcps.some((m) => (m as any).name === MCP_SERVER_NAME);
+      if (hasMcpNode && !hasMcpEntry) {
+        flow.mcps = [...mcps, buildMcpServerEntry(config.API_KEY)];
+      } else if (!hasMcpNode && hasMcpEntry) {
+        flow.mcps = mcps.filter((m) => (m as any).name !== MCP_SERVER_NAME);
       }
     }
 

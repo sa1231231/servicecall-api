@@ -6,7 +6,7 @@
 
 import type { DataPoint, SendSmsAction } from "./agent-generator/data-point-registry.js";
 import { NOT_MENTIONED, PHONE_COLLECTED_FLAG, PATH_TAKEN_VAR, isSendSmsAction } from "./agent-generator/data-point-registry.js";
-import { makeIdFactory, SEND_SMS_TOOL_ID, type IdFactory, type PathIds } from "./agent-generator/node-builders.js";
+import { makeIdFactory, MCP_SERVER_NAME, SEND_SMS_TOOL_NAME, type IdFactory, type PathIds } from "./agent-generator/node-builders.js";
 import type { ParsedPath, ParsedDataPoint } from "./node-parser.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -443,9 +443,9 @@ export function regenerateDataChain(
 
     nodes.push({
       id: sIds.funcId,
-      type: "function",
-      tool_id: SEND_SMS_TOOL_ID,
-      tool_type: "local",
+      type: "mcp",
+      mcp_id: MCP_SERVER_NAME,
+      mcp_tool_name: SEND_SMS_TOOL_NAME,
       wait_for_result: true,
       name: `${displayName}${suffix}`,
       instruction: {
@@ -462,7 +462,7 @@ export function regenerateDataChain(
       ],
       else_edge: {
         id: f.edgeId(),
-        transition_condition: { type: "prompt", prompt: "Tool call failed" },
+        transition_condition: { type: "prompt", prompt: "Else" },
         destination_node_id: sIds.markSentId,
       },
     });

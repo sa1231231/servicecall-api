@@ -4,13 +4,13 @@ export interface OutboundMessageDocument {
   call_id: string | null;
   client_slug: string;
   client_name: string;
-  agent_id: string;
+  agent_id: string | null;
   to: string;
   from: string;
   body: string;
   twilio_sid: string | null;
   twilio_status: string | null;
-  source: "retell_tool";
+  source: "retell_tool" | "mcp";
   error: string | null;
   created_at: Date;
 }

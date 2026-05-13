@@ -7,16 +7,24 @@ import {
 } from "./data-point-registry.js";
 import { renderTemplate } from "../build-notification.js";
 
-// Stable tool id for the send_sms CustomTool registered in every flow's
-// conversationFlow.tools[]. Function nodes generated for SMS actions
-// reference this id via tool_id, which lets the parser identify them
-// deterministically when round-tripping a published flow.
-export const SEND_SMS_TOOL_ID = "send_sms";
+// Name of the MCP server entry that the generator drops into
+// `conversationFlow.mcps[]` when any path contains an SMS action. Also used
+// as the `mcp_id` field on every McpNode so the node links to its server
+// entry (Retell pairs them by this name — there's no separate id).
+export const MCP_SERVER_NAME = "servicecall-mcp";
 
-// Public URL for the /retell/send-sms endpoint. Kept alongside the post-hook
-// URL (line ~1222) so they share the same source of truth for the public host.
-export const SEND_SMS_TOOL_URL =
-  "https://servicecall-api-production.up.railway.app/retell/send-sms";
+// Tool name on the MCP server. McpNodes set this on `mcp_tool_name`.
+export const SEND_SMS_TOOL_NAME = "send_sms";
+
+// Backwards-compat alias for code outside node-builders that imported the
+// pre-MCP constant. The parser still uses it to detect SMS nodes.
+export const SEND_SMS_TOOL_ID = SEND_SMS_TOOL_NAME;
+
+// Public URL of the MCP server (mounted at /mcp in src/index.ts). Kept
+// alongside the post-hook URL (line ~1222) so they share the same source of
+// truth for the public host.
+export const MCP_SERVER_URL =
+  "https://servicecall-api-production.up.railway.app/mcp";
 
 // Default templates for the four closing nodes. Use {{business_name}} — substituted on the way to Retell.
 //
@@ -949,58 +957,37 @@ function toVarDefs(rdp: DataPoint) {
   return [def];
 }
 
-// ── Send SMS: tool registration + node pair ──────────────────────────────────
+// ── Send SMS: MCP server entry + node pair ───────────────────────────────────
 
 /**
- * Registers the send_sms CustomTool on a conversation flow. The tool posts to
- * /retell/send-sms with an Authorization Bearer header; the endpoint authenticates
- * via API_KEY, falls back to call.from_number when `to` is omitted, and logs every
- * send to MongoDB outbound_messages (see src/routes/retell/send-sms.ts).
+ * Returns the MCP server entry the generator drops into
+ * `conversationFlow.mcps[]`. Retell calls this URL with JSON-RPC for every
+ * McpNode invocation; the bearer header authenticates against our `/mcp`
+ * endpoint (see src/routes/mcp.ts).
  *
- * Returning JSON shapes: { success: true, result } on 200, { success: false, error }
- * on non-200. Either way the SMS-action's Mark Sent extract node flips the sentinel
- * variable so the Variables Router never re-fires the same action in one call.
+ * `name` is the logical id Retell uses to pair McpNodes (`mcp_id`) to their
+ * server entry — there's no separate server-side id assigned at registration.
  */
-export function buildSendSmsTool(apiKey: string) {
+export function buildMcpServerEntry(apiKey: string) {
   return {
-    type: "custom",
-    tool_id: SEND_SMS_TOOL_ID,
-    name: SEND_SMS_TOOL_ID,
-    url: SEND_SMS_TOOL_URL,
-    method: "POST",
-    description:
-      "Send an SMS to the caller. Only invoked by deterministic flow nodes — do not call from conversational tool use.",
+    name: MCP_SERVER_NAME,
+    url: MCP_SERVER_URL,
     headers: { Authorization: `Bearer ${apiKey}` },
-    parameters: {
-      type: "object",
-      properties: {
-        message: {
-          type: "string",
-          description: "SMS body to send. Max 1600 characters.",
-        },
-        to: {
-          type: "string",
-          description:
-            "Recipient phone in E.164 format. Omit to send to the caller's number (call.from_number).",
-        },
-      },
-      required: ["message"],
-    },
-    speak_during_execution: false,
-    speak_after_execution: false,
     timeout_ms: 10000,
   };
 }
 
 /**
  * Builds the two-node pair for a single SMS action:
- *   1. Function node — invokes the send_sms tool with the configured template.
- *   2. Mark Sent extract node — flips the per-action sentinel variable to "true".
+ *   1. McpNode — invokes the send_sms tool on our MCP server with the
+ *      configured template (Retell injects {{var}} substitution before the
+ *      request is sent, so caller-collected variables interpolate).
+ *   2. Mark Sent extract — flips the per-action sentinel variable to "true"
+ *      so the Variables Router routes past this step on the next visit.
  *
- * Both nodes route back to the path's Variables Router. Failure-path of the
- * function node also goes through Mark Sent so a Twilio error doesn't trap
- * the call in a router→function→router→function loop — the action fires
- * exactly once, success or not. Errors are already logged in outbound_messages.
+ * Both edges out of the McpNode (success + failure) route through Mark Sent
+ * so a Twilio failure doesn't trap the call in a router→mcp→router→mcp loop —
+ * the action fires exactly once. Twilio errors are logged in outbound_messages.
  */
 export function buildSendSmsNode(
   action: SendSmsAction,
@@ -1011,20 +998,18 @@ export function buildSendSmsNode(
   f: IdFactory,
 ): Record<string, unknown>[] {
   const displayName = action.name ?? "Send SMS";
-  // Retell sees args_json in the instruction prompt and assembles the tool
-  // call payload from it. Using static_text gives a single deterministic call
-  // — the LLM doesn't get to pick what to send. {{var}} substitution happens
-  // before Retell forwards the request to our endpoint, so collected dynamic
-  // variables like {{phone_number}} or {{quote_id}} land in the SMS body.
+  // Retell substitutes {{var}} in the instruction text before invoking the
+  // MCP tool. We serialize the literal args as JSON so the runtime sees a
+  // single deterministic call shape with no LLM judgment required.
   const argsObj: Record<string, unknown> = { message: action.template };
   if (action.to) argsObj.to = action.to;
   const argsJson = JSON.stringify(argsObj);
 
   const funcNode = {
     id: sIds.funcId,
-    type: "function",
-    tool_id: SEND_SMS_TOOL_ID,
-    tool_type: "local",
+    type: "mcp",
+    mcp_id: MCP_SERVER_NAME,
+    mcp_tool_name: SEND_SMS_TOOL_NAME,
     wait_for_result: true,
     name: `${displayName}${pathSuffix}`,
     instruction: {
@@ -1039,11 +1024,12 @@ export function buildSendSmsNode(
         destination_node_id: sIds.markSentId,
       },
     ],
-    // Failure route also goes to Mark Sent so the sentinel still flips and the
-    // call doesn't retry. The Twilio failure is logged in outbound_messages.
+    // Retell requires the literal "Else" on else_edge transition prompts.
+    // The destination still goes through Mark Sent so the sentinel flips
+    // either way and the action fires exactly once.
     else_edge: {
       id: f.edgeId(),
-      transition_condition: { type: "prompt", prompt: "Tool call failed" },
+      transition_condition: { type: "prompt", prompt: "Else" },
       destination_node_id: sIds.markSentId,
     },
   };

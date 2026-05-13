@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { generateAgent, NOT_MENTIONED, defaultExtractEquation } from "../index.js";
 import type { DataPoint } from "../data-point-registry.js";
-import { SEND_SMS_TOOL_ID, SEND_SMS_TOOL_URL } from "../node-builders.js";
+import { MCP_SERVER_NAME, MCP_SERVER_URL, SEND_SMS_TOOL_NAME } from "../node-builders.js";
 import { parseConversationFlow } from "../../node-parser.js";
 import { regenerateDataChain, applyRegeneratedChain } from "../../node-regenerator.js";
 
@@ -37,7 +37,7 @@ const baseConfig = {
 };
 
 describe("SMS action in path", () => {
-  it("registers the send_sms tool when a path uses it", () => {
+  it("registers the servicecall-mcp server entry when a path uses SMS", () => {
     const paths = [
       {
         name: "Default",
@@ -54,16 +54,15 @@ describe("SMS action in path", () => {
     ];
     const { agent } = generateAgent(baseConfig, [], paths, TEST_DEFAULTS);
     const flow = agent.conversationFlow as any;
-    expect(flow.tools).toHaveLength(1);
-    expect(flow.tools[0].name).toBe(SEND_SMS_TOOL_ID);
-    expect(flow.tools[0].tool_id).toBe(SEND_SMS_TOOL_ID);
-    expect(flow.tools[0].url).toBe(SEND_SMS_TOOL_URL);
-    expect(flow.tools[0].type).toBe("custom");
-    expect(flow.tools[0].parameters.required).toEqual(["message"]);
-    expect(flow.tools[0].headers.Authorization).toMatch(/^Bearer /);
+    expect(flow.mcps).toHaveLength(1);
+    expect(flow.mcps[0].name).toBe(MCP_SERVER_NAME);
+    expect(flow.mcps[0].url).toBe(MCP_SERVER_URL);
+    expect(flow.mcps[0].headers.Authorization).toMatch(/^Bearer /);
+    // CustomTool registration path is gone — flow.tools[] stays empty.
+    expect(flow.tools).toEqual([]);
   });
 
-  it("emits an empty tools[] when no path uses sendSms", () => {
+  it("emits empty mcps[] when no path uses sendSms", () => {
     const { agent } = generateAgent(
       baseConfig,
       ["phone_number", "address"],
@@ -71,10 +70,11 @@ describe("SMS action in path", () => {
       TEST_DEFAULTS,
     );
     const flow = agent.conversationFlow as any;
+    expect(flow.mcps).toEqual([]);
     expect(flow.tools).toEqual([]);
   });
 
-  it("emits function + Mark Sent nodes for each SMS action", () => {
+  it("emits McpNode + Mark Sent nodes for each SMS action", () => {
     const paths = [
       {
         name: "Default",
@@ -94,18 +94,18 @@ describe("SMS action in path", () => {
     const flow = agent.conversationFlow as any;
     const nodes: any[] = flow.nodes;
 
-    // Function node — invokes send_sms, waits for result.
-    const funcNode = nodes.find(
-      (n) => n.type === "function" && n.tool_id === SEND_SMS_TOOL_ID,
+    // McpNode — invokes send_sms on the servicecall-mcp server.
+    const mcpNode = nodes.find(
+      (n) => n.type === "mcp" && n.mcp_tool_name === SEND_SMS_TOOL_NAME,
     );
-    expect(funcNode).toBeDefined();
-    expect(funcNode.tool_type).toBe("local");
-    expect(funcNode.wait_for_result).toBe(true);
-    expect(funcNode.name).toContain("Send link");
-    expect(funcNode.instruction.type).toBe("static_text");
+    expect(mcpNode).toBeDefined();
+    expect(mcpNode.mcp_id).toBe(MCP_SERVER_NAME);
+    expect(mcpNode.wait_for_result).toBe(true);
+    expect(mcpNode.name).toContain("Send link");
+    expect(mcpNode.instruction.type).toBe("static_text");
     // The literal SMS body lands in the tool-args instruction; Retell does
     // {{var}} substitution before the request is fired.
-    expect(funcNode.instruction.text).toContain("Booking link: https://book.example.com");
+    expect(mcpNode.instruction.text).toContain("Booking link: https://book.example.com");
 
     // Mark Sent node — extract_dynamic_variables that flips the sentinel.
     const markSentNode = nodes.find((n) => n.name?.startsWith?.("Mark Send link Sent"));
@@ -116,12 +116,14 @@ describe("SMS action in path", () => {
     expect(markSentNode.variables[0].description).toBe("Always set to true.");
     expect(markSentNode.variables[0].name).toMatch(/^is_sms_sent_\d+$/);
 
-    // Function node's success edge goes to Mark Sent.
-    expect(funcNode.edges).toHaveLength(1);
-    expect(funcNode.edges[0].destination_node_id).toBe(markSentNode.id);
-    // Failure edge ALSO goes to Mark Sent so the sentinel still flips after
-    // a Twilio error (no retry loop; the failure is logged in outbound_messages).
-    expect(funcNode.else_edge.destination_node_id).toBe(markSentNode.id);
+    // McpNode's success edge goes to Mark Sent.
+    expect(mcpNode.edges).toHaveLength(1);
+    expect(mcpNode.edges[0].destination_node_id).toBe(markSentNode.id);
+    // Failure edge also goes to Mark Sent. Retell requires the literal "Else"
+    // on else_edge transition prompts — this was a deploy-blocking validation
+    // when we used arbitrary strings.
+    expect(mcpNode.else_edge.destination_node_id).toBe(markSentNode.id);
+    expect(mcpNode.else_edge.transition_condition.prompt).toBe("Else");
 
     // Mark Sent loops back to the Variables Router.
     const router = nodes.find((n) => n.name === "Variables Router");
@@ -151,14 +153,14 @@ describe("SMS action in path", () => {
     const router = nodes.find((n) => n.name === "Variables Router");
     const phoneCollect = nodes.find((n) => n.name === "Collect Phone Number");
     const addressCollect = nodes.find((n) => n.name === "Collect Address");
-    const funcNode = nodes.find(
-      (n: any) => n.type === "function" && n.tool_id === SEND_SMS_TOOL_ID,
+    const mcpNode = nodes.find(
+      (n: any) => n.type === "mcp" && n.mcp_tool_name === SEND_SMS_TOOL_NAME,
     );
 
     // Router has three edges (phone DP, SMS action, address DP) in source order.
     expect(router.edges).toHaveLength(3);
     expect(router.edges[0].destination_node_id).toBe(phoneCollect.id);
-    expect(router.edges[1].destination_node_id).toBe(funcNode.id);
+    expect(router.edges[1].destination_node_id).toBe(mcpNode.id);
     expect(router.edges[2].destination_node_id).toBe(addressCollect.id);
 
     // The SMS edge gates on the sentinel variable (not_exist || != "true")
@@ -192,7 +194,6 @@ describe("SMS action in path", () => {
       },
     ];
     const { agent } = generateAgent(baseConfig, [], paths, TEST_DEFAULTS);
-    // Parser expects the canonical-json shape with conversationFlow as a key.
     const parsed = parseConversationFlow(agent as any);
     expect(parsed.paths).toHaveLength(1);
     const path = parsed.paths[0];
@@ -213,10 +214,6 @@ describe("SMS action in path", () => {
   });
 
   it("regenerator preserves SMS node IDs across save cycles", () => {
-    // Generate once, parse, then regenerate the same chain — the function
-    // node and Mark Sent node IDs should be preserved (same as the DP
-    // preservation guarantee). This is what keeps Retell-side annotations
-    // on SMS nodes intact when the operator edits other parts of the path.
     const paths = [
       {
         name: "Default",
@@ -239,7 +236,6 @@ describe("SMS action in path", () => {
     // Pretend the operator tweaked the template; rebuild the data chain.
     const closeId = parsed.closeNode!.id;
     const newSequence = [
-      // Mimic resolved DataPoints from the existing chain
       { ...TEST_DEFAULTS.phone_number },
       { _action: "sendSms" as const, template: "Hello updated!", name: "Greet" },
       { ...TEST_DEFAULTS.address },
@@ -254,6 +250,9 @@ describe("SMS action in path", () => {
     expect(reparsedPath.smsActions[0].markSentNode.id).toBe(originalMarkSentId);
     expect(reparsedPath.smsActions[0].sentinelVar).toBe(originalSentinel);
     expect(reparsedPath.smsActions[0].template).toBe("Hello updated!");
+    // The regenerated node still has the McpNode shape.
+    expect(reparsedPath.smsActions[0].funcNode.type).toBe("mcp");
+    expect(reparsedPath.smsActions[0].funcNode.raw.mcp_id).toBe(MCP_SERVER_NAME);
   });
 
   it("rejects SMS actions inside branch chains with a clear error", () => {

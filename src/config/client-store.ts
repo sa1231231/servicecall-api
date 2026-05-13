@@ -96,6 +96,10 @@ export interface JsonClientEntry {
   // shared template — when set AND the draft is `is_template`, an approval
   // can propagate to the draft and its sibling agents (Phase 3).
   source_draft?: string;
+  // Soft-delete timestamp set by listAllClients's deletion path. Absence
+  // means the client is live; presence means it's been soft-deleted and
+  // is eligible for restore until the eventual hard-delete sweep.
+  deletedAt?: Date;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

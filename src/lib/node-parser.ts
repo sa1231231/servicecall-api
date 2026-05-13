@@ -332,10 +332,11 @@ function buildParsedPath(
       const destNode = nodeMap.get(destNodeId);
       if (!destNode) continue;
 
-      // SMS-action edge: router branches into a function node calling send_sms.
-      // The function node's edges[0]/else_edge both point to a Mark Sent extract
-      // node, which declares the sentinel variable and loops back to the router.
-      if (destNode.type === "function" && destNode.raw.tool_id === "send_sms") {
+      // SMS-action edge: router branches into an McpNode calling send_sms on
+      // the servicecall-mcp server. The McpNode's edges[0]/else_edge both
+      // point to a Mark Sent extract node, which declares the sentinel
+      // variable and loops back to the router.
+      if (destNode.type === "mcp" && destNode.raw.mcp_tool_name === "send_sms") {
         const fnEdges = destNode.raw.edges as Array<Record<string, unknown>> | undefined;
         const markSentId = fnEdges?.[0]?.destination_node_id as string | undefined;
         const markSentNode = markSentId ? nodeMap.get(markSentId) : undefined;
