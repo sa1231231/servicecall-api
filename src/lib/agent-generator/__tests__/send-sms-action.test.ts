@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { generateAgent, NOT_MENTIONED, defaultExtractEquation } from "../index.js";
 import type { DataPoint } from "../data-point-registry.js";
 import { SEND_SMS_TOOL_ID, SEND_SMS_TOOL_URL } from "../node-builders.js";
+import { parseConversationFlow } from "../../node-parser.js";
+import { regenerateDataChain, applyRegeneratedChain } from "../../node-regenerator.js";
 
 // Minimal fixtures mirroring the wider agent-generator.test.ts but trimmed to
 // what these tests exercise.
@@ -170,6 +172,88 @@ describe("SMS action in path", () => {
     expect(eqs[0].left).toMatch(/is_sms_sent_\d+/);
     expect(eqs[1].operator).toBe("!=");
     expect(eqs[1].right).toBe("true");
+  });
+
+  it("round-trips through parseConversationFlow with template + name preserved", () => {
+    const paths = [
+      {
+        name: "Default",
+        transitionCondition: "Always",
+        dataPoints: [
+          "phone_number",
+          {
+            _action: "sendSms" as const,
+            template: "Hi {{first_name}}, your link: https://book.example.com/{{quote_id}}",
+            name: "Booking link",
+            to: "+15551234567",
+          },
+          "address",
+        ],
+      },
+    ];
+    const { agent } = generateAgent(baseConfig, [], paths, TEST_DEFAULTS);
+    // Parser expects the canonical-json shape with conversationFlow as a key.
+    const parsed = parseConversationFlow(agent as any);
+    expect(parsed.paths).toHaveLength(1);
+    const path = parsed.paths[0];
+    expect(path.smsActions).toHaveLength(1);
+    const action = path.smsActions[0];
+    expect(action.template).toBe(
+      "Hi {{first_name}}, your link: https://book.example.com/{{quote_id}}",
+    );
+    expect(action.to).toBe("+15551234567");
+    expect(action.displayName).toBe("Booking link");
+    expect(action.sentinelVar).toMatch(/^is_sms_sent_\d+$/);
+
+    // Steps interleave DPs and SMS actions in router-edge order.
+    expect(path.steps).toHaveLength(3);
+    expect(path.steps[0].kind).toBe("dp");
+    expect(path.steps[1].kind).toBe("sms");
+    expect(path.steps[2].kind).toBe("dp");
+  });
+
+  it("regenerator preserves SMS node IDs across save cycles", () => {
+    // Generate once, parse, then regenerate the same chain — the function
+    // node and Mark Sent node IDs should be preserved (same as the DP
+    // preservation guarantee). This is what keeps Retell-side annotations
+    // on SMS nodes intact when the operator edits other parts of the path.
+    const paths = [
+      {
+        name: "Default",
+        transitionCondition: "Always",
+        dataPoints: [
+          "phone_number",
+          { _action: "sendSms" as const, template: "Hello!", name: "Greet" },
+          "address",
+        ],
+      },
+    ];
+    const { agent } = generateAgent(baseConfig, [], paths, TEST_DEFAULTS);
+    const canonical = JSON.parse(JSON.stringify(agent));
+    const parsed = parseConversationFlow(canonical);
+    const originalPath = parsed.paths[0];
+    const originalFuncId = originalPath.smsActions[0].funcNode.id;
+    const originalMarkSentId = originalPath.smsActions[0].markSentNode.id;
+    const originalSentinel = originalPath.smsActions[0].sentinelVar;
+
+    // Pretend the operator tweaked the template; rebuild the data chain.
+    const closeId = parsed.closeNode!.id;
+    const newSequence = [
+      // Mimic resolved DataPoints from the existing chain
+      { ...TEST_DEFAULTS.phone_number },
+      { _action: "sendSms" as const, template: "Hello updated!", name: "Greet" },
+      { ...TEST_DEFAULTS.address },
+    ];
+    const result = regenerateDataChain(originalPath, newSequence, closeId);
+    applyRegeneratedChain(canonical, result);
+
+    const reparsed = parseConversationFlow(canonical);
+    const reparsedPath = reparsed.paths[0];
+    expect(reparsedPath.smsActions).toHaveLength(1);
+    expect(reparsedPath.smsActions[0].funcNode.id).toBe(originalFuncId);
+    expect(reparsedPath.smsActions[0].markSentNode.id).toBe(originalMarkSentId);
+    expect(reparsedPath.smsActions[0].sentinelVar).toBe(originalSentinel);
+    expect(reparsedPath.smsActions[0].template).toBe("Hello updated!");
   });
 
   it("rejects SMS actions inside branch chains with a clear error", () => {

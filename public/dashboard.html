@@ -2143,6 +2143,38 @@
   </div>
 </div>
 
+<!-- ── SMS Step Edit Modal ───────────────────────────────────────────── -->
+<div id="smsModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeSmsModal()">
+  <div class="modal" style="width:480px;">
+    <h3 id="smsModalTitle">Add SMS Step</h3>
+    <p class="modal-desc">
+      Sends a text message to the caller mid-conversation. The step fires
+      deterministically at this position in the path. Use
+      <code>{{var_name}}</code> to inject collected data
+      (e.g. <code>{{phone_number}}</code>).
+    </p>
+    <div class="modal-field">
+      <label class="modal-label">Display name <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+      <input class="edit-input" type="text" id="smsModalName" placeholder="e.g. Send booking link">
+      <div class="config-hint">Shown on the Retell flow editor. Defaults to "Send SMS".</div>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Message *</label>
+      <textarea id="smsModalTemplate" rows="4" placeholder="Hi {{first_name}}, here's your booking link: ..." style="width:100%;resize:vertical;font-family:inherit;font-size:0.9rem;padding:0.45rem;border:1px solid #d1d5db;border-radius:6px;"></textarea>
+      <div class="config-hint">Max 1600 characters. <code>{{var}}</code> placeholders are substituted with caller values at send time.</div>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Recipient override <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+      <input class="edit-input" type="text" id="smsModalTo" placeholder="Leave blank to text the caller">
+      <div class="config-hint">Defaults to the caller's phone number. Pass E.164 (<code>+15551234567</code>) or a variable like <code>{{relay_phone}}</code>.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeSmsModal()">Cancel</button>
+      <button class="btn-confirm" onclick="saveSmsModal()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Branch Condition Edit Modal ──────────────────────────────────── -->
 <div id="branchModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeBranchModal()">
   <div class="modal" style="width:440px;">
@@ -8250,6 +8282,17 @@
       ]);
       if (!nodeRes.ok) throw new Error('Failed to load nodes: ' + nodeRes.status);
       neData = await nodeRes.json();
+      // Assign stable client-side ids to SMS items so render/edit/delete/drag
+      // can identify them without a variableName. Items reloaded from server
+      // get an id derived from the persistent funcNodeId; new items added
+      // in-session get a fresh _clientId in neAddSmsStep.
+      for (const path of (neData.paths || [])) {
+        for (const dp of (path.dataPoints || [])) {
+          if (dp && dp._action === 'sendSms' && !dp._clientId) {
+            dp._clientId = dp.funcNodeId || ('sms-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
+          }
+        }
+      }
       neVersionData = verRes.ok ? await verRes.json() : { versions: [], total: 0 };
       neDirty = false;
       _ftResetTouched();
@@ -8460,11 +8503,13 @@
       html += '</div>';
 
       if (canEdit) {
-        html += '<div class="ne-path-actions">' +
+        html += '<div class="ne-path-actions" style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">' +
           '<select onchange="neAddDataPoint(this.value,\'' + esc(path.name) + '\');this.value=\'\';">' +
           '<option value="">+ Add Data Point...</option>' +
           buildDpDefaultsOptions(path.dataPoints.map(d => d.variableName)) +
-          '</select></div>';
+          '</select>' +
+          '<button class="ne-btn" onclick="neAddSmsStep(\'' + esc(path.name) + '\')" style="color:#92400e;border-color:#fcd34d;background:#fffbeb;">+ Add SMS Step</button>' +
+          '</div>';
       }
 
       // ── Notification config (from originalDoc.message_types) ────
@@ -8670,6 +8715,15 @@
       let i = 0;
       while (i < dps.length) {
         const dp = dps[i];
+        // SMS-action steps live in dataPoints[] alongside DPs. They have no
+        // variableName / branch conditions; always render at depth 0 (the
+        // generator rejects SMS inside branch chains).
+        if (dp && dp._action === 'sendSms') {
+          num++;
+          out += renderSmsRow(dp, num, pathName, canEdit);
+          i++;
+          continue;
+        }
         const cleanBc = normalizeBc(dp.branchConditions);
 
         if (cleanBc.length <= depth) {
@@ -8784,6 +8838,34 @@
     return html;
   }
 
+  // SMS-action step row — sits inline in the path's data-point list. Looks
+  // similar to a DP row but has no field-toggle cells and uses _clientId
+  // (assigned at load) for identity. Drag-drop reorder uses data-sms-id.
+  function renderSmsRow(item, num, pathName, canEdit) {
+    const clientId = item._clientId || '';
+    const displayName = item.name && item.name.trim() ? item.name : 'Send SMS';
+    const tpl = item.template || '';
+    const previewMax = 80;
+    const preview = tpl.length > previewMax ? tpl.slice(0, previewMax) + '…' : tpl;
+    const toLabel = item.to ? esc(item.to) : 'caller';
+
+    let html = '<div class="ne-dp-row" draggable="true" data-sms-id="' + esc(clientId) + '" style="background:#fef3c7;border-color:#fde68a;">' +
+      '<span class="ne-handle">&#9776;</span>' +
+      '<span class="ne-num">' + num + '</span>' +
+      '<span style="font-size:0.65rem;font-weight:700;color:#92400e;background:#fcd34d;padding:0.12rem 0.4rem;border-radius:3px;letter-spacing:0.04em;">SMS</span>' +
+      '<span class="ne-label" style="flex:1;min-width:0;">' + esc(displayName) +
+        '<span style="display:block;color:#78716c;font-size:0.7rem;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + esc(preview) + '</span>' +
+      '</span>' +
+      '<span class="ne-var" title="Recipient">→ ' + toLabel + '</span>' +
+      '<span class="ne-actions">';
+    if (canEdit) {
+      html += '<button class="ne-btn" onclick="neEditSmsStep(\'' + esc(clientId) + '\',\'' + esc(pathName) + '\')">Edit</button>' +
+        '<button class="ne-btn ne-btn-remove" onclick="neRemoveSmsStep(\'' + esc(clientId) + '\',\'' + esc(pathName) + '\')">Remove</button>';
+    }
+    html += '</span></div>';
+    return html;
+  }
+
   function findMtKey(pathName) {
     if (!originalDoc || !originalDoc.message_types) return pathName;
     const mt = originalDoc.message_types;
@@ -8845,10 +8927,15 @@
       if (!dragEl) return;
       e.preventDefault();
       e.stopPropagation();
-      // Collect new order and save
+      // Collect new order and save. Each row is identified by either
+      // data-var (DPs) or data-sms-id (SMS actions); they share one
+      // ordered list because both live in path.dataPoints[].
       const pathName = list.dataset.nePath;
-      const vars = Array.from(list.querySelectorAll('.ne-dp-row')).map(r => r.dataset.var);
-      neReorderDataPoints(pathName, vars);
+      const ids = Array.from(list.querySelectorAll('.ne-dp-row')).map(r => ({
+        var: r.dataset.var,
+        smsId: r.dataset.smsId,
+      }));
+      neReorderDataPoints(pathName, ids);
     });
   }
 
@@ -9295,6 +9382,7 @@
     const varSelect = document.getElementById('branchModalVar');
     let varHtml = '<option value="">— Select variable —</option>';
     for (const d of path.dataPoints) {
+      if (d && d._action === 'sendSms') continue; // SMS steps aren't variables
       if (d.variableName === variableName) break; // only vars before this one
       const vd = d.variableDefs[0];
       if (vd && (vd.type === 'enum' || vd.type === 'boolean')) {
@@ -9589,13 +9677,124 @@
     showToast('Removed (save to publish)', 'success');
   }
 
-  function neReorderDataPoints(pathName, variableNames) {
+  function neReorderDataPoints(pathName, ids) {
     const path = neData.paths.find(p => p.name === pathName);
     if (!path) return;
-    const dpMap = new Map(path.dataPoints.map(d => [d.variableName, d]));
-    path.dataPoints = variableNames.map(v => dpMap.get(v)).filter(Boolean);
+    // ids: [{var?, smsId?}] in new visual order. Look each up against the
+    // current dataPoints[] by either variableName or _clientId; preserve
+    // any items that didn't match (shouldn't happen, but defensive).
+    const dpByVar = new Map();
+    const smsByClient = new Map();
+    for (const d of path.dataPoints) {
+      if (d && d._action === 'sendSms') {
+        if (d._clientId) smsByClient.set(d._clientId, d);
+      } else {
+        dpByVar.set(d.variableName, d);
+      }
+    }
+    const reordered = ids.map(id => {
+      if (id.var) return dpByVar.get(id.var);
+      if (id.smsId) return smsByClient.get(id.smsId);
+      return null;
+    }).filter(Boolean);
+    path.dataPoints = reordered;
     markNeDirty();
     showToast('Order updated (save to publish)', 'success');
+  }
+
+  // ── SMS step (add / edit / remove + modal) ─────────────────────
+  // SMS steps are inline path actions that compile to a Retell function node
+  // (+ Mark Sent extract) at this position in the path. State shape:
+  //   { _action: "sendSms", template, name?, to?, _clientId,
+  //     funcNodeId?, markSentNodeId?, sentinelVar? }
+  // The last three are present only for items that came back from the server
+  // load — they're passed back on save so the server can preserve node IDs.
+
+  // Module-level — the modal stores its target while open.
+  let _smsModalState = null;
+
+  function neAddSmsStep(pathName) {
+    if (!neData) return;
+    _smsModalState = { mode: 'new', pathName, clientId: null };
+    document.getElementById('smsModalTitle').textContent = 'Add SMS Step';
+    document.getElementById('smsModalName').value = '';
+    document.getElementById('smsModalTemplate').value = '';
+    document.getElementById('smsModalTo').value = '';
+    document.getElementById('smsModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('smsModalTemplate').focus(), 0);
+  }
+
+  function neEditSmsStep(clientId, pathName) {
+    if (!neData) return;
+    const path = neData.paths.find(p => p.name === pathName);
+    if (!path) return;
+    const item = path.dataPoints.find(d => d && d._action === 'sendSms' && d._clientId === clientId);
+    if (!item) return;
+    _smsModalState = { mode: 'edit', pathName, clientId };
+    document.getElementById('smsModalTitle').textContent = 'Edit SMS Step';
+    document.getElementById('smsModalName').value = item.name || '';
+    document.getElementById('smsModalTemplate').value = item.template || '';
+    document.getElementById('smsModalTo').value = item.to || '';
+    document.getElementById('smsModal').style.display = 'flex';
+    setTimeout(() => document.getElementById('smsModalTemplate').focus(), 0);
+  }
+
+  function closeSmsModal() {
+    document.getElementById('smsModal').style.display = 'none';
+    _smsModalState = null;
+  }
+
+  function saveSmsModal() {
+    if (!_smsModalState || !neData) return;
+    const { mode, pathName, clientId } = _smsModalState;
+    const name = document.getElementById('smsModalName').value.trim();
+    const template = document.getElementById('smsModalTemplate').value.trim();
+    const to = document.getElementById('smsModalTo').value.trim();
+    if (!template) {
+      showToast('Message is required', 'error');
+      return;
+    }
+    if (template.length > 1600) {
+      showToast('Message exceeds 1600 character limit (' + template.length + ')', 'error');
+      return;
+    }
+    const path = neData.paths.find(p => p.name === pathName);
+    if (!path) return;
+
+    if (mode === 'new') {
+      const newClientId = 'sms-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      path.dataPoints.push({
+        _action: 'sendSms',
+        template,
+        ...(name ? { name } : {}),
+        ...(to ? { to } : {}),
+        _clientId: newClientId,
+      });
+      showToast('SMS step added (save to publish)', 'success');
+    } else {
+      const item = path.dataPoints.find(d => d && d._action === 'sendSms' && d._clientId === clientId);
+      if (!item) return;
+      item.template = template;
+      if (name) item.name = name; else delete item.name;
+      if (to) item.to = to; else delete item.to;
+      showToast('SMS step updated (save to publish)', 'success');
+    }
+
+    markNeDirty();
+    closeSmsModal();
+    renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+  }
+
+  function neRemoveSmsStep(clientId, pathName) {
+    if (!confirm('Remove this SMS step from "' + pathName + '"?')) return;
+    const path = neData.paths.find(p => p.name === pathName);
+    if (!path) return;
+    path.dataPoints = path.dataPoints.filter(
+      d => !(d && d._action === 'sendSms' && d._clientId === clientId)
+    );
+    markNeDirty();
+    renderNodeEditor(neData, neVersionData || { versions: [], total: 0 });
+    showToast('SMS step removed (save to publish)', 'success');
   }
 
   // ── Add path ───────────────────────────────────────────────────
@@ -9668,7 +9867,19 @@
       }
     }
 
-    // Per-path data point keys + branch conditions
+    // Per-path data point keys + branch conditions. Items are sent as a mix
+    // of string DP keys and SMS-action descriptors (server handles either).
+    function serializeStep(dp) {
+      if (dp && dp._action === 'sendSms') {
+        // Strip _clientId; preserve the bookkeeping ids so the server can
+        // map this item back to its existing flow nodes for ID preservation.
+        const out = { _action: 'sendSms', template: dp.template };
+        if (dp.name) out.name = dp.name;
+        if (dp.to) out.to = dp.to;
+        return out;
+      }
+      return dp.variableName;
+    }
     changes.paths = {};
     changes.newPaths = [];
     for (const path of neData.paths) {
@@ -9677,14 +9888,15 @@
         changes.newPaths.push({
           name: path.name,
           transitionCondition: path.transitionCondition || neData.transitionConditions[path.name] || '',
-          dataPointKeys: path.dataPoints.map(d => d.variableName),
+          dataPointKeys: path.dataPoints.map(serializeStep),
         });
       } else {
         const pathChanges = {
-          dataPointKeys: path.dataPoints.map(d => d.variableName),
+          dataPointKeys: path.dataPoints.map(serializeStep),
           branchConditions: {},
         };
         for (const dp of path.dataPoints) {
+          if (dp && dp._action === 'sendSms') continue; // SMS steps have no branch conditions
           if (dp.branchConditions && dp.branchConditions.length > 0) {
             pathChanges.branchConditions[dp.variableName] = dp.branchConditions;
           } else if (dp.branchConditions === null) {

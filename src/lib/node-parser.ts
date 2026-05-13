@@ -30,7 +30,21 @@ export interface ParsedSmsAction {
   markSentNode: ParsedNode;
   /** Sentinel boolean variable name (e.g. "is_sms_sent_1"). */
   sentinelVar: string;
+  /** SMS body template as embedded in the function node's static_text
+   *  instruction. May contain {{var}} placeholders. */
+  template: string;
+  /** Optional explicit recipient override. Undefined → endpoint falls back
+   *  to call.from_number. */
+  to?: string;
+  /** Display name for the function node (UI label). */
+  displayName: string;
 }
+
+/** Path "step" in router-edge order — interleaved DPs and SMS actions. The
+ *  source-order sequence the path was authored with. */
+export type ParsedPathStep =
+  | { kind: "dp"; dp: ParsedDataPoint }
+  | { kind: "sms"; action: ParsedSmsAction };
 
 export interface ParsedPath {
   name: string;
@@ -41,6 +55,9 @@ export interface ParsedPath {
   /** SMS-send actions wired into this path's Variables Router. Empty when
    *  the path has no inline SMS. Parsed in router-edge source order. */
   smsActions: ParsedSmsAction[];
+  /** DPs and SMS actions interleaved in router-edge order — the source
+   *  sequence the path was authored with. */
+  steps: ParsedPathStep[];
   endMode: "callback" | "transfer";
   preTransferNode?: ParsedNode;
   transferCallNode?: ParsedNode;
@@ -301,6 +318,7 @@ function buildParsedPath(
   const routerEdges = routerNode.raw.edges as Array<Record<string, unknown>> | undefined;
   const dataChain: ParsedDataPoint[] = [];
   const smsActions: ParsedSmsAction[] = [];
+  const steps: ParsedPathStep[] = [];
 
   // Track each pair's primary variable name so non-composite Confirm parsing
   // can ignore the persistent orphan vars we now inject into every Confirm
@@ -324,7 +342,43 @@ function buildParsedPath(
         if (markSentNode && markSentNode.type === "extract_dynamic_variables") {
           const vars = markSentNode.raw.variables as Array<Record<string, unknown>> | undefined;
           const sentinelVar = (vars?.[0]?.name as string) ?? "";
-          smsActions.push({ funcNode: destNode, markSentNode, sentinelVar });
+          // Recover the template + optional `to` from the function node's
+          // instruction text. The generator emits it as:
+          //   `Call send_sms with: {"message":"<template>",["to":"<to>"]}`
+          // so a JSON.parse on the suffix round-trips cleanly.
+          const fnInstr = destNode.raw.instruction as Record<string, unknown> | undefined;
+          const instrText = (fnInstr?.text as string) ?? "";
+          let template = "";
+          let to: string | undefined;
+          const marker = "Call send_sms with: ";
+          const idx = instrText.indexOf(marker);
+          if (idx >= 0) {
+            const jsonPart = instrText.slice(idx + marker.length).trim();
+            try {
+              const parsed = JSON.parse(jsonPart);
+              if (parsed && typeof parsed === "object") {
+                template = typeof parsed.message === "string" ? parsed.message : "";
+                if (typeof parsed.to === "string") to = parsed.to;
+              }
+            } catch {
+              // Malformed instruction — leave fields empty so the UI can
+              // still surface the orphaned node for the operator to fix.
+            }
+          }
+          // Strip the path suffix from the display name. The builder names
+          // the node `${displayName}${pathSuffix}` where suffix is " (pathName)".
+          const rawName = (destNode.raw.name as string) ?? "Send SMS";
+          const displayName = rawName.replace(/\s*\([^)]*\)\s*$/, "");
+          const action: ParsedSmsAction = {
+            funcNode: destNode,
+            markSentNode,
+            sentinelVar,
+            template,
+            to,
+            displayName,
+          };
+          smsActions.push(action);
+          steps.push({ kind: "sms", action });
         }
         continue;
       }
@@ -342,7 +396,10 @@ function buildParsedPath(
 
       // Extract the data point info
       const dp = parseDataPointFromNodes(collectNode, confirmNode);
-      if (dp) dataChain.push(dp);
+      if (dp) {
+        dataChain.push(dp);
+        steps.push({ kind: "dp", dp });
+      }
     }
   }
 
@@ -386,6 +443,7 @@ function buildParsedPath(
     routerNode,
     dataChain,
     smsActions,
+    steps,
     endMode,
     preTransferNode,
     transferCallNode,

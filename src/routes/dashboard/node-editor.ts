@@ -22,18 +22,20 @@ import {
   type PathVariables,
   type VariableEntry,
 } from "../../lib/notification-config.js";
-import { INTERNAL_VARS } from "../../lib/agent-generator/data-point-registry.js";
+import { INTERNAL_VARS, isSendSmsAction } from "../../lib/agent-generator/data-point-registry.js";
 import { regenerateDataChain, applyRegeneratedChain } from "../../lib/node-regenerator.js";
 import { getDataPointDefaults } from "../../lib/data-point-defaults.js";
 import { resolveDataPoints } from "../../lib/agent-generator/generate-agent.js";
-import type { DataPoint, FinetuneExample } from "../../lib/agent-generator/data-point-registry.js";
+import type { DataPoint, FinetuneExample, SendSmsAction } from "../../lib/agent-generator/data-point-registry.js";
 import { PATH_TAKEN_VAR } from "../../lib/agent-generator/data-point-registry.js";
 import {
   makeIdFactory,
   buildTransitionNode,
   buildDataChain,
   buildWarmTransferOption,
+  buildSendSmsTool,
   DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT,
+  SEND_SMS_TOOL_ID,
   type PathIds,
   type PathPositions,
 } from "../../lib/agent-generator/node-builders.js";
@@ -382,17 +384,36 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
         // Path-scoped positive examples that route the caller to this
         // path. Stored on the intro node, filtered here by destination.
         transitionFinetuneExamples: readIntroFinetunesForPath(p.transitionNode.id),
-        dataPoints: p.dataChain.map((dp) => ({
-          variableName: dp.variableName,
-          label: dp.label,
-          collectNodeId: dp.collectNode.id,
-          confirmNodeId: dp.confirmNode.id,
-          conversationPrompt: dp.conversationPrompt,
-          forwardCondition: dp.forwardCondition,
-          variableDefs: dp.variableDefs,
-          branchConditions: extractBranchConditions(dp),
-          finetuneExamples: readNodeFinetunes(dp.collectNode.raw),
-        })),
+        // Interleave DPs and SMS actions in router-edge (authoring) order.
+        // SMS items carry _action: "sendSms" so the client can render them
+        // distinctly and the save serializer can round-trip them as
+        // RawDataPoint items.
+        dataPoints: p.steps.map((step) => {
+          if (step.kind === "sms") {
+            const a = step.action;
+            return {
+              _action: "sendSms" as const,
+              template: a.template,
+              ...(a.to ? { to: a.to } : {}),
+              name: a.displayName,
+              funcNodeId: a.funcNode.id,
+              markSentNodeId: a.markSentNode.id,
+              sentinelVar: a.sentinelVar,
+            };
+          }
+          const dp = step.dp;
+          return {
+            variableName: dp.variableName,
+            label: dp.label,
+            collectNodeId: dp.collectNode.id,
+            confirmNodeId: dp.confirmNode.id,
+            conversationPrompt: dp.conversationPrompt,
+            forwardCondition: dp.forwardCondition,
+            variableDefs: dp.variableDefs,
+            branchConditions: extractBranchConditions(dp),
+            finetuneExamples: readNodeFinetunes(dp.collectNode.raw),
+          };
+        }),
       })),
       nodes: parsed.allNodes.map((n) => ({
         id: n.id,
@@ -2356,40 +2377,61 @@ export async function saveAndPublishHandler(
           return;
         }
 
-        // pathChanges.dataPointKeys = ordered list of data point keys for this path.
-        // Dedup defensively (see dedupDataPointKeys for the rationale).
+        // pathChanges.dataPointKeys = ordered list of items for this path.
+        // Items are either plain string DP keys or richer objects: a DP descriptor
+        // with `variableName` or an SMS-action descriptor with `_action: "sendSms"`.
+        // Dedup defensively (see dedupDataPointKeys for the rationale); SMS items
+        // have no variableName and pass through.
         if (Array.isArray(pathChanges.dataPointKeys)) {
           pathChanges.dataPointKeys = dedupDataPointKeys(pathChanges.dataPointKeys);
 
-          const newDataPoints: DataPoint[] = [];
+          const newSequence: Array<DataPoint | SendSmsAction> = [];
           for (const item of pathChanges.dataPointKeys) {
-            if (typeof item === "string") {
-              // Look up from existing chain first (preserves prompts), then defaults
-              const existing = targetPath.dataChain.find((d) => d.variableName === item);
-              if (existing) {
-                const dp = buildDataPointsFromChain({ ...targetPath, dataChain: [existing] }, defaults)[0];
-                // Apply branch conditions if specified
-                const bc = pathChanges.branchConditions?.[item];
-                if (bc === null) delete dp._branchConditions;
-                else if (Array.isArray(bc)) dp._branchConditions = bc;
-                newDataPoints.push(dp);
-              } else {
-                try {
-                  const resolved_dps = resolveDataPoints([item], defaults);
-                  const dp = resolved_dps[0];
-                  const bc = pathChanges.branchConditions?.[item];
-                  if (Array.isArray(bc)) dp._branchConditions = bc;
-                  newDataPoints.push(dp);
-                } catch {
-                  res.status(400).json({ error: `Unknown data point "${item}" in path "${pathName}"` });
-                  return;
-                }
+            // SMS action
+            if (item && typeof item === "object" && (item as any)._action === "sendSms") {
+              const tpl = typeof (item as any).template === "string" ? (item as any).template : "";
+              if (!tpl) {
+                res.status(400).json({ error: `SMS step in path "${pathName}" is missing template` });
+                return;
+              }
+              const action: SendSmsAction = { _action: "sendSms", template: tpl };
+              if (typeof (item as any).to === "string" && (item as any).to) action.to = (item as any).to;
+              if (typeof (item as any).name === "string" && (item as any).name) action.name = (item as any).name;
+              newSequence.push(action);
+              continue;
+            }
+
+            // Data point (string key or object with variableName)
+            const key = typeof item === "string" ? item : (item as any)?.variableName;
+            if (typeof key !== "string") {
+              res.status(400).json({ error: `Malformed data point item in path "${pathName}"` });
+              return;
+            }
+            // Look up from existing chain first (preserves prompts), then defaults
+            const existing = targetPath.dataChain.find((d) => d.variableName === key);
+            if (existing) {
+              const dp = buildDataPointsFromChain({ ...targetPath, dataChain: [existing] }, defaults)[0];
+              // Apply branch conditions if specified
+              const bc = pathChanges.branchConditions?.[key];
+              if (bc === null) delete dp._branchConditions;
+              else if (Array.isArray(bc)) dp._branchConditions = bc;
+              newSequence.push(dp);
+            } else {
+              try {
+                const resolved_dps = resolveDataPoints([key], defaults);
+                const dp = resolved_dps[0];
+                const bc = pathChanges.branchConditions?.[key];
+                if (Array.isArray(bc)) dp._branchConditions = bc;
+                newSequence.push(dp);
+              } catch {
+                res.status(400).json({ error: `Unknown data point "${key}" in path "${pathName}"` });
+                return;
               }
             }
           }
 
           const result = regenerateDataChain(
-            targetPath, newDataPoints, closeNodeId,
+            targetPath, newSequence, closeNodeId,
             targetPath.name === "Default" ? undefined : targetPath.name,
           );
           applyRegeneratedChain(canonical, result);
@@ -2408,6 +2450,10 @@ export async function saveAndPublishHandler(
       const introEdges = introNode!.edges as Array<Record<string, unknown>>;
       const existingPathCount = parsed.paths.length;
 
+      // Counter for sentinel-variable uniqueness across all new paths added in
+      // this single save (existing paths' sentinels are already accounted for
+      // inside regenerateDataChain).
+      let newPathSmsCounter = 0;
       for (let npIdx = 0; npIdx < (changes.newPaths as any[]).length; npIdx++) {
         const np = (changes.newPaths as any[])[npIdx];
         if (!np.name || !np.transitionCondition || !Array.isArray(np.dataPointKeys) || np.dataPointKeys.length === 0) {
@@ -2415,44 +2461,110 @@ export async function saveAndPublishHandler(
           return;
         }
 
-        const newDataPoints: DataPoint[] = [];
-        for (const key of np.dataPointKeys) {
+        // New paths accept the same item shape as existing-path edits: string
+        // DP keys, DP descriptors, or `{_action: "sendSms", ...}` items in any
+        // order. The union sequence is what buildDataChain consumes.
+        const newSequence: Array<DataPoint | SendSmsAction> = [];
+        for (const item of np.dataPointKeys) {
+          if (item && typeof item === "object" && (item as any)._action === "sendSms") {
+            const tpl = typeof (item as any).template === "string" ? (item as any).template : "";
+            if (!tpl) {
+              res.status(400).json({ error: `SMS step in new path "${np.name}" is missing template` });
+              return;
+            }
+            const action: SendSmsAction = { _action: "sendSms", template: tpl };
+            if (typeof (item as any).to === "string" && (item as any).to) action.to = (item as any).to;
+            if (typeof (item as any).name === "string" && (item as any).name) action.name = (item as any).name;
+            newSequence.push(action);
+            continue;
+          }
+          const key = typeof item === "string" ? item : (item as any)?.variableName;
+          if (typeof key !== "string") {
+            res.status(400).json({ error: `Malformed data point item in new path "${np.name}"` });
+            return;
+          }
           try {
             const rdp = resolveDataPoints([key], defaults);
-            newDataPoints.push(rdp[0]);
+            newSequence.push(rdp[0]);
           } catch {
             res.status(400).json({ error: `Unknown data point "${key}" in new path "${np.name}"` });
             return;
           }
         }
 
+        const dpItems = newSequence.filter((it): it is DataPoint => !isSendSmsAction(it));
+        const smsItems = newSequence.filter((it): it is SendSmsAction => isSendSmsAction(it));
+
         const f = makeIdFactory();
         const pathIds: PathIds = {
           transitionId: f.nodeId(),
           frontExtractId: f.nodeId(),
           routerId: f.nodeId(),
-          chain: newDataPoints.map(() => ({ convId: f.nodeId(), confirmId: f.nodeId() })),
-          smsActions: [],
+          chain: dpItems.map(() => ({ convId: f.nodeId(), confirmId: f.nodeId() })),
+          smsActions: smsItems.map(() => ({
+            funcId: f.nodeId(),
+            markSentId: f.nodeId(),
+            sentinelVar: `is_sms_sent_new_${npIdx}_${++newPathSmsCounter}`,
+          })),
         };
         const pathYBase = (existingPathCount + npIdx) * 2000;
+        // Source-order column for each item — DPs and SMS share the column
+        // grid so layout cadence matches the authored sequence.
+        let colCursor = 0;
+        const chainPositions: Array<{ conv: { x: number; y: number }; confirm: { x: number; y: number } }> = [];
+        const smsPositions: Array<{ func: { x: number; y: number }; markSent: { x: number; y: number } }> = [];
+        for (const it of newSequence) {
+          if (isSendSmsAction(it)) {
+            smsPositions.push({
+              func: { x: -954 + colCursor * 550, y: 1800 + pathYBase },
+              markSent: { x: -954 + colCursor * 550, y: 2250 + pathYBase },
+            });
+          } else {
+            chainPositions.push({
+              conv: { x: -954 + colCursor * 550, y: 900 + pathYBase },
+              confirm: { x: -954 + colCursor * 550, y: 1350 + pathYBase },
+            });
+          }
+          colCursor++;
+        }
         const pathPos: PathPositions = {
           transition: { x: -18, y: -400 + pathYBase },
           frontExtract: { x: -18, y: 0 + pathYBase },
           router: { x: -18, y: 450 + pathYBase },
-          chain: newDataPoints.map((_, i) => ({
-            conv: { x: -954 + i * 550, y: 900 + pathYBase },
-            confirm: { x: -954 + i * 550, y: 1350 + pathYBase },
-          })),
-          smsActions: [],
+          chain: chainPositions,
+          smsActions: smsPositions,
         };
 
         nodes.push(buildTransitionNode(pathIds, pathPos, f, np.name));
-        nodes.push(...buildDataChain(newDataPoints, pathIds, pathPos, closeNodeId, f, np.name));
+        nodes.push(...buildDataChain(newSequence, pathIds, pathPos, closeNodeId, f, np.name));
         introEdges.push({
           destination_node_id: pathIds.transitionId,
           id: f.edgeId(),
           transition_condition: { type: "prompt", prompt: np.transitionCondition },
         });
+      }
+    }
+
+    // Ensure send_sms CustomTool is registered when any node references it.
+    // Function nodes emitted for SMS actions carry tool_id: "send_sms", which
+    // would otherwise fail Retell validation if tools[] doesn't include it.
+    // Conversely, if no node references it anymore (operator removed every
+    // SMS step), prune it back out so the flow stays clean.
+    {
+      const refreshedNodes = flow.nodes as Array<Record<string, unknown>>;
+      const hasSmsNode = refreshedNodes.some(
+        (n) => n.type === "function" && (n as any).tool_id === SEND_SMS_TOOL_ID,
+      );
+      const tools = (flow.tools as Array<Record<string, unknown>>) ?? [];
+      const hasSmsTool = tools.some(
+        (t) => (t as any).tool_id === SEND_SMS_TOOL_ID || (t as any).name === SEND_SMS_TOOL_ID,
+      );
+      if (hasSmsNode && !hasSmsTool) {
+        flow.tools = [...tools, buildSendSmsTool(config.API_KEY)];
+      } else if (!hasSmsNode && hasSmsTool) {
+        flow.tools = tools.filter(
+          (t) => (t as any).tool_id !== SEND_SMS_TOOL_ID && (t as any).name !== SEND_SMS_TOOL_ID,
+        );
       }
     }
 
