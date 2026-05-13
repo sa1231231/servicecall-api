@@ -33,7 +33,7 @@ export async function postHookHandler(req: Request, res: Response) {
     const sig = (req.headers["x-retell-signature"] as string) ?? "";
     const rawBody = (req as any).rawBody as string;
 
-    if (!verifyRetellWebhookOr401(rawBody, sig, config.RETELL_SIGNATURE_KEY, res))
+    if (!(await verifyRetellWebhookOr401(rawBody, sig, config.RETELL_SIGNATURE_KEY, res)))
       return;
   } else {
     console.log(`retell-post-hook: skipping signature verification (${isTestClient ? "test client" : "internal call"})`);

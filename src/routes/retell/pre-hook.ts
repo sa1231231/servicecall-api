@@ -7,8 +7,9 @@ export async function preHookHandler(req: Request, res: Response) {
   const sig = (req.headers["x-retell-signature"] as string) ?? "";
   const rawBody = (req as any).rawBody as string;
 
-  // 1) Verify Retell signature
-  if (!verifyRetellWebhookOr401(rawBody, sig, config.RETELL_SIGNATURE_KEY, res)) return;
+  // 1) Verify Retell signature (SDK is async — must await or every Promise
+  //    is truthy and the guard silently accepts forged signatures)
+  if (!(await verifyRetellWebhookOr401(rawBody, sig, config.RETELL_SIGNATURE_KEY, res))) return;
 
   // 2) Parse payload
   const body = req.body;

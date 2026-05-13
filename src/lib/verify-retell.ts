@@ -1,7 +1,11 @@
 import Retell from "retell-sdk";
 import type { Response } from "express";
 
-export function verifyRetellWebhookOrThrow(
+// Retell SDK's verify() is async (returns a Promise<boolean>). Earlier
+// versions of this file called it synchronously, which meant the returned
+// Promise was truthy and the `if (!ok)` guard never fired — letting
+// forged signatures through. Always await the SDK call.
+export async function verifyRetellWebhookOrThrow(
   rawBody: string,
   signature: string,
   signatureKey: string,
@@ -9,18 +13,18 @@ export function verifyRetellWebhookOrThrow(
   if (!signature) throw new Error("Missing x-retell-signature header");
   if (!signatureKey) throw new Error("Missing RETELL_SIGNATURE_KEY");
 
-  const ok = Retell.verify(rawBody, signatureKey, signature);
+  const ok = await Retell.verify(rawBody, signatureKey, signature);
   if (!ok) throw new Error("Invalid Retell signature");
 }
 
-export function verifyRetellWebhookOr401(
+export async function verifyRetellWebhookOr401(
   rawBody: string,
   signature: string,
   signatureKey: string,
   res: Response,
-): boolean {
+): Promise<boolean> {
   try {
-    verifyRetellWebhookOrThrow(rawBody, signature, signatureKey);
+    await verifyRetellWebhookOrThrow(rawBody, signature, signatureKey);
     return true;
   } catch (err) {
     console.error("retell: signature verification failed", err);
