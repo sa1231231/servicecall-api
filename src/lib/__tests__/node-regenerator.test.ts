@@ -297,4 +297,107 @@ describe("applyRegeneratedChain", () => {
     const ids = ((flow.conversationFlow as any).nodes as any[]).map((n) => n.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  // ── Fine-tune propagation (regression guards) ─────────────────────────────
+  // These cover the bug where workspace-default fine-tunes added in the
+  // dashboard's global-settings UI never reached published agents because:
+  //   1. buildDataPointsFromChain hardcoded finetuneExamples: []
+  //   2. regenerateDataChain only read existingCollectNode.finetune_transition_examples
+  // After the fix, dp.finetuneExamples wins; existing-node FTs are only the
+  // fallback for DPs with no resolved value.
+  describe("fine-tune propagation", () => {
+    function fteOf(node: Record<string, unknown> | undefined): Array<Record<string, unknown>> {
+      return (node?.finetune_transition_examples as Array<Record<string, unknown>>) ?? [];
+    }
+
+    it("writes dp.finetuneExamples onto the regenerated Collect node", () => {
+      const flow = buildFlow([{ id: "1", name: "first_name" }]);
+      const path = pathFor(flow);
+      const dps = [
+        dp({
+          variableName: "first_name",
+          label: "First Name",
+          finetuneExamples: [
+            { type: "negative", transcript: [{ role: "user", content: "It's John." }, { role: "agent", content: "And your last name?" }] },
+          ],
+        }),
+      ];
+
+      const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+      const collectNode = newNodes.find((n) => n.name === "Collect First Name");
+      expect(fteOf(collectNode)).toHaveLength(1);
+      expect((fteOf(collectNode)[0].transcript as any)[0].content).toBe("It's John.");
+    });
+
+    it("overwrites stale FTs already on the existing Collect node", () => {
+      // Existing flow has an old FT baked in; the new dp carries a different one.
+      const flow = buildFlow([{ id: "1", name: "first_name" }]);
+      const nodes = (flow.conversationFlow as any).nodes as any[];
+      const oldCollect = nodes.find((n) => n.id === "collect-1");
+      oldCollect.finetune_transition_examples = [
+        { transcript: [{ role: "user", content: "STALE EXAMPLE" }] },
+      ];
+      const path = pathFor(flow);
+
+      const dps = [
+        dp({
+          variableName: "first_name",
+          label: "First Name",
+          finetuneExamples: [
+            { type: "negative", transcript: [{ role: "user", content: "NEW EXAMPLE" }, { role: "agent", content: "ack" }] },
+          ],
+        }),
+      ];
+
+      const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+      const collectNode = newNodes.find((n) => n.name === "Collect First Name");
+      const ftes = fteOf(collectNode);
+      expect(ftes).toHaveLength(1);
+      expect((ftes[0].transcript as any)[0].content).toBe("NEW EXAMPLE");
+      // Stale example must not bleed through.
+      expect(ftes.some((ex) => (ex.transcript as any)?.[0]?.content === "STALE EXAMPLE")).toBe(false);
+    });
+
+    it("falls back to existing-node FTs when dp.finetuneExamples is empty", () => {
+      const flow = buildFlow([{ id: "1", name: "first_name" }]);
+      const nodes = (flow.conversationFlow as any).nodes as any[];
+      const oldCollect = nodes.find((n) => n.id === "collect-1");
+      oldCollect.finetune_transition_examples = [
+        { transcript: [{ role: "user", content: "PRESERVED" }] },
+      ];
+      const path = pathFor(flow);
+
+      // No finetuneExamples on the dp — preserves whatever's on the node.
+      const dps = [dp({ variableName: "first_name", label: "First Name" })];
+      const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+      const collectNode = newNodes.find((n) => n.name === "Collect First Name");
+      const ftes = fteOf(collectNode);
+      expect(ftes).toHaveLength(1);
+      expect((ftes[0].transcript as any)[0].content).toBe("PRESERVED");
+    });
+
+    it("assigns destination_node_id to positive examples (Confirm node)", () => {
+      // Positive examples train the model to advance from Collect → Confirm
+      // for matching utterances. resolveFinetuneExamples must rewrite the
+      // destination to the new chain's confirm id.
+      const flow = buildFlow([{ id: "1", name: "first_name" }]);
+      const path = pathFor(flow);
+      const dps = [
+        dp({
+          variableName: "first_name",
+          label: "First Name",
+          finetuneExamples: [
+            { type: "positive", transcript: [{ role: "user", content: "John Smith" }, { role: "agent", content: "Thanks." }] },
+          ],
+        }),
+      ];
+
+      const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+      const collectNode = newNodes.find((n) => n.name === "Collect First Name");
+      const confirmNode = newNodes.find((n) => n.name === "Confirm First Name");
+      const ftes = fteOf(collectNode);
+      expect(ftes).toHaveLength(1);
+      expect(ftes[0].destination_node_id).toBe(confirmNode!.id);
+    });
+  });
 });

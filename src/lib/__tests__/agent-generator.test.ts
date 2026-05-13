@@ -669,17 +669,30 @@ describe("per-path end mode", () => {
 
     // Chain: Close → Close Question → Closing Remarks → Closing Statement.
     expect(close.always_edge.destination_node_id).toBe(closeQuestion.id);
-    // Close Question waits for the caller and routes to Closing Remarks when
-    // they say no — Admin/FAQ globally handles real questions via go-back.
-    expect(closeQuestion.edges).toHaveLength(1);
-    expect(closeQuestion.edges[0].destination_node_id).toBe(closingRemarks.id);
-    expect(closeQuestion.edges[0].transition_condition.prompt).toBe(
-      "The caller has no more questions",
+    // Close Question has two edges: "no more questions" → Closing Remarks
+    // (advances the closing chain) and "has another question" → Admin/FAQ
+    // (context-specific reinforcement of the global FAQ jump).
+    expect(closeQuestion.edges).toHaveLength(2);
+    const noMoreEdge = closeQuestion.edges.find(
+      (e: any) => e.transition_condition.prompt === "The caller has no more questions",
     );
+    const anotherQuestionEdge = closeQuestion.edges.find(
+      (e: any) => e.transition_condition.prompt === "The caller has another question",
+    );
+    expect(noMoreEdge.destination_node_id).toBe(closingRemarks.id);
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    expect(anotherQuestionEdge.destination_node_id).toBe(faq.id);
     expect(closingRemarks.always_edge.destination_node_id).toBe(closingStatement.id);
 
     // Default prompt text is used when no override is provided.
     expect(closeQuestion.instruction.text).toContain("anything else");
+
+    // Finetune transition examples train the FAQ jump from this node.
+    expect(closeQuestion.finetune_transition_examples.length).toBeGreaterThan(0);
+    for (const ex of closeQuestion.finetune_transition_examples) {
+      expect(ex.destination_node_id).toBe(faq.id);
+      expect(ex.transcript.length).toBeGreaterThan(0);
+    }
   });
 
   it("closeQuestionPrompt override propagates to the rendered Close Question node", () => {

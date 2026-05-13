@@ -73,6 +73,24 @@ export const FAQ_GLOBAL_POSITIVE_EXAMPLES: FinetuneExample[] = [
   { type: "positive", transcript: [{ content: "Do I need to be home for the appointment?", role: "user" }, { content: "", role: "agent" }] },
 ];
 
+// Caller responses to "Is there anything else I can help you with?" that
+// should route to the Admin/FAQ global node instead of advancing to Closing
+// Remarks. The shape is distinctive (often prefixed with "actually yeah",
+// "one more thing", "now that you mention it") so we train it explicitly on
+// the Close Question node rather than relying on the global FAQ classifier
+// alone. Attached as finetune_transition_examples with destination set to
+// the Admin/FAQ node id at build time.
+export const CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES: FinetuneExample[] = [
+  { type: "positive", transcript: [{ content: "Actually yeah — how much do you guys charge for a service call?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Yes, one more thing — are you licensed and insured?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Hmm, actually — do you work on weekends?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Wait, before I forget — what's your service area?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Oh yeah, one quick question — do you offer any warranty?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Actually I do have one — how long have you been in business?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Hold on — do I need to be home when the technician comes out?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Now that you mention it — what time will they actually show up?", role: "user" }, { content: "", role: "agent" }] },
+];
+
 // Spoken right before a per-path live transfer kicks off.
 export const DEFAULT_PRE_TRANSFER_PROMPT = `Thanks for the information. Hold on a moment — connecting you to our team at {{business_name}} now.`;
 
@@ -253,7 +271,7 @@ export function makeIdFactory(baseMs?: number): IdFactory {
 
 // ── Finetune Example Helper ──────────────────────────────────────────────────
 
-function resolveFinetuneExamples(
+export function resolveFinetuneExamples(
   examples: FinetuneExample[] | undefined,
   defaultPositiveDestId: string,
   nodeMap: Record<string, string>,
@@ -1390,9 +1408,13 @@ export function buildCloseNode(
 }
 
 // "Is there anything else I can help you with?" — sits between Close and
-// Closing Remarks. The Admin/FAQ global node intercepts real questions
-// automatically (its go_back_conditions returns the caller here once
-// answered). The single explicit edge below moves them on when they say no.
+// Closing Remarks. Two explicit edges: "no more questions" advances to
+// Closing Remarks; "has another question" routes to Admin/FAQ. The Admin/FAQ
+// global node still intercepts questions globally (and its go_back_conditions
+// returns the caller here once answered), but the explicit edge plus the
+// CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES training set gives the model a
+// stronger, context-specific signal for follow-up-question phrasing
+// ("actually yeah…", "one more thing…") that's characteristic of this node.
 export function buildCloseQuestionNode(
   agentConfig: AgentConfig,
   ids: Ids,
@@ -1417,7 +1439,22 @@ export function buildCloseQuestionNode(
           prompt: "The caller has no more questions",
         },
       },
+      {
+        destination_node_id: ids.faqId,
+        id: f.edgeId(),
+        transition_condition: {
+          type: "prompt",
+          prompt: "The caller has another question",
+        },
+      },
     ],
+    finetune_transition_examples: CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES.map(
+      (ex) => ({
+        transcript: ex.transcript,
+        id: ex.id || `fe-${f.nextTs()}`,
+        destination_node_id: ids.faqId,
+      }),
+    ),
     id: ids.closeQuestionId,
     type: "conversation",
     display_position: pos.closeQuestion,

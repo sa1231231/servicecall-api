@@ -1353,7 +1353,12 @@ export function buildDataPointsFromChain(
       description: varDef?.description ?? "",
       conversationPrompt: dp.conversationPrompt,
       forwardCondition: dp.forwardCondition,
-      finetuneExamples: [],
+      // Pull fine-tunes from the workspace default so they propagate to the
+      // published flow on save-and-publish. The regenerator (node-regenerator.ts)
+      // uses these to overwrite whatever's on the existing Collect node,
+      // which is what lets operators edit defaults and have them flow into
+      // existing agents on the next publish.
+      finetuneExamples: defaultDp?.finetuneExamples ?? [],
       extractSuccessEquation: defaultDp?.extractSuccessEquation ?? [
         { left: `{{${dp.variableName}}}`, operator: "exists" },
         { left: `{{${dp.variableName}}}`, operator: "!=", right: "Not Mentioned" },

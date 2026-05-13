@@ -6,7 +6,7 @@
 
 import type { DataPoint, SendSmsAction } from "./agent-generator/data-point-registry.js";
 import { NOT_MENTIONED, PHONE_COLLECTED_FLAG, PATH_TAKEN_VAR, isSendSmsAction } from "./agent-generator/data-point-registry.js";
-import { makeIdFactory, MCP_SERVER_NAME, SEND_SMS_TOOL_NAME, type IdFactory, type PathIds } from "./agent-generator/node-builders.js";
+import { makeIdFactory, MCP_SERVER_NAME, SEND_SMS_TOOL_NAME, resolveFinetuneExamples, type IdFactory, type PathIds } from "./agent-generator/node-builders.js";
 import type { ParsedPath, ParsedDataPoint } from "./node-parser.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -355,10 +355,19 @@ export function regenerateDataChain(
       ? existing.forwardCondition
       : dp.forwardCondition;
 
-    // Preserve finetune examples from existing node
+    // Fine-tune precedence: resolved DataPoint wins when it has examples
+    // (this is what propagates workspace-default edits into the published
+    // flow on save-and-publish). Fall back to whatever's on the existing
+    // node only when the resolved DP carries nothing — that path preserves
+    // an empty default rather than re-importing whatever Retell's console
+    // happens to have. Conversation examples have no operator-facing UI;
+    // always reuse what's on the node.
     const existingCollectRaw = existing?.collectNode.raw;
     const finetuneConv = (existingCollectRaw?.finetune_conversation_examples as any[]) ?? [];
-    const finetuneTrans = (existingCollectRaw?.finetune_transition_examples as any[]) ?? [];
+    const finetuneTrans =
+      dp.finetuneExamples && dp.finetuneExamples.length > 0
+        ? resolveFinetuneExamples(dp.finetuneExamples, ids.confirmId, {}, f)
+        : ((existingCollectRaw?.finetune_transition_examples as any[]) ?? []);
 
     nodes.push({
       name: dp.composite ? dp.label : `Collect ${dp.label}`,

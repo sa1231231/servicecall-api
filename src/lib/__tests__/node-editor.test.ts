@@ -569,6 +569,62 @@ describe("buildDataPointsFromChain — orphan flag propagation (regression)", ()
   });
 });
 
+describe("buildDataPointsFromChain — workspace-default fine-tune propagation", () => {
+  // Regression for the bug where workspace-default fine-tunes added in the
+  // global-settings dashboard never reached published agents. The dashboard
+  // save-and-publish path calls buildDataPointsFromChain to reconstruct
+  // DataPoint[] from the existing canonical flow; that result is fed into
+  // regenerateDataChain. If we don't pull defaults.finetuneExamples here,
+  // the regenerator has nothing to write onto the new Collect node.
+
+  it("pulls finetuneExamples from the workspace default", () => {
+    const customFt = {
+      type: "negative" as const,
+      transcript: [{ role: "user" as const, content: "Just call me Smith." }, { role: "agent" as const, content: "And your first name?" }],
+    };
+    const defaults: Record<string, DataPoint> = {
+      ...TEST_DEFAULTS,
+      full_name: { ...TEST_DEFAULTS.full_name, finetuneExamples: [customFt] },
+    };
+    // The fixture agent was created with the OLD defaults (no FT). The
+    // dashboard editor reloads with the NEW defaults — buildDataPointsFromChain
+    // should now surface the new FT so the regenerator can publish it.
+    const { agent } = generateAgent(baseConfig, ["full_name", "phone_number"], undefined, TEST_DEFAULTS);
+    const parsed = parseConversationFlow(agent);
+    const dps = buildDataPointsFromChain(parsed.paths[0], defaults);
+
+    const fullName = dps.find((d) => d.variableName === "full_name");
+    expect(fullName?.finetuneExamples).toHaveLength(1);
+    expect(fullName?.finetuneExamples?.[0].transcript[0].content).toBe("Just call me Smith.");
+  });
+
+  it("end-to-end: new defaults propagate to the regenerated Collect node", () => {
+    const customFt = {
+      type: "negative" as const,
+      transcript: [{ role: "user" as const, content: "GOLDEN-CANARY-PHRASE" }, { role: "agent" as const, content: "ack" }],
+    };
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    const parsed = parseConversationFlow(agent);
+
+    // Operator added a FT to the workspace default since the agent was created.
+    const updatedDefaults: Record<string, DataPoint> = {
+      ...TEST_DEFAULTS,
+      full_name: { ...TEST_DEFAULTS.full_name, finetuneExamples: [customFt] },
+    };
+    const dps = buildDataPointsFromChain(parsed.paths[0], updatedDefaults);
+
+    const result = regenerateDataChain(parsed.paths[0], dps, parsed.closeNode!.id);
+    applyRegeneratedChain(agent, result);
+
+    // The regenerated Collect node should carry the new FT, not the old (empty) one.
+    const flow = agent.conversationFlow as { nodes: Array<Record<string, any>> };
+    const collectFullName = flow.nodes.find((n) => n.name === "Collect Full Name");
+    const ftes = (collectFullName?.finetune_transition_examples as any[]) ?? [];
+    expect(ftes).toHaveLength(1);
+    expect(ftes[0].transcript[0].content).toBe("GOLDEN-CANARY-PHRASE");
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // NODE VALIDATOR
 // ═══════════════════════════════════════════════════════════════════════════════
