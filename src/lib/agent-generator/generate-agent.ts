@@ -396,7 +396,16 @@ When listing anything — services, time slots, examples, options — never list
 
   // Shared global + closing nodes
   const humanMode: HumanRequestMode = agentConfig.humanRequestMode || "callback";
-  allNodes.push(buildFaqNode(faqKnowledgeBase, ids, pos, f, isMultiPath));
+  allNodes.push(
+    buildFaqNode(
+      faqKnowledgeBase,
+      ids,
+      pos,
+      f,
+      isMultiPath,
+      agentConfig.faqGlobalFinetuneExamples,
+    ),
+  );
   allNodes.push(buildHumanRequestNode(ids, pos, f, humanMode));
   if (humanMode === "live_transfer") {
     allNodes.push(buildTransferCallNode(ids, pos, f, agentConfig.warmTransferAgentVersion));

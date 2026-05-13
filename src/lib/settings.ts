@@ -1,5 +1,6 @@
 import { getDb } from "./db.js";
 import { setOwnerConfig } from "../config/notification-clients.js";
+import type { FinetuneExample } from "./agent-generator/data-point-registry.js";
 
 export interface CostRates {
   twilio_sms_cents: number;
@@ -42,6 +43,17 @@ export interface GlobalSettings {
    *  enabled (fail-open) so the integration starts working as soon as the
    *  operator pastes the script — they have to deliberately turn it off. */
   lead_intake_enabled?: boolean;
+  /** Workspace default fine-tune examples for the Admin/FAQ global node's
+   *  positive_finetune_examples (when to jump to FAQ from anywhere). When
+   *  unset, agent generation falls back to FAQ_GLOBAL_POSITIVE_EXAMPLES in
+   *  node-builders.ts. Operators edit these in the Categories tab. */
+  faq_global_finetune_examples?: FinetuneExample[];
+  /** Workspace default fine-tune examples for the Close Question node's
+   *  finetune_transition_examples (caller asks a follow-up question after
+   *  "anything else?"). When unset, falls back to
+   *  CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES. Destination is resolved to the
+   *  Admin/FAQ node id at generation time. */
+  close_question_finetune_examples?: FinetuneExample[];
 }
 
 function collection() {
@@ -71,6 +83,16 @@ export async function getSettings(): Promise<GlobalSettings> {
       twilio_number_monthly_cents: (doc as any)?.cost_rates?.twilio_number_monthly_cents ?? DEFAULT_COST_RATES.twilio_number_monthly_cents,
     },
     lead_intake_enabled: (doc as any)?.lead_intake_enabled,
+    faq_global_finetune_examples: Array.isArray(
+      (doc as any)?.faq_global_finetune_examples,
+    )
+      ? ((doc as any).faq_global_finetune_examples as FinetuneExample[])
+      : undefined,
+    close_question_finetune_examples: Array.isArray(
+      (doc as any)?.close_question_finetune_examples,
+    )
+      ? ((doc as any).close_question_finetune_examples as FinetuneExample[])
+      : undefined,
   };
 }
 
@@ -91,6 +113,8 @@ export async function updateSettings(
   if (updates.category_order !== undefined) setObj.category_order = updates.category_order;
   if (updates.category_labels !== undefined) setObj.category_labels = updates.category_labels;
   if (updates.lead_intake_enabled !== undefined) setObj.lead_intake_enabled = updates.lead_intake_enabled;
+  if (updates.faq_global_finetune_examples !== undefined) setObj.faq_global_finetune_examples = updates.faq_global_finetune_examples;
+  if (updates.close_question_finetune_examples !== undefined) setObj.close_question_finetune_examples = updates.close_question_finetune_examples;
   if (updates.cost_rates !== undefined) {
     // Merge into a complete CostRates object so nested writes don't drop sibling keys
     const current = await getSettings();

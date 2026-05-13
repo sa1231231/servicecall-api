@@ -216,6 +216,12 @@ export interface AgentConfig {
   businessName: string;
   faqKnowledgeBase: string;
   introFinetuneExamples: FinetuneExample[];
+  /** Positive utterances that should route the caller to the Human Request
+   *  global node ("can I talk to a person?", "transfer me to a human", etc.).
+   *  Merged into the global node's positive_finetune_examples on top of the
+   *  hardcoded baseline. Only the `transcript` field is used; `type` /
+   *  `destination` are ignored because the global node has a fixed target. */
+  humanRequestFinetuneExamples?: FinetuneExample[];
   humanRequestMode?: HumanRequestMode;
   closePrompt?: string;
   // Per-path overrides for the Close prompt (multi-path agents only).
@@ -231,6 +237,12 @@ export interface AgentConfig {
   closingStatementText?: string;
   liveTransferRecoveryPrompt?: string;
   warmTransferAgentVersion?: number;
+  // Workspace-default fine-tune example overrides. When set, these replace
+  // the hardcoded FAQ_GLOBAL_POSITIVE_EXAMPLES / CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES
+  // arrays in the generated nodes. Loaded from GlobalSettings by the create-agent
+  // path so operators can edit defaults in the Categories tab.
+  faqGlobalFinetuneExamples?: FinetuneExample[];
+  closeQuestionFinetuneExamples?: FinetuneExample[];
 }
 
 export interface IntroPathConfig {
@@ -563,12 +575,19 @@ export function buildFaqNode(
   pos: Positions,
   f: IdFactory,
   isMultiPath?: boolean,
+  positiveExamples?: FinetuneExample[],
 ) {
   // Multi-path: forward-intent goes to Intro so caller re-enters path routing
   // Single-path: forward-intent goes directly to transition (existing behavior)
   const forwardDestination = isMultiPath
     ? ids.introId
     : ids.paths[0].transitionId;
+
+  // Operator-edited workspace defaults take precedence over the hardcoded
+  // FAQ_GLOBAL_POSITIVE_EXAMPLES baseline. Empty array is a valid override
+  // (operator wants the global classifier untrained on positives), so only
+  // fall back when undefined.
+  const examples = positiveExamples ?? FAQ_GLOBAL_POSITIVE_EXAMPLES;
 
   return {
     instruction: {
@@ -600,7 +619,7 @@ ${faqKnowledgeBase}`,
       ],
       condition:
         "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
-      positive_finetune_examples: FAQ_GLOBAL_POSITIVE_EXAMPLES.map((ex) => ({
+      positive_finetune_examples: examples.map((ex) => ({
         transcript: ex.transcript,
       })),
       negative_finetune_examples: [],
@@ -1456,13 +1475,14 @@ export function buildCloseQuestionNode(
         },
       },
     ],
-    finetune_transition_examples: CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES.map(
-      (ex) => ({
-        transcript: ex.transcript,
-        id: ex.id || `fe-${f.nextTs()}`,
-        destination_node_id: ids.faqId,
-      }),
-    ),
+    finetune_transition_examples: (
+      agentConfig.closeQuestionFinetuneExamples ??
+      CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES
+    ).map((ex) => ({
+      transcript: ex.transcript,
+      id: ex.id || `fe-${f.nextTs()}`,
+      destination_node_id: ids.faqId,
+    })),
     id: ids.closeQuestionId,
     type: "conversation",
     display_position: pos.closeQuestion,

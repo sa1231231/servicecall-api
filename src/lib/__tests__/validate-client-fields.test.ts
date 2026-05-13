@@ -116,4 +116,43 @@ describe("validateGlobalSettingsUpdates", () => {
     });
     expect(errs[0]).toMatch(/review_sms_message/);
   });
+
+  it("accepts well-formed faq_global_finetune_examples and close_question_finetune_examples", () => {
+    expect(validateGlobalSettingsUpdates({
+      faq_global_finetune_examples: [
+        { type: "positive", transcript: [{ role: "user", content: "How much?" }] },
+      ],
+      close_question_finetune_examples: [
+        { type: "positive", transcript: [{ role: "user", content: "Actually yeah, one more thing" }] },
+      ],
+    })).toEqual([]);
+  });
+
+  it("accepts empty FT arrays (operator clearing)", () => {
+    expect(validateGlobalSettingsUpdates({
+      faq_global_finetune_examples: [],
+      close_question_finetune_examples: [],
+    })).toEqual([]);
+  });
+
+  it("rejects FT examples with invalid type / empty transcript / bad role", () => {
+    const errs = validateGlobalSettingsUpdates({
+      faq_global_finetune_examples: [
+        { type: "maybe", transcript: [{ role: "user", content: "ok" }] },
+        { type: "positive", transcript: [] },
+        { type: "positive", transcript: [{ role: "bot", content: "ok" }] },
+      ],
+    });
+    const joined = errs.join(" | ");
+    expect(joined).toMatch(/type/);
+    expect(joined).toMatch(/transcript/);
+    expect(joined).toMatch(/role/);
+  });
+
+  it("rejects non-array FT field", () => {
+    const errs = validateGlobalSettingsUpdates({
+      close_question_finetune_examples: { foo: "bar" } as unknown as never,
+    });
+    expect(errs[0]).toMatch(/close_question_finetune_examples must be an array/);
+  });
 });

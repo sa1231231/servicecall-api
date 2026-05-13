@@ -200,6 +200,46 @@ export function validateGlobalSettingsUpdates(updates: Record<string, unknown>):
     errors.push("lead_intake_enabled: must be a boolean");
   }
 
+  for (const ftKey of [
+    "faq_global_finetune_examples",
+    "close_question_finetune_examples",
+  ] as const) {
+    if (!(ftKey in updates)) continue;
+    const v = updates[ftKey];
+    if (v === null || v === undefined) continue;
+    if (!Array.isArray(v)) {
+      errors.push(`${ftKey} must be an array`);
+      continue;
+    }
+    v.forEach((entry, idx) => {
+      if (!entry || typeof entry !== "object") {
+        errors.push(`${ftKey}[${idx}]: must be an object`);
+        return;
+      }
+      const e = entry as { type?: unknown; transcript?: unknown };
+      if (e.type !== "positive" && e.type !== "negative") {
+        errors.push(`${ftKey}[${idx}].type: must be "positive" or "negative"`);
+      }
+      if (!Array.isArray(e.transcript) || e.transcript.length === 0) {
+        errors.push(`${ftKey}[${idx}].transcript: must be a non-empty array`);
+        return;
+      }
+      e.transcript.forEach((row, rIdx) => {
+        if (!row || typeof row !== "object") {
+          errors.push(`${ftKey}[${idx}].transcript[${rIdx}]: must be an object`);
+          return;
+        }
+        const r = row as { role?: unknown; content?: unknown };
+        if (r.role !== "user" && r.role !== "agent") {
+          errors.push(`${ftKey}[${idx}].transcript[${rIdx}].role: must be "user" or "agent"`);
+        }
+        if (typeof r.content !== "string") {
+          errors.push(`${ftKey}[${idx}].transcript[${rIdx}].content: must be a string`);
+        }
+      });
+    });
+  }
+
   if ("setup_instructions" in updates) {
     const v = updates.setup_instructions;
     if (v !== null && v !== undefined) {

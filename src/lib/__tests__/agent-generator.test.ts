@@ -709,6 +709,65 @@ describe("per-path end mode", () => {
     expect(closeQuestion.instruction.text).toBe(customPrompt);
   });
 
+  it("closeQuestionFinetuneExamples workspace override replaces the hardcoded set", () => {
+    const custom = [
+      {
+        type: "positive" as const,
+        transcript: [
+          { content: "Oh yeah — what's your weekend availability look like?", role: "user" as const },
+          { content: "", role: "agent" as const },
+        ],
+      },
+    ];
+    const { agent } = generateAgent(
+      { ...baseConfig, closeQuestionFinetuneExamples: custom },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    expect(closeQuestion.finetune_transition_examples).toHaveLength(1);
+    expect(closeQuestion.finetune_transition_examples[0].transcript[0].content).toBe(
+      "Oh yeah — what's your weekend availability look like?",
+    );
+    expect(closeQuestion.finetune_transition_examples[0].destination_node_id).toBe(faq.id);
+  });
+
+  it("faqGlobalFinetuneExamples workspace override replaces the hardcoded set on the FAQ global node", () => {
+    const custom = [
+      {
+        type: "positive" as const,
+        transcript: [
+          { content: "What are your business hours during the holidays?", role: "user" as const },
+          { content: "", role: "agent" as const },
+        ],
+      },
+      {
+        type: "positive" as const,
+        transcript: [
+          { content: "Do you accept credit cards?", role: "user" as const },
+          { content: "", role: "agent" as const },
+        ],
+      },
+    ];
+    const { agent } = generateAgent(
+      { ...baseConfig, faqGlobalFinetuneExamples: custom },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    const positives = faq.global_node_setting.positive_finetune_examples;
+    expect(positives).toHaveLength(2);
+    expect(positives[0].transcript[0].content).toBe(
+      "What are your business hours during the holidays?",
+    );
+    expect(positives[1].transcript[0].content).toBe("Do you accept credit cards?");
+  });
+
   it("end_mode=transfer wires router → Pre-Transfer → Transfer Call (number baked in)", () => {
     const dest = "+18005551234";
     const { agent } = generateAgent(

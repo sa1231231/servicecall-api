@@ -216,6 +216,12 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
       humanMode === "live_transfer" || anyTransferPath
         ? await getWarmTransferAgentVersion(retell)
         : undefined;
+    // Load workspace defaults for FAQ + Close Question fine-tunes so newly
+    // generated agents reflect operator-curated example sets. Empty arrays
+    // are valid overrides; only `undefined` falls back to the hardcoded
+    // FAQ_GLOBAL_POSITIVE_EXAMPLES / CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES.
+    const { getSettings: loadSettings } = await import("./settings.js");
+    const workspaceSettings = await loadSettings();
     const agentConfig: AgentConfig = {
       ...body.business,
       humanRequestMode: humanMode,
@@ -225,6 +231,9 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
       closingStatementText: body.business.closingStatementText?.trim() || undefined,
       liveTransferRecoveryPrompt: body.business.liveTransferRecoveryPrompt?.trim() || undefined,
       warmTransferAgentVersion,
+      faqGlobalFinetuneExamples: workspaceSettings.faq_global_finetune_examples,
+      closeQuestionFinetuneExamples:
+        workspaceSettings.close_question_finetune_examples,
     };
     const dpDefaults = await getDataPointDefaults();
     const pathConfigs: PathConfig[] | undefined = hasPaths
