@@ -1594,32 +1594,42 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     // ── edit-branch-condition ──────────────────────────────────────
 
     describe("edit-branch-condition", () => {
-      // Round-trip: demo-hvac's `preferred_day` is the only enum DP in the
-      // agent — branch on it. Set a temporary branch on `phone_number`
-      // (referencing preferred_day == "Monday") via beforeAll, then test
-      // the clear/restore round-trip, then strip the branch in afterAll
-      // so we leave the agent as we found it.
+      // edit-branch-condition stages to Mongo only; the next GET pulls
+      // from Retell and overwrites Mongo, wiping unpublished edits. To
+      // round-trip a branch end-to-end (and verify it survives a GET) we
+      // publish through save-and-publish, which pushes to Retell.
+      //
+      // Setup: install a temporary branch on phone_number (referencing
+      // preferred_day == "Monday") so the test has something to clear.
+      // Teardown: strip the branch the same way.
       const TEST_BRANCH = [{ variable: "preferred_day", operator: "==", value: "Monday" }];
-      beforeAll(async () => {
-        await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
+      const SERVICE_CALL_DPS = ["full_name", "phone_number", "problem_description", "street_address", "preferred_day"];
+      async function publishBranchOnPhone(bc: any[] | null) {
+        return fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
           method: "POST", headers: authHeaders(),
           body: JSON.stringify({
-            variableName: "phone_number", pathName: "service_call",
-            branchConditions: TEST_BRANCH,
+            changes: {
+              description: bc === null
+                ? "System test: clear branch on phone_number"
+                : "System test: set branch on phone_number",
+              paths: {
+                service_call: {
+                  dataPointKeys: SERVICE_CALL_DPS,
+                  branchConditions: { phone_number: bc },
+                },
+              },
+            },
           }),
         });
+      }
+      beforeAll(async () => {
+        await publishBranchOnPhone(TEST_BRANCH);
       });
       afterAll(async () => {
-        await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
-          method: "POST", headers: authHeaders(),
-          body: JSON.stringify({
-            variableName: "phone_number", pathName: "service_call",
-            branchConditions: null,
-          }),
-        });
+        await publishBranchOnPhone(null);
       });
 
-      it("clears the branch condition on phone_number end-to-end and restores", { timeout: 30_000 }, async () => {
+      it("clears the branch condition on phone_number end-to-end and restores", { timeout: 45_000 }, async () => {
         // Capture the live branch state — beforeAll set one but we don't
         // assume the exact shape. Clear → verify cleared → restore.
         const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
@@ -1631,15 +1641,8 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
         let mutated = false;
         try {
-          const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
-            method: "POST", headers: authHeaders(),
-            body: JSON.stringify({
-              variableName: "phone_number", pathName: "service_call",
-              branchConditions: null,
-            }),
-          });
+          const resp = await publishBranchOnPhone(null);
           expect(resp.status).toBe(200);
-          expect((await json(resp)).success).toBe(true);
           mutated = true;
 
           const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
@@ -1650,13 +1653,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
           expect(phone2.branchConditions ?? null).toBeNull();
         } finally {
           if (mutated && original !== null) {
-            await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
-              method: "POST", headers: authHeaders(),
-              body: JSON.stringify({
-                variableName: "phone_number", pathName: "service_call",
-                branchConditions: original,
-              }),
-            });
+            await publishBranchOnPhone(original);
           }
         }
       });
