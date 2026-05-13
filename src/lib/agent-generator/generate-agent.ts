@@ -84,6 +84,11 @@ function resolveSingleDataPoint(
   const obj = dp as Partial<DataPoint> & { variableName?: string };
   if (!obj.variableName)
     throw new Error(`dataPoints[${index}] missing required field: variableName`);
+  // Workspace-default fallback: when a per-agent override doesn't set a field,
+  // pull from the registry (workspace default) before falling through to the
+  // algorithmic boilerplate. `??` (not `||`) so an explicit "" / [] from the
+  // operator is preserved.
+  const defaults = registry[obj.variableName];
   const resolved: DataPoint = {
     label:
       obj.label ||
@@ -97,14 +102,19 @@ function resolveSingleDataPoint(
       obj.description ||
       `${obj.variableName}. If not mentioned, set to "${NOT_MENTIONED}". If the caller explicitly says they don't know, set to "${CALLER_DOESNT_KNOW}".`,
     conversationPrompt:
-      obj.conversationPrompt ||
+      obj.conversationPrompt ??
+      defaults?.conversationPrompt ??
       (obj.orphan ? "" :
       `Ask the caller for their ${obj.variableName.replace(/_/g, " ")}.\n\nDo not give examples unless they are unsure, then you can provide them up to three examples.\n\nIf the caller says they don't know, acknowledge it and move on.`),
     forwardCondition:
-      obj.forwardCondition ||
+      obj.forwardCondition ??
+      defaults?.forwardCondition ??
       (obj.orphan ? "" :
       `The caller has provided their ${obj.variableName.replace(/_/g, " ")} or has indicated they don't know it`),
-    finetuneExamples: obj.finetuneExamples || [],
+    finetuneExamples:
+      obj.finetuneExamples ??
+      defaults?.finetuneExamples ??
+      [],
     extractSuccessEquation: obj.extractSuccessEquation ||
       defaultExtractEquation(obj.variableName),
   };

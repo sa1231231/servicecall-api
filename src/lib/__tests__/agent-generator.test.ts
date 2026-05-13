@@ -168,6 +168,74 @@ describe("resolveDataPoints", () => {
     expect(resolved[0].variableName).toBe("inline_field");
     expect(resolved[0].description).toBe("inline desc");
   });
+
+  describe("workspace-default fallback for object-form data points", () => {
+    it("inherits workspace-default finetuneExamples when per-agent override is undefined", () => {
+      const resolved = resolveDataPoints(
+        [{ variableName: "full_name" }],
+        TEST_DEFAULTS,
+      );
+      expect(resolved[0].finetuneExamples).toEqual(
+        TEST_DEFAULTS.full_name.finetuneExamples,
+      );
+    });
+
+    it("inherits workspace-default conversationPrompt when per-agent override is undefined", () => {
+      const resolved = resolveDataPoints(
+        [{ variableName: "full_name" }],
+        TEST_DEFAULTS,
+      );
+      expect(resolved[0].conversationPrompt).toBe(
+        TEST_DEFAULTS.full_name.conversationPrompt,
+      );
+    });
+
+    it("inherits workspace-default forwardCondition when per-agent override is undefined", () => {
+      const resolved = resolveDataPoints(
+        [{ variableName: "full_name" }],
+        TEST_DEFAULTS,
+      );
+      expect(resolved[0].forwardCondition).toBe(
+        TEST_DEFAULTS.full_name.forwardCondition,
+      );
+    });
+
+    it("per-agent override wins over workspace default", () => {
+      const customExamples = [
+        { type: "positive" as const, transcript: [{ content: "Sam", role: "user" as const }] },
+      ];
+      const resolved = resolveDataPoints(
+        [{
+          variableName: "full_name",
+          conversationPrompt: "custom prompt",
+          forwardCondition: "custom condition",
+          finetuneExamples: customExamples,
+        }],
+        TEST_DEFAULTS,
+      );
+      expect(resolved[0].conversationPrompt).toBe("custom prompt");
+      expect(resolved[0].forwardCondition).toBe("custom condition");
+      expect(resolved[0].finetuneExamples).toEqual(customExamples);
+    });
+
+    it("respects explicit empty finetuneExamples (operator cleared them)", () => {
+      const resolved = resolveDataPoints(
+        [{ variableName: "full_name", finetuneExamples: [] }],
+        TEST_DEFAULTS,
+      );
+      expect(resolved[0].finetuneExamples).toEqual([]);
+    });
+
+    it("falls through to algorithmic boilerplate when variableName not in registry", () => {
+      const resolved = resolveDataPoints(
+        [{ variableName: "totally_custom" }],
+        TEST_DEFAULTS,
+      );
+      expect(resolved[0].conversationPrompt).toMatch(/Ask the caller for their totally custom/);
+      expect(resolved[0].forwardCondition).toMatch(/totally custom/);
+      expect(resolved[0].finetuneExamples).toEqual([]);
+    });
+  });
 });
 
 describe("custom data point defaults include 'Caller Doesn\\'t Know' handling", () => {
