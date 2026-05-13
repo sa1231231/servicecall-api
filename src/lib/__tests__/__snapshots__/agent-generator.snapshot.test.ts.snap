@@ -476,6 +476,21 @@ If any emergency is mentioned:
           },
         },
       ],
+      "negative_finetune_examples": [],
+      "positive_finetune_examples": [
+        {
+          "transcript": [
+            {
+              "content": "can I talk to the supervisor?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+      ],
     },
     "instruction": {
       "text": "The caller is requesting a human or live person.
@@ -1160,6 +1175,21 @@ If any emergency is mentioned:
             "prompt": "The caller would like to continue the call and not request a callback.",
             "type": "prompt",
           },
+        },
+      ],
+      "negative_finetune_examples": [],
+      "positive_finetune_examples": [
+        {
+          "transcript": [
+            {
+              "content": "can I talk to the supervisor?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
         },
       ],
     },

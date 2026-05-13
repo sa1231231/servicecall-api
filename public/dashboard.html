@@ -1892,6 +1892,16 @@
           </div>
         </details>
 
+        <details class="dp-card" data-dp-key="_human_request_ft" data-ft-default="human_request" style="margin-top:0.6rem;">
+          <summary><strong>Human Request Global Examples</strong> <span class="dp-var">positive_finetune_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
+          <div class="dp-card-body">
+            <p class="settings-hint">Caller utterances that should trigger a jump to the Human Request global node from anywhere in the call (asking for a person, supervisor, manager, transfer to a human). Added on top of the built-in baseline.</p>
+            <label>Finetune Examples</label>
+            <div class="dp-ft-list"></div>
+            <button type="button" class="ft-add-example" onclick="addFtExample('_human_request_ft')">+ Add Finetune Example</button>
+          </div>
+        </details>
+
         <div style="display:flex;gap:0.5rem;align-items:center;margin:0.6rem 0 1.5rem;">
           <button type="button" class="btn-section-save" onclick="saveFtDefaults()">Save Fine-Tune Defaults</button>
           <span id="ftDefaultsStatus" class="settings-hint" style="margin:0;"></span>
@@ -7520,6 +7530,7 @@
   const FT_DEFAULT_KEYS = {
     faq_global: '_faq_global_ft',
     close_question: '_close_question_ft',
+    human_request: '_human_request_ft',
   };
 
   async function loadFtDefaults() {
@@ -7529,6 +7540,7 @@
       const s = await res.json();
       renderFtDefaultsInto('_faq_global_ft', s.faq_global_finetune_examples);
       renderFtDefaultsInto('_close_question_ft', s.close_question_finetune_examples);
+      renderFtDefaultsInto('_human_request_ft', s.human_request_finetune_examples);
     } catch (err) {
       const status = document.getElementById('ftDefaultsStatus');
       if (status) status.textContent = 'Load failed: ' + err.message;
@@ -7571,6 +7583,7 @@
     const payload = {
       faq_global_finetune_examples: collectFtCardExamples('_faq_global_ft'),
       close_question_finetune_examples: collectFtCardExamples('_close_question_ft'),
+      human_request_finetune_examples: collectFtCardExamples('_human_request_ft'),
     };
     try {
       const res = await fetch('/dashboard/api/settings', {
@@ -7587,6 +7600,7 @@
       // Refresh counts on the summary lines.
       renderFtDefaultsInto('_faq_global_ft', payload.faq_global_finetune_examples);
       renderFtDefaultsInto('_close_question_ft', payload.close_question_finetune_examples);
+      renderFtDefaultsInto('_human_request_ft', payload.human_request_finetune_examples);
       showToast('Fine-tune defaults saved', 'success');
     } catch (err) {
       if (status) status.textContent = 'Save failed: ' + err.message;

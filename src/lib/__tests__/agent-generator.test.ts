@@ -960,3 +960,83 @@ describe("node-builders defensive guards", () => {
     ).toThrow(/does not match allocated chain IDs/);
   });
 });
+
+describe("Human Request global fine-tunes", () => {
+  function findHumanRequest(agent: any) {
+    return agent.conversationFlow.nodes.find((n: any) => n.name === "Human Request");
+  }
+  function utterancesOf(node: any): string[] {
+    const ex = node?.global_node_setting?.positive_finetune_examples ?? [];
+    return ex.map((e: any) =>
+      e.transcript?.find((t: any) => t.role === "user")?.content?.trim() ?? "",
+    );
+  }
+
+  it("includes only the hardcoded baseline when no operator examples are supplied", () => {
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    expect(utterancesOf(findHumanRequest(agent))).toEqual(["can I talk to the supervisor?"]);
+  });
+
+  it("merges operator-supplied examples on top of the baseline", () => {
+    const { agent } = generateAgent(
+      {
+        ...baseConfig,
+        humanRequestFinetuneExamples: [
+          { type: "positive", transcript: [{ role: "user", content: "Put me through to a person." }, { role: "agent", content: "" }] },
+          { type: "positive", transcript: [{ role: "user", content: "Can you transfer me to your manager?" }, { role: "agent", content: "" }] },
+        ],
+      },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    expect(utterancesOf(findHumanRequest(agent))).toEqual([
+      "can I talk to the supervisor?",
+      "Put me through to a person.",
+      "Can you transfer me to your manager?",
+    ]);
+  });
+
+  it("dedups operator examples that duplicate the baseline utterance", () => {
+    // Hardening: re-publishes shouldn't accumulate duplicates when the
+    // operator's own list happens to include the same supervisor utterance.
+    const { agent } = generateAgent(
+      {
+        ...baseConfig,
+        humanRequestFinetuneExamples: [
+          { type: "positive", transcript: [{ role: "user", content: "can I talk to the supervisor?" }, { role: "agent", content: "" }] },
+          { type: "positive", transcript: [{ role: "user", content: "Talk to a human please." }, { role: "agent", content: "" }] },
+        ],
+      },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    expect(utterancesOf(findHumanRequest(agent))).toEqual([
+      "can I talk to the supervisor?",
+      "Talk to a human please.",
+    ]);
+  });
+
+  it("populates callback mode the same way as live_transfer mode", () => {
+    const operatorExamples = [
+      { type: "positive" as const, transcript: [{ role: "user" as const, content: "transfer me" }, { role: "agent" as const, content: "" }] },
+    ];
+    const { agent: callback } = generateAgent(
+      { ...baseConfig, humanRequestFinetuneExamples: operatorExamples },
+      ["full_name"], undefined, TEST_DEFAULTS,
+    );
+    const { agent: transfer } = generateAgent(
+      { ...baseConfig, humanRequestFinetuneExamples: operatorExamples, humanRequestMode: "live_transfer" as const },
+      ["full_name"], undefined, TEST_DEFAULTS,
+    );
+    expect(utterancesOf(findHumanRequest(callback))).toEqual([
+      "can I talk to the supervisor?",
+      "transfer me",
+    ]);
+    expect(utterancesOf(findHumanRequest(transfer))).toEqual([
+      "can I talk to the supervisor?",
+      "transfer me",
+    ]);
+  });
+});

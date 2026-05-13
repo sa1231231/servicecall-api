@@ -234,6 +234,8 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
       faqGlobalFinetuneExamples: workspaceSettings.faq_global_finetune_examples,
       closeQuestionFinetuneExamples:
         workspaceSettings.close_question_finetune_examples,
+      humanRequestFinetuneExamples:
+        workspaceSettings.human_request_finetune_examples,
     };
     const dpDefaults = await getDataPointDefaults();
     const pathConfigs: PathConfig[] | undefined = hasPaths

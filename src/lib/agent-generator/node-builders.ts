@@ -630,12 +630,53 @@ ${faqKnowledgeBase}`,
   };
 }
 
+// Hardcoded baseline used by buildHumanRequestNode. Stays in the published
+// flow even when the operator provides their own examples — represents the
+// minimum classifier signal the global node needs to fire.
+const HUMAN_REQUEST_BASELINE_EXAMPLES: FinetuneExample[] = [
+  {
+    type: "positive",
+    transcript: [
+      { content: "can I talk to the supervisor?", role: "user" },
+      { content: "", role: "agent" },
+    ],
+  },
+];
+
+/**
+ * Merge the baseline + operator-supplied Human Request examples into the
+ * positive_finetune_examples shape Retell stores on global_node_setting.
+ * Dedups by the user-utterance text so re-publishes don't accumulate.
+ *
+ * Exported so the dashboard save-and-publish handler can refresh existing
+ * agents' Human Request node from workspace settings on every publish (not
+ * just at agent creation time).
+ */
+export function mergeHumanRequestExamples(operatorExamples: FinetuneExample[] | undefined) {
+  const merged: FinetuneExample[] = [...HUMAN_REQUEST_BASELINE_EXAMPLES];
+  const seen = new Set<string>(
+    merged.map((ex) =>
+      ex.transcript.find((t) => t.role === "user")?.content?.trim() ?? "",
+    ),
+  );
+  for (const ex of operatorExamples ?? []) {
+    const utter = ex.transcript.find((t) => t.role === "user")?.content?.trim() ?? "";
+    if (!utter || seen.has(utter)) continue;
+    seen.add(utter);
+    merged.push(ex);
+  }
+  return merged.map((ex) => ({ transcript: ex.transcript }));
+}
+
 export function buildHumanRequestNode(
   ids: Ids,
   pos: Positions,
   f: IdFactory,
   mode: HumanRequestMode = "callback",
+  operatorExamples?: FinetuneExample[],
 ) {
+  const positiveExamples = mergeHumanRequestExamples(operatorExamples);
+
   if (mode === "live_transfer") {
     // Agent acknowledges and immediately transfers
     return {
@@ -649,14 +690,7 @@ export function buildHumanRequestNode(
         condition:
           "Jump to this node if the caller requests a live agent or a human.",
         negative_finetune_examples: [],
-        positive_finetune_examples: [
-          {
-            transcript: [
-              { content: "can I talk to the supervisor?", role: "user" },
-              { content: "", role: "agent" },
-            ],
-          },
-        ],
+        positive_finetune_examples: positiveExamples,
       },
       id: ids.humanReqId,
       type: "conversation",
@@ -708,6 +742,8 @@ If the caller refuses and repeats the request for a human, repeat that you canno
       ],
       condition:
         "Jump to this node if the caller requests a live agent or a human.",
+      negative_finetune_examples: [],
+      positive_finetune_examples: positiveExamples,
     },
     id: ids.humanReqId,
     type: "conversation",

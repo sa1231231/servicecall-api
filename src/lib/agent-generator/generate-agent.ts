@@ -406,7 +406,9 @@ When listing anything — services, time slots, examples, options — never list
       agentConfig.faqGlobalFinetuneExamples,
     ),
   );
-  allNodes.push(buildHumanRequestNode(ids, pos, f, humanMode));
+  allNodes.push(
+    buildHumanRequestNode(ids, pos, f, humanMode, agentConfig.humanRequestFinetuneExamples),
+  );
   if (humanMode === "live_transfer") {
     allNodes.push(buildTransferCallNode(ids, pos, f, agentConfig.warmTransferAgentVersion));
   }

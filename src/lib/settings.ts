@@ -54,6 +54,10 @@ export interface GlobalSettings {
    *  CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES. Destination is resolved to the
    *  Admin/FAQ node id at generation time. */
   close_question_finetune_examples?: FinetuneExample[];
+  /** Workspace default positive examples for the Human Request global node
+   *  (caller asks for a person / supervisor / human transfer). Merged on top
+   *  of the built-in baseline at generation time. */
+  human_request_finetune_examples?: FinetuneExample[];
 }
 
 function collection() {
@@ -93,6 +97,11 @@ export async function getSettings(): Promise<GlobalSettings> {
     )
       ? ((doc as any).close_question_finetune_examples as FinetuneExample[])
       : undefined,
+    human_request_finetune_examples: Array.isArray(
+      (doc as any)?.human_request_finetune_examples,
+    )
+      ? ((doc as any).human_request_finetune_examples as FinetuneExample[])
+      : undefined,
   };
 }
 
@@ -115,6 +124,7 @@ export async function updateSettings(
   if (updates.lead_intake_enabled !== undefined) setObj.lead_intake_enabled = updates.lead_intake_enabled;
   if (updates.faq_global_finetune_examples !== undefined) setObj.faq_global_finetune_examples = updates.faq_global_finetune_examples;
   if (updates.close_question_finetune_examples !== undefined) setObj.close_question_finetune_examples = updates.close_question_finetune_examples;
+  if (updates.human_request_finetune_examples !== undefined) setObj.human_request_finetune_examples = updates.human_request_finetune_examples;
   if (updates.cost_rates !== undefined) {
     // Merge into a complete CostRates object so nested writes don't drop sibling keys
     const current = await getSettings();

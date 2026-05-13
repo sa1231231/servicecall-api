@@ -34,6 +34,7 @@ import {
   buildDataChain,
   buildWarmTransferOption,
   buildMcpServerEntry,
+  mergeHumanRequestExamples,
   DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT,
   MCP_SERVER_NAME,
   SEND_SMS_TOOL_ID,
@@ -2566,6 +2567,23 @@ export async function saveAndPublishHandler(
         flow.mcps = [...mcps, buildMcpServerEntry(config.API_KEY)];
       } else if (!hasMcpNode && hasMcpEntry) {
         flow.mcps = mcps.filter((m) => (m as any).name !== MCP_SERVER_NAME);
+      }
+    }
+
+    // Refresh the Human Request global node's positive_finetune_examples from
+    // workspace settings. Without this, operators who add new Human Request
+    // FTs in the Categories tab only see them flow into NEW agents — existing
+    // ones would never pick up the change. We rebuild the array on every
+    // save-and-publish so the dashboard is the source of truth.
+    {
+      const refreshedNodes = flow.nodes as Array<Record<string, unknown>>;
+      const humanReq = refreshedNodes.find((n) => n.name === "Human Request");
+      if (humanReq) {
+        const gns = (humanReq.global_node_setting as Record<string, unknown>) ?? {};
+        const workspaceSettings = await (await import("../../lib/settings.js")).getSettings();
+        const operatorExamples = workspaceSettings.human_request_finetune_examples ?? [];
+        const merged = mergeHumanRequestExamples(operatorExamples);
+        humanReq.global_node_setting = { ...gns, positive_finetune_examples: merged };
       }
     }
 
