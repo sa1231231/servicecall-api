@@ -30,6 +30,41 @@ export const DEFAULT_CLOSE_QUESTION_PROMPT = `Ask the caller exactly: "Is there 
 export const DEFAULT_CLOSING_REMARKS_PROMPT = `You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. `;
 export const DEFAULT_CLOSING_STATEMENT_TEXT = `Alright, bye now!`;
 
+// Generic question patterns that should route the caller to the Admin/FAQ
+// global node instead of staying in the intro / advancing to data collection.
+// Vertical-agnostic — every new agent gets these as the FAQ classifier's
+// positive training set. Empty agent content because Retell only needs the
+// user utterance for routing.
+export const FAQ_GLOBAL_POSITIVE_EXAMPLES: FinetuneExample[] = [
+  // Pricing / cost
+  { transcript: [{ content: "How much is a service call?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "What does it cost?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "How much do you charge for an estimate?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "What's your hourly rate?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Is there a fee just to come out?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Can you give me a ballpark price?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Before I commit — what am I looking at price-wise?", role: "user" }, { content: "", role: "agent" }] },
+  // Hours / availability
+  { transcript: [{ content: "Are you open on weekends?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "What time do you close?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Do you do after-hours service?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Are you open today?", role: "user" }, { content: "", role: "agent" }] },
+  // Services offered / coverage
+  { transcript: [{ content: "Do you work on Carrier units?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Do you do installations or just repairs?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Do you handle commercial buildings?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Do you service my area?", role: "user" }, { content: "", role: "agent" }] },
+  // Warranty / credentials / trust
+  { transcript: [{ content: "Are you licensed and insured?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Do you offer any warranty on repairs?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "How long have you been in business?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Is my unit still under warranty?", role: "user" }, { content: "", role: "agent" }] },
+  // Logistics / process
+  { transcript: [{ content: "How does this work?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "What should I expect when the technician arrives?", role: "user" }, { content: "", role: "agent" }] },
+  { transcript: [{ content: "Do I need to be home for the appointment?", role: "user" }, { content: "", role: "agent" }] },
+];
+
 // Spoken right before a per-path live transfer kicks off.
 export const DEFAULT_PRE_TRANSFER_PROMPT = `Thanks for the information. Hold on a moment — connecting you to our team at {{business_name}} now.`;
 
@@ -531,7 +566,9 @@ ${faqKnowledgeBase}`,
       ],
       condition:
         "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
-      positive_finetune_examples: [],
+      positive_finetune_examples: FAQ_GLOBAL_POSITIVE_EXAMPLES.map((ex) => ({
+        transcript: ex.transcript,
+      })),
       negative_finetune_examples: [],
     },
     id: ids.faqId,
