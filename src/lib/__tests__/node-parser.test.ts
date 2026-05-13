@@ -540,3 +540,83 @@ describe("parseConversationFlow — small edge cases", () => {
     expect(result.paths[0].dataChain[0].variableName).toBe("full_name");
   });
 });
+
+// ── Composite DP variableDefs taper-leak regression ──────────────────────────
+
+describe("parseConversationFlow — composite DP doesn't leak tapered followers", () => {
+  it("composite Confirm carries the full tapered list, but parsed variableDefs only contain the composite's own sub-vars", () => {
+    // Demo HVAC's service_call shape after a reorder put scheduling
+    // (composite preferred_day + preferred_time) at position 0 and email
+    // at the end:  scheduling → street → problem → phone → name → email.
+    // The composite's Confirm node carries 7 tapered vars (its 2 sub-vars
+    // plus 5 followers), but the parser must only attribute the 2 sub-vars
+    // to the composite — otherwise toVarDefs() in the regenerator emits
+    // duplicates and save-and-publish fails with EXTRACT_VAR_DUPLICATE.
+    const composite_followers = ["street_address", "problem_description", "phone_number", "full_name", "email"];
+    const flow = {
+      conversationFlow: {
+        start_node_id: "intro",
+        nodes: [
+          { id: "intro", type: "conversation", name: "Intro", instruction: { type: "prompt", text: "hi" }, edges: [] },
+          { id: "transition", type: "conversation", name: "Transition (path_a)", skip_response_edge: { destination_node_id: "extract" } },
+          {
+            id: "extract", type: "extract_dynamic_variables",
+            name: "Extract All Variables (path_a)",
+            variables: [
+              { name: "preferred_day", type: "string", description: "" },
+              { name: "preferred_time", type: "string", description: "" },
+              ...composite_followers.map(n => ({ name: n, type: "string", description: "" })),
+            ],
+            else_edge: { destination_node_id: "router" },
+          },
+          {
+            id: "router", type: "branch", name: "Variables Router (path_a)",
+            else_edge: { destination_node_id: "close" },
+            edges: [
+              { destination_node_id: "schedColl", transition_condition: { type: "equation", equations: [] } },
+              { destination_node_id: "streetColl", transition_condition: { type: "equation", equations: [] } },
+              { destination_node_id: "problemColl", transition_condition: { type: "equation", equations: [] } },
+              { destination_node_id: "phoneColl", transition_condition: { type: "equation", equations: [] } },
+              { destination_node_id: "nameColl", transition_condition: { type: "equation", equations: [] } },
+              { destination_node_id: "emailColl", transition_condition: { type: "equation", equations: [] } },
+            ],
+          },
+          // Composite Day/Time — name is the composite label (no "Collect " prefix).
+          { id: "schedColl", type: "conversation", name: "Day / Time Preference", instruction: { type: "prompt", text: "?" }, edges: [{ destination_node_id: "schedConf", transition_condition: { type: "prompt", prompt: "x" } }] },
+          { id: "schedConf", type: "extract_dynamic_variables", name: "Confirm Day / Time Preference",
+            // The full tapered list as the regenerator writes it.
+            variables: [
+              { name: "preferred_day", type: "string", description: "" },
+              { name: "preferred_time", type: "string", description: "" },
+              ...composite_followers.map(n => ({ name: n, type: "string", description: "" })),
+            ],
+          },
+          { id: "streetColl", type: "conversation", name: "Collect Street Address", instruction: { type: "prompt", text: "?" }, edges: [{ destination_node_id: "streetConf", transition_condition: { type: "prompt", prompt: "x" } }] },
+          { id: "streetConf", type: "extract_dynamic_variables", name: "Confirm Street Address",
+            variables: composite_followers.map(n => ({ name: n, type: "string", description: "" })) },
+          { id: "problemColl", type: "conversation", name: "Collect Problem Description", instruction: { type: "prompt", text: "?" }, edges: [{ destination_node_id: "problemConf", transition_condition: { type: "prompt", prompt: "x" } }] },
+          { id: "problemConf", type: "extract_dynamic_variables", name: "Confirm Problem Description",
+            variables: composite_followers.slice(1).map(n => ({ name: n, type: "string", description: "" })) },
+          { id: "phoneColl", type: "conversation", name: "Collect Phone Number", instruction: { type: "prompt", text: "?" }, edges: [{ destination_node_id: "phoneConf", transition_condition: { type: "prompt", prompt: "x" } }] },
+          { id: "phoneConf", type: "extract_dynamic_variables", name: "Confirm Phone Number",
+            variables: composite_followers.slice(2).map(n => ({ name: n, type: "string", description: "" })) },
+          { id: "nameColl", type: "conversation", name: "Collect Name", instruction: { type: "prompt", text: "?" }, edges: [{ destination_node_id: "nameConf", transition_condition: { type: "prompt", prompt: "x" } }] },
+          { id: "nameConf", type: "extract_dynamic_variables", name: "Confirm Name",
+            variables: composite_followers.slice(3).map(n => ({ name: n, type: "string", description: "" })) },
+          { id: "emailColl", type: "conversation", name: "Collect Email", instruction: { type: "prompt", text: "?" }, edges: [{ destination_node_id: "emailConf", transition_condition: { type: "prompt", prompt: "x" } }] },
+          { id: "emailConf", type: "extract_dynamic_variables", name: "Confirm Email",
+            variables: [{ name: "email", type: "string", description: "" }] },
+          { id: "close", type: "conversation", name: "Close", instruction: { type: "prompt", text: "bye" } },
+        ],
+      },
+    };
+
+    const result = parseConversationFlow(flow);
+    const dataChain = result.paths[0].dataChain;
+    expect(dataChain).toHaveLength(6);
+    const schedDp = dataChain[0];
+    expect(schedDp.variableName).toBe("preferred_day");
+    // The composite owns ONLY its two sub-vars. Followers must not leak in.
+    expect(schedDp.variableDefs.map(v => v.name)).toEqual(["preferred_day", "preferred_time"]);
+  });
+});

@@ -404,6 +404,27 @@ function buildParsedPath(
     }
   }
 
+  // ── Composite taper-leak fix ─────────────────────────────────────────────
+  // parseDataPointFromNodes maps the *entire* Confirm.variables list onto a
+  // composite's variableDefs (it has no signal at parse time for how many of
+  // them are this composite's own sub-vars vs. tapered downstream DPs). The
+  // followers are the variables that the NEXT DP's Confirm also carries.
+  // Subtract them here: composite_sub_vars = currentConfirmVars − nextConfirmVars.
+  // Without this, callers like buildDataPointsFromChain → toVarDefs would
+  // re-emit every follower under the composite, producing duplicate entries
+  // in regenerated Extract nodes — surfaced as EXTRACT_VAR_DUPLICATE on save.
+  for (let i = 0; i < dataChain.length - 1; i++) {
+    const dp = dataChain[i];
+    const isComposite = !dp.collectNode.name.startsWith("Collect ");
+    if (!isComposite) continue;
+    const nextConfirmVars = dataChain[i + 1].confirmNode.raw.variables as
+      | Array<Record<string, unknown>>
+      | undefined;
+    if (!Array.isArray(nextConfirmVars) || nextConfirmVars.length === 0) continue;
+    const followerNames = new Set(nextConfirmVars.map((v) => v.name as string));
+    dp.variableDefs = dp.variableDefs.filter((v) => !followerNames.has(v.name));
+  }
+
   // Detect orphan variables: present in front extract but no Collect node
   const chainVarNames = new Set<string>();
   for (const dp of dataChain) {
