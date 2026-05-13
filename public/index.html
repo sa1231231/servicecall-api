@@ -1727,11 +1727,22 @@
     return div;
   }
 
+  // The chain-custom-fields div lives on the chain-item (inside the
+  // hidden #routingPaths legacy view) by default. The new tree+detail
+  // editor hoists it into the detail panel for visibility while editing,
+  // tagging it with data-for-item="<itemId>" so serialization can still
+  // find it. Use this helper everywhere we look up the fields.
+  function findCustomFieldsForItem(item) {
+    if (!item) return null;
+    return item.querySelector('.chain-custom-fields')
+      || document.querySelector('.chain-custom-fields[data-for-item="' + item.dataset.itemId + '"]');
+  }
+
   function onChainDpChange(select) {
     const item = select.closest('.chain-item');
     if (select.value === '__custom__') {
       item.classList.add('custom-expanded');
-      if (!item.querySelector('.chain-custom-fields')) {
+      if (!findCustomFieldsForItem(item)) {
         const fields = document.createElement('div');
         fields.className = 'chain-custom-fields';
         fields.innerHTML = `
@@ -1760,7 +1771,7 @@
       }
     } else {
       item.classList.remove('custom-expanded');
-      const fields = item.querySelector('.chain-custom-fields');
+      const fields = findCustomFieldsForItem(item);
       if (fields) fields.remove();
     }
   }
@@ -1803,9 +1814,17 @@
   }
 
   async function saveCustomAsDefault(btn) {
-    const item = btn.closest('.chain-item');
-    const f = item.querySelector('.chain-custom-fields');
-    if (!f) return;
+    // The button lives inside .chain-custom-fields, which may either still
+    // be attached to its chain-item (legacy view) or hoisted into the
+    // detail panel by the tree editor. Resolve the chain-item via either
+    // closest() or the data-for-item back-pointer we set when hoisting.
+    const fieldsDiv = btn.closest('.chain-custom-fields');
+    let item = btn.closest('.chain-item');
+    if (!item && fieldsDiv?.dataset.forItem) {
+      item = document.querySelector('.chain-item[data-item-id="' + fieldsDiv.dataset.forItem + '"]');
+    }
+    const f = fieldsDiv || (item && item.querySelector('.chain-custom-fields'));
+    if (!item || !f) return;
 
     const variableName = slugify(f.querySelector('.cc-variableName').value.trim());
     const label = f.querySelector('.cc-label').value.trim();
@@ -2072,8 +2091,9 @@
         const dpValue = select.value;
         const itemFinetunes = getFtFromEl(node, 'finetunes');
         if (!dpValue || dpValue === '__custom__') {
-          // Custom data point
-          const fields = node.querySelector('.chain-custom-fields');
+          // Custom data point — fields may have been hoisted into the
+          // detail panel by the tree editor (see findCustomFieldsForItem).
+          const fields = findCustomFieldsForItem(node);
           if (!fields) continue;
           const variableName = slugify(fields.querySelector('.cc-variableName').value.trim());
           if (!variableName) continue;
@@ -2368,7 +2388,7 @@
             items.push(sel.value);
           }
         } else if (sel && sel.value === '__custom__') {
-          const f = node.querySelector('.chain-custom-fields');
+          const f = findCustomFieldsForItem(node);
           if (f) {
             const obj = {
               _custom: true,
@@ -3149,6 +3169,17 @@
   function renderDetailPanel(ref) {
     const detail = document.getElementById('pathTreeDetail');
     if (!detail) return;
+    // Restore any custom-DP fields we hoisted into the previous detail
+    // panel back to their owning chain-item before re-rendering. Keeps the
+    // chain-item's view of the world consistent for serialization, and
+    // avoids leaking stale fields when the user navigates to a different
+    // tree node.
+    document.querySelectorAll('.chain-custom-fields[data-for-item]').forEach((fields) => {
+      const itemId = fields.dataset.forItem;
+      const owner = document.querySelector('.chain-item[data-item-id="' + itemId + '"]');
+      if (owner && !owner.querySelector('.chain-custom-fields')) owner.appendChild(fields);
+      delete fields.dataset.forItem;
+    });
     // M5: flip the grid ratio so the tree gets full width while scanning
     // and the detail gets full width while editing. The empty-state hint
     // still renders, just in a tighter column.
@@ -3313,8 +3344,23 @@
       sel.value = e.target.value;
       // Trigger the existing onChainDpChange logic so custom DP fields render correctly
       if (typeof onChainDpChange === 'function') onChainDpChange(sel);
-      onTreeFormChange();
+      // refreshDetail so the hoist below runs and the just-created
+      // .chain-custom-fields appears in the detail panel.
+      onTreeFormChange({ refreshDetail: true });
     });
+
+    // If the selection is "+ Create custom data point...", hoist the
+    // chain-custom-fields div (created on the hidden chain-item by
+    // onChainDpChange) into the detail panel so the user can actually
+    // fill it in. The legacy #routingPaths view is display:none, so
+    // without this hoist the form is invisible.
+    if (currentVal === '__custom__') {
+      const customFields = item.querySelector('.chain-custom-fields');
+      if (customFields) {
+        customFields.dataset.forItem = itemId;
+        detail.appendChild(customFields);
+      }
+    }
     document.getElementById('detailDpFtBtn').addEventListener('click', () => {
       openFtEditor({
         title: 'Fine-tunes — ' + (sel?.options[sel.selectedIndex]?.text || 'Data Point'),
