@@ -234,6 +234,37 @@
   }
   .chain-custom-fields textarea { min-height: 50px; }
 
+  /* SMS step — distinct yellow styling so it reads as an action, not a question. */
+  .chain-item[data-type="sms"] {
+    flex-direction: column; align-items: stretch;
+    background: #fffbeb; border-color: #fde68a;
+  }
+  .chain-item[data-type="sms"] .chain-sms-header {
+    display: flex; align-items: center; gap: 0.4rem;
+  }
+  .chain-item[data-type="sms"] .chain-sms-badge {
+    font-size: 0.65rem; font-weight: 700; color: #92400e; background: #fcd34d;
+    padding: 0.12rem 0.4rem; border-radius: 3px; letter-spacing: 0.04em;
+  }
+  .chain-item[data-type="sms"] .chain-sms-name {
+    flex: 1; padding: 0.25rem 0.4rem; font-size: 0.82rem;
+    border: 1px solid #fde68a; border-radius: 4px; background: #fff;
+  }
+  .chain-item[data-type="sms"] .chain-sms-fields { margin-top: 0.4rem; }
+  .chain-item[data-type="sms"] .chain-sms-fields label {
+    display: block; font-size: 0.72rem; color: #78350f; margin-bottom: 0.15rem; font-weight: 600;
+  }
+  .chain-item[data-type="sms"] .chain-sms-template {
+    width: 100%; min-height: 56px; padding: 0.35rem 0.5rem; font-size: 0.82rem;
+    border: 1px solid #fde68a; border-radius: 4px; resize: vertical; font-family: inherit;
+    margin-bottom: 0.4rem; background: #fff;
+  }
+  .chain-item[data-type="sms"] .chain-sms-to {
+    width: 100%; padding: 0.25rem 0.4rem; font-size: 0.82rem;
+    border: 1px solid #fde68a; border-radius: 4px; background: #fff;
+  }
+  .chain-item[data-type="sms"] .field-hint { font-size: 0.7rem; color: #92400e; margin-top: 0.15rem; }
+
   /* Branch blocks */
   .chain-branch {
     display: block; padding: 0.5rem 0.65rem;
@@ -781,6 +812,7 @@
             <button type="button" onclick="treeAddPath()">+ Path</button>
             <button type="button" id="treeBtnAddDp" onclick="treeAddDataPointInContext()">+ Data Point</button>
             <button type="button" id="treeBtnAddBranch" onclick="treeAddBranchInContext()">+ Branch</button>
+            <button type="button" id="treeBtnAddSms" onclick="treeAddSmsStepInContext()" style="background:#fcd34d;color:#92400e;">+ SMS Step</button>
           </div>
         </div>
         <ul class="path-builder-tree-list" id="pathTreeList"></ul>
@@ -1599,6 +1631,38 @@
     }
   }
 
+  /**
+   * Add an SMS-action step to a chain-list. SMS steps fire deterministically at
+   * this position in the path: they compile to a Retell function node + Mark
+   * Sent extract that flips a per-action sentinel so the step runs exactly once.
+   * The template supports {{var_name}} interpolation against any data point
+   * collected earlier in the conversation.
+   */
+  function addChainSmsStep(chainList, data) {
+    const id = 'csms_' + (++chainItemCounter);
+    const d = data || {};
+    const div = document.createElement('div');
+    div.className = 'chain-item';
+    div.dataset.type = 'sms';
+    div.dataset.itemId = id;
+    div.innerHTML = `
+      <div class="chain-sms-header">
+        <span class="chain-handle">&#9776;</span>
+        <span class="chain-sms-badge">SMS</span>
+        <input type="text" class="chain-sms-name" placeholder="Display name (optional)" maxlength="60" value="${(d.name || '').replace(/"/g, '&quot;')}">
+        <button type="button" class="chain-remove" onclick="this.closest('.chain-item').remove()">&times;</button>
+      </div>
+      <div class="chain-sms-fields">
+        <label>Message <span style="color:#dc2626">*</span></label>
+        <textarea class="chain-sms-template" maxlength="1600" placeholder="Hi {{first_name}}, here's your booking link: ...">${(d.template || '').replace(/</g, '&lt;')}</textarea>
+        <div class="field-hint">Max 1600 chars. <code>{{var}}</code> placeholders are substituted with caller values at send time.</div>
+        <label style="margin-top:0.5rem;">Recipient override <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+        <input type="text" class="chain-sms-to" placeholder="Leave blank to text the caller" value="${(d.to || '').replace(/"/g, '&quot;')}">
+        <div class="field-hint">Defaults to caller's number. E.164 (<code>+15551234567</code>) or a variable like <code>{{relay_phone}}</code>.</div>
+      </div>`;
+    chainList.appendChild(div);
+  }
+
   function buildValueOptions(variableKey, selectedValue) {
     const dp = BUILTIN_DATA[variableKey];
     if (!dp) return '<option value="">— select variable first —</option>';
@@ -1864,6 +1928,7 @@
             <div class="chain-add-btns">
               <button type="button" class="btn-chain-add" onclick="addChainItem(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Data Point</button>
               <button type="button" class="btn-chain-branch" onclick="addChainBranch(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))">+ Add Branch</button>
+              <button type="button" class="btn-chain-add" onclick="addChainSmsStep(document.querySelector('[data-chain-root=&quot;${id}&quot;]'))" style="color:#92400e;border-color:#fcd34d;background:#fffbeb;">+ Add SMS Step</button>
             </div>
             <label style="margin-top:0.75rem;">Close Prompt</label>
             <textarea class="path-close-prompt" rows="3" placeholder="Spoken right after data collection wraps up — specific to this path.">${DEFAULT_CLOSE_PROMPT.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
@@ -2051,6 +2116,15 @@
           ifChain: ifList ? collectChain(ifList) : [],
           elseChain: elseList ? collectChain(elseList) : [],
         });
+      } else if (node.dataset.type === 'sms') {
+        const template = node.querySelector('.chain-sms-template').value.trim();
+        if (!template) continue; // skip empty SMS steps silently — caller didn't fill it in
+        const name = node.querySelector('.chain-sms-name').value.trim();
+        const to = node.querySelector('.chain-sms-to').value.trim();
+        const sms = { _action: 'sendSms', template };
+        if (name) sms.name = name;
+        if (to) sms.to = to;
+        items.push(sms);
       }
     }
     return items;
@@ -2321,6 +2395,18 @@
           ifChain: ifList ? serializeChain(ifList) : [],
           elseChain: elseList ? serializeChain(elseList) : [],
         });
+      } else if (node.dataset.type === 'sms') {
+        // Persist drafts even with empty templates so partial work isn't lost
+        // on save. collectChain (the publish path) drops empty ones instead.
+        const sms = {
+          _action: 'sendSms',
+          template: node.querySelector('.chain-sms-template').value,
+        };
+        const name = node.querySelector('.chain-sms-name').value;
+        const to = node.querySelector('.chain-sms-to').value;
+        if (name) sms.name = name;
+        if (to) sms.to = to;
+        items.push(sms);
       }
     }
     return items;
@@ -2345,6 +2431,12 @@
           if (ifList) restoreChain(ifList, item.ifChain || item.ifDps || []);
           if (elseList) restoreChain(elseList, item.elseChain || item.elseDps || []);
         }
+      } else if (item._action === 'sendSms') {
+        addChainSmsStep(chainList, {
+          template: item.template || '',
+          name: item.name || '',
+          to: item.to || '',
+        });
       } else if (item._custom) {
         addChainItem(chainList, '__custom__');
         const lastItem = chainList.lastElementChild;
@@ -2973,6 +3065,29 @@
             </div>
           </div>
         </li>`;
+      } else if (child.dataset.type === 'sms') {
+        const itemId = child.dataset.itemId;
+        const name = child.querySelector('.chain-sms-name')?.value || '';
+        const template = child.querySelector('.chain-sms-template')?.value || '';
+        const previewMax = 40;
+        const preview = template
+          ? (template.length > previewMax ? template.slice(0, previewMax) + '…' : template)
+          : '(empty)';
+        const label = name || preview;
+        const isSel = treeSelected?.kind === 'sms' && treeSelected.itemId === itemId;
+        html += `<li>
+          <div class="tree-node ${isSel ? 'selected' : ''}" data-type="sms" data-item-id="${esc(itemId)}"
+               onclick="treeSelect({kind:'sms',pathId:'${esc(pathId)}',itemId:'${esc(itemId)}'})"
+               style="background:${isSel ? '#fde68a' : '#fffbeb'};border-color:#fde68a;">
+            <span class="tree-icon" style="color:#92400e;">✉</span>
+            <span class="tree-label" title="${esc(template)}">SMS: ${esc(label)}</span>
+            <div class="tree-actions" onclick="event.stopPropagation()">
+              <button type="button" class="tree-act-up" title="Move up" onclick="treeMoveItem('${esc(itemId)}',-1)">▲</button>
+              <button type="button" class="tree-act-down" title="Move down" onclick="treeMoveItem('${esc(itemId)}',1)">▼</button>
+              <button type="button" class="tree-act-remove" title="Remove" onclick="treeRemoveItem('${esc(itemId)}')">×</button>
+            </div>
+          </div>
+        </li>`;
       } else if (child.dataset.type === 'branch') {
         const itemId = child.dataset.itemId;
         const variable = child.querySelector('.branch-variable')?.value || '?';
@@ -3046,6 +3161,40 @@
     if (ref.kind === 'path') return renderDetailPath(ref.pathId);
     if (ref.kind === 'dp') return renderDetailDataPoint(ref.pathId, ref.itemId);
     if (ref.kind === 'branch') return renderDetailBranch(ref.pathId, ref.itemId);
+    if (ref.kind === 'sms') return renderDetailSmsStep(ref.pathId, ref.itemId);
+  }
+
+  // SMS steps are edited inline within the path card. The tree detail just
+  // surfaces the same fields as the inline editor, bound two-way via DOM
+  // queries so saving works through whichever view the user used.
+  function renderDetailSmsStep(pathId, itemId) {
+    const detail = document.getElementById('pathTreeDetail');
+    const item = getItemById(pathId, itemId);
+    if (!detail || !item) { if (detail) detail.innerHTML = ''; return; }
+    const name = item.querySelector('.chain-sms-name')?.value || '';
+    const template = item.querySelector('.chain-sms-template')?.value || '';
+    const to = item.querySelector('.chain-sms-to')?.value || '';
+    detail.innerHTML = `
+      <h4>SMS Step <span class="detail-type-badge" style="background:#fcd34d;color:#92400e;">action</span></h4>
+      <p class="field-hint" style="margin-top:-0.25rem;">Sends a text message to the caller at this position in the path. Fires deterministically and runs exactly once.</p>
+      <label>Display name <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+      <input type="text" id="detailSmsName" value="${esc(name)}" placeholder="e.g. Send booking link" maxlength="60">
+      <label style="margin-top:0.6rem;">Message <span style="color:#dc2626">*</span></label>
+      <textarea id="detailSmsTemplate" rows="4" maxlength="1600" placeholder="Hi {{first_name}}, here's your booking link: ...">${esc(template)}</textarea>
+      <div class="field-hint">Max 1600 chars. Use <code>{{var_name}}</code> to inject collected values.</div>
+      <label style="margin-top:0.6rem;">Recipient override <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+      <input type="text" id="detailSmsTo" value="${esc(to)}" placeholder="Leave blank to text the caller">
+      <div class="field-hint">Defaults to caller's number. E.164 (<code>+15551234567</code>) or a variable like <code>{{relay_phone}}</code>.</div>`;
+    // Two-way sync: edits in the detail panel write through to the inline
+    // chain-item so collectChain / serializeChain see the latest values.
+    const syncBack = () => {
+      item.querySelector('.chain-sms-name').value = detail.querySelector('#detailSmsName').value;
+      item.querySelector('.chain-sms-template').value = detail.querySelector('#detailSmsTemplate').value;
+      item.querySelector('.chain-sms-to').value = detail.querySelector('#detailSmsTo').value;
+    };
+    detail.querySelector('#detailSmsName').addEventListener('input', syncBack);
+    detail.querySelector('#detailSmsTemplate').addEventListener('input', syncBack);
+    detail.querySelector('#detailSmsTo').addEventListener('input', syncBack);
   }
 
   function renderDetailPath(pathId) {
@@ -3372,6 +3521,19 @@
     }
     const branch = addChainBranch(target.listEl);
     if (branch) treeSelected = { kind: 'branch', pathId: target.pathId, itemId: branch.dataset.itemId };
+    onTreeFormChange({ refreshDetail: true });
+  }
+
+  function treeAddSmsStepInContext() {
+    const target = resolveTreeAddTarget();
+    if (!target) {
+      alert('Add a routing path first, then add an SMS step to it.');
+      return;
+    }
+    addChainSmsStep(target.listEl);
+    const items = target.listEl.querySelectorAll(':scope > .chain-item');
+    const last = items[items.length - 1];
+    if (last) treeSelected = { kind: 'sms', pathId: target.pathId, itemId: last.dataset.itemId };
     onTreeFormChange({ refreshDetail: true });
   }
 
