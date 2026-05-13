@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, apiGet, apiPost, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, apiGet, apiPost, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -19,17 +19,17 @@ interface DpResponse {
   }>;
 }
 
-const NODES_URL = `/dashboard/api/agents/${DEMO_METER.slug}/nodes/${DEMO_METER.agentId}`;
+const NODES_URL = `/dashboard/api/agents/${TEST_AGENT.slug}/nodes/${TEST_AGENT.agentId}`;
 
 // Hits the live save-and-publish endpoint, which in turn pushes the modified
 // flow to Retell. Each test seeds a marker example, asserts it round-trips
 // through GET, and then clears it back to the original in a cleanup block so
-// the shared Demo Meter agent is left as-found.
+// the shared the test agent agent is left as-found.
 test.describe("Fine-tune mutations roundtrip through save-and-publish + Retell", () => {
   test("dataPointFinetunes: POST writes, GET reads back, push to Retell occurs", async () => {
     const before = await apiGet<DpResponse>(env, NODES_URL);
     const path = before.paths[0];
-    expect(path, "Demo Meter has at least one path").toBeDefined();
+    expect(path, "the test agent has at least one path").toBeDefined();
     const dp = path.dataPoints[0];
     expect(dp, "first path has at least one data point").toBeDefined();
     const collectId = dp.collectNodeId;

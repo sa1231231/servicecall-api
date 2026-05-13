@@ -74,7 +74,7 @@ export const PERMISSION_CATALOG: PermissionEntry[] = [
     ui: [
       "Delete button on the agent detail page",
     ],
-    notes: "Some slugs (ROOT_ONLY_DELETE_SLUGS — e.g. demo-meter) require root regardless of this permission.",
+    notes: "Some slugs (ROOT_ONLY_DELETE_SLUGS — e.g. demo-hvac) require root regardless of this permission.",
   },
   {
     key: "send_comms",

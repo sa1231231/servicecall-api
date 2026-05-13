@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -25,7 +25,7 @@ test.describe("Desktop agent list — 2-column default (Q2)", () => {
   test("default visible columns are Name + MTD COGS only", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(
-      page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`),
+      page.locator(`#agentList [data-slug="${TEST_AGENT.slug}"]`),
     ).toBeVisible({ timeout: 15_000 });
 
     const headers = page.locator("#agentList thead th[data-col]");
@@ -40,7 +40,7 @@ test.describe("Desktop agent list — 2-column default (Q2)", () => {
   test("status badge renders inline inside the Name cell", async ({ page }) => {
     await page.goto("/dashboard");
     const row = page.locator(
-      `#agentList tr.clickable-row[data-slug="${DEMO_METER.slug}"]`,
+      `#agentList tr.clickable-row[data-slug="${TEST_AGENT.slug}"]`,
     );
     await expect(row).toBeVisible({ timeout: 15_000 });
 

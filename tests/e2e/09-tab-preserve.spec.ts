@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -11,14 +11,14 @@ test.describe("Tab preservation across agent navigation", () => {
   test("opening an agent without an explicit tab in the URL re-uses the previously active tab", async ({ page }) => {
     await page.goto("/dashboard");
 
-    const row = page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`);
+    const row = page.locator(`#agentList [data-slug="${TEST_AGENT.slug}"]`);
     await expect(row).toBeVisible({ timeout: 15_000 });
 
-    // 1. Open Demo Meter — defaults to the Settings tab on first navigation.
+    // 1. Open the test agent — defaults to the Settings tab on first navigation.
     await Promise.all([
       page.waitForResponse(
         (r) =>
-          r.url().endsWith(`/dashboard/api/agents/${DEMO_METER.slug}`) &&
+          r.url().endsWith(`/dashboard/api/agents/${TEST_AGENT.slug}`) &&
           r.request().method() === "GET",
         { timeout: 15_000 },
       ),
@@ -43,7 +43,7 @@ test.describe("Tab preservation across agent navigation", () => {
     await Promise.all([
       page.waitForResponse(
         (r) =>
-          r.url().endsWith(`/dashboard/api/agents/${DEMO_METER.slug}`) &&
+          r.url().endsWith(`/dashboard/api/agents/${TEST_AGENT.slug}`) &&
           r.request().method() === "GET",
         { timeout: 15_000 },
       ),

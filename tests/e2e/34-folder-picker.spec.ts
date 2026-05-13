@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -11,7 +11,7 @@ test.describe("Folder picker dropdown (M4)", () => {
   test("Folders button opens a dropdown listing folders + counts", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(
-      page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`),
+      page.locator(`#agentList [data-slug="${TEST_AGENT.slug}"]`),
     ).toBeVisible({ timeout: 15_000 });
 
     await page.locator("#folderPickerBtn").click();
@@ -31,7 +31,7 @@ test.describe("Folder picker dropdown (M4)", () => {
   test("clicking a folder name adds it as a search chip", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(
-      page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`),
+      page.locator(`#agentList [data-slug="${TEST_AGENT.slug}"]`),
     ).toBeVisible({ timeout: 15_000 });
 
     await page.locator("#folderPickerBtn").click();

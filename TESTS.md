@@ -162,7 +162,7 @@ But default to the lowest layer that catches regressions. Lower layers run faste
 - **Snapshot with sanitization:** `src/lib/__tests__/agent-generator.snapshot.test.ts` strips generated IDs + timestamps before snapshotting so the snapshot is stable across runs. Reuse this pattern for any test that captures complex generated output.
 - **Test-skip when prod fixture is absent:** `tests/e2e/22-pending-leads-filters.spec.ts` calls `test.skip(rowCount === 0, ...)` so the test runs only when there's a lead to interact with. Mirror this for any test that depends on real prod data.
 - **Test sentinel + revert:** `tests/e2e/36-settings-round-trip.spec.ts` writes a clearly-synthetic placeholder value, asserts persistence, then reverts in a `finally`. Use this whenever a test must mutate shared state.
-- **Helpers in `tests/e2e/_helpers.ts`:** `getEnv()`, `httpCredentials()`, `apiFetch/apiGet/apiPatch/apiPost`, and the `DEMO_METER` constant. New e2e specs should import from here rather than re-rolling auth or fixture references.
+- **Helpers in `tests/e2e/_helpers.ts`:** `getEnv()`, `httpCredentials()`, `apiFetch/apiGet/apiPatch/apiPost`, and the `TEST_AGENT` constant. New e2e specs should import from here rather than re-rolling auth or fixture references.
 
 ---
 

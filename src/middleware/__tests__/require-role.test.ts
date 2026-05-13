@@ -169,25 +169,25 @@ function mockReqWithSlug(slug: string, user?: Request["user"]): Request {
 }
 
 describe("requireRootForProtectedSlug", () => {
-  it("includes demo-meter in the protected set", () => {
-    expect(ROOT_ONLY_DELETE_SLUGS.has("demo-meter")).toBe(true);
+  it("includes demo-hvac in the protected set", () => {
+    expect(ROOT_ONLY_DELETE_SLUGS.has("demo-hvac")).toBe(true);
   });
 
-  it("blocks non-root super_admin from deleting demo-meter", () => {
+  it("blocks non-root super_admin from deleting demo-hvac", () => {
     const next = vi.fn();
     const res = mockRes();
     const user = makeUser({ role: "super_admin", isRoot: false });
-    requireRootForProtectedSlug(mockReqWithSlug("demo-meter", user), res, next);
+    requireRootForProtectedSlug(mockReqWithSlug("demo-hvac", user), res, next);
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({ error: "Root access required to delete this agent" });
   });
 
-  it("blocks non-root admin from deleting demo-meter", () => {
+  it("blocks non-root admin from deleting demo-hvac", () => {
     const next = vi.fn();
     const res = mockRes();
     requireRootForProtectedSlug(
-      mockReqWithSlug("demo-meter", makeUser({ role: "admin", isRoot: false })),
+      mockReqWithSlug("demo-hvac", makeUser({ role: "admin", isRoot: false })),
       res,
       next,
     );
@@ -195,11 +195,11 @@ describe("requireRootForProtectedSlug", () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  it("blocks non-root operator from deleting demo-meter", () => {
+  it("blocks non-root operator from deleting demo-hvac", () => {
     const next = vi.fn();
     const res = mockRes();
     requireRootForProtectedSlug(
-      mockReqWithSlug("demo-meter", makeUser({ role: "operator", isRoot: false })),
+      mockReqWithSlug("demo-hvac", makeUser({ role: "operator", isRoot: false })),
       res,
       next,
     );
@@ -207,11 +207,11 @@ describe("requireRootForProtectedSlug", () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
-  it("allows root user to delete demo-meter", () => {
+  it("allows root user to delete demo-hvac", () => {
     const next = vi.fn();
     const res = mockRes();
     requireRootForProtectedSlug(
-      mockReqWithSlug("demo-meter", makeUser({ isRoot: true })),
+      mockReqWithSlug("demo-hvac", makeUser({ isRoot: true })),
       res,
       next,
     );
@@ -234,7 +234,7 @@ describe("requireRootForProtectedSlug", () => {
   it("blocks request with no user when slug is protected", () => {
     const next = vi.fn();
     const res = mockRes();
-    requireRootForProtectedSlug(mockReqWithSlug("demo-meter"), res, next);
+    requireRootForProtectedSlug(mockReqWithSlug("demo-hvac"), res, next);
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
   });

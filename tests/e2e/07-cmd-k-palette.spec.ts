@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -14,7 +14,7 @@ test.describe("Cmd+K agent quick-switcher", () => {
     // Wait for the agent list to populate so `agentRows` is non-empty;
     // openCommandPalette() bails out otherwise.
     await expect(
-      page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`),
+      page.locator(`#agentList [data-slug="${TEST_AGENT.slug}"]`),
     ).toBeVisible({ timeout: 15_000 });
 
     // The dashboard's keydown handler accepts both metaKey and ctrlKey, so
@@ -27,10 +27,10 @@ test.describe("Cmd+K agent quick-switcher", () => {
     const input = page.locator("#cmdPaletteInput");
     await expect(input).toBeFocused();
 
-    // Type "demo" — Demo Meter should match by name (and "demo-meter" by slug).
+    // Type "demo" — the test agent should match by name (and "demo-hvac" by slug).
     await input.fill("demo");
     const demoResult = page.locator(
-      `#cmdPaletteResults li:has-text("${DEMO_METER.slug}")`,
+      `#cmdPaletteResults li:has-text("${TEST_AGENT.slug}")`,
     );
     await expect(demoResult).toBeVisible();
     // First result is auto-active.
@@ -40,7 +40,7 @@ test.describe("Cmd+K agent quick-switcher", () => {
     await Promise.all([
       page.waitForResponse(
         (r) =>
-          r.url().endsWith(`/dashboard/api/agents/${DEMO_METER.slug}`) &&
+          r.url().endsWith(`/dashboard/api/agents/${TEST_AGENT.slug}`) &&
           r.request().method() === "GET",
         { timeout: 15_000 },
       ),
@@ -50,13 +50,13 @@ test.describe("Cmd+K agent quick-switcher", () => {
     // Palette is closed and the detail view is visible with the right hash.
     await expect(overlay).toBeHidden();
     await expect(page.locator("#detailView")).toBeVisible();
-    expect(page.url()).toContain(`#agent=${DEMO_METER.slug}`);
+    expect(page.url()).toContain(`#agent=${TEST_AGENT.slug}`);
   });
 
   test("Escape closes the palette without navigating", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(
-      page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`),
+      page.locator(`#agentList [data-slug="${TEST_AGENT.slug}"]`),
     ).toBeVisible({ timeout: 15_000 });
 
     const startUrl = page.url();

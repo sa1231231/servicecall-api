@@ -24,7 +24,7 @@
 //
 // Run:
 //   railway run npx tsx tools/migrate-agent-warmth.ts            # dry run
-//   railway run npx tsx tools/migrate-agent-warmth.ts --slug=demo-meter --apply
+//   railway run npx tsx tools/migrate-agent-warmth.ts --slug=demo-hvac --apply
 //   railway run npx tsx tools/migrate-agent-warmth.ts --apply
 //   railway run npx tsx tools/migrate-agent-warmth.ts --apply --component=voice
 //

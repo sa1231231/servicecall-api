@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, apiFetch, DEMO_METER } from "./_helpers.js";
+import { getEnv, apiFetch, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -14,18 +14,18 @@ test.describe("Portal — token auth + dispatch view", () => {
 
   test.beforeAll(async () => {
     // Idempotent: GET first, POST only if no token exists.
-    let resp = await apiFetch(env, `/dashboard/api/agents/${DEMO_METER.slug}/portal-token`);
+    let resp = await apiFetch(env, `/dashboard/api/agents/${TEST_AGENT.slug}/portal-token`);
     let body = (await resp.json()) as PortalTokenResp;
 
     if (!body.portal_url) {
-      resp = await apiFetch(env, `/dashboard/api/agents/${DEMO_METER.slug}/portal-token`, {
+      resp = await apiFetch(env, `/dashboard/api/agents/${TEST_AGENT.slug}/portal-token`, {
         method: "POST",
       });
       body = (await resp.json()) as PortalTokenResp;
     }
 
     if (!body.portal_url) {
-      throw new Error("Could not obtain portal URL for Demo Meter");
+      throw new Error("Could not obtain portal URL for the test agent");
     }
     portalUrl = body.portal_url;
   });

@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -12,7 +12,7 @@ test.describe("Agent detail Save buttons on mobile (≤768px)", () => {
 
   test("Save Settings inside agent detail is sticky-positioned", async ({ page }) => {
     await page.goto("/dashboard");
-    const row = page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`);
+    const row = page.locator(`#agentList [data-slug="${TEST_AGENT.slug}"]`);
     await expect(row).toBeVisible({ timeout: 15_000 });
     await row.click();
 

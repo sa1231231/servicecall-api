@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, apiFetch, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, apiFetch, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -31,9 +31,9 @@ async function getChipValues(page: import("@playwright/test").Page, chipContaine
   }, chipContainerId);
 }
 
-/** Pull a fresh Demo Meter export to use as a known-good fixture. */
+/** Pull a fresh the test agent export to use as a known-good fixture. */
 async function fetchDemoMeterExport(): Promise<unknown> {
-  const resp = await apiFetch(env, `/dashboard/api/agents/${DEMO_METER.slug}/export`);
+  const resp = await apiFetch(env, `/dashboard/api/agents/${TEST_AGENT.slug}/export`);
   if (!resp.ok) throw new Error(`Failed to fetch export: ${resp.status}`);
   return await resp.json();
 }
@@ -144,7 +144,7 @@ test.describe("Form builder — chip inputs", () => {
 // forgot to wire it into body.client" regressions.
 
 test.describe("Form builder — submit body shape (mocked POST)", () => {
-  test("submitting an imported Demo Meter config sends a complete create-agent body", async ({ page }) => {
+  test("submitting an imported the test agent config sends a complete create-agent body", async ({ page }) => {
     const exported = (await fetchDemoMeterExport()) as Record<string, any>;
 
     let capturedBody: any = null;
@@ -168,17 +168,17 @@ test.describe("Form builder — submit body shape (mocked POST)", () => {
     await gotoFormReady(page);
     await ensureApiKey(page);
 
-    // Tweak the slug-source so it doesn't collide with the real demo-meter
+    // Tweak the slug-source so it doesn't collide with the real demo-hvac
     // (the body's slug derives from businessName; we rename to ensure a
     // would-be unique slug if this ever ran without the route mock).
-    const uniqueName = `Demo Meter E2E ${Date.now()}`;
+    const uniqueName = `the test agent E2E ${Date.now()}`;
     const importable = JSON.parse(JSON.stringify(exported));
     importable.business.businessName = uniqueName;
     importable.client.name = uniqueName;
     importable.client.slug = uniqueName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
     await page.locator("#jsonFileInput").setInputFiles({
-      name: "demo-meter.json",
+      name: "demo-hvac.json",
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(importable)),
     });
@@ -382,7 +382,7 @@ test.describe("Form builder — tree editor + flow preview", () => {
     await expect(page.locator("#businessName")).toHaveValue(/.+/, { timeout: 10_000 });
     await page.locator('button.form-subtab[data-form-tab="paths"]').click();
 
-    // Demo Meter is multi-path: measure_me + dont_measure_me.
+    // the test agent is multi-path: measure_me + dont_measure_me.
     const pathNodes = page.locator(
       '#pathTreeList .tree-node[data-type="path"]',
     );

@@ -107,8 +107,8 @@ export async function apiPost<T>(
   return (await resp.json()) as T;
 }
 
-/** Demo Meter is the canonical test agent across system + e2e tests. */
-export const DEMO_METER = {
-  slug: "demo-meter",
-  agentId: "agent_27340aa43ebbc5f4822a35225a",
+/** The canonical test agent across system + e2e tests. Currently Demo HVAC. */
+export const TEST_AGENT = {
+  slug: "demo-hvac",
+  agentId: "agent_cbdc066d07359e7988ea27f9b9",
 } as const;

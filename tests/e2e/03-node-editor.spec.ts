@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -8,21 +8,21 @@ test.use({
 });
 
 test.describe("Node Editor — read-only smoke", () => {
-  test("opening the Node Editor for Demo Meter renders the parsed flow", async ({ page }) => {
+  test("opening the Node Editor for the test agent renders the parsed flow", async ({ page }) => {
     await page.goto("/dashboard");
 
-    // Click Demo Meter row to open detail view. The click triggers showDetail()
-    // which fetches /dashboard/api/agents/demo-meter — we need that fetch to
+    // Click the test agent row to open detail view. The click triggers showDetail()
+    // which fetches /dashboard/api/agents/demo-hvac — we need that fetch to
     // resolve BEFORE clicking the Node Editor tab, otherwise switchAgentTab's
     // lazy-load gate (`originalDoc?.agent_id`) is false and loadNodeEditor
     // never fires.
-    const row = page.locator(`#agentList [data-slug="${DEMO_METER.slug}"]`);
+    const row = page.locator(`#agentList [data-slug="${TEST_AGENT.slug}"]`);
     await expect(row).toBeVisible({ timeout: 15_000 });
 
     await Promise.all([
       page.waitForResponse(
         (r) =>
-          r.url().endsWith(`/dashboard/api/agents/${DEMO_METER.slug}`) &&
+          r.url().endsWith(`/dashboard/api/agents/${TEST_AGENT.slug}`) &&
           r.request().method() === "GET",
         { timeout: 15_000 },
       ),
@@ -34,7 +34,7 @@ test.describe("Node Editor — read-only smoke", () => {
     const [nodesResp] = await Promise.all([
       page.waitForResponse(
         (r) =>
-          r.url().includes(`/nodes/${DEMO_METER.agentId}`) &&
+          r.url().includes(`/nodes/${TEST_AGENT.agentId}`) &&
           !r.url().includes("/versions") &&
           r.request().method() === "GET",
         { timeout: 25_000 },
@@ -51,7 +51,7 @@ test.describe("Node Editor — read-only smoke", () => {
     await expect(editor).toContainText("System Prompt");
     await expect(editor).toContainText("Identity & Routing Paths");
 
-    // Demo Meter is multi-path — at least one path name shows up in the
+    // the test agent is multi-path — at least one path name shows up in the
     // rendered editor.
     await expect(editor).toContainText(/measure_me|dont_measure_me/);
   });

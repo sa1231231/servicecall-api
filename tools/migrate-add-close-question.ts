@@ -14,7 +14,7 @@
 //   tsx tools/migrate-add-close-question.ts            # dry-run (default)
 //   tsx tools/migrate-add-close-question.ts --apply    # write to Mongo + Retell
 //   tsx tools/migrate-add-close-question.ts --apply --limit=3
-//   tsx tools/migrate-add-close-question.ts --apply --slug=demo-meter
+//   tsx tools/migrate-add-close-question.ts --apply --slug=demo-hvac
 //
 // Env: MONGODB_URL + RETELL_API_KEY (same as the API uses).
 

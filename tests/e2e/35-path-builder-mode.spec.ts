@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, apiFetch, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, apiFetch, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -13,10 +13,10 @@ test.describe("/form path builder — scan / edit modes (M5)", () => {
     await expect(page.locator("#agentForm")).toBeVisible({ timeout: 15_000 });
 
     // Load a real exported config so the path tree has nodes to click.
-    const exportResp = await apiFetch(env, `/dashboard/api/agents/${DEMO_METER.slug}/export`);
+    const exportResp = await apiFetch(env, `/dashboard/api/agents/${TEST_AGENT.slug}/export`);
     const exported = await exportResp.json();
     await page.locator("#jsonFileInput").setInputFiles({
-      name: "demo-meter-config.json",
+      name: "demo-hvac-config.json",
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(exported)),
     });

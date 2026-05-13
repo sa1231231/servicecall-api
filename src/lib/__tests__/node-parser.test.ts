@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { parseConversationFlow } from "../node-parser.js";
 
 // These tests cover edge cases not exercised by node-editor.test.ts
-// (which uses full Demo Meter / generated fixtures).
+// (which uses full Demo HVAC / generated fixtures).
 
 // ── Minimal valid flow builder ─────────────────────────────────────────────
 

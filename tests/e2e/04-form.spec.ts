@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { getEnv, httpCredentials, apiFetch, DEMO_METER } from "./_helpers.js";
+import { getEnv, httpCredentials, apiFetch, TEST_AGENT } from "./_helpers.js";
 
 const env = getEnv();
 
@@ -8,7 +8,7 @@ test.use({
 });
 
 test.describe("Create form — load + JSON import (no submit)", () => {
-  test("form renders and importing Demo Meter's exported JSON populates the fields", async ({ page }) => {
+  test("form renders and importing the test agent's exported JSON populates the fields", async ({ page }) => {
     await page.goto("/form");
 
     // Form loads. The data-points dropdown populates after /form/data-points
@@ -18,14 +18,14 @@ test.describe("Create form — load + JSON import (no submit)", () => {
 
     // Pull a real exported config from the server so the import has shape
     // the form expects (saves us hand-maintaining a fixture).
-    const exportResp = await apiFetch(env, `/dashboard/api/agents/${DEMO_METER.slug}/export`);
+    const exportResp = await apiFetch(env, `/dashboard/api/agents/${TEST_AGENT.slug}/export`);
     expect(exportResp.status).toBe(200);
     const exported = await exportResp.json();
 
     // Load it via the file input (the form's loadFromJsonFile hook reads
     // input.files[0] and applies it).
     await page.locator("#jsonFileInput").setInputFiles({
-      name: "demo-meter-config.json",
+      name: "demo-hvac-config.json",
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(exported)),
     });
