@@ -2432,6 +2432,7 @@ export async function saveAndPublishHandler(
           frontExtractId: f.nodeId(),
           routerId: f.nodeId(),
           chain: newDataPoints.map(() => ({ convId: f.nodeId(), confirmId: f.nodeId() })),
+          smsActions: [],
         };
         const pathYBase = (existingPathCount + npIdx) * 2000;
         const pathPos: PathPositions = {
@@ -2442,6 +2443,7 @@ export async function saveAndPublishHandler(
             conv: { x: -954 + i * 550, y: 900 + pathYBase },
             confirm: { x: -954 + i * 550, y: 1350 + pathYBase },
           })),
+          smsActions: [],
         };
 
         nodes.push(buildTransitionNode(pathIds, pathPos, f, np.name));

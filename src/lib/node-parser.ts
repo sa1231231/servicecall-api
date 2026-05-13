@@ -23,12 +23,24 @@ export interface ParsedDataPoint {
   orphan?: boolean;
 }
 
+export interface ParsedSmsAction {
+  /** Function node that invokes send_sms. */
+  funcNode: ParsedNode;
+  /** Mark-Sent extract_dynamic_variables node that flips the sentinel. */
+  markSentNode: ParsedNode;
+  /** Sentinel boolean variable name (e.g. "is_sms_sent_1"). */
+  sentinelVar: string;
+}
+
 export interface ParsedPath {
   name: string;
   transitionNode: ParsedNode;
   frontExtractNode: ParsedNode;
   routerNode: ParsedNode;
   dataChain: ParsedDataPoint[];
+  /** SMS-send actions wired into this path's Variables Router. Empty when
+   *  the path has no inline SMS. Parsed in router-edge source order. */
+  smsActions: ParsedSmsAction[];
   endMode: "callback" | "transfer";
   preTransferNode?: ParsedNode;
   transferCallNode?: ParsedNode;
@@ -288,6 +300,7 @@ function buildParsedPath(
   // Parse the data chain from the router's edges (ordered)
   const routerEdges = routerNode.raw.edges as Array<Record<string, unknown>> | undefined;
   const dataChain: ParsedDataPoint[] = [];
+  const smsActions: ParsedSmsAction[] = [];
 
   // Track each pair's primary variable name so non-composite Confirm parsing
   // can ignore the persistent orphan vars we now inject into every Confirm
@@ -297,10 +310,27 @@ function buildParsedPath(
   // correct without per-pair filtering).
   if (Array.isArray(routerEdges)) {
     for (const edge of routerEdges) {
-      const collectNodeId = edge.destination_node_id as string;
-      const collectNode = nodeMap.get(collectNodeId);
-      if (!collectNode) continue;
-      if (collectNode.type !== "conversation") continue;
+      const destNodeId = edge.destination_node_id as string;
+      const destNode = nodeMap.get(destNodeId);
+      if (!destNode) continue;
+
+      // SMS-action edge: router branches into a function node calling send_sms.
+      // The function node's edges[0]/else_edge both point to a Mark Sent extract
+      // node, which declares the sentinel variable and loops back to the router.
+      if (destNode.type === "function" && destNode.raw.tool_id === "send_sms") {
+        const fnEdges = destNode.raw.edges as Array<Record<string, unknown>> | undefined;
+        const markSentId = fnEdges?.[0]?.destination_node_id as string | undefined;
+        const markSentNode = markSentId ? nodeMap.get(markSentId) : undefined;
+        if (markSentNode && markSentNode.type === "extract_dynamic_variables") {
+          const vars = markSentNode.raw.variables as Array<Record<string, unknown>> | undefined;
+          const sentinelVar = (vars?.[0]?.name as string) ?? "";
+          smsActions.push({ funcNode: destNode, markSentNode, sentinelVar });
+        }
+        continue;
+      }
+
+      if (destNode.type !== "conversation") continue;
+      const collectNode = destNode;
 
       // The collect node's first edge should point to its confirm node
       const collectEdges = collectNode.raw.edges as Array<Record<string, unknown>> | undefined;
@@ -355,6 +385,7 @@ function buildParsedPath(
     frontExtractNode,
     routerNode,
     dataChain,
+    smsActions,
     endMode,
     preTransferNode,
     transferCallNode,
@@ -445,6 +476,10 @@ export function getPathNodeIds(path: ParsedPath): Set<string> {
   for (const dp of path.dataChain) {
     ids.add(dp.collectNode.id);
     ids.add(dp.confirmNode.id);
+  }
+  for (const action of path.smsActions) {
+    ids.add(action.funcNode.id);
+    ids.add(action.markSentNode.id);
   }
   return ids;
 }

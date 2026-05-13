@@ -2,11 +2,13 @@ import {
   NOT_MENTIONED,
   CALLER_DOESNT_KNOW,
   defaultExtractEquation,
+  isSendSmsAction,
   type DataPoint,
   type RawDataPoint,
   type BranchNode,
   type BranchCondition,
   type FinetuneExample,
+  type SendSmsAction,
 } from "./data-point-registry.js";
 import {
   makeIdFactory,
@@ -30,9 +32,11 @@ import {
   buildLiveTransferRecoveryNode,
   buildPreTransferNode,
   buildPerPathTransferCallNode,
+  buildSendSmsTool,
   type AgentConfig,
   type HumanRequestMode,
 } from "./node-builders.js";
+import { config } from "../../config.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,9 +55,15 @@ export interface PathConfig {
   transitionFinetuneExamples?: FinetuneExample[];
 }
 
+/** The flattened, in-order sequence a path compiles into: data points and
+ *  inline SMS actions. Data points feed the standard Collect+Confirm pair
+ *  pattern; SMS actions become Retell function nodes wired into the same
+ *  Variables Router that orchestrates the path's data collection. */
+export type ResolvedSequenceItem = DataPoint | SendSmsAction;
+
 export interface ResolvedPath {
   name: string;
-  resolved: DataPoint[];
+  resolved: ResolvedSequenceItem[];
   endMode: PathEndMode;
   transferDestination?: string;
 }
@@ -122,10 +132,22 @@ function resolveSingleDataPoint(
   return resolved;
 }
 
+// Overload: callers that pass only DPs (no SMS actions in the input type) get
+// the historical DataPoint[] return type back, so existing tests and callers
+// continue to typecheck without casts. The broader RawDataPoint[] overload
+// returns the union and is what generate-agent.ts itself consumes.
+export function resolveDataPoints(
+  rawDataPoints: Array<string | BranchNode | (Partial<DataPoint> & { variableName?: string })>,
+  defaults: Record<string, DataPoint>,
+): DataPoint[];
 export function resolveDataPoints(
   rawDataPoints: RawDataPoint[],
   defaults: Record<string, DataPoint>,
-): DataPoint[] {
+): ResolvedSequenceItem[];
+export function resolveDataPoints(
+  rawDataPoints: RawDataPoint[],
+  defaults: Record<string, DataPoint>,
+): ResolvedSequenceItem[] {
   if (!defaults || Object.keys(defaults).length === 0) {
     throw new Error(
       "No data point defaults provided. Ensure MongoDB data_point_defaults collection is populated.",
@@ -137,8 +159,8 @@ export function resolveDataPoints(
   function flatten(
     items: RawDataPoint[],
     parentConditions: BranchCondition[],
-  ): DataPoint[] {
-    const result: DataPoint[] = [];
+  ): ResolvedSequenceItem[] {
+    const result: ResolvedSequenceItem[] = [];
 
     for (let i = 0; i < items.length; i++) {
       const dp = items[i];
@@ -161,6 +183,17 @@ export function resolveDataPoints(
           dp.ifChain || (dp as any).ifDataPoints || [],
           [...parentConditions, ifCondition],
         );
+        // v1 restriction: SMS actions inside branch chains aren't supported.
+        // The router gate needs unconditional placement to wire cleanly;
+        // conditional actions would require ANDing branch equations onto the
+        // sentinel check, which is doable but deferred.
+        for (const it of ifItems) {
+          if (isSendSmsAction(it)) {
+            throw new Error(
+              `SMS actions inside branch chains aren't supported yet. Move the action to the top level of the path's dataPoints[].`,
+            );
+          }
+        }
         result.push(...ifItems);
 
         // Recursively resolve ELSE chain with inverted condition
@@ -168,7 +201,18 @@ export function resolveDataPoints(
           dp.elseChain || (dp as any).elseDataPoints || [],
           [...parentConditions, elseCondition],
         );
+        for (const it of elseItems) {
+          if (isSendSmsAction(it)) {
+            throw new Error(
+              `SMS actions inside branch chains aren't supported yet. Move the action to the top level of the path's dataPoints[].`,
+            );
+          }
+        }
         result.push(...elseItems);
+      } else if (isSendSmsAction(dp)) {
+        // Pass through unchanged. The data-chain builder consumes this
+        // alongside DataPoints to emit a Retell function node.
+        result.push(dp);
       } else {
         const resolved = resolveSingleDataPoint(dp, i, registry);
         if (parentConditions.length > 0) {
@@ -238,15 +282,20 @@ export function generateAgent(
     }
   });
 
-  // All resolved data points (flattened, for backward compat)
-  const allResolved = resolvedPaths.flatMap((p) => p.resolved);
+  // All resolved data points (flattened, for backward compat). SMS actions
+  // are filtered out here — callers consuming this list (e.g. notification
+  // builders, agent_versions snapshots) only care about variable shapes.
+  const allResolved: DataPoint[] = resolvedPaths
+    .flatMap((p) => p.resolved)
+    .filter((it): it is DataPoint => !isSendSmsAction(it));
 
   // Generate IDs and positions for all paths
-  const pathDataPoints = resolvedPaths.map((p) => p.resolved);
+  const pathSequences = resolvedPaths.map((p) => p.resolved);
   const pathEndModes = resolvedPaths.map((p) => p.endMode);
   const anyTransferPath = pathEndModes.some((m) => m === "transfer");
-  const ids = generateIds(f, pathDataPoints, pathEndModes);
-  const pos = layoutPositions(pathDataPoints, pathEndModes);
+  const anySmsActions = pathSequences.some((seq) => seq.some(isSendSmsAction));
+  const ids = generateIds(f, pathSequences, pathEndModes);
+  const pos = layoutPositions(pathSequences, pathEndModes);
 
   const globalPrompt = `You are Anthony, an inbound receptionist for ${businessName}.
 
@@ -386,12 +435,16 @@ When listing anything — services, time slots, examples, options — never list
   allNodes.push(buildPoliteHangupNode(ids, pos, f));
   allNodes.push(buildGuardrailEndNode(ids, pos));
 
+  // Register the send_sms CustomTool only when a path actually uses it.
+  // Keeps the published flow lean for agents that don't fire SMS mid-call.
+  const flowTools = anySmsActions ? [buildSendSmsTool(config.API_KEY)] : [];
+
   const conversationFlow = {
     version: 1,
     global_prompt: globalPrompt,
     start_node_id: ids.introId,
     start_speaker: "agent",
-    tools: [],
+    tools: flowTools,
     model_choice: {
       type: "cascading",
       model: "gpt-4.1",

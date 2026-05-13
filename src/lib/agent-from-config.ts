@@ -12,6 +12,7 @@ import {
   type PathConfig,
   type FinetuneExample,
 } from "./agent-generator/index.js";
+import { isSendSmsAction } from "./agent-generator/data-point-registry.js";
 import type { HumanRequestMode } from "./agent-generator/node-builders.js";
 import {
   toLabel,
@@ -275,7 +276,11 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
     if (resolvedPaths && resolvedPaths.length > 1) {
       const pathVariables = resolvedPaths.map((p) => ({
         name: p.name,
-        variables: flattenDataPoints(p.resolved),
+        // Filter SMS actions out — notification config only cares about
+        // DataPoints. SMS actions are inline flow steps, not collected data.
+        variables: flattenDataPoints(
+          p.resolved.filter((it): it is DataPoint => !isSendSmsAction(it)),
+        ),
       }));
       jsonEntry = deriveMultiPathNotificationConfig(pathVariables, body.client, agentId);
     } else {

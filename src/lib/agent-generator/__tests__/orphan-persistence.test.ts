@@ -28,6 +28,7 @@ function makePathFixtures(count: number): { pathIds: PathIds; pathPos: PathPosit
     frontExtractId: f.nodeId(),
     routerId: f.nodeId(),
     chain,
+    smsActions: [],
   };
   const zero = { x: 0, y: 0 };
   const pathPos: PathPositions = {
@@ -35,6 +36,7 @@ function makePathFixtures(count: number): { pathIds: PathIds; pathPos: PathPosit
     frontExtract: zero,
     router: zero,
     chain: Array.from({ length: count }, () => ({ conv: zero, confirm: zero })),
+    smsActions: [],
   };
   return { pathIds, pathPos };
 }

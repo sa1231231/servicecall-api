@@ -55,7 +55,34 @@ export interface BranchNode {
   elseChain: RawDataPoint[];
 }
 
-export type RawDataPoint = string | BranchNode | Partial<DataPoint> & { variableName?: string; composite?: boolean; variables?: VariableDef[] };
+// Deterministic mid-call action: fire an SMS via the send_sms CustomTool the
+// generator registers on every flow. Appears inline in a path's dataPoints[]
+// alongside data points; compiled to a Retell function node whose response
+// flips a per-action sentinel variable so the Variables Router moves on.
+//
+// The `template` is a literal string; Retell does {{var}} substitution from
+// collected_dynamic_variables before the tool call is made, so it can
+// reference any previously-collected data point (e.g. {{phone_number}}).
+//
+// `to` defaults to the caller's number — the /retell/send-sms endpoint pulls
+// call.from_number when args.to is omitted, including its "Web Call"/"unknown"
+// guards. Pass an explicit "{{some_other_var}}" to override.
+export interface SendSmsAction {
+  _action: "sendSms";
+  template: string;
+  to?: string;
+  name?: string;
+}
+
+export function isSendSmsAction(x: unknown): x is SendSmsAction {
+  return typeof x === "object" && x !== null && (x as { _action?: unknown })._action === "sendSms";
+}
+
+export type RawDataPoint =
+  | string
+  | BranchNode
+  | SendSmsAction
+  | Partial<DataPoint> & { variableName?: string; composite?: boolean; variables?: VariableDef[] };
 
 // ── Constants ────────────────────────────────────────────────────────────────
 

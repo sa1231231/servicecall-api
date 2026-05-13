@@ -1,10 +1,22 @@
-import type { DataPoint, FinetuneExample } from "./data-point-registry.js";
+import type { DataPoint, FinetuneExample, SendSmsAction } from "./data-point-registry.js";
 import {
   NOT_MENTIONED,
   PHONE_COLLECTED_FLAG,
   PATH_TAKEN_VAR,
+  isSendSmsAction,
 } from "./data-point-registry.js";
 import { renderTemplate } from "../build-notification.js";
+
+// Stable tool id for the send_sms CustomTool registered in every flow's
+// conversationFlow.tools[]. Function nodes generated for SMS actions
+// reference this id via tool_id, which lets the parser identify them
+// deterministically when round-tripping a published flow.
+export const SEND_SMS_TOOL_ID = "send_sms";
+
+// Public URL for the /retell/send-sms endpoint. Kept alongside the post-hook
+// URL (line ~1222) so they share the same source of truth for the public host.
+export const SEND_SMS_TOOL_URL =
+  "https://servicecall-api-production.up.railway.app/retell/send-sms";
 
 // Default templates for the four closing nodes. Use {{business_name}} — substituted on the way to Retell.
 //
@@ -58,11 +70,24 @@ export interface IdFactory {
   goBackId(): string;
 }
 
+export interface SmsActionIds {
+  funcId: string;
+  markSentId: string;
+  /** Boolean dynamic-variable name the Mark Sent node flips to "true" after
+   *  the function call returns. The Variables Router gates the SMS edge on
+   *  (not_exist || != "true") so the action fires exactly once. Unique per
+   *  action across the agent. */
+  sentinelVar: string;
+}
+
 export interface PathIds {
   transitionId: string;
   frontExtractId: string;
   routerId: string;
   chain: Array<{ convId: string; confirmId: string }>;
+  /** Parallel to the SendSmsAction items in ResolvedPath.resolved, in source
+   *  order. Empty when the path has no SMS actions. */
+  smsActions: SmsActionIds[];
   preTransferId?: string;
   transferCallId?: string;
   // Callback paths in multi-path agents own their own Close node.
@@ -96,11 +121,18 @@ interface Position {
   y: number;
 }
 
+export interface SmsActionPositions {
+  func: Position;
+  markSent: Position;
+}
+
 export interface PathPositions {
   transition: Position;
   frontExtract: Position;
   router: Position;
   chain: Array<{ conv: Position; confirm: Position }>;
+  /** Parallel to PathIds.smsActions. */
+  smsActions: SmsActionPositions[];
   preTransfer?: Position;
   transferCall?: Position;
 }
@@ -204,15 +236,20 @@ function resolveFinetuneExamples(
 
 export function generateIds(
   f: IdFactory,
-  pathDataPoints: DataPoint[][],
+  pathSequences: Array<Array<DataPoint | SendSmsAction>>,
   pathEndModes?: Array<"callback" | "transfer">,
 ): Ids {
   // Multi-path callback agents get a per-path Close node so the close prompt
   // can differ per path. Single-path agents keep the shared ids.closeId for
   // layout/backwards-compat.
-  const isMultiPath = pathDataPoints.length > 1;
-  const paths: PathIds[] = pathDataPoints.map((dps, idx) => {
+  const isMultiPath = pathSequences.length > 1;
+  // Globally-unique counter for sentinel variable names, so two SMS actions
+  // in the same agent never collide on a name like is_sms_sent_1.
+  let smsSentinelCounter = 0;
+  const paths: PathIds[] = pathSequences.map((seq, idx) => {
     const isTransfer = pathEndModes?.[idx] === "transfer";
+    const dps = seq.filter((it): it is DataPoint => !isSendSmsAction(it));
+    const actions = seq.filter((it): it is SendSmsAction => isSendSmsAction(it));
     return {
       transitionId: f.nodeId(),
       frontExtractId: f.nodeId(),
@@ -220,6 +257,11 @@ export function generateIds(
       chain: dps.map(() => ({
         convId: f.nodeId(),
         confirmId: f.nodeId(),
+      })),
+      smsActions: actions.map(() => ({
+        funcId: f.nodeId(),
+        markSentId: f.nodeId(),
+        sentinelVar: `is_sms_sent_${++smsSentinelCounter}`,
       })),
       ...(isTransfer
         ? { preTransferId: f.nodeId(), transferCallId: f.nodeId() }
@@ -254,20 +296,42 @@ const STEP_X = 550;
 const PATH_Y_OFFSET = 2000;
 
 export function layoutPositions(
-  pathDataPoints: DataPoint[][],
+  pathSequences: Array<Array<DataPoint | SendSmsAction>>,
   pathEndModes?: Array<"callback" | "transfer">,
 ): Positions {
-  const paths: PathPositions[] = pathDataPoints.map((dps, pathIdx) => {
+  // SMS-action layout sits below the Collect/Confirm row at the source-order
+  // column. Two stacked nodes: function (send_sms) above Mark Sent, both off
+  // to the side so they don't visually crowd the DP chain in the editor.
+  const SMS_Y_FUNC = 1800;
+  const SMS_Y_MARK = 2250;
+
+  const paths: PathPositions[] = pathSequences.map((seq, pathIdx) => {
     const yBase = pathIdx * PATH_Y_OFFSET;
     const isTransfer = pathEndModes?.[pathIdx] === "transfer";
+
+    const dpPositions: Array<{ conv: Position; confirm: Position }> = [];
+    const smsPositions: SmsActionPositions[] = [];
+    seq.forEach((item, i) => {
+      if (isSendSmsAction(item)) {
+        smsPositions.push({
+          func: { x: BASE_X + i * STEP_X, y: SMS_Y_FUNC + yBase },
+          markSent: { x: BASE_X + i * STEP_X, y: SMS_Y_MARK + yBase },
+        });
+      } else {
+        const dpIdx = dpPositions.length;
+        dpPositions.push({
+          conv: { x: BASE_X + dpIdx * STEP_X, y: 900 + yBase },
+          confirm: { x: BASE_X + dpIdx * STEP_X, y: 1350 + yBase },
+        });
+      }
+    });
+
     return {
       transition: { x: -18, y: -400 + yBase },
       frontExtract: { x: -18, y: 0 + yBase },
       router: { x: -18, y: 450 + yBase },
-      chain: dps.map((_, i) => ({
-        conv: { x: BASE_X + i * STEP_X, y: 900 + yBase },
-        confirm: { x: BASE_X + i * STEP_X, y: 1350 + yBase },
-      })),
+      chain: dpPositions,
+      smsActions: smsPositions,
       ...(isTransfer
         ? {
             preTransfer: { x: -18, y: 1800 + yBase },
@@ -277,10 +341,10 @@ export function layoutPositions(
     };
   });
 
-  const chainLengths = pathDataPoints.map((dps) => dps.length);
+  const chainLengths = pathSequences.map((seq) => seq.filter((it) => !isSendSmsAction(it)).length);
   const maxChainLen = chainLengths.length > 0 ? Math.max(...chainLengths) : 0;
   const lastX = BASE_X + (maxChainLen - 1) * STEP_X + STEP_X;
-  const lastPathYBase = (pathDataPoints.length - 1) * PATH_Y_OFFSET;
+  const lastPathYBase = (pathSequences.length - 1) * PATH_Y_OFFSET;
 
   return {
     intro: { x: -18, y: -906 },
@@ -848,25 +912,176 @@ function toVarDefs(rdp: DataPoint) {
   return [def];
 }
 
+// ── Send SMS: tool registration + node pair ──────────────────────────────────
+
+/**
+ * Registers the send_sms CustomTool on a conversation flow. The tool posts to
+ * /retell/send-sms with an Authorization Bearer header; the endpoint authenticates
+ * via API_KEY, falls back to call.from_number when `to` is omitted, and logs every
+ * send to MongoDB outbound_messages (see src/routes/retell/send-sms.ts).
+ *
+ * Returning JSON shapes: { success: true, result } on 200, { success: false, error }
+ * on non-200. Either way the SMS-action's Mark Sent extract node flips the sentinel
+ * variable so the Variables Router never re-fires the same action in one call.
+ */
+export function buildSendSmsTool(apiKey: string) {
+  return {
+    type: "custom",
+    tool_id: SEND_SMS_TOOL_ID,
+    name: SEND_SMS_TOOL_ID,
+    url: SEND_SMS_TOOL_URL,
+    method: "POST",
+    description:
+      "Send an SMS to the caller. Only invoked by deterministic flow nodes — do not call from conversational tool use.",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    parameters: {
+      type: "object",
+      properties: {
+        message: {
+          type: "string",
+          description: "SMS body to send. Max 1600 characters.",
+        },
+        to: {
+          type: "string",
+          description:
+            "Recipient phone in E.164 format. Omit to send to the caller's number (call.from_number).",
+        },
+      },
+      required: ["message"],
+    },
+    speak_during_execution: false,
+    speak_after_execution: false,
+    timeout_ms: 10000,
+  };
+}
+
+/**
+ * Builds the two-node pair for a single SMS action:
+ *   1. Function node — invokes the send_sms tool with the configured template.
+ *   2. Mark Sent extract node — flips the per-action sentinel variable to "true".
+ *
+ * Both nodes route back to the path's Variables Router. Failure-path of the
+ * function node also goes through Mark Sent so a Twilio error doesn't trap
+ * the call in a router→function→router→function loop — the action fires
+ * exactly once, success or not. Errors are already logged in outbound_messages.
+ */
+export function buildSendSmsNode(
+  action: SendSmsAction,
+  sIds: SmsActionIds,
+  sPos: SmsActionPositions,
+  routerId: string,
+  pathSuffix: string,
+  f: IdFactory,
+): Record<string, unknown>[] {
+  const displayName = action.name ?? "Send SMS";
+  // Retell sees args_json in the instruction prompt and assembles the tool
+  // call payload from it. Using static_text gives a single deterministic call
+  // — the LLM doesn't get to pick what to send. {{var}} substitution happens
+  // before Retell forwards the request to our endpoint, so collected dynamic
+  // variables like {{phone_number}} or {{quote_id}} land in the SMS body.
+  const argsObj: Record<string, unknown> = { message: action.template };
+  if (action.to) argsObj.to = action.to;
+  const argsJson = JSON.stringify(argsObj);
+
+  const funcNode = {
+    id: sIds.funcId,
+    type: "function",
+    tool_id: SEND_SMS_TOOL_ID,
+    tool_type: "local",
+    wait_for_result: true,
+    name: `${displayName}${pathSuffix}`,
+    instruction: {
+      type: "static_text",
+      text: `Call send_sms with: ${argsJson}`,
+    },
+    display_position: sPos.func,
+    edges: [
+      {
+        id: f.edgeId(),
+        transition_condition: { type: "prompt", prompt: "Tool call succeeded" },
+        destination_node_id: sIds.markSentId,
+      },
+    ],
+    // Failure route also goes to Mark Sent so the sentinel still flips and the
+    // call doesn't retry. The Twilio failure is logged in outbound_messages.
+    else_edge: {
+      id: f.edgeId(),
+      transition_condition: { type: "prompt", prompt: "Tool call failed" },
+      destination_node_id: sIds.markSentId,
+    },
+  };
+
+  // Mark Sent: an extract_dynamic_variables node whose only purpose is to flip
+  // the sentinel boolean to "true". Mirrors how phone_collected_flag works on
+  // the phone DP's Confirm — the description "Always set to true" tells the
+  // LLM to set the variable without needing a caller turn.
+  const markSentNode = {
+    variables: [
+      {
+        name: sIds.sentinelVar,
+        type: "boolean",
+        description: "Always set to true.",
+      },
+    ],
+    else_edge: {
+      destination_node_id: routerId,
+      id: `${sIds.markSentId}-else-edge`,
+      transition_condition: { type: "prompt", prompt: "Else" },
+    },
+    name: `Mark ${displayName} Sent${pathSuffix}`,
+    edges: [],
+    id: sIds.markSentId,
+    type: "extract_dynamic_variables",
+    display_position: sPos.markSent,
+  };
+
+  return [funcNode, markSentNode];
+}
+
 export function buildDataChain(
-  resolvedDataPoints: DataPoint[],
+  resolvedSequence: Array<DataPoint | SendSmsAction>,
   pathIds: PathIds,
   pathPos: PathPositions,
   closeId: string,
   f: IdFactory,
   pathName?: string,
 ) {
-  if (resolvedDataPoints.length !== pathIds.chain.length) {
+  // Split the union sequence into DP-only / SMS-only views aligned with
+  // pathIds.chain and pathIds.smsActions, then keep a parallel index mapper
+  // so router-edge construction can look up the right id slot per item.
+  const dpItems = resolvedSequence.filter((it): it is DataPoint => !isSendSmsAction(it));
+  const smsItems = resolvedSequence.filter((it): it is SendSmsAction => isSendSmsAction(it));
+  if (dpItems.length !== pathIds.chain.length) {
     throw new Error(
-      `buildDataChain: data point count (${resolvedDataPoints.length}) does not match allocated chain IDs (${pathIds.chain.length})`,
+      `buildDataChain: data point count (${dpItems.length}) does not match allocated chain IDs (${pathIds.chain.length})`,
     );
+  }
+  if (smsItems.length !== pathIds.smsActions.length) {
+    throw new Error(
+      `buildDataChain: SMS action count (${smsItems.length}) does not match allocated SMS ids (${pathIds.smsActions.length})`,
+    );
+  }
+
+  // Per-source-index lookups: dpAt[i] / smsAt[i] return the sub-index into
+  // the respective id arrays, or -1 if the item at i isn't of that kind.
+  const dpAt: number[] = new Array(resolvedSequence.length).fill(-1);
+  const smsAt: number[] = new Array(resolvedSequence.length).fill(-1);
+  {
+    let dpCursor = 0;
+    let smsCursor = 0;
+    resolvedSequence.forEach((it, i) => {
+      if (isSendSmsAction(it)) smsAt[i] = smsCursor++;
+      else dpAt[i] = dpCursor++;
+    });
   }
 
   const nodes: Record<string, unknown>[] = [];
   const suffix = pathName ? ` (${pathName})` : "";
 
-  // Front-loaded Extract: capture all variables from caller's initial input
-  const allVariableDefs = resolvedDataPoints.flatMap(toVarDefs);
+  // Front-loaded Extract: capture all DP variables from the caller's initial
+  // input. SMS sentinel vars are NOT registered here — they're flipped only
+  // by their Mark Sent nodes and the router uses not_exist as the initial gate.
+  const allVariableDefs = dpItems.flatMap(toVarDefs);
 
   // In multi-path mode, add hidden _path_taken variable for post-call routing
   if (pathName) {
@@ -892,12 +1107,33 @@ export function buildDataChain(
     display_position: pathPos.frontExtract,
   });
 
-  // Variables Router: check each variable, route to first missing one.
-  // If a data point has _branchCondition, AND the condition into the edge.
+  // Variables Router: walk the source sequence and produce one edge per item
+  // (DPs gated on "var still missing", SMS actions gated on "sentinel not yet
+  // flipped to true"). Source order = router-edge order, and Retell evaluates
+  // router edges first-match-wins, so an SMS action between DP1 and DP2 only
+  // fires once DP1 is collected.
   // Orphan data points are extract-only — skip them in the router.
-  const nonOrphanDps = resolvedDataPoints.filter((dp) => !dp.orphan);
-  const routerEdges = nonOrphanDps.map((dp) => {
-    const i = resolvedDataPoints.indexOf(dp);
+  const routerEdges: Record<string, unknown>[] = [];
+  resolvedSequence.forEach((item, i) => {
+    if (isSendSmsAction(item)) {
+      const sIds = pathIds.smsActions[smsAt[i]];
+      routerEdges.push({
+        destination_node_id: sIds.funcId,
+        id: f.edgeId(),
+        transition_condition: {
+          type: "equation",
+          equations: [
+            { left: `{{${sIds.sentinelVar}}}`, operator: "not_exist" },
+            { left: `{{${sIds.sentinelVar}}}`, operator: "!=", right: "true" },
+          ],
+          operator: "||",
+        },
+      });
+      return;
+    }
+
+    const dp = item;
+    if (dp.orphan) return;
     let missingEquations: any[];
     let missingOperator: string;
 
@@ -933,6 +1169,8 @@ export function buildDataChain(
       missingOperator = "||";
     }
 
+    const dpIdx = dpAt[i];
+
     // If this data point is inside a branch, AND all branch conditions
     if (dp._branchConditions && dp._branchConditions.length > 0) {
       const branchEqs: any[] = [];
@@ -959,26 +1197,27 @@ export function buildDataChain(
           );
         }
       }
-      return {
-        destination_node_id: pathIds.chain[i].convId,
+      routerEdges.push({
+        destination_node_id: pathIds.chain[dpIdx].convId,
         id: f.edgeId(),
         transition_condition: {
           type: "equation",
           equations: [...missingEquations, ...branchEqs],
           operator: "&&",
         },
-      };
+      });
+      return;
     }
 
-    return {
-      destination_node_id: pathIds.chain[i].convId,
+    routerEdges.push({
+      destination_node_id: pathIds.chain[dpIdx].convId,
       id: f.edgeId(),
       transition_condition: {
         type: "equation",
         equations: missingEquations,
         operator: missingOperator,
       },
-    };
+    });
   });
 
   nodes.push({
@@ -994,9 +1233,16 @@ export function buildDataChain(
     display_position: pathPos.router,
   });
 
+  // Emit SMS-action node pairs: Function (send_sms) → Mark Sent → Router.
+  smsItems.forEach((action, smsIdx) => {
+    const sIds = pathIds.smsActions[smsIdx];
+    const sPos = pathPos.smsActions[smsIdx];
+    nodes.push(...buildSendSmsNode(action, sIds, sPos, pathIds.routerId, suffix, f));
+  });
+
   // Per-variable: Collect (conversation) + Confirm (extract) → back to router
   // Orphan data points are extract-only — no Collect+Confirm nodes needed.
-  resolvedDataPoints.forEach((dp, i) => {
+  dpItems.forEach((dp, i) => {
     if (dp.orphan) return;
     const chainIds = pathIds.chain[i];
     const chainPos = pathPos.chain[i];
@@ -1013,8 +1259,8 @@ export function buildDataChain(
     //     (they live in the same variables array). Composites are usually
     //     atomic (one prompt covers a tightly-scoped Q&A) so the lost
     //     capture window is minor.
-    const taperedNonOrphans = resolvedDataPoints.slice(i).filter((d) => !d.orphan);
-    const persistentOrphans = dp.composite ? [] : resolvedDataPoints.filter((d) => d.orphan);
+    const taperedNonOrphans = dpItems.slice(i).filter((d) => !d.orphan);
+    const persistentOrphans = dp.composite ? [] : dpItems.filter((d) => d.orphan);
     const remainingVarDefs = [...taperedNonOrphans, ...persistentOrphans].flatMap(toVarDefs);
 
     // Collect node — ask for the variable

@@ -305,8 +305,10 @@ describe("generateAgent", () => {
     ];
     const { resolvedPaths } = generateAgent(baseConfig, [], paths, TEST_DEFAULTS);
     expect(resolvedPaths).toHaveLength(2);
-    expect(resolvedPaths![0].resolved[0].variableName).toBe("full_name");
-    expect(resolvedPaths![1].resolved[0].variableName).toBe("city");
+    // resolvedPaths[i].resolved is a union (DataPoint | SendSmsAction); this
+    // test only uses DPs, so cast for property access.
+    expect((resolvedPaths![0].resolved[0] as any).variableName).toBe("full_name");
+    expect((resolvedPaths![1].resolved[0] as any).variableName).toBe("city");
   });
 });
 
