@@ -233,6 +233,7 @@ describe("POST /deleted-agents/:slug/restore", () => {
     mockGetClientDocument.mockResolvedValue({
       agent_id: "agent_1",
       retell_agents: { agent_1: {} },
+      deletedAt: new Date(),
     });
     mockAgentRetrieve.mockResolvedValue({ agent_name: "Acme [DELETED — expires 2026-12-01]" });
     mockAgentUpdate.mockResolvedValue(undefined);
@@ -251,6 +252,7 @@ describe("POST /deleted-agents/:slug/restore", () => {
     mockGetClientDocument.mockResolvedValue({
       agent_id: "agent_1",
       retell_agents: { agent_1: {} },
+      deletedAt: new Date(),
     });
     mockAgentRetrieve.mockResolvedValue({ agent_name: "Already Clean" });
     mockRestoreClient.mockResolvedValue(undefined);
@@ -265,6 +267,7 @@ describe("POST /deleted-agents/:slug/restore", () => {
     mockGetClientDocument.mockResolvedValue({
       agent_id: "agent_1",
       retell_agents: { agent_1: {} },
+      deletedAt: new Date(),
     });
     mockAgentRetrieve.mockRejectedValue(new Error("retell down"));
     mockRestoreClient.mockResolvedValue(undefined);
@@ -276,13 +279,35 @@ describe("POST /deleted-agents/:slug/restore", () => {
   });
 
   it("returns 500 when restore itself fails", async () => {
-    mockGetClientDocument.mockResolvedValue({ agent_id: "agent_1", retell_agents: {} });
+    mockGetClientDocument.mockResolvedValue({ agent_id: "agent_1", retell_agents: {}, deletedAt: new Date() });
     mockAgentRetrieve.mockResolvedValue({ agent_name: "Clean" });
     mockRestoreClient.mockRejectedValue(new Error("db blew up"));
     const res = makeRes();
     await runRoute(dashboardApiRouter, "post", "/deleted-agents/:slug/restore",
       makeReq({ params: { slug: "acme" } }), res);
     expect(res._status).toBe(500);
+  });
+
+  it("returns 404 when slug does not exist", async () => {
+    mockGetClientDocument.mockResolvedValue(null);
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "post", "/deleted-agents/:slug/restore",
+      makeReq({ params: { slug: "ghost" } }), res);
+    expect(res._status).toBe(404);
+    expect(mockRestoreClient).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when the agent is not soft-deleted", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      agent_id: "agent_1",
+      retell_agents: {},
+      // No deletedAt — agent is live.
+    });
+    const res = makeRes();
+    await runRoute(dashboardApiRouter, "post", "/deleted-agents/:slug/restore",
+      makeReq({ params: { slug: "acme" } }), res);
+    expect(res._status).toBe(409);
+    expect(mockRestoreClient).not.toHaveBeenCalled();
   });
 });
 
@@ -320,6 +345,7 @@ describe("DELETE /deleted-agents/:slug", () => {
     mockGetClientDocument.mockResolvedValue({
       agent_id: "agent_1",
       retell_agents: { agent_1: {} },
+      deletedAt: new Date(),
     });
     mockReleaseAgentResources.mockResolvedValue({
       released: [],

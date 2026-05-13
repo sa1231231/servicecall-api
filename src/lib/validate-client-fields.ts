@@ -88,6 +88,34 @@ function checkLength(label: string, val: unknown, max: number, errors: string[])
   }
 }
 
+function checkString(label: string, val: unknown, errors: string[]): void {
+  if (val === null || val === undefined) return;
+  if (typeof val !== "string") {
+    errors.push(`${label}: must be a string (got ${typeof val})`);
+  }
+}
+
+function checkStringArray(label: string, val: unknown, errors: string[]): void {
+  if (val === null || val === undefined) return;
+  if (!Array.isArray(val)) {
+    errors.push(`${label}: must be an array of strings (got ${typeof val})`);
+    return;
+  }
+  for (const s of val) {
+    if (typeof s !== "string") {
+      errors.push(`${label}: array entries must be strings (got ${typeof s})`);
+      return;
+    }
+  }
+}
+
+function checkPlainObject(label: string, val: unknown, errors: string[]): void {
+  if (val === null || val === undefined) return;
+  if (typeof val !== "object" || Array.isArray(val)) {
+    errors.push(`${label}: must be an object`);
+  }
+}
+
 /** Validate a partial client-doc update. Returns [] if all checks pass. */
 export function validateClientFieldUpdates(updates: Record<string, unknown>): string[] {
   const errors: string[] = [];
@@ -159,9 +187,18 @@ export function validateGlobalSettingsUpdates(updates: Record<string, unknown>):
     }
   }
 
+  checkString("review_sms_message", updates.review_sms_message, errors);
+  checkString("payment_sms_message", updates.payment_sms_message, errors);
+  checkString("portal_sms_message", updates.portal_sms_message, errors);
   checkLength("review_sms_message", updates.review_sms_message, FIELD_LIMITS.review_sms_message, errors);
   checkLength("payment_sms_message", updates.payment_sms_message, FIELD_LIMITS.payment_sms_message, errors);
   checkLength("portal_sms_message", updates.portal_sms_message, FIELD_LIMITS.portal_sms_message, errors);
+
+  if ("category_order" in updates) checkStringArray("category_order", updates.category_order, errors);
+  if ("category_labels" in updates) checkPlainObject("category_labels", updates.category_labels, errors);
+  if ("lead_intake_enabled" in updates && updates.lead_intake_enabled !== null && typeof updates.lead_intake_enabled !== "boolean") {
+    errors.push("lead_intake_enabled: must be a boolean");
+  }
 
   if ("setup_instructions" in updates) {
     const v = updates.setup_instructions;

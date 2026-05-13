@@ -166,7 +166,18 @@ dashboardApiRouter.post("/deleted-agents/:slug/restore", requireFeature("permane
   try {
     // Restore the Retell agent names (strip "[DELETED — expires ...]" suffix)
     const doc = await getClientDocument(slug);
-    if (doc) {
+    // The route only makes sense for a soft-deleted client. If the slug
+    // doesn't exist or the doc isn't soft-deleted, refuse — otherwise the
+    // endpoint silently no-ops with "success: true".
+    if (!doc) {
+      res.status(404).json({ error: `No agent found for slug "${slug}"` });
+      return;
+    }
+    if (!doc.deletedAt) {
+      res.status(409).json({ error: `Agent "${slug}" is not soft-deleted` });
+      return;
+    }
+    {
       const retell = new Retell({ apiKey: config.RETELL_API_KEY });
       const deletedPattern = /\s*\[DELETED — expires \d{4}-\d{2}-\d{2}\]$/;
       const allIds = new Set([

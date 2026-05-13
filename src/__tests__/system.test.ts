@@ -519,7 +519,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     it("creates user", async () => {
       const resp = await fetch(url("/dashboard/api/users"), {
         method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ username: testUser, password: "testpass123", role: "viewer" }),
+        body: JSON.stringify({ username: testUser, password: "testpass123!", role: "viewer" }),
       });
       expect(resp.status).toBe(200);
       expect((await json(resp)).username).toBe(testUser);
@@ -527,7 +527,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     it("rejects duplicate", async () => {
       expect((await fetch(url("/dashboard/api/users"), {
         method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ username: testUser, password: "testpass123", role: "viewer" }),
+        body: JSON.stringify({ username: testUser, password: "testpass123!", role: "viewer" }),
       })).status).toBe(400);
     });
     it("updates permissions", async () => {
@@ -964,7 +964,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     it("super_admin role accepted in user creation", async () => {
       const resp = await fetch(url("/dashboard/api/users"), {
         method: "POST", headers: authHeaders(),
-        body: JSON.stringify({ username: superAdminTestUser, password: "testpass123", role: "super_admin" }),
+        body: JSON.stringify({ username: superAdminTestUser, password: "testpass123!", role: "super_admin" }),
       });
       expect(resp.status).toBe(200);
       // Clean up (afterAll repeats this as a safety net if the assertion threw)
@@ -2649,8 +2649,9 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         fetch(url(`/dashboard/api/agents/${SLUG}/calls?limit=2&offset=0`), { headers: authHeaders() }).then(json),
         fetch(url(`/dashboard/api/agents/${SLUG}/calls?limit=2&offset=2`), { headers: authHeaders() }).then(json),
       ]);
-      // Only assert difference if Demo Meter has at least 4 calls in the log.
-      if (page1.length === 2 && page2.length > 0) {
+      // Only assert difference when both pages actually returned call_id-bearing rows.
+      // Demo Meter's call log can be sparse; skip the comparison when it is.
+      if (Array.isArray(page1) && Array.isArray(page2) && page1[0]?.call_id && page2[0]?.call_id) {
         expect(page2[0].call_id).not.toBe(page1[0].call_id);
       }
     });
