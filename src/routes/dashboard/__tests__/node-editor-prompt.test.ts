@@ -209,8 +209,9 @@ describe("POST /:agentId/edit-prompt", () => {
       expect.anything(), "edit_node_prompt", "acme/agent_1",
       { nodeId: "n1", nodeName: "Greeting" },
     );
-    // edit-prompt does NOT push to Retell — user publishes explicitly
-    expect(mockPushFlowToRetell).not.toHaveBeenCalled();
+    // edit-prompt pushes to Retell so the next GET (which pulls from
+    // Retell and overwrites Mongo) doesn't revert the edit.
+    expect(mockPushFlowToRetell).toHaveBeenCalledTimes(1);
   });
 });
 

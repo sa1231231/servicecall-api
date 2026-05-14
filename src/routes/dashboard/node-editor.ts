@@ -574,7 +574,9 @@ nodeEditorRouter.post("/:agentId/edit-prompt", async (req, res) => {
       return;
     }
 
-    // Store in MongoDB (no Retell push — user publishes explicitly)
+    // Push to Retell first so the next GET (which pulls from Retell and
+    // overwrites the Mongo snapshot) doesn't revert this edit.
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_node_prompt", `${slug}/${agentId}`, { nodeId, nodeName: targetNode.name });
@@ -627,7 +629,8 @@ nodeEditorRouter.post("/:agentId/edit-global-prompt", async (req, res) => {
       return;
     }
 
-    // Push to Retell
+    // Push to Retell first so the next GET doesn't overwrite this edit.
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_global_prompt", `${slug}/${agentId}`);
@@ -706,7 +709,8 @@ nodeEditorRouter.post("/:agentId/edit-transition", async (req, res) => {
       return;
     }
 
-    // Push to Retell
+    // Push to Retell first so the next GET doesn't overwrite this edit.
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_transition", `${slug}/${agentId}`, { pathName, transitionCondition });
@@ -1088,6 +1092,7 @@ nodeEditorRouter.post("/:agentId/add-data-point", async (req, res) => {
       return;
     }
 
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "add_data_point", `${slug}/${agentId}`, {
@@ -1186,6 +1191,7 @@ nodeEditorRouter.post("/:agentId/remove-data-point", async (req, res) => {
       return;
     }
 
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "remove_data_point", `${slug}/${agentId}`, {
@@ -1279,6 +1285,7 @@ nodeEditorRouter.post("/:agentId/reorder-data-points", async (req, res) => {
       return;
     }
 
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "reorder_data_points", `${slug}/${agentId}`, {
@@ -1479,6 +1486,7 @@ nodeEditorRouter.post("/:agentId/edit-branch-condition", async (req, res) => {
       return;
     }
 
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_branch_condition", `${slug}/${agentId}`, {
@@ -1630,6 +1638,9 @@ nodeEditorRouter.post("/:agentId/edit-path-name", async (req, res) => {
       else if (nm === `Transfer Call (${oldName})`) n.name = `Transfer Call (${newName})`;
     }
 
+    // Push to Retell first so the renamed nodes propagate. Without this,
+    // the next GET pulls the old node names back and overwrites Mongo.
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await getDb()
       .collection<JsonClientEntry & { _id: string }>("clients")
       .updateOne({ _id: slug } as any, { $set: updates });
@@ -1797,6 +1808,7 @@ nodeEditorRouter.post("/:agentId/edit-human-request-mode", async (req, res) => {
       return;
     }
 
+    await pushFlowToRetell(retell(), snapshot.conversationFlowId, canonical);
     await storeCanonical(slug, agentId, canonical, resolved.doc);
 
     await logAudit(req, "edit_human_request_mode", `${slug}/${agentId}`, { mode });

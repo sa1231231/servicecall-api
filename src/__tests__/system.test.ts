@@ -1314,7 +1314,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     // ── edit-prompt ────────────────────────────────────────────────
 
     describe("edit-prompt", () => {
-      it("edits Close node", { timeout: 30_000 }, async () => {
+      it("edits Close node and the edit survives a GET (push verified)", { timeout: 30_000 }, async () => {
         const struct = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
         // Multi-path agents have "Close (pathName)" nodes; single-path agents
         // keep the legacy singleton "Close". Accept either.
@@ -1322,12 +1322,30 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
           n.name === "Close" || (typeof n.name === "string" && n.name.startsWith("Close ("))
         );
         expect(closeNode).toBeDefined();
-        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-prompt`), {
-          method: "POST", headers: authHeaders(),
-          body: JSON.stringify({ nodeId: closeNode.id, instruction: `Thank the caller. [SYSTEST-${Date.now()}]` }),
-        });
-        expect(resp.status).toBe(200);
-        expect((await json(resp)).success).toBe(true);
+        const originalPrompt = closeNode.instruction?.text ?? "";
+        const marker = `[SYSTEST-${Date.now()}]`;
+        const newPrompt = `Thank the caller. ${marker}`;
+        try {
+          const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-prompt`), {
+            method: "POST", headers: authHeaders(),
+            body: JSON.stringify({ nodeId: closeNode.id, instruction: newPrompt }),
+          });
+          expect(resp.status).toBe(200);
+          expect((await json(resp)).success).toBe(true);
+
+          // Readback verifies the edit reached Retell — GET pulls from
+          // Retell, so a missing push would surface as the original text.
+          const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+          const closeAfter = after.nodes.find((n: any) => n.id === closeNode.id);
+          expect(closeAfter.instruction.text).toContain(marker);
+        } finally {
+          if (originalPrompt) {
+            await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-prompt`), {
+              method: "POST", headers: authHeaders(),
+              body: JSON.stringify({ nodeId: closeNode.id, instruction: originalPrompt }),
+            });
+          }
+        }
       });
 
       it("rejects empty instruction", async () => {
@@ -1355,14 +1373,26 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     // ── edit-global-prompt ─────────────────────────────────────────
 
     describe("edit-global-prompt", () => {
-      it("changes global prompt", { timeout: 30_000 }, async () => {
+      it("changes global prompt and the edit survives a GET (push verified)", { timeout: 30_000 }, async () => {
         const struct = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
-        const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-global-prompt`), {
-          method: "POST", headers: authHeaders(),
-          body: JSON.stringify({ globalPrompt: struct.globalPrompt + `\n[TEST-${Date.now()}]` }),
-        });
-        expect(resp.status).toBe(200);
-        expect((await json(resp)).success).toBe(true);
+        const original = struct.globalPrompt;
+        const marker = `[TEST-${Date.now()}]`;
+        try {
+          const resp = await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-global-prompt`), {
+            method: "POST", headers: authHeaders(),
+            body: JSON.stringify({ globalPrompt: original + "\n" + marker }),
+          });
+          expect(resp.status).toBe(200);
+          expect((await json(resp)).success).toBe(true);
+
+          const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
+          expect(after.globalPrompt).toContain(marker);
+        } finally {
+          await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-global-prompt`), {
+            method: "POST", headers: authHeaders(),
+            body: JSON.stringify({ globalPrompt: original }),
+          });
+        }
       });
 
       it("rejects empty", async () => {
@@ -1594,44 +1624,29 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     // ── edit-branch-condition ──────────────────────────────────────
 
     describe("edit-branch-condition", () => {
-      // edit-branch-condition stages to Mongo only; the next GET pulls
-      // from Retell and overwrites Mongo, wiping unpublished edits. To
-      // round-trip a branch end-to-end (and verify it survives a GET) we
-      // publish through save-and-publish, which pushes to Retell.
-      //
       // Setup: install a temporary branch on phone_number (referencing
       // preferred_day == "Monday") so the test has something to clear.
-      // Teardown: strip the branch the same way.
+      // Teardown: strip the branch.
       const TEST_BRANCH = [{ variable: "preferred_day", operator: "==", value: "Monday" }];
-      const SERVICE_CALL_DPS = ["full_name", "phone_number", "problem_description", "street_address", "preferred_day"];
-      async function publishBranchOnPhone(bc: any[] | null) {
-        return fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/save-and-publish`), {
+      async function setBranchOnPhone(bc: any[] | null) {
+        return fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-branch-condition`), {
           method: "POST", headers: authHeaders(),
           body: JSON.stringify({
-            changes: {
-              description: bc === null
-                ? "System test: clear branch on phone_number"
-                : "System test: set branch on phone_number",
-              paths: {
-                service_call: {
-                  dataPointKeys: SERVICE_CALL_DPS,
-                  branchConditions: { phone_number: bc },
-                },
-              },
-            },
+            variableName: "phone_number", pathName: "service_call",
+            branchConditions: bc,
           }),
         });
       }
       beforeAll(async () => {
-        await publishBranchOnPhone(TEST_BRANCH);
+        await setBranchOnPhone(TEST_BRANCH);
       });
       afterAll(async () => {
-        await publishBranchOnPhone(null);
+        await setBranchOnPhone(null);
       });
 
       it("clears the branch condition on phone_number end-to-end and restores", { timeout: 45_000 }, async () => {
-        // Capture the live branch state — beforeAll set one but we don't
-        // assume the exact shape. Clear → verify cleared → restore.
+        // beforeAll set a branch — verify it survived the round trip,
+        // then clear it, verify cleared, restore.
         const before = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
         const dm = before.paths.find((p: any) => p.name === "service_call");
         const phone = dm?.dataPoints.find((d: any) => d.variableName === "phone_number");
@@ -1641,19 +1656,17 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
         let mutated = false;
         try {
-          const resp = await publishBranchOnPhone(null);
+          const resp = await setBranchOnPhone(null);
           expect(resp.status).toBe(200);
           mutated = true;
 
           const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
           const dm2 = after.paths.find((p: any) => p.name === "service_call");
           const phone2 = dm2.dataPoints.find((d: any) => d.variableName === "phone_number");
-          // After clearing, the variable should still exist but have no
-          // branch attached.
           expect(phone2.branchConditions ?? null).toBeNull();
         } finally {
           if (mutated && original !== null) {
-            await publishBranchOnPhone(original);
+            await setBranchOnPhone(original);
           }
         }
       });
