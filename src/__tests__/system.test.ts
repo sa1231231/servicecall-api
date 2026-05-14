@@ -916,6 +916,62 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         expect(Array.isArray(ex.transcript) && ex.transcript.length > 0).toBe(true);
       }
     });
+
+    it("Emergency Guardrail global node is not emitted on the deployed flow", async () => {
+      // Regression: the bespoke "Emergency Gaurd Rail" node was removed
+      // in favor of Retell's built-in emergency guardrails. Verify the
+      // deployed canonical flow doesn't carry it.
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      expect(flow).toBeDefined();
+      const emergency = flow.nodes.find((n: any) => n.name === "Emergency Gaurd Rail");
+      expect(emergency, "Emergency Guard Rail should NOT be present").toBeUndefined();
+    });
+
+    it("Human Request global ships ≥10 baseline positive examples", async () => {
+      // Regression: HUMAN_REQUEST_BASELINE_EXAMPLES expanded from 1 to
+      // ~10 phrasings. Verify the deployed agent carries the full
+      // baseline (workspace additions, if any, sit on top).
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      const hr = flow.nodes.find((n: any) => n.name === "Human Request");
+      expect(hr, "Human Request node should be present").toBeDefined();
+      const positives = hr.global_node_setting?.positive_finetune_examples ?? [];
+      expect(positives.length).toBeGreaterThanOrEqual(10);
+      // Sanity: a well-known baseline phrasing must survive the merge.
+      const utterances = positives.map(
+        (ex: any) => ex.transcript?.find((t: any) => t.role === "user")?.content,
+      );
+      expect(utterances).toContain("can I talk to the supervisor?");
+    });
+
+    it("Irrelevant Guardrail global ships non-empty baseline positive examples", async () => {
+      // Regression: positive_finetune_examples was empty before — now
+      // ships an off-topic baseline (IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES).
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      const ig = flow.nodes.find((n: any) => n.name === "irrelevantGaurdrail");
+      expect(ig, "Irrelevant Guardrail node should be present").toBeDefined();
+      const positives = ig.global_node_setting?.positive_finetune_examples ?? [];
+      expect(positives.length).toBeGreaterThan(0);
+      // Each positive should have a user transcript line.
+      for (const ex of positives) {
+        const userLine = ex.transcript?.find((t: any) => t.role === "user")?.content;
+        expect(typeof userLine === "string" && userLine.length > 0).toBe(true);
+      }
+    });
   });
 
   // ── 17. Data Point Defaults ─────────────────────────────────────────
