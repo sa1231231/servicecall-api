@@ -307,7 +307,6 @@ Snapshot FAQ knowledge base for testing.",
   {
     "edges": [
       "→ Closing Remarks (The caller has no more questions)",
-      "→ Admin/FAQ (The caller has another question)",
     ],
     "finetune_transition_examples": "[8 examples]",
     "instruction": {
@@ -1008,7 +1007,6 @@ Snapshot FAQ knowledge base for testing.",
   {
     "edges": [
       "→ Closing Remarks (The caller has no more questions)",
-      "→ Admin/FAQ (The caller has another question)",
     ],
     "finetune_transition_examples": "[8 examples]",
     "instruction": {

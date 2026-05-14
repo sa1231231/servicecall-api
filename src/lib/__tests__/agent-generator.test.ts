@@ -669,25 +669,25 @@ describe("per-path end mode", () => {
 
     // Chain: Close → Close Question → Closing Remarks → Closing Statement.
     expect(close.always_edge.destination_node_id).toBe(closeQuestion.id);
-    // Close Question has two edges: "no more questions" → Closing Remarks
-    // (advances the closing chain) and "has another question" → Admin/FAQ
-    // (context-specific reinforcement of the global FAQ jump).
-    expect(closeQuestion.edges).toHaveLength(2);
-    const noMoreEdge = closeQuestion.edges.find(
-      (e: any) => e.transition_condition.prompt === "The caller has no more questions",
-    );
-    const anotherQuestionEdge = closeQuestion.edges.find(
-      (e: any) => e.transition_condition.prompt === "The caller has another question",
-    );
+    // Close Question has ONE explicit edge: "no more questions" → Closing
+    // Remarks. The follow-up-question path runs through the Admin/FAQ
+    // global node's `condition`; we used to emit a second explicit edge
+    // here for context-specific training but Retell's console rendered
+    // that as a duplicate Admin/FAQ entry (once via edge, once via global)
+    // so it was dropped. The finetune_transition_examples below still
+    // train the global jump with their destination_node_id.
+    expect(closeQuestion.edges).toHaveLength(1);
+    const noMoreEdge = closeQuestion.edges[0];
+    expect(noMoreEdge.transition_condition.prompt).toBe("The caller has no more questions");
     expect(noMoreEdge.destination_node_id).toBe(closingRemarks.id);
-    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
-    expect(anotherQuestionEdge.destination_node_id).toBe(faq.id);
     expect(closingRemarks.always_edge.destination_node_id).toBe(closingStatement.id);
 
     // Default prompt text is used when no override is provided.
     expect(closeQuestion.instruction.text).toContain("anything else");
 
-    // Finetune transition examples train the FAQ jump from this node.
+    // Finetune transition examples train the FAQ jump from this node by
+    // pointing at the global FAQ node id (no explicit edge needed).
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
     expect(closeQuestion.finetune_transition_examples.length).toBeGreaterThan(0);
     for (const ex of closeQuestion.finetune_transition_examples) {
       expect(ex.destination_node_id).toBe(faq.id);

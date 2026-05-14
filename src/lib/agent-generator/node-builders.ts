@@ -1502,6 +1502,17 @@ export function buildCloseQuestionNode(
       }),
     },
     name: "Close Question",
+    // Only one explicit edge — to Closing Remarks when the caller is done.
+    // The Admin/FAQ global node catches follow-up questions via its
+    // `condition` + go_back_conditions; emitting a second edge here
+    // doubled the destination in Retell's console (once via edge, once
+    // via global) which read as a bug.
+    //
+    // The finetune_transition_examples below still carry
+    // destination_node_id = ids.faqId. With no explicit edge to FAQ,
+    // those train the model on the contextual "actually yeah / one more
+    // thing" phrasing specific to this node and trigger the global jump
+    // — single source of truth in the Retell UI.
     edges: [
       {
         destination_node_id: ids.closingRemarksId,
@@ -1509,14 +1520,6 @@ export function buildCloseQuestionNode(
         transition_condition: {
           type: "prompt",
           prompt: "The caller has no more questions",
-        },
-      },
-      {
-        destination_node_id: ids.faqId,
-        id: f.edgeId(),
-        transition_condition: {
-          type: "prompt",
-          prompt: "The caller has another question",
         },
       },
     ],
