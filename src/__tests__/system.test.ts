@@ -1318,11 +1318,13 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         const struct = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
         // Multi-path agents have "Close (pathName)" nodes; single-path agents
         // keep the legacy singleton "Close". Accept either.
+        // The GET reshape exposes the prompt as `promptPreview` (not
+        // `instruction.text`), so use that for capture + verification.
         const closeNode = struct.nodes.find((n: any) =>
           n.name === "Close" || (typeof n.name === "string" && n.name.startsWith("Close ("))
         );
         expect(closeNode).toBeDefined();
-        const originalPrompt = closeNode.instruction?.text ?? "";
+        const originalPrompt = closeNode.promptPreview ?? "";
         const marker = `[SYSTEST-${Date.now()}]`;
         const newPrompt = `Thank the caller. ${marker}`;
         try {
@@ -1337,7 +1339,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
           // Retell, so a missing push would surface as the original text.
           const after = await json(await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}`), { headers: authHeaders() }));
           const closeAfter = after.nodes.find((n: any) => n.id === closeNode.id);
-          expect(closeAfter.instruction.text).toContain(marker);
+          expect(closeAfter.promptPreview).toContain(marker);
         } finally {
           if (originalPrompt) {
             await fetch(url(`/dashboard/api/agents/${SLUG}/nodes/${AGENT_ID}/edit-prompt`), {
