@@ -4,7 +4,7 @@ exports[`agent-generator canonical JSON snapshot > multi-path agent: stable shap
 [
   {
     "edges": [
-      "→ Intro (You answered the caller's question.)",
+      "→ Path Router (You answered the caller's question.)",
     ],
     "global_node_setting": {
       "condition": "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
@@ -783,6 +783,15 @@ Set a clear boundary by stating that you cannot continue unrelated conversations
     "type": "conversation",
   },
   {
+    "edges": [
+      "→ Variables Router (Callback) (equation)",
+      "→ Variables Router (Transfer) (equation)",
+    ],
+    "else_edge": "→ Intro (else)",
+    "name": "Path Router",
+    "type": "branch",
+  },
+  {
     "always_edge": "→ End Call (Always)",
     "edges": [],
     "instruction": {
@@ -886,7 +895,7 @@ exports[`agent-generator canonical JSON snapshot > single-path agent: stable sha
 [
   {
     "edges": [
-      "→ Conversation (You answered the caller's question.)",
+      "→ Path Router (You answered the caller's question.)",
     ],
     "global_node_setting": {
       "condition": "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
@@ -1647,6 +1656,14 @@ Set a clear boundary by stating that you cannot continue unrelated conversations
     },
     "name": "irrelevantGaurdrail",
     "type": "conversation",
+  },
+  {
+    "edges": [
+      "→ Variables Router (equation)",
+    ],
+    "else_edge": "→ Intro (else)",
+    "name": "Path Router",
+    "type": "branch",
   },
   {
     "always_edge": "→ End Call (Always)",

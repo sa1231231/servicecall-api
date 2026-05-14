@@ -18,6 +18,7 @@ import {
   buildIntroNode,
   buildTransitionNode,
   buildFaqNode,
+  buildPathRouterNode,
   buildHumanRequestNode,
   buildDataChain,
   buildCloseNode,
@@ -34,6 +35,7 @@ import {
   buildMcpServerEntry,
   type AgentConfig,
   type HumanRequestMode,
+  type IntroPathConfig,
 } from "./node-builders.js";
 import { config } from "../../config.js";
 
@@ -405,6 +407,11 @@ When listing anything — services, time slots, examples, options — never list
       agentConfig.faqGlobalFinetuneExamples,
     ),
   );
+  // Path Router sits on FAQ's outgoing "answered" edge. Routes back to
+  // the matching path's Variables Router when `_path_taken` is set,
+  // else falls through to Intro. Makes mid-call FAQ returns
+  // deterministic when Retell's `go_back_conditions` doesn't fire.
+  allNodes.push(buildPathRouterNode(ids, pos, f, paths as IntroPathConfig[]));
   allNodes.push(
     buildHumanRequestNode(ids, pos, f, humanMode, agentConfig.humanRequestFinetuneExamples),
   );

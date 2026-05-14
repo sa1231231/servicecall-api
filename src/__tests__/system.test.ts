@@ -953,6 +953,39 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(utterances).toContain("can I talk to the supervisor?");
     });
 
+    it("Path Router is emitted and FAQ routes through it (deterministic resume)", async () => {
+      // Regression for the FAQ go-back unreliability fix: the FAQ's
+      // "answered the caller's question" edge should route through the
+      // Path Router (which deterministically resumes the right path
+      // based on _path_taken), not back to Intro.
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      const pathRouter = flow.nodes.find((n: any) => n.name === "Path Router");
+      const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+      const intro = flow.nodes.find((n: any) => n.name === "Intro");
+      expect(pathRouter, "Path Router node should be present").toBeDefined();
+      expect(pathRouter.type).toBe("branch");
+
+      // FAQ's "answered" edge → Path Router (not Intro).
+      const answered = (faq.edges as any[]).find(
+        (e: any) => e.transition_condition?.prompt === "You answered the caller's question.",
+      );
+      expect(answered.destination_node_id).toBe(pathRouter.id);
+
+      // Path Router has one branch per HVAC path (service_call,
+      // emergency_call, existing_customer) and falls through to Intro.
+      expect(pathRouter.edges).toHaveLength(3);
+      const pathNames = (pathRouter.edges as any[])
+        .map((e: any) => e.transition_condition?.equations?.[0]?.right)
+        .sort();
+      expect(pathNames).toEqual(["emergency_call", "existing_customer", "service_call"]);
+      expect(pathRouter.else_edge.destination_node_id).toBe(intro.id);
+    });
+
     it("Irrelevant Guardrail global ships non-empty baseline positive examples", async () => {
       // Regression: positive_finetune_examples was empty before — now
       // ships an off-topic baseline (IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES).

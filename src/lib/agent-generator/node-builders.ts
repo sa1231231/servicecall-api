@@ -181,6 +181,12 @@ interface Ids {
   introId: string;
   endId: string;
   faqId: string;
+  /** Deterministic resume router: sits between FAQ's "answered" edge and
+   *  the rest of the flow. Checks `_path_taken` and routes straight to
+   *  the matching path's Variables Router on a mid-call FAQ return.
+   *  Falls through to Intro when `_path_taken` doesn't exist yet (FAQ
+   *  asked before the caller stated their intent). See buildPathRouterNode. */
+  pathRouterId: string;
   humanReqId: string;
   transferCallId: string;
   transferFailedId: string;
@@ -222,6 +228,7 @@ interface Positions {
   intro: Position;
   end: Position;
   faq: Position;
+  pathRouter: Position;
   humanReq: Position;
   irrelevantGuardrail: Position;
   politeHangup: Position;
@@ -376,6 +383,7 @@ export function generateIds(
     introId: f.nodeId(),
     endId: f.nodeId(),
     faqId: f.nodeId(),
+    pathRouterId: f.nodeId(),
     humanReqId: f.nodeId(),
     transferCallId: f.nodeId(),
     transferFailedId: f.nodeId(),
@@ -453,6 +461,10 @@ const CLOSE_HEADROOM = 500;      // gap from the deepest path's last node to the
 
 // Globals on the left.
 const FAQ_POS: Position = { x: -498, y: -642 };
+// Path Router sits between the FAQ globals column and the Intro path
+// entry, just below Admin/FAQ. Visually communicates that it's part of
+// the FAQ resume chain (not a "real" branch in the call flow).
+const PATH_ROUTER_POS: Position = { x: 18, y: -642 };
 const HUMAN_REQ_POS: Position = { x: -1242, y: 222 };
 const IRRELEVANT_GUARDRAIL_POS: Position = { x: -1242, y: 942 };
 const POLITE_HANGUP_POS: Position = { x: -690, y: 870 };
@@ -536,6 +548,7 @@ export function layoutPositions(
     // below, which is the Polite Hangup chain's terminal.
     end: { x: END_X, y: closeYMid },
     faq: FAQ_POS,
+    pathRouter: PATH_ROUTER_POS,
     humanReq: HUMAN_REQ_POS,
     irrelevantGuardrail: IRRELEVANT_GUARDRAIL_POS,
     politeHangup: POLITE_HANGUP_POS,
@@ -702,14 +715,17 @@ export function buildFaqNode(
   ids: Ids,
   pos: Positions,
   f: IdFactory,
-  isMultiPath?: boolean,
+  _isMultiPath?: boolean,
   positiveExamples?: FinetuneExample[],
 ) {
-  // Multi-path: forward-intent goes to Intro so caller re-enters path routing
-  // Single-path: forward-intent goes directly to transition (existing behavior)
-  const forwardDestination = isMultiPath
-    ? ids.introId
-    : ids.paths[0].transitionId;
+  // Forward through the Path Router on the "answered the caller's
+  // question" exit — that node checks _path_taken and skips back to
+  // the matching path's Variables Router when the caller jumped into
+  // FAQ mid-call. Falls through to Intro when no path has been entered
+  // yet. This is the fallback when Retell's `go_back_conditions`
+  // doesn't fire reliably; when it does, the caller returns to their
+  // previous node directly and never traverses this edge.
+  const forwardDestination = ids.pathRouterId;
 
   // Additive layering: baseline always ships, workspace override extends
   // it (dedup by user-utterance). Operator can add to the baseline but
@@ -755,6 +771,61 @@ ${faqKnowledgeBase}`,
     id: ids.faqId,
     type: "conversation",
     display_position: pos.faq,
+  };
+}
+
+/**
+ * Deterministic resume router for mid-call FAQ returns.
+ *
+ * Sits between the Admin/FAQ node's "answered the caller's question"
+ * edge and the rest of the flow. Evaluates `_path_taken` (the hidden
+ * variable each path's front Extract stamps on entry) and routes
+ * straight to the matching path's Variables Router — skipping Intro
+ * re-classification and the Transition's "let me grab the information"
+ * reacknowledgement. When `_path_taken` doesn't exist (FAQ asked before
+ * any path entry), the else_edge falls through to Intro and the call
+ * unfolds normally.
+ *
+ * This is the safety net for Retell's `go_back_conditions`. When go-back
+ * fires, the caller returns to their previous node directly and never
+ * touches this router. When go-back is finicky and the FAQ's explicit
+ * "answered" edge fires instead, the Path Router resumes the path
+ * deterministically instead of re-classifying.
+ */
+export function buildPathRouterNode(
+  ids: Ids,
+  pos: Positions,
+  f: IdFactory,
+  pathConfigs?: IntroPathConfig[],
+) {
+  // Single-path agents still get a Path Router. The Default path's
+  // front Extract stamps `_path_taken = "Default"`, so a mid-call FAQ
+  // return matches and skips Intro + Transition reacknowledgement.
+  const paths = pathConfigs && pathConfigs.length > 0
+    ? pathConfigs.map((p) => p.name)
+    : ["Default"];
+
+  return {
+    name: "Path Router",
+    type: "branch",
+    id: ids.pathRouterId,
+    edges: paths.map((pathName, i) => ({
+      destination_node_id: ids.paths[i].routerId,
+      id: f.edgeId(),
+      transition_condition: {
+        type: "equation",
+        equations: [
+          { left: "{{_path_taken}}", operator: "==", right: pathName },
+        ],
+        operator: "&&",
+      },
+    })),
+    else_edge: {
+      destination_node_id: ids.introId,
+      id: `${ids.pathRouterId}-else-edge`,
+      transition_condition: { type: "prompt", prompt: "Else" },
+    },
+    display_position: pos.pathRouter,
   };
 }
 

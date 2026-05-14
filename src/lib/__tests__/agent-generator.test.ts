@@ -1006,6 +1006,97 @@ describe("per-path end mode", () => {
     expect(occurrences).toHaveLength(1);
   });
 
+  it("Path Router: FAQ's 'answered' edge routes through Path Router (multi-path)", () => {
+    // The FAQ used to route its "answered the caller's question" edge
+    // straight to Intro (multi-path) or to the path's Transition
+    // (single-path). Now it routes through the Path Router, which
+    // checks `_path_taken` and skips back to the right Variables Router
+    // when the caller was already deep in a path. Regression coverage
+    // for the deterministic-resume work.
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "A", transitionCondition: "x", dataPoints: ["full_name"] },
+        { name: "B", transitionCondition: "y", dataPoints: ["full_name"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    const pathRouter = flow.nodes.find((n: any) => n.name === "Path Router");
+    const intro = flow.nodes.find((n: any) => n.name === "Intro");
+    expect(faq).toBeDefined();
+    expect(pathRouter).toBeDefined();
+    expect(pathRouter.type).toBe("branch");
+
+    // FAQ's "answered" edge points at the Path Router, NOT Intro.
+    const answeredEdge = (faq.edges as any[]).find(
+      (e) => e.transition_condition?.prompt === "You answered the caller's question.",
+    );
+    expect(answeredEdge).toBeDefined();
+    expect(answeredEdge.destination_node_id).toBe(pathRouter.id);
+    expect(answeredEdge.destination_node_id).not.toBe(intro.id);
+  });
+
+  it("Path Router: one branch per path + else_edge to Intro (multi-path)", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "service_call", transitionCondition: "x", dataPoints: ["full_name"] },
+        { name: "emergency_call", transitionCondition: "y", dataPoints: ["full_name"] },
+        { name: "existing_customer", transitionCondition: "z", dataPoints: ["full_name"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const pathRouter = flow.nodes.find((n: any) => n.name === "Path Router");
+    const intro = flow.nodes.find((n: any) => n.name === "Intro");
+    const routerService = flow.nodes.find((n: any) => n.name === "Variables Router (service_call)");
+    const routerEmergency = flow.nodes.find((n: any) => n.name === "Variables Router (emergency_call)");
+    const routerExisting = flow.nodes.find((n: any) => n.name === "Variables Router (existing_customer)");
+
+    // Three branch edges, one per path.
+    expect(pathRouter.edges).toHaveLength(3);
+    const edgesByName: Record<string, any> = {};
+    for (const edge of pathRouter.edges as any[]) {
+      const right = edge.transition_condition.equations[0].right;
+      edgesByName[right] = edge;
+    }
+    expect(edgesByName.service_call.destination_node_id).toBe(routerService.id);
+    expect(edgesByName.emergency_call.destination_node_id).toBe(routerEmergency.id);
+    expect(edgesByName.existing_customer.destination_node_id).toBe(routerExisting.id);
+
+    // Each edge gates on {{_path_taken}} == "<pathName>".
+    for (const edge of pathRouter.edges as any[]) {
+      expect(edge.transition_condition.type).toBe("equation");
+      const eq = edge.transition_condition.equations[0];
+      expect(eq.left).toBe("{{_path_taken}}");
+      expect(eq.operator).toBe("==");
+    }
+
+    // else_edge falls through to Intro for fresh calls (no path entered yet).
+    expect(pathRouter.else_edge.destination_node_id).toBe(intro.id);
+  });
+
+  it("Path Router: single-path agents get one edge gated on 'Default'", () => {
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const pathRouter = flow.nodes.find((n: any) => n.name === "Path Router");
+    const intro = flow.nodes.find((n: any) => n.name === "Intro");
+    const router = flow.nodes.find((n: any) => n.name === "Variables Router");
+
+    expect(pathRouter).toBeDefined();
+    expect(pathRouter.edges).toHaveLength(1);
+    const edge = pathRouter.edges[0];
+    // _path_taken on single-path agents is set to "Default" by the
+    // front Extract's variable description. Path Router matches that.
+    expect(edge.transition_condition.equations[0].right).toBe("Default");
+    expect(edge.destination_node_id).toBe(router.id);
+    expect(pathRouter.else_edge.destination_node_id).toBe(intro.id);
+  });
+
   it("canvas layout — globals left, paths staircase, closing chain bottom row", () => {
     // Regression coverage for the canvas-layout cleanup. Snapshots drop
     // display_position so we need explicit assertions to lock in the
