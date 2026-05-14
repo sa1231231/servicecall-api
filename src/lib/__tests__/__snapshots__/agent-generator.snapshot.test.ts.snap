@@ -391,29 +391,6 @@ Thank them and tell them to have a wonderful day. ",
     ],
   },
   {
-    "edges": [],
-    "global_node_setting": {
-      "condition": "The caller reveals an emergency situation which they are experiencing, including:
-• gas smell
-• carbon monoxide / CO
-• fire
-• smoke
-• sparks
-• dizziness from fumes
-• alarms related to gas or CO
-
-If any emergency is mentioned:
-• Do NOT ask follow-up questions",
-    },
-    "instruction": {
-      "text": "Tell the caller this sounds like an emergency, and if it is, please hang up and call nine, one, one immediately.",
-      "type": "prompt",
-    },
-    "name": "Emergency Gaurd Rail",
-    "skip_response_edge": "→ Polite Hangup (skip)",
-    "type": "conversation",
-  },
-  {
     "name": "End Call",
     "speak_during_execution": false,
     "type": "end",
@@ -481,6 +458,114 @@ If any emergency is mentioned:
           "transcript": [
             {
               "content": "can I talk to the supervisor?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Can I speak to a person?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Transfer me to a human.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Is there a live agent I can talk to?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "I want to talk to someone real.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Get me a manager.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "I need to talk to a real person, not a bot.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Just put me through to a representative.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Connect me to your team.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "I want to speak to an actual person.",
               "role": "user",
             },
             {
@@ -571,7 +656,104 @@ Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ
           ],
         },
       ],
-      "positive_finetune_examples": [],
+      "positive_finetune_examples": [
+        {
+          "transcript": [
+            {
+              "content": "Tell me a joke.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "What's the weather like today?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Who's going to win the game tonight?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "What do you think about the election?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Can you write me a poem?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "What's your favorite color?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Hey, do you have a girlfriend?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Can we just chat for a bit?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+      ],
     },
     "instruction": {
       "text": "You can only do allowed and relevant tasks to the company and cannot continue irrelevant or off-topic conversations.
@@ -1110,29 +1292,6 @@ Do not ask any questions here.",
     "type": "conversation",
   },
   {
-    "edges": [],
-    "global_node_setting": {
-      "condition": "The caller reveals an emergency situation which they are experiencing, including:
-• gas smell
-• carbon monoxide / CO
-• fire
-• smoke
-• sparks
-• dizziness from fumes
-• alarms related to gas or CO
-
-If any emergency is mentioned:
-• Do NOT ask follow-up questions",
-    },
-    "instruction": {
-      "text": "Tell the caller this sounds like an emergency, and if it is, please hang up and call nine, one, one immediately.",
-      "type": "prompt",
-    },
-    "name": "Emergency Gaurd Rail",
-    "skip_response_edge": "→ Polite Hangup (skip)",
-    "type": "conversation",
-  },
-  {
     "name": "End Call",
     "speak_during_execution": false,
     "type": "end",
@@ -1181,6 +1340,114 @@ If any emergency is mentioned:
           "transcript": [
             {
               "content": "can I talk to the supervisor?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Can I speak to a person?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Transfer me to a human.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Is there a live agent I can talk to?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "I want to talk to someone real.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Get me a manager.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "I need to talk to a real person, not a bot.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Just put me through to a representative.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Connect me to your team.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "I want to speak to an actual person.",
               "role": "user",
             },
             {
@@ -1270,7 +1537,104 @@ Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ
           ],
         },
       ],
-      "positive_finetune_examples": [],
+      "positive_finetune_examples": [
+        {
+          "transcript": [
+            {
+              "content": "Tell me a joke.",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "What's the weather like today?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Who's going to win the game tonight?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "What do you think about the election?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Can you write me a poem?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "What's your favorite color?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Hey, do you have a girlfriend?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+        {
+          "transcript": [
+            {
+              "content": "Can we just chat for a bit?",
+              "role": "user",
+            },
+            {
+              "content": "",
+              "role": "agent",
+            },
+          ],
+        },
+      ],
     },
     "instruction": {
       "text": "You can only do allowed and relevant tasks to the company and cannot continue irrelevant or off-topic conversations.

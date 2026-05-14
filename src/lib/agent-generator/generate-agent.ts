@@ -24,7 +24,6 @@ import {
   buildCloseQuestionNode,
   buildClosingSequence,
   buildIrrelevantGuardrailNode,
-  buildEmergencyGuardrailNode,
   buildPoliteHangupNode,
   buildGuardrailEndNode,
   buildAgentRoot,
@@ -447,8 +446,7 @@ When listing anything — services, time slots, examples, options — never list
   // node so the "anything else?" wording stays consistent across paths.
   allNodes.push(buildCloseQuestionNode(agentConfig, ids, pos, f));
   allNodes.push(...buildClosingSequence(agentConfig, ids, pos, f));
-  allNodes.push(buildIrrelevantGuardrailNode(ids, pos, f));
-  allNodes.push(buildEmergencyGuardrailNode(ids, pos, f));
+  allNodes.push(buildIrrelevantGuardrailNode(ids, pos, f, agentConfig.irrelevantGuardrailFinetuneExamples));
   allNodes.push(buildPoliteHangupNode(ids, pos, f));
   allNodes.push(buildGuardrailEndNode(ids, pos));
 

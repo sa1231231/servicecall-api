@@ -174,7 +174,9 @@ describe("parseConversationFlow", () => {
     expect(globalNames).toContain("Admin/FAQ");
     expect(globalNames).toContain("Human Request");
     expect(globalNames).toContain("irrelevantGaurdrail");
-    expect(globalNames).toContain("Emergency Gaurd Rail");
+    // Emergency Guard Rail removed — Retell ships built-in emergency
+    // guardrails so the bespoke node was redundant.
+    expect(globalNames).not.toContain("Emergency Gaurd Rail");
   });
 
   it("extracts globalPrompt and startNodeId", () => {

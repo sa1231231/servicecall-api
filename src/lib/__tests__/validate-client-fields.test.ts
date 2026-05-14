@@ -176,4 +176,37 @@ describe("validateGlobalSettingsUpdates", () => {
     });
     expect(errs.join(" | ")).toMatch(/intro_faq_finetune_examples.*type/);
   });
+
+  it("accepts and validates human_request_finetune_examples (was previously unvalidated)", () => {
+    expect(validateGlobalSettingsUpdates({
+      human_request_finetune_examples: [
+        { type: "positive", transcript: [{ role: "user", content: "Can I speak to a person?" }] },
+      ],
+    })).toEqual([]);
+
+    const errs = validateGlobalSettingsUpdates({
+      human_request_finetune_examples: [
+        { type: "positive", transcript: [{ role: "narrator", content: "..." }] },
+      ],
+    });
+    expect(errs.join(" | ")).toMatch(/human_request_finetune_examples.*role/);
+  });
+
+  it("accepts and validates irrelevant_guardrail_finetune_examples", () => {
+    expect(validateGlobalSettingsUpdates({
+      irrelevant_guardrail_finetune_examples: [
+        { type: "positive", transcript: [{ role: "user", content: "Tell me a joke." }] },
+      ],
+    })).toEqual([]);
+
+    // Empty array is a valid override (operator adds nothing on top of baseline).
+    expect(validateGlobalSettingsUpdates({
+      irrelevant_guardrail_finetune_examples: [],
+    })).toEqual([]);
+
+    const errs = validateGlobalSettingsUpdates({
+      irrelevant_guardrail_finetune_examples: { not: "an array" } as unknown as never,
+    });
+    expect(errs[0]).toMatch(/irrelevant_guardrail_finetune_examples must be an array/);
+  });
 });

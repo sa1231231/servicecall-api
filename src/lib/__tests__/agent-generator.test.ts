@@ -775,7 +775,7 @@ describe("per-path end mode", () => {
     expect(closeQuestion.instruction.text).toBe(customPrompt);
   });
 
-  it("closeQuestionFinetuneExamples workspace override replaces the hardcoded set", () => {
+  it("closeQuestionFinetuneExamples workspace override extends the hardcoded baseline (additive)", () => {
     const custom = [
       {
         type: "positive" as const,
@@ -794,14 +794,20 @@ describe("per-path end mode", () => {
     const flow = agent.conversationFlow as any;
     const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
     const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
-    expect(closeQuestion.finetune_transition_examples).toHaveLength(1);
-    expect(closeQuestion.finetune_transition_examples[0].transcript[0].content).toBe(
+    const fts = closeQuestion.finetune_transition_examples as any[];
+
+    // Baseline (8) + 1 workspace addition = 9 total. Override doesn't
+    // replace the baseline.
+    expect(fts).toHaveLength(9);
+    // Every entry targets the global FAQ node id.
+    for (const ex of fts) expect(ex.destination_node_id).toBe(faq.id);
+    // The workspace addition is present at the end.
+    expect(fts[fts.length - 1].transcript[0].content).toBe(
       "Oh yeah — what's your weekend availability look like?",
     );
-    expect(closeQuestion.finetune_transition_examples[0].destination_node_id).toBe(faq.id);
   });
 
-  it("faqGlobalFinetuneExamples workspace override replaces the hardcoded set on the FAQ global node", () => {
+  it("faqGlobalFinetuneExamples workspace override extends the hardcoded baseline (additive)", () => {
     const custom = [
       {
         type: "positive" as const,
@@ -826,12 +832,18 @@ describe("per-path end mode", () => {
     );
     const flow = agent.conversationFlow as any;
     const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
-    const positives = faq.global_node_setting.positive_finetune_examples;
-    expect(positives).toHaveLength(2);
-    expect(positives[0].transcript[0].content).toBe(
-      "What are your business hours during the holidays?",
+    const positives = faq.global_node_setting.positive_finetune_examples as any[];
+
+    // Baseline must still ship — verify by length grew from 2 (workspace
+    // alone) and at least one well-known baseline phrasing is present.
+    expect(positives.length).toBeGreaterThan(2);
+    const utterances = positives.map(
+      (ex: any) => ex.transcript.find((t: any) => t.role === "user")?.content,
     );
-    expect(positives[1].transcript[0].content).toBe("Do you accept credit cards?");
+    expect(utterances).toContain("What are your business hours during the holidays?");
+    expect(utterances).toContain("Do you accept credit cards?");
+    // And a well-known baseline phrasing.
+    expect(utterances).toContain("How much is a service call?");
   });
 
   it("Intro carries default FAQ-jump FT examples targeting the global FAQ", () => {
@@ -863,7 +875,7 @@ describe("per-path end mode", () => {
     }
   });
 
-  it("introFaqFinetuneExamples workspace override replaces the hardcoded set", () => {
+  it("introFaqFinetuneExamples workspace override extends the hardcoded baseline (additive)", () => {
     const custom = [
       {
         type: "positive" as const,
@@ -886,8 +898,112 @@ describe("per-path end mode", () => {
     const faqFts = (intro.finetune_transition_examples as any[]).filter(
       (ex) => ex.destination_node_id === faq.id,
     );
-    expect(faqFts).toHaveLength(1);
-    expect(faqFts[0].transcript[0].content).toBe("Hey, do you guys do free quotes?");
+    // Baseline (8) + 1 workspace addition = 9 total.
+    expect(faqFts.length).toBeGreaterThan(1);
+    const utterances = faqFts.map(
+      (ex: any) => ex.transcript.find((t: any) => t.role === "user")?.content,
+    );
+    expect(utterances).toContain("Hey, do you guys do free quotes?");
+  });
+
+  it("Emergency Guardrail node is no longer emitted (removed in favor of Retell's built-in)", () => {
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const emergency = flow.nodes.find((n: any) => n.name === "Emergency Gaurd Rail");
+    expect(emergency).toBeUndefined();
+  });
+
+  it("Human Request baseline ships ≥10 examples and operator override layers additively", () => {
+    // Sanity: baseline alone.
+    const noOverride = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS).agent
+      .conversationFlow as any;
+    const hrBaseline = noOverride.nodes.find((n: any) => n.name === "Human Request")
+      .global_node_setting.positive_finetune_examples as any[];
+    expect(hrBaseline.length).toBeGreaterThanOrEqual(10);
+
+    // Operator extends baseline; baseline still present.
+    const customExample = {
+      type: "positive" as const,
+      transcript: [
+        { content: "I need a real human, not your AI.", role: "user" as const },
+        { content: "", role: "agent" as const },
+      ],
+    };
+    const withOverride = generateAgent(
+      { ...baseConfig, humanRequestFinetuneExamples: [customExample] },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    ).agent.conversationFlow as any;
+    const hrWith = withOverride.nodes.find((n: any) => n.name === "Human Request")
+      .global_node_setting.positive_finetune_examples as any[];
+
+    expect(hrWith.length).toBe(hrBaseline.length + 1);
+    const utterances = hrWith.map(
+      (ex: any) => ex.transcript.find((t: any) => t.role === "user")?.content,
+    );
+    expect(utterances).toContain("I need a real human, not your AI.");
+    // Sanity: a known baseline phrasing survives the merge.
+    expect(utterances).toContain("can I talk to the supervisor?");
+  });
+
+  it("Irrelevant Guardrail baseline ships ≥6 positive examples and operator override layers additively", () => {
+    const noOverride = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS).agent
+      .conversationFlow as any;
+    const igBaseline = noOverride.nodes.find((n: any) => n.name === "irrelevantGaurdrail")
+      .global_node_setting.positive_finetune_examples as any[];
+    expect(igBaseline.length).toBeGreaterThanOrEqual(6);
+
+    const customExample = {
+      type: "positive" as const,
+      transcript: [
+        { content: "What's your favorite TV show?", role: "user" as const },
+        { content: "", role: "agent" as const },
+      ],
+    };
+    const withOverride = generateAgent(
+      { ...baseConfig, irrelevantGuardrailFinetuneExamples: [customExample] },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    ).agent.conversationFlow as any;
+    const igWith = withOverride.nodes.find((n: any) => n.name === "irrelevantGaurdrail")
+      .global_node_setting.positive_finetune_examples as any[];
+
+    expect(igWith.length).toBe(igBaseline.length + 1);
+    const utterances = igWith.map(
+      (ex: any) => ex.transcript.find((t: any) => t.role === "user")?.content,
+    );
+    expect(utterances).toContain("What's your favorite TV show?");
+    // Sanity: a known baseline phrasing.
+    expect(utterances).toContain("Tell me a joke.");
+  });
+
+  it("Workspace override dedups by user-utterance (no doubled entries)", () => {
+    // Operator pastes a phrasing that already exists in the FAQ baseline.
+    // The merge should NOT double it.
+    const dup = {
+      type: "positive" as const,
+      transcript: [
+        // Matches an existing FAQ_GLOBAL_POSITIVE_EXAMPLES entry.
+        { content: "How much is a service call?", role: "user" as const },
+        { content: "", role: "agent" as const },
+      ],
+    };
+    const { agent } = generateAgent(
+      { ...baseConfig, faqGlobalFinetuneExamples: [dup] },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const positives = flow.nodes.find((n: any) => n.name === "Admin/FAQ")
+      .global_node_setting.positive_finetune_examples as any[];
+    const occurrences = positives.filter(
+      (ex: any) =>
+        ex.transcript.find((t: any) => t.role === "user")?.content === "How much is a service call?",
+    );
+    expect(occurrences).toHaveLength(1);
   });
 
   it("canvas layout — globals left, paths staircase, closing chain bottom row", () => {
@@ -913,7 +1029,7 @@ describe("per-path end mode", () => {
     const byName = (n: string) => flow.nodes.find((node: any) => node.name === n);
 
     // 1. Globals on the left.
-    for (const name of ["Admin/FAQ", "Human Request", "irrelevantGaurdrail", "Emergency Gaurd Rail", "Polite Hangup"]) {
+    for (const name of ["Admin/FAQ", "Human Request", "irrelevantGaurdrail", "Polite Hangup"]) {
       const node = byName(name);
       expect(node, `${name} should exist`).toBeDefined();
       expect(node.display_position.x, `${name} should be at negative x`).toBeLessThan(0);
@@ -1161,9 +1277,13 @@ describe("Human Request global fine-tunes", () => {
     );
   }
 
-  it("includes only the hardcoded baseline when no operator examples are supplied", () => {
+  it("includes the hardcoded baseline when no operator examples are supplied", () => {
     const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
-    expect(utterancesOf(findHumanRequest(agent))).toEqual(["can I talk to the supervisor?"]);
+    const utterances = utterancesOf(findHumanRequest(agent));
+    // Baseline has ≥10 phrasings (was 1 before the May-2026 expansion).
+    expect(utterances.length).toBeGreaterThanOrEqual(10);
+    expect(utterances).toContain("can I talk to the supervisor?");
+    expect(utterances).toContain("Transfer me to a human.");
   });
 
   it("merges operator-supplied examples on top of the baseline", () => {
@@ -1179,11 +1299,11 @@ describe("Human Request global fine-tunes", () => {
       undefined,
       TEST_DEFAULTS,
     );
-    expect(utterancesOf(findHumanRequest(agent))).toEqual([
-      "can I talk to the supervisor?",
-      "Put me through to a person.",
-      "Can you transfer me to your manager?",
-    ]);
+    const utterances = utterancesOf(findHumanRequest(agent));
+    // Operator additions appended; baseline survives.
+    expect(utterances).toContain("can I talk to the supervisor?");
+    expect(utterances).toContain("Put me through to a person.");
+    expect(utterances).toContain("Can you transfer me to your manager?");
   });
 
   it("dedups operator examples that duplicate the baseline utterance", () => {
@@ -1201,10 +1321,11 @@ describe("Human Request global fine-tunes", () => {
       undefined,
       TEST_DEFAULTS,
     );
-    expect(utterancesOf(findHumanRequest(agent))).toEqual([
-      "can I talk to the supervisor?",
-      "Talk to a human please.",
-    ]);
+    const utterances = utterancesOf(findHumanRequest(agent));
+    // Supervisor phrasing appears exactly once (baseline + operator dup → 1).
+    const supervisorCount = utterances.filter((u) => u === "can I talk to the supervisor?").length;
+    expect(supervisorCount).toBe(1);
+    expect(utterances).toContain("Talk to a human please.");
   });
 
   it("populates callback mode the same way as live_transfer mode", () => {
@@ -1219,13 +1340,11 @@ describe("Human Request global fine-tunes", () => {
       { ...baseConfig, humanRequestFinetuneExamples: operatorExamples, humanRequestMode: "live_transfer" as const },
       ["full_name"], undefined, TEST_DEFAULTS,
     );
-    expect(utterancesOf(findHumanRequest(callback))).toEqual([
-      "can I talk to the supervisor?",
-      "transfer me",
-    ]);
-    expect(utterancesOf(findHumanRequest(transfer))).toEqual([
-      "can I talk to the supervisor?",
-      "transfer me",
-    ]);
+    expect(utterancesOf(findHumanRequest(callback))).toEqual(
+      utterancesOf(findHumanRequest(transfer)),
+    );
+    // Both should contain the baseline + operator addition.
+    expect(utterancesOf(findHumanRequest(callback))).toContain("transfer me");
+    expect(utterancesOf(findHumanRequest(callback))).toContain("can I talk to the supervisor?");
   });
 });

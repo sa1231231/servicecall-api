@@ -204,6 +204,8 @@ export function validateGlobalSettingsUpdates(updates: Record<string, unknown>):
     "faq_global_finetune_examples",
     "close_question_finetune_examples",
     "intro_faq_finetune_examples",
+    "human_request_finetune_examples",
+    "irrelevant_guardrail_finetune_examples",
   ] as const) {
     if (!(ftKey in updates)) continue;
     const v = updates[ftKey];

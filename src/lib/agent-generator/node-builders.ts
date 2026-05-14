@@ -185,7 +185,6 @@ interface Ids {
   transferCallId: string;
   transferFailedId: string;
   irrelevantGuardrailId: string;
-  emergencyGuardrailId: string;
   politeHangupId: string;
   guardrailEndId: string;
   closeId: string;
@@ -225,7 +224,6 @@ interface Positions {
   faq: Position;
   humanReq: Position;
   irrelevantGuardrail: Position;
-  emergencyGuardrail: Position;
   politeHangup: Position;
   guardrailEnd: Position;
   close: Position;
@@ -270,6 +268,10 @@ export interface AgentConfig {
   // jump fires on the first turn instead of getting captured by a
   // path-transition edge.
   introFaqFinetuneExamples?: FinetuneExample[];
+  // Workspace-default positive FT examples for the Irrelevant Guardrail
+  // global node. Merged on top of IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES
+  // at generation time (additive — baseline always ships).
+  irrelevantGuardrailFinetuneExamples?: FinetuneExample[];
 }
 
 export interface IntroPathConfig {
@@ -378,7 +380,6 @@ export function generateIds(
     transferCallId: f.nodeId(),
     transferFailedId: f.nodeId(),
     irrelevantGuardrailId: f.nodeId(),
-    emergencyGuardrailId: f.nodeId(),
     politeHangupId: f.nodeId(),
     guardrailEndId: f.nodeId(),
     closeId: f.nodeId(),
@@ -455,7 +456,6 @@ const FAQ_POS: Position = { x: -498, y: -642 };
 const HUMAN_REQ_POS: Position = { x: -1242, y: 222 };
 const IRRELEVANT_GUARDRAIL_POS: Position = { x: -1242, y: 942 };
 const POLITE_HANGUP_POS: Position = { x: -690, y: 870 };
-const EMERGENCY_GUARDRAIL_POS: Position = { x: -1242, y: 1710 };
 const GUARDRAIL_END_POS: Position = { x: -570, y: 1734 };
 
 export function layoutPositions(
@@ -538,7 +538,6 @@ export function layoutPositions(
     faq: FAQ_POS,
     humanReq: HUMAN_REQ_POS,
     irrelevantGuardrail: IRRELEVANT_GUARDRAIL_POS,
-    emergencyGuardrail: EMERGENCY_GUARDRAIL_POS,
     politeHangup: POLITE_HANGUP_POS,
     guardrailEnd: GUARDRAIL_END_POS,
     // Single-path shared Close. Multi-path uses PathPositions.close per
@@ -683,13 +682,14 @@ Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ
       // by a path-transition edge. No explicit edge from Intro to FAQ —
       // single source of truth in the Retell UI (same pattern as Close
       // Question after the duplicate-destination fix).
-      ...(config.introFaqFinetuneExamples ?? INTRO_FAQ_FINETUNE_EXAMPLES).map(
-        (ex) => ({
-          transcript: ex.transcript,
-          id: ex.id || `fe-${f.nextTs()}`,
-          destination_node_id: ids.faqId,
-        }),
-      ),
+      ...mergeAdditiveFinetunes(
+        INTRO_FAQ_FINETUNE_EXAMPLES,
+        config.introFaqFinetuneExamples,
+      ).map((ex) => ({
+        transcript: ex.transcript,
+        id: ex.id || `fe-${f.nextTs()}`,
+        destination_node_id: ids.faqId,
+      })),
     ],
     id: ids.introId,
     type: "conversation",
@@ -711,11 +711,11 @@ export function buildFaqNode(
     ? ids.introId
     : ids.paths[0].transitionId;
 
-  // Operator-edited workspace defaults take precedence over the hardcoded
-  // FAQ_GLOBAL_POSITIVE_EXAMPLES baseline. Empty array is a valid override
-  // (operator wants the global classifier untrained on positives), so only
-  // fall back when undefined.
-  const examples = positiveExamples ?? FAQ_GLOBAL_POSITIVE_EXAMPLES;
+  // Additive layering: baseline always ships, workspace override extends
+  // it (dedup by user-utterance). Operator can add to the baseline but
+  // not remove built-in entries — keeps the global classifier from being
+  // accidentally untrained on a critical phrasing.
+  const examples = mergeAdditiveFinetunes(FAQ_GLOBAL_POSITIVE_EXAMPLES, positiveExamples);
 
   return {
     instruction: {
@@ -758,30 +758,58 @@ ${faqKnowledgeBase}`,
   };
 }
 
+// Hardcoded baseline for the Irrelevant Guardrail global node's
+// positive_finetune_examples. Trains the classifier to jump to the
+// "we can only do allowed/relevant tasks" prompt when the caller goes
+// off-topic. Shipped in every agent; operator's workspace override
+// layers on top via mergeAdditiveFinetunes.
+const IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES: FinetuneExample[] = [
+  { type: "positive", transcript: [{ content: "Tell me a joke.", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "What's the weather like today?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Who's going to win the game tonight?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "What do you think about the election?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Can you write me a poem?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "What's your favorite color?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Hey, do you have a girlfriend?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Can we just chat for a bit?", role: "user" }, { content: "", role: "agent" }] },
+];
+
 // Hardcoded baseline used by buildHumanRequestNode. Stays in the published
 // flow even when the operator provides their own examples — represents the
 // minimum classifier signal the global node needs to fire.
 const HUMAN_REQUEST_BASELINE_EXAMPLES: FinetuneExample[] = [
-  {
-    type: "positive",
-    transcript: [
-      { content: "can I talk to the supervisor?", role: "user" },
-      { content: "", role: "agent" },
-    ],
-  },
+  { type: "positive", transcript: [{ content: "can I talk to the supervisor?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Can I speak to a person?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Transfer me to a human.", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Is there a live agent I can talk to?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "I want to talk to someone real.", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Get me a manager.", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "I need to talk to a real person, not a bot.", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Just put me through to a representative.", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Connect me to your team.", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "I want to speak to an actual person.", role: "user" }, { content: "", role: "agent" }] },
 ];
 
 /**
- * Merge the baseline + operator-supplied Human Request examples into the
- * positive_finetune_examples shape Retell stores on global_node_setting.
- * Dedups by the user-utterance text so re-publishes don't accumulate.
+ * Merge a hardcoded baseline + operator-supplied workspace examples into the
+ * shape Retell stores on a node's positive_finetune_examples (or any other
+ * FinetuneExample array). Dedups by the first user-utterance text so
+ * re-publishes don't accumulate, and so an operator who copy-pastes a
+ * baseline phrasing into their workspace setting doesn't produce duplicates.
  *
- * Exported so the dashboard save-and-publish handler can refresh existing
- * agents' Human Request node from workspace settings on every publish (not
- * just at agent creation time).
+ * Layering is ALWAYS additive: the baseline ships in every agent, the
+ * workspace override extends it. An operator that wants to suppress a
+ * baseline phrasing has to do it manually in the Retell console (out of
+ * scope here — the workspace UI only adds).
+ *
+ * Used by Human Request, Irrelevant Guardrail, Admin/FAQ global, Close
+ * Question, and Intro→FAQ classifiers.
  */
-export function mergeHumanRequestExamples(operatorExamples: FinetuneExample[] | undefined) {
-  const merged: FinetuneExample[] = [...HUMAN_REQUEST_BASELINE_EXAMPLES];
+export function mergeAdditiveFinetunes(
+  baseline: FinetuneExample[],
+  operatorExamples: FinetuneExample[] | undefined,
+): FinetuneExample[] {
+  const merged: FinetuneExample[] = [...baseline];
   const seen = new Set<string>(
     merged.map((ex) =>
       ex.transcript.find((t) => t.role === "user")?.content?.trim() ?? "",
@@ -793,7 +821,20 @@ export function mergeHumanRequestExamples(operatorExamples: FinetuneExample[] | 
     seen.add(utter);
     merged.push(ex);
   }
-  return merged.map((ex) => ({ transcript: ex.transcript }));
+  return merged;
+}
+
+/**
+ * Back-compat wrapper around mergeAdditiveFinetunes for the Human Request
+ * baseline. Returns the shape Retell stores on global_node_setting
+ * (transcript-only objects, no type field).
+ *
+ * Exported so the dashboard save-and-publish handler can refresh existing
+ * agents' Human Request node from workspace settings on every publish.
+ */
+export function mergeHumanRequestExamples(operatorExamples: FinetuneExample[] | undefined) {
+  return mergeAdditiveFinetunes(HUMAN_REQUEST_BASELINE_EXAMPLES, operatorExamples)
+    .map((ex) => ({ transcript: ex.transcript }));
 }
 
 export function buildHumanRequestNode(
@@ -1013,7 +1054,14 @@ export function buildIrrelevantGuardrailNode(
   ids: Ids,
   pos: Positions,
   f: IdFactory,
+  operatorExamples?: FinetuneExample[],
 ) {
+  // Strip the `type` field — Retell stores positives without it on
+  // global_node_setting.positive_finetune_examples.
+  const positiveExamples = mergeAdditiveFinetunes(
+    IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES,
+    operatorExamples,
+  ).map((ex) => ({ transcript: ex.transcript }));
   return {
     instruction: {
       type: "prompt",
@@ -1067,7 +1115,7 @@ Set a clear boundary by stating that you cannot continue unrelated conversations
           ],
         },
       ],
-      positive_finetune_examples: [],
+      positive_finetune_examples: positiveExamples,
     },
     id: ids.irrelevantGuardrailId,
     type: "conversation",
@@ -1075,44 +1123,11 @@ Set a clear boundary by stating that you cannot continue unrelated conversations
   };
 }
 
-export function buildEmergencyGuardrailNode(
-  ids: Ids,
-  pos: Positions,
-  f: IdFactory,
-) {
-  return {
-    instruction: {
-      type: "prompt",
-      text: "Tell the caller this sounds like an emergency, and if it is, please hang up and call nine, one, one immediately.",
-    },
-    name: "Emergency Gaurd Rail",
-    edges: [],
-    global_node_setting: {
-      condition: `The caller reveals an emergency situation which they are experiencing, including:
-• gas smell
-• carbon monoxide / CO
-• fire
-• smoke
-• sparks
-• dizziness from fumes
-• alarms related to gas or CO
-
-If any emergency is mentioned:
-• Do NOT ask follow-up questions`,
-    },
-    id: ids.emergencyGuardrailId,
-    type: "conversation",
-    display_position: pos.emergencyGuardrail,
-    skip_response_edge: {
-      destination_node_id: ids.politeHangupId,
-      id: `skip-response-edge-${f.nextTs()}-${randomSuffix(9)}`,
-      transition_condition: {
-        type: "prompt",
-        prompt: "Skip response",
-      },
-    },
-  };
-}
+// Previously: a global "Emergency Gaurd Rail" node that intercepted gas /
+// carbon-monoxide / fire emergencies and routed the caller to Polite
+// Hangup with a 9-1-1 prompt. Retell ships its own built-in emergency
+// guardrail (operator confirmed), so the bespoke node was redundant —
+// removed in May 2026 to keep the left-side global column tidy.
 
 export function buildPoliteHangupNode(ids: Ids, pos: Positions, f: IdFactory) {
   return {
@@ -1651,9 +1666,9 @@ export function buildCloseQuestionNode(
         },
       },
     ],
-    finetune_transition_examples: (
-      agentConfig.closeQuestionFinetuneExamples ??
-      CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES
+    finetune_transition_examples: mergeAdditiveFinetunes(
+      CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES,
+      agentConfig.closeQuestionFinetuneExamples,
     ).map((ex) => ({
       transcript: ex.transcript,
       id: ex.id || `fe-${f.nextTs()}`,

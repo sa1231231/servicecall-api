@@ -66,6 +66,11 @@ export interface GlobalSettings {
    *  generation time — no explicit edge from Intro to FAQ, same UI-clean
    *  pattern as Close Question. */
   intro_faq_finetune_examples?: FinetuneExample[];
+  /** Workspace default positive FT examples for the Irrelevant Guardrail
+   *  global node (caller goes off-topic / asks nonsense / tries to
+   *  derail). Merged on top of IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES
+   *  at generation time — additive. */
+  irrelevant_guardrail_finetune_examples?: FinetuneExample[];
 }
 
 function collection() {
@@ -115,6 +120,11 @@ export async function getSettings(): Promise<GlobalSettings> {
     )
       ? ((doc as any).intro_faq_finetune_examples as FinetuneExample[])
       : undefined,
+    irrelevant_guardrail_finetune_examples: Array.isArray(
+      (doc as any)?.irrelevant_guardrail_finetune_examples,
+    )
+      ? ((doc as any).irrelevant_guardrail_finetune_examples as FinetuneExample[])
+      : undefined,
   };
 }
 
@@ -139,6 +149,7 @@ export async function updateSettings(
   if (updates.close_question_finetune_examples !== undefined) setObj.close_question_finetune_examples = updates.close_question_finetune_examples;
   if (updates.human_request_finetune_examples !== undefined) setObj.human_request_finetune_examples = updates.human_request_finetune_examples;
   if (updates.intro_faq_finetune_examples !== undefined) setObj.intro_faq_finetune_examples = updates.intro_faq_finetune_examples;
+  if (updates.irrelevant_guardrail_finetune_examples !== undefined) setObj.irrelevant_guardrail_finetune_examples = updates.irrelevant_guardrail_finetune_examples;
   if (updates.cost_rates !== undefined) {
     // Merge into a complete CostRates object so nested writes don't drop sibling keys
     const current = await getSettings();

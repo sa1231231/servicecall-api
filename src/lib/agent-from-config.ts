@@ -238,6 +238,8 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
         workspaceSettings.human_request_finetune_examples,
       introFaqFinetuneExamples:
         workspaceSettings.intro_faq_finetune_examples,
+      irrelevantGuardrailFinetuneExamples:
+        workspaceSettings.irrelevant_guardrail_finetune_examples,
     };
     const dpDefaults = await getDataPointDefaults();
     const pathConfigs: PathConfig[] | undefined = hasPaths
