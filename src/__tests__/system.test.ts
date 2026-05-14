@@ -9,7 +9,7 @@ const ROOT_PASSWORD = process.env.ROOT_PASSWORD;
 
 // All tests use Demo HVAC (demo-hvac) as the canonical test agent.
 const SLUG = "demo-hvac";
-const AGENT_ID = "agent_cbdc066d07359e7988ea27f9b9";
+const AGENT_ID = "agent_0db334059af8c5af52a3e9cf3a";
 
 function url(path: string): string {
   return `${BASE_URL}${path}`;
@@ -640,6 +640,197 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     it("legacy /agents/from-template returns 404 (route removed)", async () => {
       const r = await fetch(url("/agents/from-template"), { method: "POST", headers: authHeaders(), body: "{}" });
       expect(r.status).toBe(404);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // HVAC Default round-trip: end-to-end create → verify → cleanup
+  //
+  // Regression coverage for the "Node Editor showed dataPoints reversed"
+  // bug that wiped out demo-hvac's service_call path order. Older system
+  // tests asserted dataPoints via toContain (set membership), which let an
+  // order flip slip through. This block creates a fresh agent from the HVAC
+  // Default draft, asserts EXACT order with toEqual, verifies the front
+  // Extract All Variables node lists variables in the same order, and
+  // confirms workspace-default fine-tunes propagated onto the Collect nodes.
+  //
+  // afterAll hard-deletes the throwaway agent so re-runs don't leak state.
+  // ──────────────────────────────────────────────────────────────────────────
+  describe("HVAC default round-trip (regression)", () => {
+    const testSlug = `test-hvac-${Date.now()}`;
+    const testBusinessName = `Test HVAC ${Date.now()}`;
+    let createdAgentId: string | undefined;
+    let createdSlug: string | undefined;
+
+    afterAll(async () => {
+      if (!createdSlug) return;
+      // Soft-delete then permanent-delete so Retell + Twilio resources get
+      // released too (releaseAgentResources fires inside permanent-delete).
+      try {
+        await fetch(url(`/dashboard/api/agents/${createdSlug}`), {
+          method: "DELETE", headers: authHeaders(),
+        });
+        await fetch(url(`/dashboard/api/deleted-agents/${createdSlug}`), {
+          method: "DELETE", headers: authHeaders(),
+        });
+      } catch (err) {
+        console.warn(`[HVAC round-trip cleanup] failed for ${createdSlug}:`, err);
+      }
+    });
+
+    it("POST /agents/from-draft with HVAC Default creates an agent", async () => {
+      const resp = await fetch(url("/agents/from-draft"), {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          draft: "HVAC Default",
+          business: {
+            businessName: testBusinessName,
+            faqKnowledgeBase: "Test FAQ content for round-trip system test.",
+          },
+          client: { slug: testSlug, name: testBusinessName },
+        }),
+      });
+      expect(resp.status).toBe(201);
+      const body = await json(resp);
+      expect(body.success).toBe(true);
+      expect(typeof body.agent_id).toBe("string");
+      expect(body.slug).toBe(testSlug);
+      createdAgentId = body.agent_id;
+      createdSlug = body.slug;
+    });
+
+    it("each path's dataPoints is in exact source order (toEqual, not toContain)", async () => {
+      expect(createdAgentId).toBeDefined();
+      const resp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}/nodes/${createdAgentId}`),
+        { headers: authHeaders() },
+      );
+      expect(resp.status).toBe(200);
+      const body = await json(resp);
+
+      const byName = Object.fromEntries(
+        body.paths.map((p: any) => [p.name, p.dataPoints.map((d: any) => d.variableName)]),
+      );
+
+      // Composite "scheduling" is surfaced as its first sub-var
+      // (preferred_day) because the GET endpoint pulls confirmVars[0].name
+      // for the dp's variableName. Asserting on that here pins the
+      // routing-pad order the operator sees in the dashboard.
+      expect(byName.service_call).toEqual([
+        "full_name",
+        "phone_number",
+        "problem_description",
+        "street_address",
+        "preferred_day",
+      ]);
+      expect(byName.emergency_call).toEqual([
+        "full_name",
+        "phone_number",
+        "problem_description",
+        "street_address",
+      ]);
+      expect(byName.existing_customer).toEqual([
+        "full_name",
+        "phone_number",
+        "problem_description",
+      ]);
+    });
+
+    it("Extract All Variables nodes list variables in the same source order", async () => {
+      // Pull the full client doc — retell_agents[agentId].conversationFlow is
+      // the canonical Retell flow as stored. The /dashboard/api/agents/:slug
+      // GET endpoint returns the full doc; from there we walk flow.nodes
+      // and assert each path's front Extract node variable order.
+      const resp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      expect(resp.status).toBe(200);
+      const doc: any = await json(resp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      expect(flow, "canonical flow in retell_agents[agentId]").toBeDefined();
+
+      const orderOf = (pathName: string): string[] => {
+        const n = flow.nodes.find((x: any) => x.name === `Extract All Variables (${pathName})`);
+        expect(n, `front-extract for "${pathName}"`).toBeDefined();
+        return (n.variables ?? [])
+          .map((v: any) => v.name)
+          .filter((name: string) => name !== "_path_taken");
+      };
+
+      // service_call: composite sub-vars expand inline at the composite's
+      // source position. Draft order [full_name, phone_number,
+      // problem_description, street_address, scheduling{day,time}] →
+      // [full_name, phone_number, problem_description, street_address,
+      //  preferred_day, preferred_time].
+      expect(orderOf("service_call")).toEqual([
+        "full_name",
+        "phone_number",
+        "problem_description",
+        "street_address",
+        "preferred_day",
+        "preferred_time",
+      ]);
+      expect(orderOf("emergency_call")).toEqual([
+        "full_name",
+        "phone_number",
+        "problem_description",
+        "street_address",
+      ]);
+      expect(orderOf("existing_customer")).toEqual([
+        "full_name",
+        "phone_number",
+        "problem_description",
+      ]);
+    });
+
+    it("workspace-default fine-tunes propagated onto Collect nodes", async () => {
+      // Pull the workspace defaults and confirm at least one Collect node
+      // for problem_description carries a finetune example matching the
+      // default. This guards against a regression where the generator
+      // forgets to thread defaults through onto the Collect's
+      // finetune_transition_examples (the dashboard's editor shows them
+      // there).
+      const defaultsResp = await fetch(url("/dashboard/api/data-point-defaults"), { headers: authHeaders() });
+      const defaultsBody = await json(defaultsResp);
+      const problemFt = defaultsBody.defaults?.problem_description?.finetuneExamples ?? [];
+
+      // If the workspace has no defaults set, the assertion would be a
+      // no-op rather than a meaningful regression check — skip in that
+      // case so the test doesn't pass vacuously.
+      if (problemFt.length === 0) {
+        console.warn("[HVAC round-trip] workspace problem_description has no finetuneExamples — skipping FT assertion");
+        return;
+      }
+
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      expect(flow).toBeDefined();
+      const collectNodes = flow.nodes.filter(
+        (n: any) => typeof n.name === "string" && n.name.startsWith("Collect Problem Description"),
+      );
+      expect(collectNodes.length).toBeGreaterThan(0);
+
+      // Each Collect Problem Description should carry the workspace
+      // default's user-utterance at least once in its
+      // finetune_transition_examples.
+      const defaultUtterances = new Set(
+        problemFt
+          .map((ex: any) => ex.transcript?.find((t: any) => t.role === "user")?.content)
+          .filter(Boolean),
+      );
+      for (const node of collectNodes) {
+        const onNode = (node.finetune_transition_examples ?? [])
+          .map((ex: any) => ex.transcript?.find((t: any) => t.role === "user")?.content)
+          .filter(Boolean);
+        const overlap = onNode.some((u: string) => defaultUtterances.has(u));
+        expect(overlap, `${node.name} missing workspace FT`).toBe(true);
+      }
     });
   });
 
