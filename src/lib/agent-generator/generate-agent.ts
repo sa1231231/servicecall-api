@@ -426,10 +426,16 @@ When listing anything — services, time slots, examples, options — never list
     resolvedPaths.forEach((rp, pathIdx) => {
       const pIds = ids.paths[pathIdx];
       if (rp.endMode === "transfer" || !pIds.closeId) return;
+      // Each callback path stacks its own Close vertically below the
+      // last path. layoutPositions stamps a `close` Position on the
+      // PathPositions for non-transfer paths; fall back to the shared
+      // pos.close if it's missing for any reason.
+      const perPathClose = pos.paths[pathIdx].close;
       allNodes.push(
         buildCloseNode(agentConfig, ids, pos, f, {
           nodeId: pIds.closeId,
           pathName: rp.name,
+          displayPosition: perPathClose,
         }),
       );
     });

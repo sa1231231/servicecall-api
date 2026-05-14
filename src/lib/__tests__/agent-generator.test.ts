@@ -890,6 +890,73 @@ describe("per-path end mode", () => {
     expect(faqFts[0].transcript[0].content).toBe("Hey, do you guys do free quotes?");
   });
 
+  it("canvas layout — globals left, paths staircase, closing chain bottom row", () => {
+    // Regression coverage for the canvas-layout cleanup. Snapshots drop
+    // display_position so we need explicit assertions to lock in the
+    // shape. Three invariants:
+    //   1. Globals (Admin/FAQ, Human Request, irrelevant + emergency
+    //      guardrails, Polite Hangup, guardrail End) sit at NEGATIVE x.
+    //   2. Each path's Transition / Extract / Router share a Y row, and
+    //      Collect/Confirm pairs march downward at uniform spacing.
+    //   3. Per-path Close nodes stack vertically; Close Question +
+    //      Closing Remarks + Closing Statement + End share one Y row.
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "A", transitionCondition: "x", dataPoints: ["full_name", "phone_number"] },
+        { name: "B", transitionCondition: "y", dataPoints: ["full_name", "city"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const byName = (n: string) => flow.nodes.find((node: any) => node.name === n);
+
+    // 1. Globals on the left.
+    for (const name of ["Admin/FAQ", "Human Request", "irrelevantGaurdrail", "Emergency Gaurd Rail", "Polite Hangup"]) {
+      const node = byName(name);
+      expect(node, `${name} should exist`).toBeDefined();
+      expect(node.display_position.x, `${name} should be at negative x`).toBeLessThan(0);
+    }
+
+    // 2. Path A — header row aligned, DP pairs march downward.
+    const transitionA = byName("Transition (A)");
+    const extractA = byName("Extract All Variables (A)");
+    const routerA = byName("Variables Router (A)");
+    expect(transitionA.display_position.y).toBe(extractA.display_position.y);
+    expect(extractA.display_position.y).toBe(routerA.display_position.y);
+    expect(transitionA.display_position.x).toBeLessThan(extractA.display_position.x);
+    expect(extractA.display_position.x).toBeLessThan(routerA.display_position.x);
+
+    // Each Collect/Confirm pair shares Y; pair N+1 is below pair N.
+    const collectNodesA = flow.nodes.filter((n: any) =>
+      n.type === "conversation" && /Collect /.test(n.name) &&
+      // Per-path collect nodes don't have a name suffix; identify Path A's
+      // ones via the router edges that point at them.
+      (routerA.edges as any[]).some((e: any) => e.destination_node_id === n.id),
+    );
+    expect(collectNodesA.length).toBe(2);
+    const sortedA = [...collectNodesA].sort((a: any, b: any) => a.display_position.y - b.display_position.y);
+    expect(sortedA[0].display_position.y).toBeLessThan(sortedA[1].display_position.y);
+
+    // 3. Closing chain on one row, per-path closes stacked.
+    const closeA = byName("Close (A)");
+    const closeB = byName("Close (B)");
+    const closeQuestion = byName("Close Question");
+    const closingRemarks = byName("Closing Remarks");
+    const closingStatement = byName("Closing Statement");
+    // Per-path closes: same X, different Y.
+    expect(closeA.display_position.x).toBe(closeB.display_position.x);
+    expect(closeA.display_position.y).not.toBe(closeB.display_position.y);
+    // Closing Remarks + Closing Statement on one row (same Y as Close Question).
+    expect(closingRemarks.display_position.y).toBe(closeQuestion.display_position.y);
+    expect(closingStatement.display_position.y).toBe(closeQuestion.display_position.y);
+    // And the row marches left-to-right: close column < closeQuestion < closingRemarks < closingStatement.
+    expect(closeA.display_position.x).toBeLessThan(closeQuestion.display_position.x);
+    expect(closeQuestion.display_position.x).toBeLessThan(closingRemarks.display_position.x);
+    expect(closingRemarks.display_position.x).toBeLessThan(closingStatement.display_position.x);
+  });
+
   it("end_mode=transfer wires router → Pre-Transfer → Transfer Call (number baked in)", () => {
     const dest = "+18005551234";
     const { agent } = generateAgent(

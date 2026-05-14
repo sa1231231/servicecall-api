@@ -214,6 +214,9 @@ export interface PathPositions {
   smsActions: SmsActionPositions[];
   preTransfer?: Position;
   transferCall?: Position;
+  /** Per-path Close node position (multi-path only). Single-path uses
+   *  the shared Positions.close. */
+  close?: Position;
 }
 
 interface Positions {
@@ -387,20 +390,81 @@ export function generateIds(
 }
 
 // ── Layout ───────────────────────────────────────────────────────────────────
+//
+// Canvas geometry derived from a manually-arranged HVAC agent the operator
+// confirmed read well in the Retell console. The shape:
+//
+//   • Globals on the LEFT (negative X) — Admin/FAQ, Human Request,
+//     guardrails, Polite Hangup. So the operator's eye starts at the
+//     conversation root and "global handlers" don't crowd the path columns.
+//   • Intro just inside the right side, top of canvas.
+//   • Each routing path is a horizontal Transition → Extract → Router row
+//     followed by a vertical Collect/Confirm staircase. Same shape per
+//     path so multi-path agents read like rhythm — eye drops down to the
+//     next path and the layout repeats.
+//   • Closing chain horizontal at the bottom, below all paths. Per-path
+//     Close nodes stack vertically into a single Close Question →
+//     Closing Remarks → Closing Statement → End row.
+//
+// Tweaking: keep changes here, not in the per-node builders. node-regenerator
+// preserves existing display_positions on edit so historical agents won't be
+// re-laid out unless the operator deletes + recreates.
 
-const BASE_X = -954;
-const STEP_X = 550;
-const PATH_Y_OFFSET = 2000;
+// Intro (path-entry node).
+const INTRO_POS: Position = { x: 558, y: -234 };
+
+// Per-path header row (Transition + Extract + Router).
+const HEADER_Y_REL = -138;
+const TRANSITION_X = 1086;
+const EXTRACT_X = 1662;
+const ROUTER_X = 2190;
+
+// Per-path Collect/Confirm chain. Each DP is one horizontal pair stacked
+// DP_Y_STEP below the previous one. DP_Y_FIRST_REL is the first pair's Y
+// relative to its path's yBase.
+const DP_COLLECT_X = 2982;
+const DP_CONFIRM_X = 3702;
+const DP_Y_FIRST_REL = -42;
+const DP_Y_STEP = 500;
+
+// SMS actions sit in the same column as Collect/Confirm but below the last
+// DP, so a path with both DPs and SMS reads top-to-bottom in source order.
+const SMS_FUNC_X = DP_COLLECT_X;
+const SMS_MARK_X = DP_CONFIRM_X;
+
+// Transfer-mode replacement for the closing chain (per-path Pre-Transfer +
+// Transfer Call, both below the last DP of that path).
+const PRE_TRANSFER_X = DP_COLLECT_X;
+const TRANSFER_CALL_X = DP_CONFIRM_X;
+
+// Vertical gap between consecutive paths' baselines. Sized for ~5 DPs +
+// SMS room + headroom so paths don't visually bleed into each other.
+const PATH_Y_OFFSET = 3600;
+
+// Closing chain X columns (horizontal row below all paths).
+const CLOSE_X = 2742;
+const CLOSE_QUESTION_X = 3294;
+const CLOSING_REMARKS_X = 3846;
+const CLOSING_STATEMENT_X = 4398;
+const END_X = 4950;
+const CLOSE_STACK_Y_STEP = 360; // vertical gap between per-path Close nodes
+const CLOSE_HEADROOM = 500;      // gap from the deepest path's last node to the first Close
+
+// Globals on the left.
+const FAQ_POS: Position = { x: -498, y: -642 };
+const HUMAN_REQ_POS: Position = { x: -1242, y: 222 };
+const IRRELEVANT_GUARDRAIL_POS: Position = { x: -1242, y: 942 };
+const POLITE_HANGUP_POS: Position = { x: -690, y: 870 };
+const EMERGENCY_GUARDRAIL_POS: Position = { x: -1242, y: 1710 };
+const GUARDRAIL_END_POS: Position = { x: -570, y: 1734 };
 
 export function layoutPositions(
   pathSequences: Array<Array<DataPoint | SendSmsAction>>,
   pathEndModes?: Array<"callback" | "transfer">,
 ): Positions {
-  // SMS-action layout sits below the Collect/Confirm row at the source-order
-  // column. Two stacked nodes: function (send_sms) above Mark Sent, both off
-  // to the side so they don't visually crowd the DP chain in the editor.
-  const SMS_Y_FUNC = 1800;
-  const SMS_Y_MARK = 2250;
+  // Compute the deepest Y any path's last DP / SMS reaches so the closing
+  // chain can sit below all of them with consistent headroom.
+  let deepestPathEndY = 0;
 
   const paths: PathPositions[] = pathSequences.map((seq, pathIdx) => {
     const yBase = pathIdx * PATH_Y_OFFSET;
@@ -408,52 +472,79 @@ export function layoutPositions(
 
     const dpPositions: Array<{ conv: Position; confirm: Position }> = [];
     const smsPositions: SmsActionPositions[] = [];
-    seq.forEach((item, i) => {
+    seq.forEach((item) => {
       if (isSendSmsAction(item)) {
+        // SMS lands at the next "row" below the last DP/SMS in this path,
+        // using the same DP_Y_STEP cadence so the staircase stays uniform.
+        const rowIdx = dpPositions.length + smsPositions.length;
+        const rowY = yBase + DP_Y_FIRST_REL + rowIdx * DP_Y_STEP;
         smsPositions.push({
-          func: { x: BASE_X + i * STEP_X, y: SMS_Y_FUNC + yBase },
-          markSent: { x: BASE_X + i * STEP_X, y: SMS_Y_MARK + yBase },
+          func: { x: SMS_FUNC_X, y: rowY },
+          markSent: { x: SMS_MARK_X, y: rowY },
         });
       } else {
-        const dpIdx = dpPositions.length;
+        const rowIdx = dpPositions.length + smsPositions.length;
+        const rowY = yBase + DP_Y_FIRST_REL + rowIdx * DP_Y_STEP;
         dpPositions.push({
-          conv: { x: BASE_X + dpIdx * STEP_X, y: 900 + yBase },
-          confirm: { x: BASE_X + dpIdx * STEP_X, y: 1350 + yBase },
+          conv: { x: DP_COLLECT_X, y: rowY },
+          confirm: { x: DP_CONFIRM_X, y: rowY },
         });
       }
     });
 
-    return {
-      transition: { x: -18, y: -400 + yBase },
-      frontExtract: { x: -18, y: 0 + yBase },
-      router: { x: -18, y: 450 + yBase },
+    const lastRowY = yBase + DP_Y_FIRST_REL +
+      Math.max(0, dpPositions.length + smsPositions.length - 1) * DP_Y_STEP;
+    if (lastRowY > deepestPathEndY) deepestPathEndY = lastRowY;
+
+    const pathPos: PathPositions = {
+      transition: { x: TRANSITION_X, y: yBase + HEADER_Y_REL },
+      frontExtract: { x: EXTRACT_X, y: yBase + HEADER_Y_REL },
+      router: { x: ROUTER_X, y: yBase + HEADER_Y_REL },
       chain: dpPositions,
       smsActions: smsPositions,
-      ...(isTransfer
-        ? {
-            preTransfer: { x: -18, y: 1800 + yBase },
-            transferCall: { x: 540, y: 1800 + yBase },
-          }
-        : {}),
     };
+
+    if (isTransfer) {
+      // Transfer paths replace the closing chain with Pre-Transfer →
+      // Transfer Call, dropped directly below the path's last DP row.
+      const nextRowY = lastRowY + DP_Y_STEP;
+      pathPos.preTransfer = { x: PRE_TRANSFER_X, y: nextRowY };
+      pathPos.transferCall = { x: TRANSFER_CALL_X, y: nextRowY };
+    }
+
+    return pathPos;
   });
 
-  const chainLengths = pathSequences.map((seq) => seq.filter((it) => !isSendSmsAction(it)).length);
-  const maxChainLen = chainLengths.length > 0 ? Math.max(...chainLengths) : 0;
-  const lastX = BASE_X + (maxChainLen - 1) * STEP_X + STEP_X;
-  const lastPathYBase = (pathSequences.length - 1) * PATH_Y_OFFSET;
+  // Closing chain Y: sit below the deepest path, then stack per-path Close
+  // nodes vertically. The shared Close Question / Closing Remarks /
+  // Closing Statement / End row sits at the vertical midpoint of the
+  // Close stack so the layout reads as a centered convergence.
+  const closeY0 = deepestPathEndY + CLOSE_HEADROOM;
+  const closeYMid = closeY0 + ((pathSequences.length - 1) * CLOSE_STACK_Y_STEP) / 2;
+
+  // Stamp per-path close positions for the multi-path emitter.
+  paths.forEach((p, pathIdx) => {
+    if (pathEndModes?.[pathIdx] === "transfer") return;
+    p.close = { x: CLOSE_X, y: closeY0 + pathIdx * CLOSE_STACK_Y_STEP };
+  });
 
   return {
-    intro: { x: -18, y: -906 },
-    end: { x: 1494, y: -882 },
-    faq: { x: -1386, y: -1770 },
-    humanReq: { x: -954, y: -1770 },
-    irrelevantGuardrail: { x: -1386, y: -2490 },
-    emergencyGuardrail: { x: -882, y: -2778 },
-    politeHangup: { x: -1026, y: -2394 },
-    guardrailEnd: { x: -666, y: -2346 },
-    close: { x: lastX, y: 894 + lastPathYBase },
-    closeQuestion: { x: lastX, y: 1038 + lastPathYBase },
+    intro: INTRO_POS,
+    // Post-closing End Call: reached via Closing Statement.skip_response_edge.
+    // Sits at the right end of the bottom row, same Y as Close Question /
+    // Closing Remarks / Closing Statement. Different from guardrailEnd
+    // below, which is the Polite Hangup chain's terminal.
+    end: { x: END_X, y: closeYMid },
+    faq: FAQ_POS,
+    humanReq: HUMAN_REQ_POS,
+    irrelevantGuardrail: IRRELEVANT_GUARDRAIL_POS,
+    emergencyGuardrail: EMERGENCY_GUARDRAIL_POS,
+    politeHangup: POLITE_HANGUP_POS,
+    guardrailEnd: GUARDRAIL_END_POS,
+    // Single-path shared Close. Multi-path uses PathPositions.close per
+    // path; the single-path emitter still reads this top-level position.
+    close: { x: CLOSE_X, y: closeYMid },
+    closeQuestion: { x: CLOSE_QUESTION_X, y: closeYMid },
     paths,
   };
 }
@@ -1580,7 +1671,11 @@ export function buildClosingSequence(
   pos: Positions,
   f: IdFactory,
 ) {
-  const lastX = pos.close.x;
+  // Closing Remarks / Statement / (post-closing) End share the same Y row
+  // as Close Question — the chain reads left-to-right along the bottom of
+  // the canvas: Close (per-path) → Close Question → Closing Remarks →
+  // Closing Statement → End.
+  const rowY = pos.closeQuestion.y;
   const remarksTemplate =
     agentConfig.closingRemarksPrompt ?? DEFAULT_CLOSING_REMARKS_PROMPT;
   const statementTemplate =
@@ -1601,7 +1696,7 @@ export function buildClosingSequence(
       edges: [],
       id: ids.closingRemarksId,
       type: "conversation",
-      display_position: { x: lastX, y: 1182 },
+      display_position: { x: CLOSING_REMARKS_X, y: rowY },
     },
     {
       instruction: {
@@ -1612,7 +1707,7 @@ export function buildClosingSequence(
       edges: [],
       id: ids.closingStatementId,
       type: "conversation",
-      display_position: { x: lastX, y: 1494 },
+      display_position: { x: CLOSING_STATEMENT_X, y: rowY },
       skip_response_edge: {
         destination_node_id: ids.endId,
         id: `skip-response-edge-${f.nextTs()}-${randomSuffix(9)}`,
