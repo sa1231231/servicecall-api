@@ -108,12 +108,17 @@ describe("Agent creator — feature reflection", () => {
       const flow = (agent.conversationFlow as any);
       const startNodeId = flow.start_node_id as string;
       const intro = flow.nodes.find((n: any) => n.id === startNodeId);
-      const examples = intro.finetune_transition_examples as any[];
+      const faqId = flow.nodes.find((n: any) => n.name === "Admin/FAQ").id;
+      // Exclude the default Intro→FAQ FT examples (those target the FAQ
+      // global node id and are scoped to a different concern).
+      const examples = (intro.finetune_transition_examples as any[]).filter(
+        (ex) => ex.destination_node_id !== faqId,
+      );
       const serviceTransitionId = intro.edges.find(
         (e: any) => e.transition_condition.prompt === "service request",
       ).destination_node_id;
 
-      // Expect exactly one example, with destination matching the Service path's transition node.
+      // Expect exactly one path-transition example.
       expect(examples).toHaveLength(1);
       expect(examples[0].id).toBe("ft-service-1");
       expect(examples[0].destination_node_id).toBe(serviceTransitionId);
@@ -152,7 +157,11 @@ describe("Agent creator — feature reflection", () => {
       );
       const flow = (agent.conversationFlow as any);
       const intro = flow.nodes.find((n: any) => n.id === flow.start_node_id);
-      const examples = intro.finetune_transition_examples as any[];
+      const faqId = flow.nodes.find((n: any) => n.name === "Admin/FAQ").id;
+      // Exclude the default Intro→FAQ FT examples.
+      const examples = (intro.finetune_transition_examples as any[]).filter(
+        (ex) => ex.destination_node_id !== faqId,
+      );
       const serviceDest = intro.edges.find(
         (e: any) => e.transition_condition.prompt === "service request",
       ).destination_node_id;
@@ -196,10 +205,16 @@ describe("Agent creator — feature reflection", () => {
       );
       const flow = (agent.conversationFlow as any);
       const intro = flow.nodes.find((n: any) => n.id === flow.start_node_id);
-      const serialized = JSON.stringify(intro.finetune_transition_examples);
+      const faqId = flow.nodes.find((n: any) => n.name === "Admin/FAQ").id;
+      // Exclude default Intro→FAQ FTs — count only the agent-level and
+      // per-path examples we wired in for this assertion.
+      const nonFaq = (intro.finetune_transition_examples as any[]).filter(
+        (ex) => ex.destination_node_id !== faqId,
+      );
+      const serialized = JSON.stringify(nonFaq);
       expect(serialized).toContain("AGENT_LEVEL_INTRO_EXAMPLE");
       expect(serialized).toContain("PATH_LEVEL_EXAMPLE");
-      expect(intro.finetune_transition_examples).toHaveLength(2);
+      expect(nonFaq).toHaveLength(2);
     });
 
     it("a path with no transitionFinetuneExamples doesn't pollute the intro node's array", () => {
@@ -214,7 +229,13 @@ describe("Agent creator — feature reflection", () => {
       );
       const flow = (agent.conversationFlow as any);
       const intro = flow.nodes.find((n: any) => n.id === flow.start_node_id);
-      expect(intro.finetune_transition_examples).toEqual([]);
+      const faqId = flow.nodes.find((n: any) => n.name === "Admin/FAQ").id;
+      // Exclude the default Intro→FAQ FTs; the path-transition slots
+      // should still be empty because neither path provided FTs.
+      const nonFaq = (intro.finetune_transition_examples as any[]).filter(
+        (ex) => ex.destination_node_id !== faqId,
+      );
+      expect(nonFaq).toEqual([]);
     });
 
     it("closePrompt populates the Close node (single-path)", () => {

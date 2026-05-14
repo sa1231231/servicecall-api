@@ -510,7 +510,7 @@ If the caller refuses and repeats the request for a human, repeat that you canno
       "→ Transition (Transfer) (Wants live transfer)",
     ],
     "finetune_conversation_examples": [],
-    "finetune_transition_examples": "[0 examples]",
+    "finetune_transition_examples": "[8 examples]",
     "instruction": {
       "text": "Determine the reason for the caller's call.
 
@@ -1209,7 +1209,7 @@ If the caller refuses and repeats the request for a human, repeat that you canno
       "→ Conversation (The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.)",
     ],
     "finetune_conversation_examples": [],
-    "finetune_transition_examples": "[0 examples]",
+    "finetune_transition_examples": "[8 examples]",
     "instruction": {
       "text": "Determine the reason for the caller's call.
 

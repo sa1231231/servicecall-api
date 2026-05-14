@@ -91,6 +91,24 @@ export const CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES: FinetuneExample[] = [
   { type: "positive", transcript: [{ content: "Now that you mention it — what time will they actually show up?", role: "user" }, { content: "", role: "agent" }] },
 ];
 
+// Caller utterances that arrive at the Intro node as an inbound *question*
+// rather than a service request. The Admin/FAQ global node intercepts them
+// via its `condition` + `positive_finetune_examples`, but the Intro node's
+// "do NOT leave this node if the caller is only asking questions" prompt
+// can otherwise pull the model into a path Transition before the global
+// classifier fires. Training these explicitly on the Intro node biases the
+// model toward the FAQ jump at the very first turn of the call.
+export const INTRO_FAQ_FINETUNE_EXAMPLES: FinetuneExample[] = [
+  { type: "positive", transcript: [{ content: "Hi — what are your hours?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "How much do you guys charge for a service call?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Do you do residential work or just commercial?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Are you guys open today?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Quick question — are you licensed and insured?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Do you service my area?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "What kind of payment do you accept?", role: "user" }, { content: "", role: "agent" }] },
+  { type: "positive", transcript: [{ content: "Do you offer free estimates?", role: "user" }, { content: "", role: "agent" }] },
+];
+
 // Spoken right before a per-path live transfer kicks off.
 export const DEFAULT_PRE_TRANSFER_PROMPT = `Thanks for the information. Hold on a moment — connecting you to our team at {{business_name}} now.`;
 
@@ -238,11 +256,17 @@ export interface AgentConfig {
   liveTransferRecoveryPrompt?: string;
   warmTransferAgentVersion?: number;
   // Workspace-default fine-tune example overrides. When set, these replace
-  // the hardcoded FAQ_GLOBAL_POSITIVE_EXAMPLES / CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES
-  // arrays in the generated nodes. Loaded from GlobalSettings by the create-agent
-  // path so operators can edit defaults in the Categories tab.
+  // the hardcoded FAQ_GLOBAL_POSITIVE_EXAMPLES / CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES /
+  // INTRO_FAQ_FINETUNE_EXAMPLES arrays in the generated nodes. Loaded from
+  // GlobalSettings by the create-agent path so operators can edit defaults
+  // in the Categories tab.
   faqGlobalFinetuneExamples?: FinetuneExample[];
   closeQuestionFinetuneExamples?: FinetuneExample[];
+  // Examples of caller utterances that arrive at the Intro node as a
+  // question (rather than a service request) so the global Admin/FAQ
+  // jump fires on the first turn instead of getting captured by a
+  // path-transition edge.
+  introFaqFinetuneExamples?: FinetuneExample[];
 }
 
 export interface IntroPathConfig {
@@ -561,6 +585,19 @@ Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ
           id: ex.id || `fe-${f.nextTs()}`,
           destination_node_id: ids.paths[i].transitionId,
         })),
+      ),
+      // Inbound-question examples: caller's first turn is a question, not
+      // a service request. destination_node_id targets the Admin/FAQ
+      // global node so the model jumps to FAQ instead of getting captured
+      // by a path-transition edge. No explicit edge from Intro to FAQ —
+      // single source of truth in the Retell UI (same pattern as Close
+      // Question after the duplicate-destination fix).
+      ...(config.introFaqFinetuneExamples ?? INTRO_FAQ_FINETUNE_EXAMPLES).map(
+        (ex) => ({
+          transcript: ex.transcript,
+          id: ex.id || `fe-${f.nextTs()}`,
+          destination_node_id: ids.faqId,
+        }),
       ),
     ],
     id: ids.introId,

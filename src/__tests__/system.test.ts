@@ -880,6 +880,42 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         expect(Array.isArray(ex.transcript) && ex.transcript.length > 0).toBe(true);
       }
     });
+
+    it("Intro has no explicit edge to Admin/FAQ + FT examples target the global FAQ", async () => {
+      // Same UI-clean pattern as Close Question. The Intro node's only
+      // explicit edges go to path Transition nodes. The first-turn
+      // FAQ-jump case (caller's first utterance is a question rather
+      // than a service request) is trained via finetune_transition_examples
+      // whose destination_node_id targets the FAQ global node id —
+      // single Admin/FAQ reference in the Retell destination picker.
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      expect(flow).toBeDefined();
+
+      const intro = flow.nodes.find((n: any) => n.name === "Intro");
+      const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+      expect(intro, "Intro node present").toBeDefined();
+      expect(faq, "Admin/FAQ node present").toBeDefined();
+
+      // No edge from Intro to FAQ.
+      const faqEdges = (intro.edges as any[]).filter(
+        (e) => e.destination_node_id === faq.id,
+      );
+      expect(faqEdges).toHaveLength(0);
+
+      // At least one FT example targets the FAQ jump.
+      const faqFts = (intro.finetune_transition_examples as any[]).filter(
+        (ex) => ex.destination_node_id === faq.id,
+      );
+      expect(faqFts.length).toBeGreaterThan(0);
+      for (const ex of faqFts) {
+        expect(Array.isArray(ex.transcript) && ex.transcript.length > 0).toBe(true);
+      }
+    });
   });
 
   // ── 17. Data Point Defaults ─────────────────────────────────────────

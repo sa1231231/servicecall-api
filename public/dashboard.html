@@ -1892,6 +1892,16 @@
           </div>
         </details>
 
+        <details class="dp-card" data-dp-key="_intro_faq_ft" data-ft-default="intro_faq" style="margin-top:0.6rem;">
+          <summary><strong>Intro → FAQ Examples</strong> <span class="dp-var">finetune_transition_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
+          <div class="dp-card-body">
+            <p class="settings-hint">First-turn caller utterances that are questions (not service requests). Routes through the Admin/FAQ global node so the model doesn't get captured by a path-transition edge before the global classifier fires.</p>
+            <label>Finetune Examples</label>
+            <div class="dp-ft-list"></div>
+            <button type="button" class="ft-add-example" onclick="addFtExample('_intro_faq_ft')">+ Add Finetune Example</button>
+          </div>
+        </details>
+
         <details class="dp-card" data-dp-key="_human_request_ft" data-ft-default="human_request" style="margin-top:0.6rem;">
           <summary><strong>Human Request Global Examples</strong> <span class="dp-var">positive_finetune_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
           <div class="dp-card-body">
@@ -7531,6 +7541,7 @@
     faq_global: '_faq_global_ft',
     close_question: '_close_question_ft',
     human_request: '_human_request_ft',
+    intro_faq: '_intro_faq_ft',
   };
 
   async function loadFtDefaults() {
@@ -7541,6 +7552,7 @@
       renderFtDefaultsInto('_faq_global_ft', s.faq_global_finetune_examples);
       renderFtDefaultsInto('_close_question_ft', s.close_question_finetune_examples);
       renderFtDefaultsInto('_human_request_ft', s.human_request_finetune_examples);
+      renderFtDefaultsInto('_intro_faq_ft', s.intro_faq_finetune_examples);
     } catch (err) {
       const status = document.getElementById('ftDefaultsStatus');
       if (status) status.textContent = 'Load failed: ' + err.message;
@@ -7584,6 +7596,7 @@
       faq_global_finetune_examples: collectFtCardExamples('_faq_global_ft'),
       close_question_finetune_examples: collectFtCardExamples('_close_question_ft'),
       human_request_finetune_examples: collectFtCardExamples('_human_request_ft'),
+      intro_faq_finetune_examples: collectFtCardExamples('_intro_faq_ft'),
     };
     try {
       const res = await fetch('/dashboard/api/settings', {
@@ -7601,6 +7614,7 @@
       renderFtDefaultsInto('_faq_global_ft', payload.faq_global_finetune_examples);
       renderFtDefaultsInto('_close_question_ft', payload.close_question_finetune_examples);
       renderFtDefaultsInto('_human_request_ft', payload.human_request_finetune_examples);
+      renderFtDefaultsInto('_intro_faq_ft', payload.intro_faq_finetune_examples);
       showToast('Fine-tune defaults saved', 'success');
     } catch (err) {
       if (status) status.textContent = 'Save failed: ' + err.message;

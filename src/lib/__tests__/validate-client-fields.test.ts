@@ -155,4 +155,25 @@ describe("validateGlobalSettingsUpdates", () => {
     });
     expect(errs[0]).toMatch(/close_question_finetune_examples must be an array/);
   });
+
+  it("accepts and validates intro_faq_finetune_examples (same shape as the others)", () => {
+    expect(validateGlobalSettingsUpdates({
+      intro_faq_finetune_examples: [
+        { type: "positive", transcript: [{ role: "user", content: "What are your hours?" }] },
+      ],
+    })).toEqual([]);
+
+    // Empty array is a valid override (clears the baseline).
+    expect(validateGlobalSettingsUpdates({
+      intro_faq_finetune_examples: [],
+    })).toEqual([]);
+
+    // Malformed entries still reject.
+    const errs = validateGlobalSettingsUpdates({
+      intro_faq_finetune_examples: [
+        { type: "maybe", transcript: [{ role: "user", content: "ok" }] },
+      ],
+    });
+    expect(errs.join(" | ")).toMatch(/intro_faq_finetune_examples.*type/);
+  });
 });

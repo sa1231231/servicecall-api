@@ -58,6 +58,14 @@ export interface GlobalSettings {
    *  (caller asks for a person / supervisor / human transfer). Merged on top
    *  of the built-in baseline at generation time. */
   human_request_finetune_examples?: FinetuneExample[];
+  /** Workspace default fine-tune examples for the Intro node's
+   *  finetune_transition_examples that target the Admin/FAQ global node
+   *  (caller asks a question instead of stating a service request).
+   *  When unset, falls back to INTRO_FAQ_FINETUNE_EXAMPLES in
+   *  node-builders.ts. Destination resolves to the FAQ node id at
+   *  generation time — no explicit edge from Intro to FAQ, same UI-clean
+   *  pattern as Close Question. */
+  intro_faq_finetune_examples?: FinetuneExample[];
 }
 
 function collection() {
@@ -102,6 +110,11 @@ export async function getSettings(): Promise<GlobalSettings> {
     )
       ? ((doc as any).human_request_finetune_examples as FinetuneExample[])
       : undefined,
+    intro_faq_finetune_examples: Array.isArray(
+      (doc as any)?.intro_faq_finetune_examples,
+    )
+      ? ((doc as any).intro_faq_finetune_examples as FinetuneExample[])
+      : undefined,
   };
 }
 
@@ -125,6 +138,7 @@ export async function updateSettings(
   if (updates.faq_global_finetune_examples !== undefined) setObj.faq_global_finetune_examples = updates.faq_global_finetune_examples;
   if (updates.close_question_finetune_examples !== undefined) setObj.close_question_finetune_examples = updates.close_question_finetune_examples;
   if (updates.human_request_finetune_examples !== undefined) setObj.human_request_finetune_examples = updates.human_request_finetune_examples;
+  if (updates.intro_faq_finetune_examples !== undefined) setObj.intro_faq_finetune_examples = updates.intro_faq_finetune_examples;
   if (updates.cost_rates !== undefined) {
     // Merge into a complete CostRates object so nested writes don't drop sibling keys
     const current = await getSettings();

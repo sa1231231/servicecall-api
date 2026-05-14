@@ -834,6 +834,62 @@ describe("per-path end mode", () => {
     expect(positives[1].transcript[0].content).toBe("Do you accept credit cards?");
   });
 
+  it("Intro carries default FAQ-jump FT examples targeting the global FAQ", () => {
+    // Baseline (no workspace override): the hardcoded
+    // INTRO_FAQ_FINETUNE_EXAMPLES bake in. They live on the Intro node
+    // with destination_node_id = FAQ node id and NO explicit edge to
+    // FAQ — single source of truth in the Retell UI (same UI-clean
+    // pattern as Close Question).
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const intro = flow.nodes.find((n: any) => n.name === "Intro");
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    expect(intro).toBeDefined();
+    expect(faq).toBeDefined();
+
+    // No explicit edge from Intro to FAQ.
+    const faqEdges = (intro.edges as any[]).filter(
+      (e) => e.destination_node_id === faq.id,
+    );
+    expect(faqEdges).toHaveLength(0);
+
+    // FT examples include at least one targeting the global FAQ.
+    const faqFts = (intro.finetune_transition_examples as any[]).filter(
+      (ex) => ex.destination_node_id === faq.id,
+    );
+    expect(faqFts.length).toBeGreaterThan(0);
+    for (const ex of faqFts) {
+      expect(Array.isArray(ex.transcript) && ex.transcript.length > 0).toBe(true);
+    }
+  });
+
+  it("introFaqFinetuneExamples workspace override replaces the hardcoded set", () => {
+    const custom = [
+      {
+        type: "positive" as const,
+        transcript: [
+          { content: "Hey, do you guys do free quotes?", role: "user" as const },
+          { content: "", role: "agent" as const },
+        ],
+      },
+    ];
+    const { agent } = generateAgent(
+      { ...baseConfig, introFaqFinetuneExamples: custom },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const intro = flow.nodes.find((n: any) => n.name === "Intro");
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+
+    const faqFts = (intro.finetune_transition_examples as any[]).filter(
+      (ex) => ex.destination_node_id === faq.id,
+    );
+    expect(faqFts).toHaveLength(1);
+    expect(faqFts[0].transcript[0].content).toBe("Hey, do you guys do free quotes?");
+  });
+
   it("end_mode=transfer wires router → Pre-Transfer → Transfer Call (number baked in)", () => {
     const dest = "+18005551234";
     const { agent } = generateAgent(

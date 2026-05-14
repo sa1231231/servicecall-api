@@ -203,6 +203,7 @@ export function validateGlobalSettingsUpdates(updates: Record<string, unknown>):
   for (const ftKey of [
     "faq_global_finetune_examples",
     "close_question_finetune_examples",
+    "intro_faq_finetune_examples",
   ] as const) {
     if (!(ftKey in updates)) continue;
     const v = updates[ftKey];
