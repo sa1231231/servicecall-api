@@ -1363,6 +1363,15 @@ export function buildDataChain(
     //     (they live in the same variables array). Composites are usually
     //     atomic (one prompt covers a tightly-scoped Q&A) so the lost
     //     capture window is minor.
+    //
+    // Order: non-orphans first, then orphans. parseDataPointFromNodes
+    // identifies the just-collected primary variable as `confirmVars[0]`,
+    // so we MUST keep the tapered non-orphan at index 0 — otherwise an
+    // orphan placed earlier in source order would shadow it and the
+    // parser would mis-attribute this Collect/Confirm pair to the orphan.
+    // The dashboard's Node Editor uses dataChain/steps order (not Confirm
+    // variables) to render the routing pad, so the orphan's position
+    // there is preserved by the parser, not by this list.
     const taperedNonOrphans = dpItems.slice(i).filter((d) => !d.orphan);
     const persistentOrphans = dp.composite ? [] : dpItems.filter((d) => d.orphan);
     const remainingVarDefs = [...taperedNonOrphans, ...persistentOrphans].flatMap(toVarDefs);

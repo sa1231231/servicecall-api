@@ -497,6 +497,121 @@ describe("composite parsing with orphan persistence (regression)", () => {
   });
 });
 
+describe("parser orphan placement (regression — HVAC Default reversal)", () => {
+  // Reproducer for the user-reported bug: an orphan dp placed mid-chain
+  // was being appended to the END of dataChain (and silently dropped from
+  // steps) at parse time, so the Node Editor showed it at the bottom of the
+  // routing pad — not where the operator placed it. Saving from there
+  // pushed the wrong order back to Retell.
+
+  const orphanInMiddle: DataPoint = {
+    label: "Service Type",
+    variableName: "hvac_service_type",
+    type: "enum",
+    choices: ["maintenance", "repair", NOT_MENTIONED],
+    description: `hvac_service_type. If not mentioned, set to "${NOT_MENTIONED}".`,
+    conversationPrompt: "",
+    forwardCondition: "",
+    finetuneExamples: [],
+    extractSuccessEquation: defaultExtractEquation("hvac_service_type"),
+    orphan: true,
+  };
+
+  it("preserves orphan position in dataChain and steps", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      ["full_name", "phone_number", "hvac_service_type", "city"],
+      undefined,
+      { ...TEST_DEFAULTS, hvac_service_type: orphanInMiddle },
+    );
+    const parsed = parseConversationFlow(agent);
+    const path = parsed.paths[0];
+
+    const chainNames = path.dataChain.map((dp) => dp.variableName);
+    expect(chainNames).toEqual([
+      "full_name",
+      "phone_number",
+      "hvac_service_type",
+      "city",
+    ]);
+
+    const stepNames = path.steps.map((s) =>
+      s.kind === "dp" ? s.dp.variableName : `<sms:${s.action.displayName}>`,
+    );
+    expect(stepNames).toEqual([
+      "full_name",
+      "phone_number",
+      "hvac_service_type",
+      "city",
+    ]);
+
+    const hvac = path.dataChain.find((d) => d.variableName === "hvac_service_type");
+    expect(hvac?.orphan).toBe(true);
+    // Sanity: hvac dp should only appear once in the chain.
+    const hvacCount = path.dataChain.filter((d) => d.variableName === "hvac_service_type").length;
+    expect(hvacCount).toBe(1);
+  });
+
+  it("buildDataPointsFromChain returns the orphan at its source position", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      ["full_name", "phone_number", "hvac_service_type", "city"],
+      undefined,
+      { ...TEST_DEFAULTS, hvac_service_type: orphanInMiddle },
+    );
+    const parsed = parseConversationFlow(agent);
+    const dps = buildDataPointsFromChain(parsed.paths[0], {
+      ...TEST_DEFAULTS,
+      hvac_service_type: orphanInMiddle,
+    });
+    expect(dps.map((d) => d.variableName)).toEqual([
+      "full_name",
+      "phone_number",
+      "hvac_service_type",
+      "city",
+    ]);
+  });
+
+  it("multi-orphan source order is preserved", () => {
+    const orphanEmail: DataPoint = {
+      label: "Email",
+      variableName: "caller_email",
+      type: "string",
+      description: `caller_email. If not mentioned, set to "${NOT_MENTIONED}".`,
+      conversationPrompt: "",
+      forwardCondition: "",
+      finetuneExamples: [],
+      extractSuccessEquation: defaultExtractEquation("caller_email"),
+      orphan: true,
+    };
+    const { agent } = generateAgent(
+      baseConfig,
+      ["full_name", "hvac_service_type", "phone_number", "caller_email"],
+      undefined,
+      {
+        ...TEST_DEFAULTS,
+        hvac_service_type: orphanInMiddle,
+        caller_email: orphanEmail,
+      },
+    );
+    const parsed = parseConversationFlow(agent);
+    expect(parsed.paths[0].dataChain.map((d) => d.variableName)).toEqual([
+      "full_name",
+      "hvac_service_type",
+      "phone_number",
+      "caller_email",
+    ]);
+    expect(
+      parsed.paths[0].steps.map((s) => (s.kind === "dp" ? s.dp.variableName : "sms")),
+    ).toEqual([
+      "full_name",
+      "hvac_service_type",
+      "phone_number",
+      "caller_email",
+    ]);
+  });
+});
+
 describe("buildDataPointsFromChain — orphan flag propagation (regression)", () => {
   it("propagates orphan from the parser-detected orphan dp", () => {
     // Build an agent where `is_loaded` is orphan from the start. Parse it,

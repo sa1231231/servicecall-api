@@ -74,6 +74,12 @@ describe("buildDataChain — orphan variable persistence", () => {
     //   Confirm at idx 2 (normal_c) → tapered = [normal_c],
     //                                  + orphans = [orphan_a]
     //                                  → expect [normal_c, orphan_a]
+    //
+    // Non-orphans MUST come first so parseDataPointFromNodes can identify
+    // the just-collected primary via confirmVars[0]. The Node Editor UI's
+    // routing-pad order is preserved by the parser's frontVars-position
+    // splice (node-parser.ts), not by this list — so flipping orphans to
+    // the front here would shadow the primary and break the round-trip.
     const dps = [
       makeDp({ variableName: "orphan_a", label: "Orphan A", orphan: true }),
       makeDp({ variableName: "normal_b", label: "Normal B" }),

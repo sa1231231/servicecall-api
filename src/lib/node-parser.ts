@@ -425,24 +425,45 @@ function buildParsedPath(
     dp.variableDefs = dp.variableDefs.filter((v) => !followerNames.has(v.name));
   }
 
-  // Detect orphan variables: present in front extract but no Collect node
-  const chainVarNames = new Set<string>();
+  // Detect orphan variables: present in front extract but no Collect node.
+  //
+  // Walk frontVars in order and splice each orphan into dataChain AND steps
+  // at the position that matches its source location relative to the chain's
+  // non-orphan primaries. Previously orphans were always appended to the
+  // end of dataChain and never added to steps at all, which made the
+  // dashboard's Node Editor either drop them or pin them to the bottom —
+  // both ways destroying the operator's authoring order on a load → save
+  // round-trip.
+  const primaryNames = new Set(dataChain.map((dp) => dp.variableName));
+  const subVarNames = new Set<string>();
   for (const dp of dataChain) {
-    chainVarNames.add(dp.variableName);
-    // Also include sub-variables from composite data points
-    for (const vd of dp.variableDefs) chainVarNames.add(vd.name);
+    for (const vd of dp.variableDefs) {
+      if (!primaryNames.has(vd.name)) subVarNames.add(vd.name);
+    }
   }
   const frontVars = frontExtractNode.raw.variables as Array<Record<string, unknown>> | undefined;
   if (Array.isArray(frontVars)) {
+    let cursor = 0; // next insertion index in dataChain / steps
     for (const v of frontVars) {
       const name = v.name as string;
       if (!name) continue;
-      if (chainVarNames.has(name)) continue;
-      // Skip known internal/sentinel variables
+      // Skip known internal/sentinel variables.
       if (name === "_path_taken" || name.endsWith("_collected")) continue;
-      dataChain.push({
+
+      if (primaryNames.has(name)) {
+        // Hit a non-orphan primary — advance the cursor past its slot so any
+        // later orphan in frontVars lands after it.
+        const idxInChain = dataChain.findIndex(
+          (dp, i) => i >= cursor && dp.variableName === name,
+        );
+        if (idxInChain >= 0) cursor = idxInChain + 1;
+        continue;
+      }
+      if (subVarNames.has(name)) continue; // composite sub-var of an existing dp
+
+      const orphanDp: ParsedDataPoint = {
         variableName: name,
-        label: (name).replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+        label: name.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
         collectNode: frontExtractNode, // placeholder — no real collect node
         confirmNode: frontExtractNode,
         variableDefs: [{
@@ -454,7 +475,10 @@ function buildParsedPath(
         conversationPrompt: "",
         forwardCondition: "",
         orphan: true,
-      });
+      };
+      dataChain.splice(cursor, 0, orphanDp);
+      steps.splice(cursor, 0, { kind: "dp", dp: orphanDp });
+      cursor++;
     }
   }
 

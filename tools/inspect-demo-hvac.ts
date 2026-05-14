@@ -13,7 +13,7 @@
 //   railway run npx tsx tools/inspect-demo-hvac.ts --slug=demo-hvac
 
 import "dotenv/config";
-import { initDb } from "../src/lib/db.js";
+import { initDb, getDb } from "../src/lib/db.js";
 import { getClientDocument } from "../src/config/client-store.js";
 import { getDataPointDefaults } from "../src/lib/data-point-defaults.js";
 
@@ -80,6 +80,87 @@ async function main() {
     )
     .map((n) => ({ id: n.id, name: n.name }));
 
+  // ── Step-1 diagnostics for the dp-reversal bug ────────────────────────────
+  //
+  // Dump three things so we can pin the cause of the "node editor shows
+  // dataPoints reversed" report:
+  //
+  //   1. The front Extract All Variables node's variables[] (source order
+  //      as written by the generator).
+  //   2. Every Variables Router node's edges[] destination ids, mapped to
+  //      the names of the nodes they point at, in the order Retell returned
+  //      them. If this is reversed vs (1), Retell is flipping the array
+  //      on fetch.
+  //   3. The HVAC Default draft (agent_drafts collection) — both
+  //      formData.routingPaths[i].chain (form authoring shape) and
+  //      exportConfig.paths[i].dataPoints (create-time payload) — so we
+  //      can tell whether the draft itself is stored reversed.
+  const nodesById = new Map<string, Record<string, any>>(nodes.map((n) => [n.id as string, n]));
+  const labelFor = (nodeId: string | undefined): string => {
+    if (!nodeId) return "(none)";
+    const n = nodesById.get(nodeId);
+    if (!n) return `(missing:${nodeId})`;
+    return `${n.name ?? "?"} [${n.type ?? "?"}]`;
+  };
+
+  const frontExtract = nodes.find(
+    (n) => n.type === "extract_dynamic_variables" && n.name === "Extract All Variables",
+  );
+  const frontExtractVars = Array.isArray(frontExtract?.variables)
+    ? frontExtract!.variables.map((v: any) => v.name)
+    : [];
+
+  const routerNodes = nodes.filter((n) => /Variables Router/i.test(n.name ?? ""));
+  const routerSummary = routerNodes.map((r) => ({
+    id: r.id,
+    name: r.name,
+    edges: Array.isArray(r.edges)
+      ? r.edges.map((e: any) => ({
+          destination_node_id: e.destination_node_id,
+          dest: labelFor(e.destination_node_id),
+        }))
+      : null,
+    else_edge_dest: labelFor(r.else_edge?.destination_node_id),
+  }));
+
+  // Pull the HVAC Default draft so we can compare its stored chain order
+  // against the live agent's router/front-extract order.
+  const draftDoc: any = await getDb()
+    .collection("agent_drafts")
+    .find({ name: "HVAC Default" })
+    .sort({ updatedAt: -1 })
+    .limit(1)
+    .next();
+  const draftSummary = draftDoc
+    ? {
+        _id: String(draftDoc._id),
+        name: draftDoc.name,
+        updatedAt: draftDoc.updatedAt,
+        formData_routingPaths: (draftDoc.formData?.routingPaths ?? []).map(
+          (p: any) => ({
+            name: p.name,
+            chain: Array.isArray(p.chain)
+              ? p.chain.map((c: any) =>
+                  typeof c === "string"
+                    ? c
+                    : c?._ref ?? c?.variableName ?? c?._custom ? `<custom:${c?.variableName ?? "?"}>` : "?",
+                )
+              : null,
+          }),
+        ),
+        exportConfig_paths: (draftDoc.exportConfig?.paths ?? []).map(
+          (p: any) => ({
+            name: p.name,
+            dataPoints: Array.isArray(p.dataPoints)
+              ? p.dataPoints.map((dp: any) =>
+                  typeof dp === "string" ? dp : dp?.variableName ?? "?",
+                )
+              : null,
+          }),
+        ),
+      }
+    : null;
+
   const report = {
     slug,
     client_name: doc.name,
@@ -93,6 +174,10 @@ async function main() {
     },
     collect_nodes: collectSummary,
     problem_description_extract_nodes: problemDescPresence,
+    // Step-1 diagnostics for the data-point reversal bug.
+    front_extract_variables: frontExtractVars,
+    routers: routerSummary,
+    hvac_default_draft: draftSummary,
     workspace_defaults: {
       problem_description: problemDescription
         ? {
