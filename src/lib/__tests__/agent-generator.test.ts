@@ -695,6 +695,72 @@ describe("per-path end mode", () => {
     }
   });
 
+  it("Close Question has NO explicit edge to Admin/FAQ (regression — Retell UI duplicate)", () => {
+    // Regression for the bug where the Close Question node had two edges
+    // (Closing Remarks + Admin/FAQ). Retell's console rendered the FAQ
+    // edge plus the global FAQ jump as duplicate Admin/FAQ entries in
+    // the destination picker. Drop the explicit edge — keep the FT
+    // examples pointing at the global FAQ id so the training still
+    // triggers the global jump.
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    expect(closeQuestion).toBeDefined();
+    expect(faq).toBeDefined();
+
+    // No edge from Close Question to Admin/FAQ.
+    const faqEdges = (closeQuestion.edges as any[]).filter(
+      (e) => e.destination_node_id === faq.id,
+    );
+    expect(faqEdges).toHaveLength(0);
+
+    // No edge with the legacy "has another question" prompt either.
+    const anotherQuestionEdges = (closeQuestion.edges as any[]).filter(
+      (e) => e.transition_condition?.prompt === "The caller has another question",
+    );
+    expect(anotherQuestionEdges).toHaveLength(0);
+
+    // And: FT examples still train the FAQ jump.
+    expect(closeQuestion.finetune_transition_examples.length).toBeGreaterThan(0);
+    expect(
+      closeQuestion.finetune_transition_examples.every(
+        (ex: any) => ex.destination_node_id === faq.id,
+      ),
+    ).toBe(true);
+  });
+
+  it("Close Question shape holds in multi-path agents too", () => {
+    // The multi-path generator shares a single Close Question node across
+    // per-path Close nodes (already asserted above). This test pins the
+    // shape: 1 edge, FT examples → global FAQ, no FAQ edge.
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "A", transitionCondition: "is A", dataPoints: ["full_name"] },
+        { name: "B", transitionCondition: "is B", dataPoints: ["phone_number"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+    const closingRemarks = flow.nodes.find((n: any) => n.name === "Closing Remarks");
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    expect(closeQuestion).toBeDefined();
+
+    expect(closeQuestion.edges).toHaveLength(1);
+    expect(closeQuestion.edges[0].destination_node_id).toBe(closingRemarks.id);
+    expect(closeQuestion.edges[0].transition_condition.prompt).toBe(
+      "The caller has no more questions",
+    );
+
+    expect(closeQuestion.finetune_transition_examples.length).toBeGreaterThan(0);
+    for (const ex of closeQuestion.finetune_transition_examples) {
+      expect(ex.destination_node_id).toBe(faq.id);
+    }
+  });
+
   it("closeQuestionPrompt override propagates to the rendered Close Question node", () => {
     const customPrompt = "Custom: any other concerns I can address before I let you go?";
     const { agent } = generateAgent(

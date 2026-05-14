@@ -832,6 +832,54 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         expect(overlap, `${node.name} missing workspace FT`).toBe(true);
       }
     });
+
+    it("Close Question has no explicit edge to Admin/FAQ + FT examples target the global FAQ", async () => {
+      // Regression for the "duplicate Admin/FAQ in destination picker"
+      // Retell-console bug. The Close Question node should have exactly
+      // ONE explicit edge (to Closing Remarks) — the follow-up-question
+      // path runs through the FAQ global node. The
+      // finetune_transition_examples on Close Question still carry
+      // destination_node_id = FAQ node id; that trains the global jump
+      // without showing FAQ twice in the UI.
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      expect(flow).toBeDefined();
+
+      const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+      const closingRemarks = flow.nodes.find((n: any) => n.name === "Closing Remarks");
+      const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+      expect(closeQuestion, "Close Question node present").toBeDefined();
+      expect(faq, "Admin/FAQ node present").toBeDefined();
+
+      // Exactly one edge — to Closing Remarks.
+      expect(closeQuestion.edges).toHaveLength(1);
+      expect(closeQuestion.edges[0].destination_node_id).toBe(closingRemarks.id);
+      expect(closeQuestion.edges[0].transition_condition?.prompt).toBe(
+        "The caller has no more questions",
+      );
+
+      // No edge to FAQ — neither by id nor by the legacy prompt.
+      const faqEdges = (closeQuestion.edges as any[]).filter(
+        (e) => e.destination_node_id === faq.id,
+      );
+      expect(faqEdges).toHaveLength(0);
+      const anotherQuestionEdges = (closeQuestion.edges as any[]).filter(
+        (e) => e.transition_condition?.prompt === "The caller has another question",
+      );
+      expect(anotherQuestionEdges).toHaveLength(0);
+
+      // FT examples still train the FAQ jump.
+      const fts = closeQuestion.finetune_transition_examples ?? [];
+      expect(fts.length).toBeGreaterThan(0);
+      for (const ex of fts) {
+        expect(ex.destination_node_id, "FT destination should be the global FAQ id").toBe(faq.id);
+        expect(Array.isArray(ex.transcript) && ex.transcript.length > 0).toBe(true);
+      }
+    });
   });
 
   // ── 17. Data Point Defaults ─────────────────────────────────────────
