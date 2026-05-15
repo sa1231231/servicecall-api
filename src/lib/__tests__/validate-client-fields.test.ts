@@ -209,4 +209,26 @@ describe("validateGlobalSettingsUpdates", () => {
     });
     expect(errs[0]).toMatch(/irrelevant_guardrail_finetune_examples must be an array/);
   });
+
+  it("accepts and validates faq_conversation_finetune_examples (in-node response style)", () => {
+    expect(validateGlobalSettingsUpdates({
+      faq_conversation_finetune_examples: [
+        { type: "positive", transcript: [
+          { role: "user", content: "Do you take Apple Pay?" },
+          { role: "agent", content: "Yes, we do." },
+        ]},
+      ],
+    })).toEqual([]);
+
+    expect(validateGlobalSettingsUpdates({
+      faq_conversation_finetune_examples: [],
+    })).toEqual([]);
+
+    const errs = validateGlobalSettingsUpdates({
+      faq_conversation_finetune_examples: [
+        { type: "positive", transcript: [{ role: "bot", content: "..." }] },
+      ],
+    });
+    expect(errs.join(" | ")).toMatch(/faq_conversation_finetune_examples.*role/);
+  });
 });

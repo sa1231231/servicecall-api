@@ -71,6 +71,11 @@ export interface GlobalSettings {
    *  derail). Merged on top of IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES
    *  at generation time — additive. */
   irrelevant_guardrail_finetune_examples?: FinetuneExample[];
+  /** Workspace default in-node response examples for the Admin/FAQ
+   *  node's `finetune_conversation_examples` field. Trains the agent's
+   *  reply style (short, declarative, no follow-ups). Merged on top of
+   *  FAQ_CONVERSATION_FINETUNE_EXAMPLES at generation time — additive. */
+  faq_conversation_finetune_examples?: FinetuneExample[];
 }
 
 function collection() {
@@ -125,6 +130,11 @@ export async function getSettings(): Promise<GlobalSettings> {
     )
       ? ((doc as any).irrelevant_guardrail_finetune_examples as FinetuneExample[])
       : undefined,
+    faq_conversation_finetune_examples: Array.isArray(
+      (doc as any)?.faq_conversation_finetune_examples,
+    )
+      ? ((doc as any).faq_conversation_finetune_examples as FinetuneExample[])
+      : undefined,
   };
 }
 
@@ -150,6 +160,7 @@ export async function updateSettings(
   if (updates.human_request_finetune_examples !== undefined) setObj.human_request_finetune_examples = updates.human_request_finetune_examples;
   if (updates.intro_faq_finetune_examples !== undefined) setObj.intro_faq_finetune_examples = updates.intro_faq_finetune_examples;
   if (updates.irrelevant_guardrail_finetune_examples !== undefined) setObj.irrelevant_guardrail_finetune_examples = updates.irrelevant_guardrail_finetune_examples;
+  if (updates.faq_conversation_finetune_examples !== undefined) setObj.faq_conversation_finetune_examples = updates.faq_conversation_finetune_examples;
   if (updates.cost_rates !== undefined) {
     // Merge into a complete CostRates object so nested writes don't drop sibling keys
     const current = await getSettings();

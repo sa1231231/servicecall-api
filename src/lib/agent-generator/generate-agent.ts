@@ -406,6 +406,7 @@ When listing anything — services, time slots, examples, options — never list
       f,
       isMultiPath,
       agentConfig.faqGlobalFinetuneExamples,
+      agentConfig.faqConversationFinetuneExamples,
     ),
   );
   // Path Router sits on FAQ's outgoing "answered" edge. Routes back to

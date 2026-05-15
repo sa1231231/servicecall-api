@@ -986,6 +986,30 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(pathRouter.else_edge.destination_node_id).toBe(intro.id);
     });
 
+    it("Admin/FAQ: ships baseline finetune_conversation_examples on the deployed flow", async () => {
+      // Regression for the in-node response style training. The FAQ
+      // node should carry a non-empty finetune_conversation_examples
+      // array — each entry a {transcript: [...]} with a user turn and
+      // a short declarative agent reply. Trains the model not to ask
+      // follow-up questions inside FAQ.
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+      expect(faq).toBeDefined();
+      const examples = faq.finetune_conversation_examples;
+      expect(Array.isArray(examples) && examples.length > 0).toBe(true);
+      for (const ex of examples) {
+        const userTurn = ex.transcript?.find((t: any) => t.role === "user");
+        const agentTurn = ex.transcript?.find((t: any) => t.role === "agent");
+        expect(typeof userTurn?.content === "string" && userTurn.content.length > 0).toBe(true);
+        expect(typeof agentTurn?.content === "string" && agentTurn.content.length > 0).toBe(true);
+      }
+    });
+
     it("Admin/FAQ: skip-response edge to Path Router + no-follow-ups directive in instruction text", async () => {
       // Regression coverage for the FAQ auto-route work. The FAQ node
       // should (a) carry a skip_response_edge to the Path Router so it

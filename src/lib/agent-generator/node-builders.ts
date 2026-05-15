@@ -109,6 +109,35 @@ export const INTRO_FAQ_FINETUNE_EXAMPLES: FinetuneExample[] = [
   { type: "positive", transcript: [{ content: "Do you offer free estimates?", role: "user" }, { content: "", role: "agent" }] },
 ];
 
+// In-node response training for the Admin/FAQ node. Emitted on the
+// FAQ node's `finetune_conversation_examples` field — trains the
+// agent's reply style (short, declarative, no follow-up questions),
+// not the routing-jump signal. Style-focused so the answers stay
+// generic across verticals; the actual content gets overridden at
+// runtime by the FAQ knowledge base.
+export const FAQ_CONVERSATION_FINETUNE_EXAMPLES: FinetuneExample[] = [
+  { type: "positive", transcript: [
+    { content: "What are your hours?", role: "user" },
+    { content: "We're open Monday through Friday, 8 to 5.", role: "agent" },
+  ]},
+  { type: "positive", transcript: [
+    { content: "How much do you charge?", role: "user" },
+    { content: "Pricing is provided during the consultation.", role: "agent" },
+  ]},
+  { type: "positive", transcript: [
+    { content: "Do you service my area?", role: "user" },
+    { content: "Yes, we cover the surrounding area.", role: "agent" },
+  ]},
+  { type: "positive", transcript: [
+    { content: "Are you licensed and insured?", role: "user" },
+    { content: "Yes, we are.", role: "agent" },
+  ]},
+  { type: "positive", transcript: [
+    { content: "Do you offer free estimates?", role: "user" },
+    { content: "Free estimates aren't offered.", role: "agent" },
+  ]},
+];
+
 // Spoken right before a per-path live transfer kicks off.
 export const DEFAULT_PRE_TRANSFER_PROMPT = `Thanks for the information. Hold on a moment — connecting you to our team at {{business_name}} now.`;
 
@@ -288,6 +317,11 @@ export interface AgentConfig {
   // global node. Merged on top of IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES
   // at generation time (additive — baseline always ships).
   irrelevantGuardrailFinetuneExamples?: FinetuneExample[];
+  // Workspace-default in-node response examples for the Admin/FAQ
+  // node's `finetune_conversation_examples` field. Trains the agent's
+  // reply style (short, declarative, no follow-ups). Merged on top of
+  // FAQ_CONVERSATION_FINETUNE_EXAMPLES additively.
+  faqConversationFinetuneExamples?: FinetuneExample[];
 }
 
 export interface IntroPathConfig {
@@ -735,6 +769,7 @@ export function buildFaqNode(
   f: IdFactory,
   _isMultiPath?: boolean,
   positiveExamples?: FinetuneExample[],
+  conversationExamples?: FinetuneExample[],
 ) {
   // Forward through the Path Router on the "answered the caller's
   // question" exit — that node checks _path_taken and skips back to
@@ -750,6 +785,15 @@ export function buildFaqNode(
   // not remove built-in entries — keeps the global classifier from being
   // accidentally untrained on a critical phrasing.
   const examples = mergeAdditiveFinetunes(FAQ_GLOBAL_POSITIVE_EXAMPLES, positiveExamples);
+  // In-node response training (style — short, declarative, no
+  // follow-ups). Same additive merge against the hardcoded
+  // FAQ_CONVERSATION_FINETUNE_EXAMPLES baseline. Strip the `type`
+  // field on emit since Retell stores conversation fine-tunes as
+  // plain `{ transcript }` objects.
+  const conversationFts = mergeAdditiveFinetunes(
+    FAQ_CONVERSATION_FINETUNE_EXAMPLES,
+    conversationExamples,
+  ).map((ex) => ({ transcript: ex.transcript }));
 
   return {
     instruction: {
@@ -767,6 +811,7 @@ ${faqKnowledgeBase}
 Do not ask any questions or elaborate, just answer the question.`,
     },
     name: "Admin/FAQ",
+    finetune_conversation_examples: conversationFts,
     edges: [
       {
         destination_node_id: forwardDestination,

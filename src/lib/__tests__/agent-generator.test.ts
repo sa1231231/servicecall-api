@@ -1289,6 +1289,87 @@ describe("per-path end mode", () => {
     expect(faq.skip_response_edge.transition_condition.prompt).toBe("Skip response");
   });
 
+  it("Admin/FAQ: ships baseline finetune_conversation_examples", () => {
+    // In-node response training — short, declarative, no follow-ups.
+    // Emitted on the FAQ node's finetune_conversation_examples field,
+    // not on global_node_setting.positive_finetune_examples (which is
+    // the global classifier signal). Each entry is a plain
+    // { transcript } object — no `type` field since Retell strips it
+    // for conversation fine-tunes.
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    const examples = faq.finetune_conversation_examples as any[];
+    expect(Array.isArray(examples)).toBe(true);
+    expect(examples.length).toBeGreaterThan(0);
+    for (const ex of examples) {
+      expect(ex.type).toBeUndefined();
+      expect(Array.isArray(ex.transcript)).toBe(true);
+      // Each example has a user turn and a non-empty agent reply
+      // (this is the style-training signal — not the FAQ classifier).
+      const user = ex.transcript.find((t: any) => t.role === "user");
+      const agentTurn = ex.transcript.find((t: any) => t.role === "agent");
+      expect(user?.content?.length).toBeGreaterThan(0);
+      expect(agentTurn?.content?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("Admin/FAQ: faqConversationFinetuneExamples workspace override extends the baseline (additive)", () => {
+    const custom = [
+      {
+        type: "positive" as const,
+        transcript: [
+          { content: "Do you take credit cards?", role: "user" as const },
+          { content: "Yes, we accept all major cards.", role: "agent" as const },
+        ],
+      },
+    ];
+    const { agent } = generateAgent(
+      { ...baseConfig, faqConversationFinetuneExamples: custom },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    const examples = faq.finetune_conversation_examples as any[];
+    // Baseline survives + the operator's addition.
+    expect(examples.length).toBeGreaterThan(1);
+    const utterances = examples.map(
+      (ex: any) => ex.transcript.find((t: any) => t.role === "user")?.content,
+    );
+    expect(utterances).toContain("Do you take credit cards?");
+    // A well-known baseline phrasing is still present.
+    expect(utterances).toContain("What are your hours?");
+  });
+
+  it("Admin/FAQ: faqConversationFinetuneExamples override dedups by user-utterance", () => {
+    // Operator pastes a phrasing that already exists in the baseline —
+    // the merge should NOT double it.
+    const dup = [
+      {
+        type: "positive" as const,
+        transcript: [
+          { content: "What are your hours?", role: "user" as const },
+          { content: "Different answer here.", role: "agent" as const },
+        ],
+      },
+    ];
+    const { agent } = generateAgent(
+      { ...baseConfig, faqConversationFinetuneExamples: dup },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    const occurrences = (faq.finetune_conversation_examples as any[]).filter(
+      (ex: any) =>
+        ex.transcript.find((t: any) => t.role === "user")?.content === "What are your hours?",
+    );
+    expect(occurrences).toHaveLength(1);
+  });
+
   it("canvas layout — globals left, paths staircase, closing chain bottom row", () => {
     // Regression coverage for the canvas-layout cleanup. Snapshots drop
     // display_position so we need explicit assertions to lock in the

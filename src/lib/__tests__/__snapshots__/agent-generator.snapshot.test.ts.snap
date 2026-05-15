@@ -6,6 +6,68 @@ exports[`agent-generator canonical JSON snapshot > multi-path agent: stable shap
     "edges": [
       "→ Path Router (You answered the caller's question.)",
     ],
+    "finetune_conversation_examples": [
+      {
+        "transcript": [
+          {
+            "content": "What are your hours?",
+            "role": "user",
+          },
+          {
+            "content": "We're open Monday through Friday, 8 to 5.",
+            "role": "agent",
+          },
+        ],
+      },
+      {
+        "transcript": [
+          {
+            "content": "How much do you charge?",
+            "role": "user",
+          },
+          {
+            "content": "Pricing is provided during the consultation.",
+            "role": "agent",
+          },
+        ],
+      },
+      {
+        "transcript": [
+          {
+            "content": "Do you service my area?",
+            "role": "user",
+          },
+          {
+            "content": "Yes, we cover the surrounding area.",
+            "role": "agent",
+          },
+        ],
+      },
+      {
+        "transcript": [
+          {
+            "content": "Are you licensed and insured?",
+            "role": "user",
+          },
+          {
+            "content": "Yes, we are.",
+            "role": "agent",
+          },
+        ],
+      },
+      {
+        "transcript": [
+          {
+            "content": "Do you offer free estimates?",
+            "role": "user",
+          },
+          {
+            "content": "Free estimates aren't offered.",
+            "role": "agent",
+          },
+        ],
+      },
+    ],
     "global_node_setting": {
       "condition": "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
       "go_back_conditions": [
@@ -915,6 +977,68 @@ exports[`agent-generator canonical JSON snapshot > single-path agent: stable sha
   {
     "edges": [
       "→ Path Router (You answered the caller's question.)",
+    ],
+    "finetune_conversation_examples": [
+      {
+        "transcript": [
+          {
+            "content": "What are your hours?",
+            "role": "user",
+          },
+          {
+            "content": "We're open Monday through Friday, 8 to 5.",
+            "role": "agent",
+          },
+        ],
+      },
+      {
+        "transcript": [
+          {
+            "content": "How much do you charge?",
+            "role": "user",
+          },
+          {
+            "content": "Pricing is provided during the consultation.",
+            "role": "agent",
+          },
+        ],
+      },
+      {
+        "transcript": [
+          {
+            "content": "Do you service my area?",
+            "role": "user",
+          },
+          {
+            "content": "Yes, we cover the surrounding area.",
+            "role": "agent",
+          },
+        ],
+      },
+      {
+        "transcript": [
+          {
+            "content": "Are you licensed and insured?",
+            "role": "user",
+          },
+          {
+            "content": "Yes, we are.",
+            "role": "agent",
+          },
+        ],
+      },
+      {
+        "transcript": [
+          {
+            "content": "Do you offer free estimates?",
+            "role": "user",
+          },
+          {
+            "content": "Free estimates aren't offered.",
+            "role": "agent",
+          },
+        ],
+      },
     ],
     "global_node_setting": {
       "condition": "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",

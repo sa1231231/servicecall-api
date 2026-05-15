@@ -1912,6 +1912,16 @@
           </div>
         </details>
 
+        <details class="dp-card" data-dp-key="_faq_conversation_ft" data-ft-default="faq_conversation" style="margin-top:0.6rem;">
+          <summary><strong>Admin/FAQ Conversation Examples</strong> <span class="dp-var">finetune_conversation_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
+          <div class="dp-card-body">
+            <p class="settings-hint">Example Q&amp;A pairs on the Admin/FAQ node itself — trains the agent's reply style (short, declarative, no follow-ups). The agent uses your knowledge base for content but learns the response shape from these examples. Added on top of the built-in baseline.</p>
+            <label>Finetune Examples</label>
+            <div class="dp-ft-list"></div>
+            <button type="button" class="ft-add-example" onclick="addFtExample('_faq_conversation_ft')">+ Add Finetune Example</button>
+          </div>
+        </details>
+
         <details class="dp-card" data-dp-key="_human_request_ft" data-ft-default="human_request" style="margin-top:0.6rem;">
           <summary><strong>Human Request Global Examples</strong> <span class="dp-var">positive_finetune_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
           <div class="dp-card-body">
@@ -7553,6 +7563,7 @@
     human_request: '_human_request_ft',
     intro_faq: '_intro_faq_ft',
     irrelevant_guardrail: '_irrelevant_guardrail_ft',
+    faq_conversation: '_faq_conversation_ft',
   };
 
   async function loadFtDefaults() {
@@ -7565,6 +7576,7 @@
       renderFtDefaultsInto('_human_request_ft', s.human_request_finetune_examples);
       renderFtDefaultsInto('_intro_faq_ft', s.intro_faq_finetune_examples);
       renderFtDefaultsInto('_irrelevant_guardrail_ft', s.irrelevant_guardrail_finetune_examples);
+      renderFtDefaultsInto('_faq_conversation_ft', s.faq_conversation_finetune_examples);
     } catch (err) {
       const status = document.getElementById('ftDefaultsStatus');
       if (status) status.textContent = 'Load failed: ' + err.message;
@@ -7610,6 +7622,7 @@
       human_request_finetune_examples: collectFtCardExamples('_human_request_ft'),
       intro_faq_finetune_examples: collectFtCardExamples('_intro_faq_ft'),
       irrelevant_guardrail_finetune_examples: collectFtCardExamples('_irrelevant_guardrail_ft'),
+      faq_conversation_finetune_examples: collectFtCardExamples('_faq_conversation_ft'),
     };
     try {
       const res = await fetch('/dashboard/api/settings', {
@@ -7629,6 +7642,7 @@
       renderFtDefaultsInto('_human_request_ft', payload.human_request_finetune_examples);
       renderFtDefaultsInto('_intro_faq_ft', payload.intro_faq_finetune_examples);
       renderFtDefaultsInto('_irrelevant_guardrail_ft', payload.irrelevant_guardrail_finetune_examples);
+      renderFtDefaultsInto('_faq_conversation_ft', payload.faq_conversation_finetune_examples);
       showToast('Fine-tune defaults saved', 'success');
     } catch (err) {
       if (status) status.textContent = 'Save failed: ' + err.message;
