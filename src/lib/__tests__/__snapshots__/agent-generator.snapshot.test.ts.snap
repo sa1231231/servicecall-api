@@ -55,18 +55,6 @@ exports[`agent-generator canonical JSON snapshot > multi-path agent: stable shap
           },
         ],
       },
-      {
-        "transcript": [
-          {
-            "content": "Do you offer free estimates?",
-            "role": "user",
-          },
-          {
-            "content": "Free estimates aren't offered.",
-            "role": "agent",
-          },
-        ],
-      },
     ],
     "global_node_setting": {
       "condition": "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
@@ -1023,18 +1011,6 @@ exports[`agent-generator canonical JSON snapshot > single-path agent: stable sha
           },
           {
             "content": "Yes, we are.",
-            "role": "agent",
-          },
-        ],
-      },
-      {
-        "transcript": [
-          {
-            "content": "Do you offer free estimates?",
-            "role": "user",
-          },
-          {
-            "content": "Free estimates aren't offered.",
             "role": "agent",
           },
         ],

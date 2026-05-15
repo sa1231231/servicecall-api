@@ -132,10 +132,6 @@ export const FAQ_CONVERSATION_FINETUNE_EXAMPLES: FinetuneExample[] = [
     { content: "Are you licensed and insured?", role: "user" },
     { content: "Yes, we are.", role: "agent" },
   ]},
-  { type: "positive", transcript: [
-    { content: "Do you offer free estimates?", role: "user" },
-    { content: "Free estimates aren't offered.", role: "agent" },
-  ]},
 ];
 
 // Spoken right before a per-path live transfer kicks off.
