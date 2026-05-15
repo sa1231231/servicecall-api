@@ -287,10 +287,13 @@ exports[`agent-generator canonical JSON snapshot > multi-path agent: stable shap
     "instruction": {
       "text": "Your goal is to answer administrative and general questions briefly and accurately.
 
-Snapshot FAQ knowledge base for testing.",
+Snapshot FAQ knowledge base for testing.
+
+Do not ask any questions or elaborate, just answer the question.",
       "type": "prompt",
     },
     "name": "Admin/FAQ",
+    "skip_response_edge": "→ Path Router (skip)",
     "type": "conversation",
   },
   {
@@ -1194,10 +1197,13 @@ exports[`agent-generator canonical JSON snapshot > single-path agent: stable sha
     "instruction": {
       "text": "Your goal is to answer administrative and general questions briefly and accurately.
 
-Snapshot FAQ knowledge base for testing.",
+Snapshot FAQ knowledge base for testing.
+
+Do not ask any questions or elaborate, just answer the question.",
       "type": "prompt",
     },
     "name": "Admin/FAQ",
+    "skip_response_edge": "→ Path Router (skip)",
     "type": "conversation",
   },
   {

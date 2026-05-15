@@ -986,6 +986,34 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(pathRouter.else_edge.destination_node_id).toBe(intro.id);
     });
 
+    it("Admin/FAQ: skip-response edge to Path Router + no-follow-ups directive in instruction text", async () => {
+      // Regression coverage for the FAQ auto-route work. The FAQ node
+      // should (a) carry a skip_response_edge to the Path Router so it
+      // doesn't gate on caller turn-taking after answering, and (b)
+      // end its instruction text with the "Do not ask any questions or
+      // elaborate" line so the model doesn't tack on follow-ups
+      // inside the FAQ.
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+      const pathRouter = flow.nodes.find((n: any) => n.name === "Path Router");
+      expect(faq).toBeDefined();
+      expect(pathRouter).toBeDefined();
+
+      // Skip-response edge → Path Router.
+      expect(faq.skip_response_edge?.destination_node_id).toBe(pathRouter.id);
+      expect(faq.skip_response_edge?.transition_condition?.prompt).toBe("Skip response");
+
+      // Instruction text ends with the no-follow-ups directive.
+      expect(faq.instruction.text).toMatch(
+        /Do not ask any questions or elaborate, just answer the question\.\s*$/,
+      );
+    });
+
     it("Close-said sentinel: Mark Close Said extract per callback path + router shortcut wired correctly", async () => {
       // Regression coverage for the "redundant Close thanks after FAQ
       // resume" optimization. Each callback path's Close.always_edge

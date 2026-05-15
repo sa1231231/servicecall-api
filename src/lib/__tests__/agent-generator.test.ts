@@ -1249,6 +1249,46 @@ describe("per-path end mode", () => {
     // the emitter for an unreachable edge — keeps generator simpler.
   });
 
+  it("Admin/FAQ: instruction ends with the no-follow-ups directive", () => {
+    // Stops the model from tacking on "is there anything else?" or
+    // expanding into adjacent topics inside the FAQ node — Close
+    // Question handles that downstream, and the skip-response edge
+    // (asserted in the next test) auto-routes back as soon as the
+    // answer finishes.
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    expect(faq).toBeDefined();
+    expect(faq.instruction.text).toMatch(
+      /Do not ask any questions or elaborate, just answer the question\.\s*$/,
+    );
+  });
+
+  it("Admin/FAQ: skip_response_edge auto-routes to Path Router", () => {
+    // After Retell stops speaking on the FAQ node, the
+    // skip_response_edge fires immediately. Path Router resumes the
+    // matching path's Variables Router via _path_taken (or falls
+    // through to Intro on a first-turn FAQ). The
+    // global_node_setting.go_back_conditions safety net still fires
+    // when the model spontaneously decides "you've answered the
+    // question" mid-speech.
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "A", transitionCondition: "x", dataPoints: ["full_name"] },
+        { name: "B", transitionCondition: "y", dataPoints: ["full_name"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const faq = flow.nodes.find((n: any) => n.name === "Admin/FAQ");
+    const pathRouter = flow.nodes.find((n: any) => n.name === "Path Router");
+    expect(faq.skip_response_edge).toBeDefined();
+    expect(faq.skip_response_edge.destination_node_id).toBe(pathRouter.id);
+    expect(faq.skip_response_edge.transition_condition.prompt).toBe("Skip response");
+  });
+
   it("canvas layout — globals left, paths staircase, closing chain bottom row", () => {
     // Regression coverage for the canvas-layout cleanup. Snapshots drop
     // display_position so we need explicit assertions to lock in the

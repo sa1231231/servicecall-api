@@ -754,9 +754,17 @@ export function buildFaqNode(
   return {
     instruction: {
       type: "prompt",
+      // Trailing "no follow-ups" directive stops the model from
+      // tacking on "is there anything else?" or expanding into
+      // adjacent topics inside the FAQ node — Close Question already
+      // handles the follow-up gate downstream, and the skip-response
+      // edge below auto-routes back to the path as soon as the answer
+      // finishes.
       text: `Your goal is to answer administrative and general questions briefly and accurately.
 
-${faqKnowledgeBase}`,
+${faqKnowledgeBase}
+
+Do not ask any questions or elaborate, just answer the question.`,
     },
     name: "Admin/FAQ",
     edges: [
@@ -789,6 +797,18 @@ ${faqKnowledgeBase}`,
     id: ids.faqId,
     type: "conversation",
     display_position: pos.faq,
+    // Auto-route to the Path Router once Retell stops speaking on this
+    // node — no waiting for the caller's next turn. The Path Router
+    // resumes the matching path's Variables Router via _path_taken, or
+    // falls through to Intro when no path has been entered yet.
+    // go_back_conditions still fires when the model spontaneously
+    // decides it's done answering; this edge is the structural
+    // fallback that guarantees deterministic routing.
+    skip_response_edge: {
+      destination_node_id: ids.pathRouterId,
+      id: `skip-response-edge-${f.nextTs()}-${randomSuffix(9)}`,
+      transition_condition: { type: "prompt", prompt: "Skip response" },
+    },
   };
 }
 
