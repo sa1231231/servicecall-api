@@ -26,7 +26,7 @@ Run counts as of the last update of this file: ~1,800 unit · ~250 system · ~10
 ### What goes here
 - Pure utility logic (slug normalization, date formatting, validators).
 - Conversation-flow generation and parsing (`src/lib/agent-generator`, `src/lib/node-parser`).
-- One-shot tools logic — extract pure functions and unit-test them. See `tools/migrate-add-close-question.ts` (logic exported as `migrateOneFlow`, tested separately).
+- One-shot tools logic — extract pure functions and unit-test them separately from the I/O wrapper.
 - Snapshot tests for stable structural output (e.g. `agent-generator.snapshot.test.ts`). Use a sanitizer that strips generated IDs so the snapshot survives across runs.
 
 ### What NOT to put here

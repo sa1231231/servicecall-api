@@ -138,7 +138,7 @@ async function main(): Promise<void> {
   }
 }
 
-// Only run when invoked directly (mirror the migrate-add-close-question.ts pattern).
+// Only run when invoked directly (so importing this module is side-effect free).
 const __thisFile = fileURLToPath(import.meta.url);
 const __entryFile = process.argv[1] ? path.resolve(process.argv[1]) : "";
 if (__thisFile === __entryFile) {

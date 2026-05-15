@@ -8,9 +8,9 @@
 //
 // Affects new-agent generation only: existing agents already have their
 // per-node finetune_transition_examples copies (set at generation time
-// or via the dashboard). The migrate-agent-warmth.ts script could be
-// extended later to retro-fit existing agents, but per Sam's "small
-// changes, test incrementally" preference, that's deferred.
+// or via the dashboard). Retro-fitting existing agents would need a
+// separate one-shot migration, but per Sam's "small changes, test
+// incrementally" preference, that's deferred.
 //
 // Run:
 //   railway run npx tsx tools/seed-data-point-finetunes.ts             # dry run
