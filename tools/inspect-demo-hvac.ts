@@ -10,7 +10,7 @@
 //
 // Run:
 //   railway run npx tsx tools/inspect-demo-hvac.ts
-//   railway run npx tsx tools/inspect-demo-hvac.ts --slug=demo-hvac
+//   railway run npx tsx tools/inspect-demo-hvac.ts --slug=demo-hvac2
 
 import "dotenv/config";
 import { initDb, getDb } from "../src/lib/db.js";
@@ -23,7 +23,7 @@ function parseArg(flag: string): string | null {
 }
 
 async function main() {
-  const slug = parseArg("slug") ?? "demo-hvac";
+  const slug = parseArg("slug") ?? "demo-hvac2";
 
   await initDb();
 

@@ -15,6 +15,27 @@ function url(path: string): string {
   return `${BASE_URL}${path}`;
 }
 
+// Rate-limit-resilient fetch — see system.test.ts for rationale. Shadows
+// the global fetch: retries on 429 with a capped backoff.
+const _realFetch = globalThis.fetch;
+async function fetch(
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const resp = await _realFetch(input, init);
+    if (resp.status !== 429 || attempt === 5) return resp;
+    const headerSec = Number(resp.headers.get("retry-after"));
+    // Honor the server's Retry-After (capped 60s); else short backoff.
+    const waitSec =
+      Number.isFinite(headerSec) && headerSec > 0
+        ? Math.min(headerSec, 60)
+        : Math.min(attempt * 2, 10);
+    await new Promise((r) => setTimeout(r, waitSec * 1000));
+  }
+  return _realFetch(input, init);
+}
+
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
     "x-api-key": API_KEY!,

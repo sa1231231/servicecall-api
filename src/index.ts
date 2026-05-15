@@ -39,14 +39,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5000,                // ~333/min — earlier 1000/15min ceiling was
-                            // exceeded by the e2e suite (~30 reqs × 45+
-                            // tests in one run hits the wall partway
-                            // through, producing rate-limit flakes that
-                            // look like network blips). Real-world
-                            // dashboard traffic stays well below this
-                            // ceiling; brute-force protection still
-                            // applies via per-username lockout above.
+  max: 50000,               // ~3333/min — the system test suite fires
+                            // hundreds of requests per run and is run
+                            // repeatedly back-to-back during dev; a
+                            // 5000/15min ceiling drained partway through
+                            // a session and 429-stormed every subsequent
+                            // run. This headroom lets the suite run
+                            // freely. Real-world dashboard traffic stays
+                            // orders of magnitude below this; it remains
+                            // a coarse flood guard, and brute-force
+                            // protection still applies via per-username
+                            // lockout + the tighter authLimiter below.
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },

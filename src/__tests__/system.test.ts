@@ -19,6 +19,34 @@ function url(path: string): string {
   return `${BASE_URL}${path}`;
 }
 
+// ── Rate-limit-resilient fetch ──────────────────────────────────────────────
+// The system suite fires hundreds of requests against a live server with a
+// global rate limiter. A single transient 429 would otherwise cascade into
+// dozens of false failures. Shadow the global fetch: on 429, honor the
+// Retry-After header (capped so a real lockout still fails fast-ish) and
+// retry a few times before surfacing the 429 to the assertion.
+const _realFetch = globalThis.fetch;
+async function fetch(
+  input: string | URL | Request,
+  init?: RequestInit,
+): Promise<Response> {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    const resp = await _realFetch(input, init);
+    if (resp.status !== 429 || attempt === 5) return resp;
+    const headerSec = Number(resp.headers.get("retry-after"));
+    // Honor the server's Retry-After when present — capped at 60s so a
+    // fully-drained window can't stall one request indefinitely, but
+    // generous enough that we wait the real reset instead of retrying
+    // early and burning attempts. No header → short exponential backoff.
+    const waitSec =
+      Number.isFinite(headerSec) && headerSec > 0
+        ? Math.min(headerSec, 60)
+        : Math.min(attempt * 2, 10);
+    await new Promise((r) => setTimeout(r, waitSec * 1000));
+  }
+  return _realFetch(input, init);
+}
+
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return {
     "x-api-key": API_KEY!,
