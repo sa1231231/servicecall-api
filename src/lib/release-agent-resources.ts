@@ -122,6 +122,24 @@ export async function releaseAgentResources(
       }
     }
 
+    // Clear emergency address before release — Twilio blocks .remove()
+    // on numbers that have one attached ("Please remove the emergency
+    // address on this number before deleting it."). Best-effort; the
+    // .remove() block below will surface any real remaining blocker.
+    // Idempotent: numbers without an emergency address ignore the
+    // update; numbers with one get unbound.
+    try {
+      await twilioClient.incomingPhoneNumbers(phone_number_sid).update({
+        emergencyStatus: "Inactive",
+        emergencyAddressSid: "",
+      } as any);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/20404|404/.test(msg)) {
+        console.warn(`[${logTag}] twilio emergency-clear (${phone_number}): ${msg}`);
+      }
+    }
+
     // Twilio incoming-number release — STOPS THE RECURRING CHARGE.
     // 404 here means the number was already released; silence it.
     try {

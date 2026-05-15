@@ -10,6 +10,7 @@ const {
   mockTwilioMsgRemove,
   mockTwilioTrunkRemove,
   mockTwilioIncomingRemove,
+  mockTwilioIncomingUpdate,
   mockLogPhoneEvent,
   mockHistoryFindArray,
 } = vi.hoisted(() => ({
@@ -20,6 +21,7 @@ const {
   mockTwilioMsgRemove: vi.fn(),
   mockTwilioTrunkRemove: vi.fn(),
   mockTwilioIncomingRemove: vi.fn(),
+  mockTwilioIncomingUpdate: vi.fn(),
   mockLogPhoneEvent: vi.fn(),
   mockHistoryFindArray: vi.fn(),
 }));
@@ -46,6 +48,7 @@ vi.mock("twilio", () => ({
   default: () => ({
     incomingPhoneNumbers: (sid: string) => ({
       remove: () => mockTwilioIncomingRemove(sid),
+      update: (params: any) => mockTwilioIncomingUpdate(sid, params),
     }),
     trunking: {
       v1: {
@@ -88,7 +91,8 @@ beforeEach(() => {
   for (const m of [
     mockRetellPhoneList, mockRetellPhoneDelete, mockRetellAgentDelete,
     mockRetellFlowDelete, mockTwilioMsgRemove, mockTwilioTrunkRemove,
-    mockTwilioIncomingRemove, mockLogPhoneEvent, mockHistoryFindArray,
+    mockTwilioIncomingRemove, mockTwilioIncomingUpdate, mockLogPhoneEvent,
+    mockHistoryFindArray,
   ]) m.mockReset();
   // Sensible defaults: every external call resolves OK; no Retell numbers,
   // no SID history.
@@ -99,6 +103,7 @@ beforeEach(() => {
   mockTwilioMsgRemove.mockResolvedValue(true);
   mockTwilioTrunkRemove.mockResolvedValue(true);
   mockTwilioIncomingRemove.mockResolvedValue(true);
+  mockTwilioIncomingUpdate.mockResolvedValue(true);
   mockLogPhoneEvent.mockResolvedValue(undefined);
   mockHistoryFindArray.mockResolvedValue([]);
 });
@@ -296,6 +301,50 @@ describe("releaseAgentResources — Retell-live source of truth", () => {
     expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_a");
     expect(result.released).toHaveLength(1);
     expect(result.errors).toEqual([]);
+  });
+
+  it("clears emergency address before releasing the Twilio number", async () => {
+    // Twilio blocks .remove() on numbers with an emergency address
+    // attached. Pre-release update({emergencyStatus, emergencyAddressSid})
+    // unbinds it so the release lands cleanly without operator hops.
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
+    ]);
+    mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_a" }]);
+
+    const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
+
+    expect(mockTwilioIncomingUpdate).toHaveBeenCalledWith("PN_a", {
+      emergencyStatus: "Inactive",
+      emergencyAddressSid: "",
+    });
+    expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_a");
+    // The update fires BEFORE the remove (order matters — Twilio's gate).
+    const updateOrder = mockTwilioIncomingUpdate.mock.invocationCallOrder[0];
+    const removeOrder = mockTwilioIncomingRemove.mock.invocationCallOrder[0];
+    expect(updateOrder).toBeLessThan(removeOrder);
+    expect(result.released).toHaveLength(1);
+  });
+
+  it("when emergency-clear fails, still attempts the release (best-effort)", async () => {
+    // The pre-release update is informational — a 500 from Twilio's
+    // address-unbind endpoint shouldn't abort the release. The .remove()
+    // call surfaces any real remaining blocker on its own.
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
+    ]);
+    mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_a" }]);
+    mockTwilioIncomingUpdate.mockRejectedValue(new Error("Twilio 500"));
+
+    const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
+
+    // Update was attempted, but remove still ran and succeeded.
+    expect(mockTwilioIncomingUpdate).toHaveBeenCalled();
+    expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_a");
+    expect(result.released).toHaveLength(1);
+    // The update failure is a console warning, not a release-blocking
+    // error — `errors` stays clean of remove-side messages.
+    expect(result.errors.some((e: string) => /twilio release/.test(e))).toBe(false);
   });
 });
 
