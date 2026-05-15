@@ -305,8 +305,12 @@ describe("releaseAgentResources — Retell-live source of truth", () => {
 
   it("clears emergency address before releasing the Twilio number", async () => {
     // Twilio blocks .remove() on numbers with an emergency address
-    // attached. Pre-release update({emergencyStatus, emergencyAddressSid})
-    // unbinds it so the release lands cleanly without operator hops.
+    // attached. Pre-release update({emergencyAddressSid: ""}) unbinds
+    // it so the release lands cleanly without operator hops.
+    //
+    // Important: Twilio rejects updates that combine emergencyStatus +
+    // emergencyAddressSid in the same call ("Cannot modify both"),
+    // so we send only the address field.
     mockRetellPhoneList.mockResolvedValue([
       inboundBinding("+15550001111", "agent_x"),
     ]);
@@ -315,7 +319,6 @@ describe("releaseAgentResources — Retell-live source of truth", () => {
     const result = await releaseAgentResources("acme", { agent_id: "agent_x" });
 
     expect(mockTwilioIncomingUpdate).toHaveBeenCalledWith("PN_a", {
-      emergencyStatus: "Inactive",
       emergencyAddressSid: "",
     });
     expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_a");
@@ -345,6 +348,38 @@ describe("releaseAgentResources — Retell-live source of truth", () => {
     // The update failure is a console warning, not a release-blocking
     // error — `errors` stays clean of remove-side messages.
     expect(result.errors.some((e: string) => /twilio release/.test(e))).toBe(false);
+  });
+
+  it("retries the Twilio release on 21631 (emergency address still attached)", async () => {
+    // The emergency-address unbind is async — Twilio holds the number
+    // in `pending-unregistration` for ~30s before settling at
+    // `unregistered`. .remove() during that window returns 21631.
+    // We retry with backoff so operator-clicked deletes succeed on the
+    // first try (instead of leaving the number billing in Twilio).
+    vi.useFakeTimers();
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
+    ]);
+    mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_a" }]);
+    // First two .remove() attempts return 21631; third succeeds.
+    let removeCalls = 0;
+    mockTwilioIncomingRemove.mockImplementation(async () => {
+      removeCalls += 1;
+      if (removeCalls < 3) {
+        throw new Error("Code 21631: Please remove the emergency address");
+      }
+      return true;
+    });
+
+    const promise = releaseAgentResources("acme", { agent_id: "agent_x" });
+    // Drain the backoff timers (5s + 10s = 15s of waiting).
+    await vi.advanceTimersByTimeAsync(20_000);
+    const result = await promise;
+
+    expect(mockTwilioIncomingRemove).toHaveBeenCalledTimes(3);
+    expect(result.released).toHaveLength(1);
+    expect(result.errors).toEqual([]);
+    vi.useRealTimers();
   });
 });
 

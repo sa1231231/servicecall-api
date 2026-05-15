@@ -125,12 +125,22 @@ export async function releaseAgentResources(
     // Clear emergency address before release — Twilio blocks .remove()
     // on numbers that have one attached ("Please remove the emergency
     // address on this number before deleting it."). Best-effort; the
-    // .remove() block below will surface any real remaining blocker.
-    // Idempotent: numbers without an emergency address ignore the
-    // update; numbers with one get unbound.
+    // .remove() block below surfaces any real remaining blocker.
+    //
+    // Important: Twilio rejects updates that modify both EmergencyStatus
+    // and EmergencyAddressSid in the same request ("Cannot modify both
+    // emergency address SID and emergency status in the same request").
+    // Empirically, only clearing EmergencyAddressSid is needed — the
+    // delete gate is the address itself, not the status flag.
+    //
+    // The unbind is also async: emergency_address_status drops to
+    // "pending-unregistration" immediately, then settles at
+    // "unregistered" after ~30s of Twilio backend work. Trying .remove()
+    // during the pending window returns the same 21631 error as before,
+    // so we retry the release on 21631 with backoff to bridge that
+    // window without the operator hitting "delete" again.
     try {
       await twilioClient.incomingPhoneNumbers(phone_number_sid).update({
-        emergencyStatus: "Inactive",
         emergencyAddressSid: "",
       } as any);
     } catch (err) {
@@ -142,21 +152,44 @@ export async function releaseAgentResources(
 
     // Twilio incoming-number release — STOPS THE RECURRING CHARGE.
     // 404 here means the number was already released; silence it.
-    try {
-      await twilioClient.incomingPhoneNumbers(phone_number_sid).remove();
+    // 21631 (emergency address still attached) gets retried with
+    // backoff to bridge Twilio's async pending-unregistration window
+    // (the address-clear above flips emergency_address_status to
+    // "pending-unregistration" first, then settles at "unregistered"
+    // after ~30s of Twilio backend work). Linear backoff 5s/10s/15s/20s/25s
+    // — total ~75s max wait — empirically enough that operator-clicked
+    // deletes succeed on the first try.
+    let releasedOk = false;
+    let lastErrMsg = "";
+    let alreadyGone = false;
+    for (let attempt = 1; attempt <= 6; attempt++) {
+      try {
+        await twilioClient.incomingPhoneNumbers(phone_number_sid).remove();
+        releasedOk = true;
+        break;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        lastErrMsg = msg;
+        if (/20404|404/.test(msg)) {
+          alreadyGone = true;
+          break;
+        }
+        // Retry only on 21631 (emergency address still attached) — any
+        // other failure is bubbled up immediately.
+        if (!/21631/.test(msg) || attempt === 6) break;
+        await new Promise((r) => setTimeout(r, attempt * 5000));
+      }
+    }
+    if (releasedOk) {
       console.log(`[${logTag}] released Twilio number ${phone_number} (sid=${phone_number_sid})`);
       released.push({ phone_number, phone_number_sid });
-      // Audit-log the release so getNumberDaysInRange (billing) sees it.
       await logPhoneEvent(slug, phone_number, phone_number_sid, "released");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!/20404|404/.test(msg)) {
-        console.warn(`[${logTag}] twilio release (${phone_number}): ${msg}`);
-        errors.push(`twilio release (${phone_number}): ${msg}`);
-      } else {
-        // Already released — log the audit event so billing windows close.
-        await logPhoneEvent(slug, phone_number, phone_number_sid, "released");
-      }
+    } else if (alreadyGone) {
+      // Already released — log the audit event so billing windows close.
+      await logPhoneEvent(slug, phone_number, phone_number_sid, "released");
+    } else {
+      console.warn(`[${logTag}] twilio release (${phone_number}): ${lastErrMsg}`);
+      errors.push(`twilio release (${phone_number}): ${lastErrMsg}`);
     }
   }
 
