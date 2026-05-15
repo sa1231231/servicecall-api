@@ -107,8 +107,8 @@ export async function apiPost<T>(
   return (await resp.json()) as T;
 }
 
-/** The canonical test agent across system + e2e tests. Currently Demo HVAC. */
+/** The canonical test agent across system + e2e tests. Currently Demo HVAC2. */
 export const TEST_AGENT = {
-  slug: "demo-hvac",
-  agentId: "agent_0db334059af8c5af52a3e9cf3a",
+  slug: "demo-hvac2",
+  agentId: "agent_8d0a4780e06c42f9091dfced3d",
 } as const;

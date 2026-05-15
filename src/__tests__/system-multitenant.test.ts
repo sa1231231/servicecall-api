@@ -9,7 +9,7 @@ const ROOT_PASSWORD = process.env.ROOT_PASSWORD;
 
 const hasConfig = !!BASE_URL && BASE_URL.startsWith("http") && !!API_KEY && !!ROOT_PASSWORD;
 
-const SLUG_A = "demo-hvac";
+const SLUG_A = "demo-hvac2";
 
 function url(path: string): string {
   return `${BASE_URL}${path}`;

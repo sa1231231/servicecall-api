@@ -7,9 +7,13 @@ const BASE_URL = process.env.SYSTEM_TEST_URL ?? process.env.BASE_URL;
 const API_KEY = process.env.API_KEY;
 const ROOT_PASSWORD = process.env.ROOT_PASSWORD;
 
-// All tests use Demo HVAC (demo-hvac) as the canonical test agent.
-const SLUG = "demo-hvac";
-const AGENT_ID = "agent_0db334059af8c5af52a3e9cf3a";
+// All tests use Demo HVAC2 (demo-hvac2) as the canonical test agent.
+// Replaced the original demo-hvac in May 2026 — the new instance is
+// generated from the current HVAC Default draft, so every recent
+// generator change (path router, Mark Close Said, FAQ skip-response
+// edge, FAQ conversation FTs, etc.) is baked into the deployed flow.
+const SLUG = "demo-hvac2";
+const AGENT_ID = "agent_8d0a4780e06c42f9091dfced3d";
 
 function url(path: string): string {
   return `${BASE_URL}${path}`;

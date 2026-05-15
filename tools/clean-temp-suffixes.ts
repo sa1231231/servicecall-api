@@ -10,8 +10,8 @@
 // Idempotent. Dry-run by default; --apply to commit.
 //
 // Run:
-//   railway run npx tsx tools/clean-temp-suffixes.ts                    # dry run, demo-hvac
-//   railway run npx tsx tools/clean-temp-suffixes.ts --slug=demo-hvac --apply
+//   railway run npx tsx tools/clean-temp-suffixes.ts                     # dry run, demo-hvac2
+//   railway run npx tsx tools/clean-temp-suffixes.ts --slug=demo-hvac2 --apply
 //
 // Env: MONGODB_URL + RETELL_API_KEY.
 
@@ -60,7 +60,7 @@ function walkAndClean(obj: unknown, log: string[]): unknown {
 }
 
 async function main() {
-  const slug = parseArg("slug") ?? "demo-hvac";
+  const slug = parseArg("slug") ?? "demo-hvac2";
   const apply = process.argv.includes("--apply");
 
   await initDb();

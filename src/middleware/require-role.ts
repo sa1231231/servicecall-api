@@ -78,7 +78,7 @@ export function requireFeature(feature: string, level: Level) {
   };
 }
 
-export const ROOT_ONLY_DELETE_SLUGS = new Set<string>(["demo-hvac"]);
+export const ROOT_ONLY_DELETE_SLUGS = new Set<string>(["demo-hvac2"]);
 
 export function requireRootForProtectedSlug(
   req: Request,
