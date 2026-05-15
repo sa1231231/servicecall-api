@@ -944,6 +944,23 @@ const HUMAN_REQUEST_BASELINE_EXAMPLES: FinetuneExample[] = [
 ];
 
 /**
+ * The hardcoded fine-tune baselines, keyed by the workspace-settings field
+ * they extend (`<key>_finetune_examples`). Surfaced read-only in the
+ * dashboard Categories tab so operators can see exactly what ships in every
+ * agent before adding their own examples. All six are layered additively via
+ * mergeAdditiveFinetunes at generation time — a workspace setting extends the
+ * matching baseline here, it never replaces it.
+ */
+export const FT_BUILTIN_BASELINES: Record<string, FinetuneExample[]> = {
+  faq_global: FAQ_GLOBAL_POSITIVE_EXAMPLES,
+  close_question: CLOSE_QUESTION_FAQ_FINETUNE_EXAMPLES,
+  intro_faq: INTRO_FAQ_FINETUNE_EXAMPLES,
+  irrelevant_guardrail: IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES,
+  faq_conversation: FAQ_CONVERSATION_FINETUNE_EXAMPLES,
+  human_request: HUMAN_REQUEST_BASELINE_EXAMPLES,
+};
+
+/**
  * Merge a hardcoded baseline + operator-supplied workspace examples into the
  * shape Retell stores on a node's positive_finetune_examples (or any other
  * FinetuneExample array). Dedups by the first user-utterance text so

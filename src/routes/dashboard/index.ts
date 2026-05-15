@@ -32,6 +32,7 @@ import {
 import { getCallLogById } from "../../lib/call-log.js";
 import { sendSmsToAll } from "../../lib/notify-sms.js";
 import { getSettings, updateSettings } from "../../lib/settings.js";
+import { FT_BUILTIN_BASELINES } from "../../lib/agent-generator/node-builders.js";
 import { validateGlobalSettingsUpdates } from "../../lib/validate-client-fields.js";
 import { runBackup } from "../../lib/backup.js";
 import {
@@ -497,6 +498,14 @@ dashboardApiRouter.get("/billing/cogs/:slug", async (req, res) => {
 
 dashboardApiRouter.get("/settings", async (_req, res) => {
   res.json(await getSettings());
+});
+
+// The hardcoded fine-tune baselines that ship in every generated agent. The
+// Categories tab renders these read-only above each editable workspace-
+// additions card so operators can see what always ships before extending it.
+// Static constants — no DB read, no permission gate needed.
+dashboardApiRouter.get("/ft-builtin-defaults", (_req, res) => {
+  res.json(FT_BUILTIN_BASELINES);
 });
 
 dashboardApiRouter.patch("/settings", requireFeature("global_settings", "write"), async (req, res) => {

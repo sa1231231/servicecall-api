@@ -1379,6 +1379,15 @@
   .ft-example .ft-header select { font-size: 0.75rem; padding: 0.15rem 0.3rem; border-radius: 4px; border: 1px solid #d1d5db; }
   .ft-example .ft-remove { margin-left: auto; color: #dc2626; background: none; border: none; cursor: pointer; font-size: 0.8rem; }
   .ft-example .ft-remove:hover { color: #991b1b; }
+  .ft-baseline-block { margin-bottom: 0.75rem; }
+  .ft-baseline-note { font-weight: normal; color: #6b7280; font-size: 0.78rem; }
+  .dp-ft-baseline { border: 1px dashed #d1d5db; border-radius: 6px; padding: 0.5rem; background: #f9fafb; max-height: 220px; overflow-y: auto; }
+  .ft-baseline-example { padding: 0.3rem 0.4rem; border-radius: 4px; background: #fff; border: 1px solid #eef0f3; margin-bottom: 0.35rem; }
+  .ft-baseline-example:last-child { margin-bottom: 0; }
+  .ft-baseline-type { display: inline-block; font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 0.2rem; }
+  .ft-baseline-row { display: flex; gap: 0.4rem; font-size: 0.8rem; line-height: 1.35; }
+  .ft-baseline-role { flex: 0 0 42px; color: #9ca3af; text-align: right; }
+  .ft-baseline-text { flex: 1; color: #374151; white-space: pre-wrap; }
   .ft-row { display: flex; gap: 0.35rem; margin-bottom: 0.25rem; align-items: center; }
   .ft-row select { width: 70px; font-size: 0.75rem; padding: 0.2rem; border-radius: 4px; border: 1px solid #d1d5db; }
   .ft-row input { flex: 1; font-size: 0.78rem; padding: 0.25rem 0.4rem; border: 1px solid #d1d5db; border-radius: 4px; }
@@ -1870,13 +1879,17 @@
              generated agents inherit. Reuses the .dp-card / .ft-example
              styles + addFtExample() so editing matches the DP cards below. -->
         <h2 style="margin-top:0;">Workspace Fine-Tune Defaults</h2>
-        <p class="settings-hint" style="margin-bottom:0.75rem;">Training examples baked into newly created agents. Leave a section empty to fall back to the built-in defaults for that node.</p>
+        <p class="settings-hint" style="margin-bottom:0.75rem;">Training examples baked into newly created agents. Each section shows the built-in baseline (read-only — always ships) plus any examples you add to extend it. Your examples are merged on top of the baseline, deduped by caller utterance.</p>
 
         <details class="dp-card" data-dp-key="_faq_global_ft" data-ft-default="faq_global">
           <summary><strong>Admin/FAQ Global Examples</strong> <span class="dp-var">positive_finetune_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
           <div class="dp-card-body">
             <p class="settings-hint">Caller utterances that should trigger a jump to the Admin/FAQ global node from anywhere in the call (pricing, hours, services, warranty, logistics).</p>
-            <label>Finetune Examples</label>
+            <div class="ft-baseline-block">
+              <label>Built-in baseline <span class="ft-baseline-note">— always ships in every agent, read-only</span></label>
+              <div class="dp-ft-baseline"><p class="settings-hint" style="margin:0;">Loading…</p></div>
+            </div>
+            <label>Your additional examples <span class="ft-baseline-note">— extend the baseline above</span></label>
             <div class="dp-ft-list"></div>
             <button type="button" class="ft-add-example" onclick="addFtExample('_faq_global_ft')">+ Add Finetune Example</button>
           </div>
@@ -1886,7 +1899,11 @@
           <summary><strong>Close Question → FAQ Examples</strong> <span class="dp-var">finetune_transition_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
           <div class="dp-card-body">
             <p class="settings-hint">Caller responses to "Is there anything else I can help you with?" that should route to Admin/FAQ instead of advancing to Closing Remarks. Look for follow-up phrasing ("actually yeah", "one more thing").</p>
-            <label>Finetune Examples</label>
+            <div class="ft-baseline-block">
+              <label>Built-in baseline <span class="ft-baseline-note">— always ships in every agent, read-only</span></label>
+              <div class="dp-ft-baseline"><p class="settings-hint" style="margin:0;">Loading…</p></div>
+            </div>
+            <label>Your additional examples <span class="ft-baseline-note">— extend the baseline above</span></label>
             <div class="dp-ft-list"></div>
             <button type="button" class="ft-add-example" onclick="addFtExample('_close_question_ft')">+ Add Finetune Example</button>
           </div>
@@ -1896,7 +1913,11 @@
           <summary><strong>Intro → FAQ Examples</strong> <span class="dp-var">finetune_transition_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
           <div class="dp-card-body">
             <p class="settings-hint">First-turn caller utterances that are questions (not service requests). Routes through the Admin/FAQ global node so the model doesn't get captured by a path-transition edge before the global classifier fires.</p>
-            <label>Finetune Examples</label>
+            <div class="ft-baseline-block">
+              <label>Built-in baseline <span class="ft-baseline-note">— always ships in every agent, read-only</span></label>
+              <div class="dp-ft-baseline"><p class="settings-hint" style="margin:0;">Loading…</p></div>
+            </div>
+            <label>Your additional examples <span class="ft-baseline-note">— extend the baseline above</span></label>
             <div class="dp-ft-list"></div>
             <button type="button" class="ft-add-example" onclick="addFtExample('_intro_faq_ft')">+ Add Finetune Example</button>
           </div>
@@ -1906,7 +1927,11 @@
           <summary><strong>Irrelevant Guardrail Examples</strong> <span class="dp-var">positive_finetune_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
           <div class="dp-card-body">
             <p class="settings-hint">Off-topic / nonsense / derailing caller utterances that should trigger the Irrelevant Guardrail global node. Added on top of the built-in baseline (always ships) — your entries extend, never replace.</p>
-            <label>Finetune Examples</label>
+            <div class="ft-baseline-block">
+              <label>Built-in baseline <span class="ft-baseline-note">— always ships in every agent, read-only</span></label>
+              <div class="dp-ft-baseline"><p class="settings-hint" style="margin:0;">Loading…</p></div>
+            </div>
+            <label>Your additional examples <span class="ft-baseline-note">— extend the baseline above</span></label>
             <div class="dp-ft-list"></div>
             <button type="button" class="ft-add-example" onclick="addFtExample('_irrelevant_guardrail_ft')">+ Add Finetune Example</button>
           </div>
@@ -1916,7 +1941,11 @@
           <summary><strong>Admin/FAQ Conversation Examples</strong> <span class="dp-var">finetune_conversation_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
           <div class="dp-card-body">
             <p class="settings-hint">Example Q&amp;A pairs on the Admin/FAQ node itself — trains the agent's reply style (short, declarative, no follow-ups). The agent uses your knowledge base for content but learns the response shape from these examples. Added on top of the built-in baseline.</p>
-            <label>Finetune Examples</label>
+            <div class="ft-baseline-block">
+              <label>Built-in baseline <span class="ft-baseline-note">— always ships in every agent, read-only</span></label>
+              <div class="dp-ft-baseline"><p class="settings-hint" style="margin:0;">Loading…</p></div>
+            </div>
+            <label>Your additional examples <span class="ft-baseline-note">— extend the baseline above</span></label>
             <div class="dp-ft-list"></div>
             <button type="button" class="ft-add-example" onclick="addFtExample('_faq_conversation_ft')">+ Add Finetune Example</button>
           </div>
@@ -1926,7 +1955,11 @@
           <summary><strong>Human Request Global Examples</strong> <span class="dp-var">positive_finetune_examples</span><span class="ft-default-count" style="margin-left:auto;color:#6b7280;font-size:0.78rem;"></span></summary>
           <div class="dp-card-body">
             <p class="settings-hint">Caller utterances that should trigger a jump to the Human Request global node from anywhere in the call (asking for a person, supervisor, manager, transfer to a human). Added on top of the built-in baseline.</p>
-            <label>Finetune Examples</label>
+            <div class="ft-baseline-block">
+              <label>Built-in baseline <span class="ft-baseline-note">— always ships in every agent, read-only</span></label>
+              <div class="dp-ft-baseline"><p class="settings-hint" style="margin:0;">Loading…</p></div>
+            </div>
+            <label>Your additional examples <span class="ft-baseline-note">— extend the baseline above</span></label>
             <div class="dp-ft-list"></div>
             <button type="button" class="ft-add-example" onclick="addFtExample('_human_request_ft')">+ Add Finetune Example</button>
           </div>
@@ -7568,9 +7601,18 @@
 
   async function loadFtDefaults() {
     try {
-      const res = await fetch('/dashboard/api/settings');
-      if (!res.ok) throw new Error('Failed: ' + res.status);
-      const s = await res.json();
+      const [sRes, bRes] = await Promise.all([
+        fetch('/dashboard/api/settings'),
+        fetch('/dashboard/api/ft-builtin-defaults'),
+      ]);
+      if (!sRes.ok) throw new Error('Failed: ' + sRes.status);
+      if (!bRes.ok) throw new Error('Failed: ' + bRes.status);
+      const s = await sRes.json();
+      const baselines = await bRes.json();
+      // Read-only baselines that always ship in every generated agent.
+      Object.keys(FT_DEFAULT_KEYS).forEach((ftKey) => {
+        renderFtBaseline(ftKey, baselines[ftKey]);
+      });
       renderFtDefaultsInto('_faq_global_ft', s.faq_global_finetune_examples);
       renderFtDefaultsInto('_close_question_ft', s.close_question_finetune_examples);
       renderFtDefaultsInto('_human_request_ft', s.human_request_finetune_examples);
@@ -7583,6 +7625,27 @@
     }
   }
 
+  // Render the hardcoded baseline for a card as a read-only list. `ftKey` is
+  // the data-ft-default attribute value (faq_global, human_request, …).
+  function renderFtBaseline(ftKey, examples) {
+    const card = document.querySelector(`.dp-card[data-ft-default="${ftKey}"]`);
+    if (!card) return;
+    const box = card.querySelector('.dp-ft-baseline');
+    if (!box) return;
+    const arr = Array.isArray(examples) ? examples : [];
+    box.innerHTML = arr.length
+      ? arr.map(renderFtBaselineExample).join('')
+      : '<p class="settings-hint" style="margin:0;">No built-in baseline.</p>';
+  }
+
+  function renderFtBaselineExample(ex) {
+    const rows = (ex.transcript || []).map((t) =>
+      `<div class="ft-baseline-row"><span class="ft-baseline-role">${esc(t.role)}</span>` +
+      `<span class="ft-baseline-text">${esc(t.content) || '<em style="color:#9ca3af;">(empty)</em>'}</span></div>`
+    ).join('');
+    return `<div class="ft-baseline-example"><span class="ft-baseline-type">${esc(ex.type || 'positive')}</span>${rows}</div>`;
+  }
+
   function renderFtDefaultsInto(cardKey, examples) {
     const card = document.querySelector(`.dp-card[data-dp-key="${cardKey}"]`);
     if (!card) return;
@@ -7592,8 +7655,8 @@
     list.innerHTML = arr.map((ex, i) => renderFtExample(cardKey, i, ex)).join('');
     if (countEl) {
       countEl.textContent = arr.length === 0
-        ? 'using built-in defaults'
-        : `${arr.length} example${arr.length === 1 ? '' : 's'}`;
+        ? 'baseline only'
+        : `baseline + ${arr.length} added`;
     }
   }
 
