@@ -986,6 +986,45 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(pathRouter.else_edge.destination_node_id).toBe(intro.id);
     });
 
+    it("Close-said sentinel: Mark Close Said extract per callback path + router shortcut wired correctly", async () => {
+      // Regression coverage for the "redundant Close thanks after FAQ
+      // resume" optimization. Each callback path's Close.always_edge
+      // points at a Mark Close Said extract that stamps
+      // _close_was_said=true. The Variables Router carries a final
+      // close-shortcut edge gated on that sentinel, routing straight
+      // to Close Question — skipping Close on the second pass.
+      const docResp = await fetch(
+        url(`/dashboard/api/agents/${createdSlug}`),
+        { headers: authHeaders() },
+      );
+      const doc: any = await json(docResp);
+      const flow = doc.retell_agents?.[createdAgentId!]?.conversationFlow;
+      const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+      expect(closeQuestion).toBeDefined();
+
+      // One Mark Close Said per HVAC callback path. (All 3 HVAC paths
+      // are callback mode by default.)
+      for (const pathName of ["service_call", "emergency_call", "existing_customer"]) {
+        const mark = flow.nodes.find((n: any) => n.name === `Mark Close Said (${pathName})`);
+        expect(mark, `Mark Close Said for ${pathName}`).toBeDefined();
+        expect(mark.type).toBe("extract_dynamic_variables");
+        expect(mark.variables?.[0]?.name).toBe("_close_was_said");
+        expect(mark.else_edge?.destination_node_id).toBe(closeQuestion.id);
+
+        // Close (${pathName}) → Mark Close Said (${pathName}).
+        const close = flow.nodes.find((n: any) => n.name === `Close (${pathName})`);
+        expect(close, `Close for ${pathName}`).toBeDefined();
+        expect(close.always_edge.destination_node_id).toBe(mark.id);
+
+        // Variables Router's LAST edge gates on _close_was_said.
+        const router = flow.nodes.find((n: any) => n.name === `Variables Router (${pathName})`);
+        expect(router).toBeDefined();
+        const lastEdge = (router.edges as any[])[(router.edges as any[]).length - 1];
+        expect(lastEdge.transition_condition.equations[0].left).toBe("{{_close_was_said}}");
+        expect(lastEdge.destination_node_id).toBe(closeQuestion.id);
+      }
+    });
+
     it("Irrelevant Guardrail global ships non-empty baseline positive examples", async () => {
       // Regression: positive_finetune_examples was empty before — now
       // ships an off-topic baseline (IRRELEVANT_GUARDRAIL_POSITIVE_EXAMPLES).

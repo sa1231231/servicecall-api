@@ -1080,6 +1080,7 @@ nodeEditorRouter.post("/:agentId/add-data-point", async (req, res) => {
       targetPath,
       currentDataPoints,
       closeNodeId,
+      findCloseQuestionId(parsed),
       targetPath.name === "Default" ? undefined : targetPath.name,
     );
     applyRegeneratedChain(canonical, result);
@@ -1180,6 +1181,7 @@ nodeEditorRouter.post("/:agentId/remove-data-point", async (req, res) => {
       targetPath,
       filtered,
       closeNodeId,
+      findCloseQuestionId(parsed),
       targetPath.name === "Default" ? undefined : targetPath.name,
     );
     applyRegeneratedChain(canonical, result);
@@ -1274,6 +1276,7 @@ nodeEditorRouter.post("/:agentId/reorder-data-points", async (req, res) => {
       targetPath,
       reordered,
       closeNodeId,
+      findCloseQuestionId(parsed),
       targetPath.name === "Default" ? undefined : targetPath.name,
     );
     applyRegeneratedChain(canonical, result);
@@ -1310,6 +1313,25 @@ function findPath(
 ): ParsedPath | undefined {
   if (!pathName) return paths[0];
   return paths.find((p) => p.name === pathName);
+}
+
+/**
+ * Locate the Close Question node id in a parsed flow. Needed by the
+ * regenerator + new-path emit to wire the Variables Router's
+ * "_close_was_said" shortcut edge. Throws on missing — every agent
+ * generated since the closing-chain split has this node. Older agents
+ * without it fall back to the routerEdges shortcut being a no-op
+ * (variable never set since there's no Mark Close Said either).
+ */
+function findCloseQuestionId(parsed: ParsedFlow): string {
+  const node = parsed.closingNodes.find((n) => n.name === "Close Question");
+  if (!node) {
+    // Soft-fall: legacy agents pre-Close-Question split. Caller catches
+    // this and emits a 500 — the regenerator path doesn't have a clean
+    // way to skip the shortcut otherwise.
+    throw new Error("Could not find Close Question node in flow");
+  }
+  return node.id;
 }
 
 /**
@@ -1475,6 +1497,7 @@ nodeEditorRouter.post("/:agentId/edit-branch-condition", async (req, res) => {
       targetPath,
       currentDataPoints,
       closeNodeId,
+      findCloseQuestionId(parsed),
       targetPath.name === "Default" ? undefined : targetPath.name,
     );
     applyRegeneratedChain(canonical, result);
@@ -2451,6 +2474,7 @@ export async function saveAndPublishHandler(
 
           const result = regenerateDataChain(
             targetPath, newSequence, closeNodeId,
+            findCloseQuestionId(parsed),
             targetPath.name === "Default" ? undefined : targetPath.name,
           );
           applyRegeneratedChain(canonical, result);
@@ -2555,7 +2579,17 @@ export async function saveAndPublishHandler(
         };
 
         nodes.push(buildTransitionNode(pathIds, pathPos, f, np.name));
-        nodes.push(...buildDataChain(newSequence, pathIds, pathPos, closeNodeId, f, np.name));
+        // closeQuestion id needed for the Variables Router's "_close_was_said"
+        // shortcut edge. Locate Close Question by name — the parser
+        // exposes it via closingNodes but isn't surfaced as a typed
+        // accessor; look it up directly from the canonical.
+        const closeQuestionNode = nodes.find((n) => n.name === "Close Question");
+        if (!closeQuestionNode) {
+          res.status(500).json({ error: "Could not find Close Question node in flow" });
+          return;
+        }
+        const closeQuestionNodeId = closeQuestionNode.id as string;
+        nodes.push(...buildDataChain(newSequence, pathIds, pathPos, closeNodeId, closeQuestionNodeId, f, np.name));
         introEdges.push({
           destination_node_id: pathIds.transitionId,
           id: f.edgeId(),

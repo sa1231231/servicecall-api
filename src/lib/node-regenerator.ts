@@ -85,6 +85,7 @@ export function regenerateDataChain(
   existingPath: ParsedPath,
   newSequence: Array<DataPoint | SendSmsAction>,
   closeNodeId: string,
+  closeQuestionId: string,
   pathName?: string,
 ): RegenerateResult {
   // Partition the union sequence into DP-only and SMS-only views — internal
@@ -308,6 +309,24 @@ export function regenerateDataChain(
       },
     });
   }
+
+  // Close-already-said shortcut. Last edge before else_edge so it only
+  // fires when no missing-var edge matches and the caller has heard
+  // Close already (set by Mark Close Said downstream). Skips Close on
+  // the second pass after a FAQ side-trip. Mirrors the same emission
+  // in buildDataChain (node-builders.ts) so save-and-publish doesn't
+  // strip this edge from regenerated agents.
+  routerEdges.push({
+    destination_node_id: closeQuestionId,
+    id: f.edgeId(),
+    transition_condition: {
+      type: "equation",
+      equations: [
+        { left: "{{_close_was_said}}", operator: "==", right: "true" },
+      ],
+      operator: "&&",
+    },
+  });
 
   nodes.push({
     name: `Variables Router${suffix}`,

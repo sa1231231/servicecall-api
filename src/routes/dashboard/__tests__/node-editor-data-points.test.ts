@@ -181,6 +181,7 @@ describe("POST /:agentId/add-data-point", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/add-data-point",
@@ -198,6 +199,7 @@ describe("POST /:agentId/add-data-point", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name", "email"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/add-data-point",
@@ -232,6 +234,7 @@ describe("POST /:agentId/add-data-point", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/add-data-point",
@@ -257,6 +260,7 @@ describe("POST /:agentId/add-data-point", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name", "phone"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/add-data-point",
@@ -274,6 +278,7 @@ describe("POST /:agentId/add-data-point", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     mockValidateConversationFlow.mockReturnValue([{ code: "X", message: "bad" }]);
     const res = makeRes();
@@ -307,7 +312,11 @@ describe("POST /:agentId/add-data-point", () => {
       ...pathB.frontExtractNode,
       raw: { variables: [{ name: "full_name" }, { name: "phone" }] },
     } as any;
-    mockParseConversationFlow.mockReturnValue({ paths: [pathA, pathB], closeNode: { id: "close" } });
+    mockParseConversationFlow.mockReturnValue({
+      paths: [pathA, pathB],
+      closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
+    });
 
     const res = makeRes();
     await runRoute("post", "/:agentId/add-data-point",
@@ -336,6 +345,7 @@ describe("POST /:agentId/add-data-point", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/add-data-point",
@@ -372,6 +382,7 @@ describe("POST /:agentId/remove-data-point", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name", "phone"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/remove-data-point",
@@ -388,6 +399,7 @@ describe("POST /:agentId/remove-data-point", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/remove-data-point",
@@ -404,6 +416,7 @@ describe("POST /:agentId/remove-data-point", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name", "email"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/remove-data-point",
@@ -450,6 +463,7 @@ describe("POST /:agentId/reorder-data-points", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name", "email"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/reorder-data-points",
@@ -467,6 +481,7 @@ describe("POST /:agentId/reorder-data-points", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [makePath("Default", ["full_name", "email"])],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/reorder-data-points",

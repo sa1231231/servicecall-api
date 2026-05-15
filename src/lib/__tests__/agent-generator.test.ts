@@ -319,8 +319,13 @@ describe("edge cases", () => {
     const { agent } = generateAgent(baseConfig, ["full_name", "city"], undefined, TEST_DEFAULTS);
     const flow = agent.conversationFlow as any;
     const router = flow.nodes.find((n: any) => n.name === "Variables Router");
+    // The trailing _close_was_said shortcut edge uses == with "true"
+    // instead of NOT_MENTIONED. Filter it out so this assertion stays
+    // scoped to the var-collection edges.
     router.edges.forEach((edge: any) => {
       const eqs = edge.transition_condition.equations;
+      const isCloseSaidEdge = eqs.some((eq: any) => eq.left === "{{_close_was_said}}");
+      if (isCloseSaidEdge) return;
       const notMentionedEq = eqs.find((eq: any) => eq.operator === "==");
       if (notMentionedEq) {
         expect(notMentionedEq.right).toBe(NOT_MENTIONED);
@@ -347,8 +352,13 @@ describe("edge cases", () => {
     expect(close).toBeDefined();
     expect(transition).toBeDefined();
     expect(transition.skip_response_edge.destination_node_id).toBe(close.id);
-    // No Extract / Variables Router nodes generated for this path
-    const extracts = flow.nodes.filter((n: any) => n.type === "extract_dynamic_variables");
+    // No DP Extract / Variables Router nodes generated for this path.
+    // (Mark Close Said is also an extract — filter it out.)
+    const extracts = flow.nodes.filter(
+      (n: any) =>
+        n.type === "extract_dynamic_variables" &&
+        !/^Mark Close Said/.test(n.name),
+    );
     expect(extracts).toHaveLength(0);
   });
 
@@ -388,7 +398,8 @@ describe("edge cases", () => {
     const flow = agent.conversationFlow as any;
     expect(flow.nodes.length).toBeGreaterThan(10);
     const router = flow.nodes.find((n: any) => n.name === "Variables Router");
-    expect(router.edges).toHaveLength(1);
+    // 1 DP edge + 1 _close_was_said shortcut = 2 total.
+    expect(router.edges).toHaveLength(2);
   });
 });
 
@@ -480,7 +491,11 @@ describe("if/else branch support", () => {
     const flow = agent.conversationFlow as any;
     const router = flow.nodes.find((n: any) => n.name === "Variables Router");
 
-    expect(router.edges).toHaveLength(3); // full_name + phone_number (IF) + city (ELSE)
+    // 3 DP edges (full_name + phone_number IF + city ELSE) + 1
+    // _close_was_said shortcut at the end = 4 total. Positional
+    // assertions below still target indices 0-2 since the shortcut
+    // sits last.
+    expect(router.edges).toHaveLength(4);
 
     // First edge: full_name — no branch condition, uses || operator
     const nameEdge = router.edges[0];
@@ -635,13 +650,20 @@ describe("per-path end mode", () => {
     const routerB = flow.nodes.find((n: any) => n.name === "Variables Router (B)");
     expect(routerA.else_edge.destination_node_id).toBe(closeA.id);
     expect(routerB.else_edge.destination_node_id).toBe(closeB.id);
-    // Both per-path Close nodes share the Close Question node, which in turn
-    // routes to Closing Remarks via its "no more questions" edge.
+    // Each Close → its Mark Close Said extract → shared Close Question
+    // → Closing Remarks. The Mark Close Said extract stamps
+    // _close_was_said so a second pass through the router skips Close.
     const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
     const closingRemarks = flow.nodes.find((n: any) => n.name === "Closing Remarks");
+    const markCloseSaidA = flow.nodes.find((n: any) => n.name === "Mark Close Said (A)");
+    const markCloseSaidB = flow.nodes.find((n: any) => n.name === "Mark Close Said (B)");
     expect(closeQuestion).toBeDefined();
-    expect(closeA.always_edge.destination_node_id).toBe(closeQuestion.id);
-    expect(closeB.always_edge.destination_node_id).toBe(closeQuestion.id);
+    expect(markCloseSaidA).toBeDefined();
+    expect(markCloseSaidB).toBeDefined();
+    expect(closeA.always_edge.destination_node_id).toBe(markCloseSaidA.id);
+    expect(closeB.always_edge.destination_node_id).toBe(markCloseSaidB.id);
+    expect(markCloseSaidA.else_edge.destination_node_id).toBe(closeQuestion.id);
+    expect(markCloseSaidB.else_edge.destination_node_id).toBe(closeQuestion.id);
     expect(closeQuestion.edges[0].destination_node_id).toBe(closingRemarks.id);
     // No legacy unsuffixed "Close" node in multi-path agents
     expect(flow.nodes.find((n: any) => n.name === "Close")).toBeUndefined();
@@ -667,8 +689,13 @@ describe("per-path end mode", () => {
     expect(closingRemarks).toBeDefined();
     expect(closingStatement).toBeDefined();
 
-    // Chain: Close → Close Question → Closing Remarks → Closing Statement.
-    expect(close.always_edge.destination_node_id).toBe(closeQuestion.id);
+    // Chain: Close → Mark Close Said → Close Question → Closing
+    // Remarks → Closing Statement. Mark Close Said sits between Close
+    // and Close Question to stamp _close_was_said for FAQ-resume.
+    const markCloseSaid = flow.nodes.find((n: any) => n.name === "Mark Close Said");
+    expect(markCloseSaid).toBeDefined();
+    expect(close.always_edge.destination_node_id).toBe(markCloseSaid.id);
+    expect(markCloseSaid.else_edge.destination_node_id).toBe(closeQuestion.id);
     // Close Question has ONE explicit edge: "no more questions" → Closing
     // Remarks. The follow-up-question path runs through the Admin/FAQ
     // global node's `condition`; we used to emit a second explicit edge
@@ -1097,6 +1124,131 @@ describe("per-path end mode", () => {
     expect(pathRouter.else_edge.destination_node_id).toBe(intro.id);
   });
 
+  it("Close-said sentinel: Mark Close Said extract emitted per callback path, not for transfer paths", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "service_call", transitionCondition: "x", dataPoints: ["full_name"] },
+        { name: "emergency", transitionCondition: "y", dataPoints: ["full_name"], endMode: "transfer", transferDestination: "+18005551234" },
+        { name: "existing", transitionCondition: "z", dataPoints: ["full_name"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const markNodes = flow.nodes.filter((n: any) =>
+      typeof n.name === "string" && /^Mark Close Said/.test(n.name),
+    );
+    // 2 callback paths → 2 Mark Close Said nodes; transfer path skipped.
+    expect(markNodes).toHaveLength(2);
+    const names = markNodes.map((n: any) => n.name).sort();
+    expect(names).toEqual(["Mark Close Said (existing)", "Mark Close Said (service_call)"]);
+    expect(flow.nodes.find((n: any) => n.name === "Mark Close Said (emergency)")).toBeUndefined();
+  });
+
+  it("Close-said sentinel: each Mark Close Said extract stamps _close_was_said=true and else-edges to Close Question", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "A", transitionCondition: "x", dataPoints: ["full_name"] },
+        { name: "B", transitionCondition: "y", dataPoints: ["full_name"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+    const markCloseSaidNodes = flow.nodes.filter((n: any) =>
+      typeof n.name === "string" && /^Mark Close Said/.test(n.name),
+    );
+    expect(markCloseSaidNodes.length).toBeGreaterThan(0);
+    for (const m of markCloseSaidNodes) {
+      expect(m.type).toBe("extract_dynamic_variables");
+      expect(m.variables).toHaveLength(1);
+      expect(m.variables[0].name).toBe("_close_was_said");
+      expect(m.variables[0].type).toBe("boolean");
+      expect(m.variables[0].description).toMatch(/Always set to true/);
+      expect(m.else_edge.destination_node_id).toBe(closeQuestion.id);
+    }
+  });
+
+  it("Close-said sentinel: per-path Close.always_edge points at its Mark Close Said extract (not Close Question)", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "A", transitionCondition: "x", dataPoints: ["full_name"] },
+        { name: "B", transitionCondition: "y", dataPoints: ["full_name"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const closeA = flow.nodes.find((n: any) => n.name === "Close (A)");
+    const closeB = flow.nodes.find((n: any) => n.name === "Close (B)");
+    const markA = flow.nodes.find((n: any) => n.name === "Mark Close Said (A)");
+    const markB = flow.nodes.find((n: any) => n.name === "Mark Close Said (B)");
+    const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+    expect(closeA.always_edge.destination_node_id).toBe(markA.id);
+    expect(closeB.always_edge.destination_node_id).toBe(markB.id);
+    expect(closeA.always_edge.destination_node_id).not.toBe(closeQuestion.id);
+  });
+
+  it("Close-said sentinel: Variables Router's LAST edge before else_edge gates on _close_was_said → Close Question", () => {
+    // Two paths to force multi-path mode (single-path doesn't suffix
+    // the router name, which complicates the assertion). The shortcut
+    // edge shape is identical between single and multi-path.
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        { name: "service_call", transitionCondition: "x", dataPoints: ["full_name", "phone_number"] },
+        { name: "other", transitionCondition: "y", dataPoints: ["full_name"] },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    const router = flow.nodes.find((n: any) => n.name === "Variables Router (service_call)");
+    const closeQuestion = flow.nodes.find((n: any) => n.name === "Close Question");
+    const lastEdge = router.edges[router.edges.length - 1];
+    expect(lastEdge.transition_condition.type).toBe("equation");
+    expect(lastEdge.transition_condition.equations).toHaveLength(1);
+    const eq = lastEdge.transition_condition.equations[0];
+    expect(eq.left).toBe("{{_close_was_said}}");
+    expect(eq.operator).toBe("==");
+    expect(eq.right).toBe("true");
+    expect(lastEdge.destination_node_id).toBe(closeQuestion.id);
+    // Router's else_edge still goes to Close (the first-time terminator).
+    const closeNode = flow.nodes.find((n: any) => n.name === "Close (service_call)");
+    expect(router.else_edge.destination_node_id).toBe(closeNode.id);
+  });
+
+  it("Close-said sentinel: transfer-only single-path agents emit no Mark Close Said extract", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        {
+          name: "EmergencyOnly",
+          transitionCondition: "x",
+          dataPoints: ["full_name"],
+          endMode: "transfer",
+          transferDestination: "+18005551234",
+        },
+      ],
+      TEST_DEFAULTS,
+    );
+    const flow = agent.conversationFlow as any;
+    // No Mark Close Said — no Close on a transfer path means nothing
+    // ever sets _close_was_said, so the extract is unnecessary.
+    expect(flow.nodes.find((n: any) =>
+      typeof n.name === "string" && /^Mark Close Said/.test(n.name),
+    )).toBeUndefined();
+    // The router itself still emits the close-shortcut edge as a
+    // harmless no-op (variable is never set on a transfer-only path,
+    // so the equation never matches). We don't bother special-casing
+    // the emitter for an unreachable edge — keeps generator simpler.
+  });
+
   it("canvas layout — globals left, paths staircase, closing chain bottom row", () => {
     // Regression coverage for the canvas-layout cleanup. Snapshots drop
     // display_position so we need explicit assertions to lock in the
@@ -1351,6 +1503,7 @@ describe("node-builders defensive guards", () => {
         { chain: [{ collectId: "c1", confirmId: "cf1" }] } as any, // only 1 chain slot
         {} as any, // pathPos
         "close_id", // closeId
+        "close_question_id", // closeQuestionId
         f, // IdFactory
       ),
     ).toThrow(/does not match allocated chain IDs/);

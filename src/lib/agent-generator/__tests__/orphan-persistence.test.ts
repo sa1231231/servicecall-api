@@ -57,7 +57,7 @@ describe("buildDataChain — orphan variable persistence", () => {
     ];
     const { pathIds, pathPos } = makePathFixtures(3);
     const f = makeIdFactory(2000);
-    const nodes = buildDataChain(dps, pathIds, pathPos, "close-1", f) as Record<string, unknown>[];
+    const nodes = buildDataChain(dps, pathIds, pathPos, "close-1", "close-question-1", f) as Record<string, unknown>[];
     const front = nodes.find((n) => n.id === pathIds.frontExtractId);
     expect(front).toBeTruthy();
     expect(namesOf(front!)).toEqual(["orphan_a", "normal_b", "normal_c"]);
@@ -87,7 +87,7 @@ describe("buildDataChain — orphan variable persistence", () => {
     ];
     const { pathIds, pathPos } = makePathFixtures(3);
     const f = makeIdFactory(3000);
-    const nodes = buildDataChain(dps, pathIds, pathPos, "close-1", f) as Record<string, unknown>[];
+    const nodes = buildDataChain(dps, pathIds, pathPos, "close-1", "close-question-1", f) as Record<string, unknown>[];
 
     // Confirm for normal_b is at chain index 1 — its confirmId.
     const confirmB = nodes.find((n) => n.id === pathIds.chain[1].confirmId);
@@ -113,7 +113,7 @@ describe("buildDataChain — orphan variable persistence", () => {
     ];
     const { pathIds, pathPos } = makePathFixtures(4);
     const f = makeIdFactory(4000);
-    const nodes = buildDataChain(dps, pathIds, pathPos, "close-1", f) as Record<string, unknown>[];
+    const nodes = buildDataChain(dps, pathIds, pathPos, "close-1", "close-question-1", f) as Record<string, unknown>[];
 
     // Confirm for normal_b (idx 1)
     const confirmB = nodes.find((n) => n.id === pathIds.chain[1].confirmId);
@@ -134,7 +134,7 @@ describe("buildDataChain — orphan variable persistence", () => {
     ];
     const { pathIds, pathPos } = makePathFixtures(3);
     const f = makeIdFactory(5000);
-    const nodes = buildDataChain(dps, pathIds, pathPos, "close-1", f) as Record<string, unknown>[];
+    const nodes = buildDataChain(dps, pathIds, pathPos, "close-1", "close-question-1", f) as Record<string, unknown>[];
     expect(namesOf(nodes.find((n) => n.id === pathIds.chain[0].confirmId)!)).toEqual(["a", "b", "c"]);
     expect(namesOf(nodes.find((n) => n.id === pathIds.chain[1].confirmId)!)).toEqual(["b", "c"]);
     expect(namesOf(nodes.find((n) => n.id === pathIds.chain[2].confirmId)!)).toEqual(["c"]);

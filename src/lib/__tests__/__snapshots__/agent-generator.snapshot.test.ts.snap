@@ -294,7 +294,7 @@ Snapshot FAQ knowledge base for testing.",
     "type": "conversation",
   },
   {
-    "always_edge": "→ Close Question (Always)",
+    "always_edge": "→ Mark Close Said (Callback) (Always)",
     "edges": [],
     "instruction": {
       "text": "Thank the caller for all the information, and let them know our team at Snapshot Co will reach out to get them set up as soon as possible.",
@@ -783,6 +783,20 @@ Set a clear boundary by stating that you cannot continue unrelated conversations
     "type": "conversation",
   },
   {
+    "edges": [],
+    "else_edge": "→ Close Question (else)",
+    "finetune_transition_examples": "[0 examples]",
+    "name": "Mark Close Said (Callback)",
+    "type": "extract_dynamic_variables",
+    "variables": [
+      {
+        "description": "Always set to true",
+        "name": "_close_was_said",
+        "type": "boolean",
+      },
+    ],
+  },
+  {
     "edges": [
       "→ Variables Router (Callback) (equation)",
       "→ Variables Router (Transfer) (equation)",
@@ -875,6 +889,7 @@ Do not ask any questions here.",
   {
     "edges": [
       "→ Collect Full Name (equation)",
+      "→ Close Question (equation)",
     ],
     "else_edge": "→ Close (Callback) (else)",
     "name": "Variables Router (Callback)",
@@ -883,6 +898,7 @@ Do not ask any questions here.",
   {
     "edges": [
       "→ Collect City (equation)",
+      "→ Close Question (equation)",
     ],
     "else_edge": "→ Pre-Transfer (Transfer) (else)",
     "name": "Variables Router (Transfer)",
@@ -1185,7 +1201,7 @@ Snapshot FAQ knowledge base for testing.",
     "type": "conversation",
   },
   {
-    "always_edge": "→ Close Question (Always)",
+    "always_edge": "→ Mark Close Said (Always)",
     "edges": [],
     "instruction": {
       "text": "Thank the caller for all the information, and let them know our team at Snapshot Co will reach out to get them set up as soon as possible.",
@@ -1658,6 +1674,20 @@ Set a clear boundary by stating that you cannot continue unrelated conversations
     "type": "conversation",
   },
   {
+    "edges": [],
+    "else_edge": "→ Close Question (else)",
+    "finetune_transition_examples": "[0 examples]",
+    "name": "Mark Close Said",
+    "type": "extract_dynamic_variables",
+    "variables": [
+      {
+        "description": "Always set to true",
+        "name": "_close_was_said",
+        "type": "boolean",
+      },
+    ],
+  },
+  {
     "edges": [
       "→ Variables Router (equation)",
     ],
@@ -1679,6 +1709,7 @@ Set a clear boundary by stating that you cannot continue unrelated conversations
     "edges": [
       "→ Collect Full Name (equation)",
       "→ Collect City (equation)",
+      "→ Close Question (equation)",
     ],
     "else_edge": "→ Close (else)",
     "name": "Variables Router",

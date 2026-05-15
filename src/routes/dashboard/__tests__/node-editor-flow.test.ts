@@ -148,6 +148,7 @@ describe("POST /:agentId/edit-branch-condition", () => {
         dataChain: [{ variableName: "full_name", label: "Name", variableDefs: [{ name: "full_name", type: "string" }], collectNode: { id: "c1", name: "Collect Name" }, confirmNode: { id: "cf1" }, conversationPrompt: "", forwardCondition: "" }],
       }],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/edit-branch-condition",
@@ -166,6 +167,7 @@ describe("POST /:agentId/edit-branch-condition", () => {
         dataChain: [{ variableName: "full_name", label: "Name", variableDefs: [{ name: "full_name", type: "string" }], collectNode: { id: "c1", name: "Collect Name" }, confirmNode: { id: "cf1" }, conversationPrompt: "", forwardCondition: "" }],
       }],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/edit-branch-condition",
@@ -189,6 +191,7 @@ describe("POST /:agentId/edit-branch-condition", () => {
         dataChain: [{ variableName: "email", label: "Email", variableDefs: [{ name: "email", type: "string" }], collectNode: { id: "c1", name: "Collect Email" }, confirmNode: { id: "cf1" }, conversationPrompt: "", forwardCondition: "" }],
       }],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/edit-branch-condition",
@@ -412,6 +415,7 @@ describe("POST /:agentId/edit-path-end-mode", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [{ name: "Sales", routerNode: { id: "router-missing" } }],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/edit-path-end-mode",
@@ -442,6 +446,7 @@ describe("POST /:agentId/edit-path-end-mode", () => {
         { name: "Other", routerNode: { id: "router-Other" }, endMode: "transfer" },
       ],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/edit-path-end-mode",
@@ -480,6 +485,7 @@ describe("POST /:agentId/edit-path-end-mode", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [{ name: "Solo", routerNode: { id: "router-Solo" }, endMode: "transfer" }],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/edit-path-end-mode",
@@ -530,6 +536,7 @@ describe("POST /:agentId/edit-path-end-mode", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [{ name: "Sales", routerNode: { id: "router-Sales" }, endMode: "callback" }],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/edit-path-end-mode",
@@ -558,6 +565,7 @@ describe("POST /:agentId/edit-path-end-mode", () => {
     mockParseConversationFlow.mockReturnValue({
       paths: [{ name: "Sales", routerNode: { id: "router-Sales" }, endMode: "callback" }],
       closeNode: { id: "close" },
+      closingNodes: [{ name: "Close Question", id: "close-question" }],
     });
     const res = makeRes();
     await runRoute("post", "/:agentId/edit-path-end-mode",

@@ -22,6 +22,7 @@ import {
   buildHumanRequestNode,
   buildDataChain,
   buildCloseNode,
+  buildMarkCloseSaidNode,
   buildCloseQuestionNode,
   buildClosingSequence,
   buildIrrelevantGuardrailNode,
@@ -372,7 +373,7 @@ When listing anything — services, time slots, examples, options — never list
     } else {
       allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel));
       allNodes.push(
-        ...buildDataChain(rp.resolved, pIds, pPos, terminalId, f, pathLabel),
+        ...buildDataChain(rp.resolved, pIds, pPos, terminalId, ids.closeQuestionId, f, pathLabel),
       );
     }
 
@@ -437,16 +438,49 @@ When listing anything — services, time slots, examples, options — never list
       // PathPositions for non-transfer paths; fall back to the shared
       // pos.close if it's missing for any reason.
       const perPathClose = pos.paths[pathIdx].close;
+      const markCloseSaidId = pIds.markCloseSaidId;
+      if (!markCloseSaidId) {
+        throw new Error(
+          `Path "${rp.name}": expected markCloseSaidId for non-transfer path`,
+        );
+      }
       allNodes.push(
-        buildCloseNode(agentConfig, ids, pos, f, {
+        buildCloseNode(agentConfig, ids, pos, f, markCloseSaidId, {
           nodeId: pIds.closeId,
           pathName: rp.name,
           displayPosition: perPathClose,
         }),
       );
+      const markCloseSaidPos = pos.paths[pathIdx].markCloseSaid;
+      if (!markCloseSaidPos) {
+        throw new Error(
+          `Path "${rp.name}": expected markCloseSaid display position`,
+        );
+      }
+      allNodes.push(
+        buildMarkCloseSaidNode(ids, f, markCloseSaidId, markCloseSaidPos, rp.name),
+      );
     });
   } else {
-    allNodes.push(buildCloseNode(agentConfig, ids, pos, f));
+    // Single-path. Transfer paths skip Close entirely (router's
+    // else_edge → Pre-Transfer instead). Callback single-path emits
+    // Close + Mark Close Said via paths[0]'s allocated ids.
+    if (resolvedPaths[0]?.endMode !== "transfer") {
+      const singlePathMarkCloseSaidId = ids.paths[0]?.markCloseSaidId;
+      if (!singlePathMarkCloseSaidId) {
+        throw new Error("Single-path callback agent: expected markCloseSaidId on paths[0]");
+      }
+      allNodes.push(
+        buildCloseNode(agentConfig, ids, pos, f, singlePathMarkCloseSaidId),
+      );
+      const markCloseSaidPos = pos.paths[0]?.markCloseSaid;
+      if (!markCloseSaidPos) {
+        throw new Error("Single-path callback agent: expected markCloseSaid display position");
+      }
+      allNodes.push(
+        buildMarkCloseSaidNode(ids, f, singlePathMarkCloseSaidId, markCloseSaidPos),
+      );
+    }
   }
   // Close Question sits between the (single or per-path) Close node(s) and
   // the shared Closing Remarks. All Close nodes always_edge to this single

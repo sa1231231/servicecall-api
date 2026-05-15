@@ -157,11 +157,14 @@ describe("SMS action in path", () => {
       (n: any) => n.type === "mcp" && n.mcp_tool_name === SEND_SMS_TOOL_NAME,
     );
 
-    // Router has three edges (phone DP, SMS action, address DP) in source order.
-    expect(router.edges).toHaveLength(3);
+    // 3 source-order edges (phone DP, SMS action, address DP) + 1
+    // _close_was_said shortcut at the end = 4 total.
+    expect(router.edges).toHaveLength(4);
     expect(router.edges[0].destination_node_id).toBe(phoneCollect.id);
     expect(router.edges[1].destination_node_id).toBe(mcpNode.id);
     expect(router.edges[2].destination_node_id).toBe(addressCollect.id);
+    // Last edge is the close-said shortcut, gated on the sentinel.
+    expect(router.edges[3].transition_condition.equations[0].left).toBe("{{_close_was_said}}");
 
     // The SMS edge gates on the sentinel variable (not_exist || != "true")
     // so it fires exactly once after Mark Sent flips it to true.
@@ -235,12 +238,13 @@ describe("SMS action in path", () => {
 
     // Pretend the operator tweaked the template; rebuild the data chain.
     const closeId = parsed.closeNode!.id;
+    const closeQuestionId = parsed.closingNodes.find((n) => n.name === "Close Question")!.id;
     const newSequence = [
       { ...TEST_DEFAULTS.phone_number },
       { _action: "sendSms" as const, template: "Hello updated!", name: "Greet" },
       { ...TEST_DEFAULTS.address },
     ];
-    const result = regenerateDataChain(originalPath, newSequence, closeId);
+    const result = regenerateDataChain(originalPath, newSequence, closeId, closeQuestionId);
     applyRegeneratedChain(canonical, result);
 
     const reparsed = parseConversationFlow(canonical);

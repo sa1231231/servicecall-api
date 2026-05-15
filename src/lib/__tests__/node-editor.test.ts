@@ -12,6 +12,12 @@ import { validateConversationFlow, type ValidationError } from "../node-validato
 import { regenerateDataChain, applyRegeneratedChain } from "../node-regenerator.js";
 import { buildDataPointsFromChain, dedupDataPointKeys } from "../../routes/dashboard/node-editor.js";
 
+// Shortcut: every regenerateDataChain call needs the Close Question id
+// for the Variables Router's "_close_was_said" shortcut edge.
+function cqId(parsed: ReturnType<typeof parseConversationFlow>): string {
+  return parsed.closingNodes.find((n) => n.name === "Close Question")!.id;
+}
+
 // ── Test Data ────────────────────────────────────────────────────────────────
 
 const baseConfig = {
@@ -317,8 +323,12 @@ describe("orphan data points", () => {
     const nodes = (agent.conversationFlow as any).nodes as any[];
     const router = nodes.find((n: any) => n.type === "branch" && n.name.includes("Router"));
     expect(router).toBeDefined();
-    // Router should only have 1 edge (for full_name), not 2
-    expect(router.edges).toHaveLength(1);
+    // Router should have 1 DP edge (full_name, not the orphan) + 1
+    // _close_was_said shortcut = 2 total. Orphan still does NOT get an
+    // edge — that's the regression this test guards.
+    expect(router.edges).toHaveLength(2);
+    // First edge is the DP edge; last is the close-said shortcut.
+    expect(router.edges[router.edges.length - 1].transition_condition.equations[0].left).toBe("{{_close_was_said}}");
   });
 
   it("validates successfully with orphan data point", () => {
@@ -367,7 +377,7 @@ describe("orphan data points", () => {
       if (parsedDp?.orphan) dp.orphan = true;
     }
 
-    const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+    const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
 
     expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -666,7 +676,7 @@ describe("buildDataPointsFromChain — orphan flag propagation (regression)", ()
 
     // End-to-end: feed back into the regenerator and confirm the canonical
     // validates clean (no duplicate ids, no empty Collect text).
-    const result = regenerateDataChain(parsed.paths[0], dps, parsed.closeNode!.id);
+    const result = regenerateDataChain(parsed.paths[0], dps, parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
     expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
     // And: there should NOT be a Collect node for hvac_service_type after regen.
@@ -730,7 +740,7 @@ describe("buildDataPointsFromChain — workspace-default fine-tune propagation",
     };
     const dps = buildDataPointsFromChain(parsed.paths[0], updatedDefaults);
 
-    const result = regenerateDataChain(parsed.paths[0], dps, parsed.closeNode!.id);
+    const result = regenerateDataChain(parsed.paths[0], dps, parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
 
     // The regenerated Collect node should carry the new FT, not the old (empty) one.
@@ -982,7 +992,7 @@ describe("regenerateDataChain", () => {
         router: path.routerNode.id,
       };
 
-      const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), parsed.closeNode!.id, cqId(parsed));
       const newIds = result.newNodes.map(n => n.id);
 
       expect(newIds).toContain(origIds.collect0);
@@ -997,7 +1007,7 @@ describe("regenerateDataChain", () => {
       const { agent } = generateSinglePath(["full_name", "phone_number", "city"]);
       const parsed = parseConversationFlow(agent);
       const path = parsed.paths[0];
-      const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
     });
@@ -1010,7 +1020,7 @@ describe("regenerateDataChain", () => {
       const path = parsed.paths[0];
       const dps = [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city];
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1025,7 +1035,7 @@ describe("regenerateDataChain", () => {
       const path = parsed.paths[0];
       const dps = [TEST_DEFAULTS.city, ...dataPointsFromChain(path.dataChain)];
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1040,7 +1050,7 @@ describe("regenerateDataChain", () => {
       const existing = dataPointsFromChain(path.dataChain);
       const dps = [existing[0], TEST_DEFAULTS.phone_number, existing[1]];
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1055,7 +1065,7 @@ describe("regenerateDataChain", () => {
       const path = parsed.paths[0];
       const dps = [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.phone_number, TEST_DEFAULTS.city, TEST_DEFAULTS.email];
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1071,7 +1081,7 @@ describe("regenerateDataChain", () => {
       const path = parsed.paths[0];
       const dps = dataPointsFromChain(path.dataChain).filter(dp => dp.variableName !== "phone_number");
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1085,7 +1095,7 @@ describe("regenerateDataChain", () => {
       const path = parsed.paths[0];
       const dps = dataPointsFromChain(path.dataChain).filter(dp => dp.variableName !== "full_name");
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1099,7 +1109,7 @@ describe("regenerateDataChain", () => {
       const path = parsed.paths[0];
       const dps = dataPointsFromChain(path.dataChain).filter(dp => dp.variableName !== "city");
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1113,7 +1123,7 @@ describe("regenerateDataChain", () => {
       const path = parsed.paths[0];
       const dps = dataPointsFromChain(path.dataChain).filter(dp => dp.variableName === "full_name");
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1129,7 +1139,7 @@ describe("regenerateDataChain", () => {
       const path = parsed.paths[0];
       const dps = dataPointsFromChain(path.dataChain).reverse();
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1144,7 +1154,7 @@ describe("regenerateDataChain", () => {
       const existing = dataPointsFromChain(path.dataChain);
       const dps = [existing[2], existing[1], existing[0]]; // city, phone, name
 
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1159,7 +1169,7 @@ describe("regenerateDataChain", () => {
 
       const path = parsed.paths[0];
       const dps = [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city];
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       const reParsed = parseConversationFlow(agent);
@@ -1180,7 +1190,7 @@ describe("regenerateDataChain", () => {
 
       // Add city, but full_name should keep its original prompt
       const dps = [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city];
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       const reParsed = parseConversationFlow(agent);
@@ -1198,7 +1208,7 @@ describe("regenerateDataChain", () => {
 
       // Add city to residential
       const dps = [...dataPointsFromChain(residential.dataChain), TEST_DEFAULTS.city];
-      const result = regenerateDataChain(residential, dps, parsed.closeNode!.id, "Residential");
+      const result = regenerateDataChain(residential, dps, parsed.closeNode!.id, cqId(parsed), "Residential");
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1216,7 +1226,7 @@ describe("regenerateDataChain", () => {
       const residential = parsed.paths.find(p => p.name === "Residential")!;
 
       const dps = dataPointsFromChain(residential.dataChain);
-      const result = regenerateDataChain(residential, dps, parsed.closeNode!.id, "Residential");
+      const result = regenerateDataChain(residential, dps, parsed.closeNode!.id, cqId(parsed), "Residential");
 
       const routerNode = result.newNodes.find(n => (n as any).type === "branch");
       expect((routerNode as any)?.name).toContain("(Residential)");
@@ -1236,7 +1246,7 @@ describe("regenerateDataChain", () => {
 
       // Regenerate with same data points
       const dps = dataPointsFromChain(path.dataChain);
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1256,7 +1266,7 @@ describe("regenerateDataChain", () => {
 
       // Add another data point after scheduling
       const dps = [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city];
-      const result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+      const result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
       applyRegeneratedChain(agent, result);
 
       expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
@@ -1280,7 +1290,7 @@ describe("round-trip integrity", () => {
     const origVars = getPathVariableNames(path);
 
     // Regenerate with identical data
-    const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), parsed.closeNode!.id);
+    const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
 
     const errors = validateConversationFlow(agent.conversationFlow as any);
@@ -1301,6 +1311,7 @@ describe("round-trip integrity", () => {
       const terminalId = path.closeNode?.id ?? parsed.closeNode!.id;
       const result = regenerateDataChain(
         path, dataPointsFromChain(path.dataChain), terminalId,
+        cqId(parsed),
         path.name === "Default" ? undefined : path.name,
       );
       applyRegeneratedChain(agent, result);
@@ -1322,7 +1333,7 @@ describe("round-trip integrity", () => {
     let parsed = parseConversationFlow(agent);
     let path = parsed.paths[0];
     let dps = [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city];
-    let result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+    let result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
     expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
 
@@ -1333,7 +1344,7 @@ describe("round-trip integrity", () => {
     // Remove city
     path = parsed.paths[0];
     dps = dataPointsFromChain(path.dataChain).filter(dp => dp.variableName !== "city");
-    result = regenerateDataChain(path, dps, parsed.closeNode!.id);
+    result = regenerateDataChain(path, dps, parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
     expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
 
@@ -1348,28 +1359,28 @@ describe("round-trip integrity", () => {
     // Add phone_number
     let parsed = parseConversationFlow(agent);
     let path = parsed.paths[0];
-    let result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.phone_number], parsed.closeNode!.id);
+    let result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.phone_number], parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
     expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
 
     // Add city
     parsed = parseConversationFlow(agent);
     path = parsed.paths[0];
-    result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city], parsed.closeNode!.id);
+    result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city], parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
     expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
 
     // Add email
     parsed = parseConversationFlow(agent);
     path = parsed.paths[0];
-    result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.email], parsed.closeNode!.id);
+    result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.email], parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
     expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
 
     // Remove phone_number
     parsed = parseConversationFlow(agent);
     path = parsed.paths[0];
-    result = regenerateDataChain(path, dataPointsFromChain(path.dataChain).filter(dp => dp.variableName !== "phone_number"), parsed.closeNode!.id);
+    result = regenerateDataChain(path, dataPointsFromChain(path.dataChain).filter(dp => dp.variableName !== "phone_number"), parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
     expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
 
@@ -1377,7 +1388,7 @@ describe("round-trip integrity", () => {
     parsed = parseConversationFlow(agent);
     path = parsed.paths[0];
     const dps = dataPointsFromChain(path.dataChain);
-    result = regenerateDataChain(path, dps.reverse(), parsed.closeNode!.id);
+    result = regenerateDataChain(path, dps.reverse(), parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
     expect(validateConversationFlow(agent.conversationFlow as any)).toEqual([]);
 
@@ -1394,7 +1405,7 @@ describe("round-trip integrity", () => {
     const path = parsed.paths[0];
     const closeId = parsed.closeNode!.id;
 
-    const result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city], closeId);
+    const result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city], closeId, cqId(parsed));
     applyRegeneratedChain(agent, result);
 
     const flow = agent.conversationFlow as any;
@@ -1407,7 +1418,7 @@ describe("round-trip integrity", () => {
     const parsed = parseConversationFlow(agent);
     const path = parsed.paths[0];
 
-    const result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city], parsed.closeNode!.id);
+    const result = regenerateDataChain(path, [...dataPointsFromChain(path.dataChain), TEST_DEFAULTS.city], parsed.closeNode!.id, cqId(parsed));
     applyRegeneratedChain(agent, result);
 
     const flow = agent.conversationFlow as any;
@@ -1422,7 +1433,7 @@ describe("round-trip integrity", () => {
     const parsed = parseConversationFlow(agent);
     const path = parsed.paths[0];
 
-    const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), parsed.closeNode!.id);
+    const result = regenerateDataChain(path, dataPointsFromChain(path.dataChain), parsed.closeNode!.id, cqId(parsed));
 
     // First confirm (full_name) should have 3 variables (full_name + phone_number + city)
     const confirmNodes = result.newNodes.filter(n => (n as any).type === "extract_dynamic_variables" && (n as any).name.startsWith("Confirm"));
@@ -1503,7 +1514,7 @@ describe("regenerator: respects per-path end mode", () => {
       { variableName: "phone_number", label: "Phone Number", type: "string", description: "", conversationPrompt: "", forwardCondition: "", finetuneExamples: [], extractSuccessEquation: defaultExtractEquation("phone_number") },
     ] as DataPoint[];
 
-    const result = regenerateDataChain(emergency, newChain, parsed.closeNode!.id, "Emergency");
+    const result = regenerateDataChain(emergency, newChain, parsed.closeNode!.id, cqId(parsed), "Emergency");
     const router = result.newNodes.find((n: any) => n.name === "Variables Router (Emergency)") as any;
     // Else_edge must point to the path's existing Pre-Transfer node, NOT the Close node.
     expect(router.else_edge.destination_node_id).toBe(emergency.preTransferNode!.id);

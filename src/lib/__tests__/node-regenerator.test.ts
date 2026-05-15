@@ -107,7 +107,7 @@ describe("regenerateDataChain", () => {
       dp({ variableName: "last_name", label: "Last Name" }),
     ];
 
-    const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+    const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
 
     const collectFirst = newNodes.find((n) => n.name === "Collect First Name");
     const collectLast = newNodes.find((n) => n.name === "Collect Last Name");
@@ -120,7 +120,7 @@ describe("regenerateDataChain", () => {
     const path = pathFor(flow);
     const dps = [dp({ variableName: "first_name", label: "First Name" })];
 
-    const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+    const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
 
     const front = newNodes.find((n) => n.id === "extract");
     const router = newNodes.find((n) => n.id === "router");
@@ -140,7 +140,7 @@ describe("regenerateDataChain", () => {
       dp({ variableName: "email", label: "Email" }),
     ];
 
-    const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+    const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
     const front = newNodes.find((n) => n.id === "extract")!;
     expect(namesOf(front)).toEqual(["first_name", "last_name", "email", "_path_taken"]);
   });
@@ -150,8 +150,8 @@ describe("regenerateDataChain", () => {
     const path = pathFor(flow);
     const dps = [dp({ variableName: "first_name", label: "First Name" })];
 
-    const withName = regenerateDataChain(path, dps, "close", "p");
-    const withoutName = regenerateDataChain(path, dps, "close");
+    const withName = regenerateDataChain(path, dps, "close", "close-q", "p");
+    const withoutName = regenerateDataChain(path, dps, "close", "close-q");
 
     expect(namesOf(withName.newNodes.find((n) => n.id === "extract")!)).toContain("_path_taken");
     expect(namesOf(withoutName.newNodes.find((n) => n.id === "extract")!)).not.toContain("_path_taken");
@@ -169,10 +169,11 @@ describe("regenerateDataChain", () => {
       dp({ variableName: "passive_signal", label: "Passive", orphan: true }),
     ];
 
-    const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+    const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
     const router = newNodes.find((n) => n.id === "router") as any;
 
-    expect(router.edges).toHaveLength(2); // orphan does NOT get a router edge
+    // 2 non-orphan DP edges + 1 _close_was_said shortcut = 3 total.
+    expect(router.edges).toHaveLength(3);
     expect(router.else_edge.destination_node_id).toBe("close");
   });
 
@@ -181,7 +182,7 @@ describe("regenerateDataChain", () => {
     const path = pathFor(flow);
     expect(path.endMode).toBe("callback");
 
-    const { newNodes } = regenerateDataChain(path, [dp({ variableName: "first_name", label: "First Name" })], "close", "p");
+    const { newNodes } = regenerateDataChain(path, [dp({ variableName: "first_name", label: "First Name" })], "close", "close-q", "p");
     const router = newNodes.find((n) => n.id === "router") as any;
     expect(router.else_edge.destination_node_id).toBe("close");
   });
@@ -194,7 +195,7 @@ describe("regenerateDataChain", () => {
       dp({ variableName: "passive_signal", label: "Passive", orphan: true }),
     ];
 
-    const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+    const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
     expect(newNodes.find((n) => n.name === "Collect Passive")).toBeUndefined();
     expect(newNodes.find((n) => n.name === "Confirm Passive")).toBeUndefined();
     expect(newNodes.find((n) => n.name === "Collect First Name")).toBeDefined();
@@ -210,7 +211,7 @@ describe("regenerateDataChain", () => {
     // The dp passed in has a different conversationPrompt — regenerator should
     // NOT clobber the existing one.
     const dps = [dp({ variableName: "first_name", label: "First Name", conversationPrompt: "Generic ask" })];
-    const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+    const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
     const collect = newNodes.find((n) => n.name === "Collect First Name") as any;
     expect(collect.instruction.text).toBe("CUSTOM PROMPT EDITED IN CONSOLE");
   });
@@ -223,7 +224,7 @@ describe("regenerateDataChain", () => {
     const path = pathFor(flow);
     const dps = [dp({ variableName: "first_name", label: "First Name" })];
 
-    const { removedNodeIds } = regenerateDataChain(path, dps, "close", "p");
+    const { removedNodeIds } = regenerateDataChain(path, dps, "close", "close-q", "p");
     expect(removedNodeIds.has("extract")).toBe(true);
     expect(removedNodeIds.has("router")).toBe(true);
     expect(removedNodeIds.has("collect-1")).toBe(true);
@@ -237,7 +238,7 @@ describe("regenerateDataChain", () => {
     const path = pathFor(flow);
     const dps = [dp({ variableName: "phone_number", label: "Phone Number" })];
 
-    const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+    const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
     const confirm = newNodes.find((n) => n.name === "Confirm Phone Number") as any;
     expect(namesOf(confirm)).toContain("phone_number_collected");
   });
@@ -247,7 +248,7 @@ describe("regenerateDataChain", () => {
     const path = pathFor(flow);
     const dps = [dp({ variableName: "phone_number", label: "Phone Number" })];
 
-    const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+    const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
     const router = newNodes.find((n) => n.id === "router") as any;
     const tc = router.edges[0].transition_condition;
     expect(tc.operator).toBe("&&");
@@ -266,7 +267,7 @@ describe("applyRegeneratedChain", () => {
       dp({ variableName: "first_name", label: "First Name" }),
       dp({ variableName: "email", label: "Email" }),
     ];
-    const result = regenerateDataChain(path, dps, "close", "p");
+    const result = regenerateDataChain(path, dps, "close", "close-q", "p");
 
     applyRegeneratedChain(flow, result);
 
@@ -291,7 +292,7 @@ describe("applyRegeneratedChain", () => {
       dp({ variableName: "first_name", label: "First Name" }),
       dp({ variableName: "email", label: "Email" }), // new
     ];
-    const result = regenerateDataChain(path, dps, "close", "p");
+    const result = regenerateDataChain(path, dps, "close", "close-q", "p");
 
     applyRegeneratedChain(flow, result);
     const ids = ((flow.conversationFlow as any).nodes as any[]).map((n) => n.id);
@@ -323,7 +324,7 @@ describe("applyRegeneratedChain", () => {
         }),
       ];
 
-      const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+      const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
       const collectNode = newNodes.find((n) => n.name === "Collect First Name");
       expect(fteOf(collectNode)).toHaveLength(1);
       expect((fteOf(collectNode)[0].transcript as any)[0].content).toBe("It's John.");
@@ -349,7 +350,7 @@ describe("applyRegeneratedChain", () => {
         }),
       ];
 
-      const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+      const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
       const collectNode = newNodes.find((n) => n.name === "Collect First Name");
       const ftes = fteOf(collectNode);
       expect(ftes).toHaveLength(1);
@@ -369,7 +370,7 @@ describe("applyRegeneratedChain", () => {
 
       // No finetuneExamples on the dp — preserves whatever's on the node.
       const dps = [dp({ variableName: "first_name", label: "First Name" })];
-      const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+      const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
       const collectNode = newNodes.find((n) => n.name === "Collect First Name");
       const ftes = fteOf(collectNode);
       expect(ftes).toHaveLength(1);
@@ -392,7 +393,7 @@ describe("applyRegeneratedChain", () => {
         }),
       ];
 
-      const { newNodes } = regenerateDataChain(path, dps, "close", "p");
+      const { newNodes } = regenerateDataChain(path, dps, "close", "close-q", "p");
       const collectNode = newNodes.find((n) => n.name === "Collect First Name");
       const confirmNode = newNodes.find((n) => n.name === "Confirm First Name");
       const ftes = fteOf(collectNode);

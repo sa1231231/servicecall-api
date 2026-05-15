@@ -173,6 +173,12 @@ export interface PathIds {
   // Single-path agents and transfer paths leave this undefined and use
   // the shared ids.closeId / Pre-Transfer respectively.
   closeId?: string;
+  // Mark Close Said extract sits between Close and Close Question. It
+  // stamps `_close_was_said = "true"` so a second pass through the
+  // Variables Router (after a FAQ side-trip) can skip Close and go
+  // straight to Close Question via the router shortcut edge. Only
+  // allocated for callback paths; transfer paths have no Close.
+  markCloseSaidId?: string;
 }
 
 export type HumanRequestMode = "live_transfer" | "callback";
@@ -222,6 +228,9 @@ export interface PathPositions {
   /** Per-path Close node position (multi-path only). Single-path uses
    *  the shared Positions.close. */
   close?: Position;
+  /** Per-path Mark Close Said extract position. Sits between Close and
+   *  Close Question, same Y as Close, one column to the right. */
+  markCloseSaid?: Position;
 }
 
 interface Positions {
@@ -376,6 +385,10 @@ export function generateIds(
         ? { preTransferId: f.nodeId(), transferCallId: f.nodeId() }
         : {}),
       ...(!isTransfer && isMultiPath ? { closeId: f.nodeId() } : {}),
+      // Mark Close Said extract: one per callback path. Single-path
+      // agents also get one (stored here on paths[0]); transfer paths
+      // don't (no Close to follow).
+      ...(!isTransfer ? { markCloseSaidId: f.nodeId() } : {}),
     };
   });
 
@@ -534,10 +547,15 @@ export function layoutPositions(
   const closeY0 = deepestPathEndY + CLOSE_HEADROOM;
   const closeYMid = closeY0 + ((pathSequences.length - 1) * CLOSE_STACK_Y_STEP) / 2;
 
-  // Stamp per-path close positions for the multi-path emitter.
+  // Stamp per-path close + mark-close-said positions. Mark Close Said
+  // sits between each Close and the shared Close Question — same Y as
+  // its Close, one column to the right so the chain reads left → right
+  // along the bottom row.
   paths.forEach((p, pathIdx) => {
     if (pathEndModes?.[pathIdx] === "transfer") return;
-    p.close = { x: CLOSE_X, y: closeY0 + pathIdx * CLOSE_STACK_Y_STEP };
+    const closeY = closeY0 + pathIdx * CLOSE_STACK_Y_STEP;
+    p.close = { x: CLOSE_X, y: closeY };
+    p.markCloseSaid = { x: CLOSE_X + 552, y: closeY };
   });
 
   return {
@@ -1361,6 +1379,7 @@ export function buildDataChain(
   pathIds: PathIds,
   pathPos: PathPositions,
   closeId: string,
+  closeQuestionId: string,
   f: IdFactory,
   pathName?: string,
 ) {
@@ -1538,6 +1557,24 @@ export function buildDataChain(
     });
   });
 
+  // Close-already-said shortcut. Last edge before else_edge so it only
+  // fires when no missing-var edge matches (i.e. all data already
+  // collected) AND the caller has previously heard the Close node's
+  // "thank you for the info" line. Set by the Mark Close Said extract
+  // downstream of Close. Skips Close on the second pass so the caller
+  // doesn't hear the thank-you a second time after a FAQ side-trip.
+  routerEdges.push({
+    destination_node_id: closeQuestionId,
+    id: f.edgeId(),
+    transition_condition: {
+      type: "equation",
+      equations: [
+        { left: "{{_close_was_said}}", operator: "==", right: "true" },
+      ],
+      operator: "&&",
+    },
+  });
+
   nodes.push({
     name: `Variables Router${suffix}`,
     edges: routerEdges,
@@ -1649,6 +1686,7 @@ export function buildCloseNode(
   ids: Ids,
   pos: Positions,
   f: IdFactory,
+  markCloseSaidId: string,
   overrides?: {
     nodeId?: string;
     pathName?: string;
@@ -1674,9 +1712,11 @@ export function buildCloseNode(
       }),
     },
     always_edge: {
-      // Close always flows to the Close Question node — Close just thanks the
-      // caller, Close Question asks "anything else?" and waits.
-      destination_node_id: ids.closeQuestionId,
+      // Close → Mark Close Said → Close Question. The Mark Close Said
+      // extract stamps `_close_was_said = "true"` so a second pass
+      // through the Variables Router (after a FAQ side-trip) can skip
+      // Close via the router shortcut edge.
+      destination_node_id: markCloseSaidId,
       id: `always-edge-${f.nextTs()}-${randomSuffix(9)}`,
       transition_condition: { type: "prompt", prompt: "Always" },
     },
@@ -1690,6 +1730,44 @@ export function buildCloseNode(
     // through cleanly even if the caller speaks. Retell treats this as a
     // per-node override of the agent-level global; 0 = no interruption.
     interruption_sensitivity: 0,
+  };
+}
+
+/**
+ * Mark Close Said extract — sits between a Close node and the shared
+ * Close Question. Stamps `_close_was_said = "true"` so the Variables
+ * Router's shortcut edge can skip Close on a second pass (e.g. after a
+ * mid-call FAQ side-trip returning through the Path Router).
+ *
+ * One per callback path (transfer paths have no Close).
+ */
+export function buildMarkCloseSaidNode(
+  ids: Ids,
+  f: IdFactory,
+  nodeId: string,
+  displayPosition: Position,
+  pathName?: string,
+) {
+  const name = pathName ? `Mark Close Said (${pathName})` : "Mark Close Said";
+  return {
+    name,
+    type: "extract_dynamic_variables",
+    id: nodeId,
+    variables: [
+      {
+        name: "_close_was_said",
+        type: "boolean",
+        description: "Always set to true",
+      },
+    ],
+    edges: [],
+    finetune_transition_examples: [],
+    else_edge: {
+      destination_node_id: ids.closeQuestionId,
+      id: `${nodeId}-else-edge`,
+      transition_condition: { type: "prompt", prompt: "Else" },
+    },
+    display_position: displayPosition,
   };
 }
 
