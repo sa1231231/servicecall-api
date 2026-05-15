@@ -119,7 +119,10 @@ function sanitize(value: any, idMap: Map<string, string>): any {
       });
       continue;
     }
-    if (k === "finetune_transition_examples" && Array.isArray(v)) {
+    if (
+      (k === "finetune_transition_examples" || k === "finetune_conversation_examples") &&
+      Array.isArray(v)
+    ) {
       // Examples carry generated IDs + can be re-ordered on re-export;
       // keep only the count to lock in coverage without snapshot churn.
       out[k] = `[${v.length} examples]`;

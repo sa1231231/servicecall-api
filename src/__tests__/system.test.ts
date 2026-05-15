@@ -1003,6 +1003,9 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       const examples = faq.finetune_conversation_examples;
       expect(Array.isArray(examples) && examples.length > 0).toBe(true);
       for (const ex of examples) {
+        // Retell schema requires `id` on each entry — flow creation
+        // 400s without it.
+        expect(typeof ex.id === "string" && ex.id.length > 0).toBe(true);
         const userTurn = ex.transcript?.find((t: any) => t.role === "user");
         const agentTurn = ex.transcript?.find((t: any) => t.role === "agent");
         expect(typeof userTurn?.content === "string" && userTurn.content.length > 0).toBe(true);

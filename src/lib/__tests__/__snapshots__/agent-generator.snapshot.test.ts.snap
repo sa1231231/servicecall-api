@@ -6,56 +6,7 @@ exports[`agent-generator canonical JSON snapshot > multi-path agent: stable shap
     "edges": [
       "→ Path Router (You answered the caller's question.)",
     ],
-    "finetune_conversation_examples": [
-      {
-        "transcript": [
-          {
-            "content": "What are your hours?",
-            "role": "user",
-          },
-          {
-            "content": "We're open Monday through Friday, 8 to 5.",
-            "role": "agent",
-          },
-        ],
-      },
-      {
-        "transcript": [
-          {
-            "content": "How much do you charge?",
-            "role": "user",
-          },
-          {
-            "content": "Pricing is provided during the consultation.",
-            "role": "agent",
-          },
-        ],
-      },
-      {
-        "transcript": [
-          {
-            "content": "Do you service my area?",
-            "role": "user",
-          },
-          {
-            "content": "Yes, we cover the surrounding area.",
-            "role": "agent",
-          },
-        ],
-      },
-      {
-        "transcript": [
-          {
-            "content": "Are you licensed and insured?",
-            "role": "user",
-          },
-          {
-            "content": "Yes, we are.",
-            "role": "agent",
-          },
-        ],
-      },
-    ],
+    "finetune_conversation_examples": "[4 examples]",
     "global_node_setting": {
       "condition": "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
       "go_back_conditions": [
@@ -395,7 +346,7 @@ Thank them and tell them to have a wonderful day. ",
     "edges": [
       "→ Confirm City (The caller has given their city)",
     ],
-    "finetune_conversation_examples": [],
+    "finetune_conversation_examples": "[0 examples]",
     "finetune_transition_examples": "[0 examples]",
     "instruction": {
       "text": "Ask for the city.",
@@ -408,7 +359,7 @@ Thank them and tell them to have a wonderful day. ",
     "edges": [
       "→ Confirm Full Name (The caller has given their name or indicated they don't know it)",
     ],
-    "finetune_conversation_examples": [],
+    "finetune_conversation_examples": "[0 examples]",
     "finetune_transition_examples": "[0 examples]",
     "instruction": {
       "text": "Ask for the caller's name. If they don't know, move on.",
@@ -647,7 +598,7 @@ If the caller refuses and repeats the request for a human, repeat that you canno
       "→ Transition (Callback) (Wants callback)",
       "→ Transition (Transfer) (Wants live transfer)",
     ],
-    "finetune_conversation_examples": [],
+    "finetune_conversation_examples": "[0 examples]",
     "finetune_transition_examples": "[8 examples]",
     "instruction": {
       "text": "Determine the reason for the caller's call.
@@ -966,56 +917,7 @@ exports[`agent-generator canonical JSON snapshot > single-path agent: stable sha
     "edges": [
       "→ Path Router (You answered the caller's question.)",
     ],
-    "finetune_conversation_examples": [
-      {
-        "transcript": [
-          {
-            "content": "What are your hours?",
-            "role": "user",
-          },
-          {
-            "content": "We're open Monday through Friday, 8 to 5.",
-            "role": "agent",
-          },
-        ],
-      },
-      {
-        "transcript": [
-          {
-            "content": "How much do you charge?",
-            "role": "user",
-          },
-          {
-            "content": "Pricing is provided during the consultation.",
-            "role": "agent",
-          },
-        ],
-      },
-      {
-        "transcript": [
-          {
-            "content": "Do you service my area?",
-            "role": "user",
-          },
-          {
-            "content": "Yes, we cover the surrounding area.",
-            "role": "agent",
-          },
-        ],
-      },
-      {
-        "transcript": [
-          {
-            "content": "Are you licensed and insured?",
-            "role": "user",
-          },
-          {
-            "content": "Yes, we are.",
-            "role": "agent",
-          },
-        ],
-      },
-    ],
+    "finetune_conversation_examples": "[4 examples]",
     "global_node_setting": {
       "condition": "Jump to this node when a customer has an admin/FAQ question regarding the business or its services.",
       "go_back_conditions": [
@@ -1355,7 +1257,7 @@ Thank them and tell them to have a wonderful day. ",
     "edges": [
       "→ Confirm City (The caller has given their city)",
     ],
-    "finetune_conversation_examples": [],
+    "finetune_conversation_examples": "[0 examples]",
     "finetune_transition_examples": "[0 examples]",
     "instruction": {
       "text": "Ask for the city.",
@@ -1368,7 +1270,7 @@ Thank them and tell them to have a wonderful day. ",
     "edges": [
       "→ Confirm Full Name (The caller has given their name or indicated they don't know it)",
     ],
-    "finetune_conversation_examples": [],
+    "finetune_conversation_examples": "[0 examples]",
     "finetune_transition_examples": "[0 examples]",
     "instruction": {
       "text": "Ask for the caller's name. If they don't know, move on.",
@@ -1606,7 +1508,7 @@ If the caller refuses and repeats the request for a human, repeat that you canno
     "edges": [
       "→ Conversation (The caller confirms forward intent with service, including wanting to sign up, get a quote, schedule service, or get started.)",
     ],
-    "finetune_conversation_examples": [],
+    "finetune_conversation_examples": "[0 examples]",
     "finetune_transition_examples": "[8 examples]",
     "instruction": {
       "text": "Determine the reason for the caller's call.

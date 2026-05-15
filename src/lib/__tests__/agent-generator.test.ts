@@ -1304,6 +1304,10 @@ describe("per-path end mode", () => {
     expect(examples.length).toBeGreaterThan(0);
     for (const ex of examples) {
       expect(ex.type).toBeUndefined();
+      // Retell rejects the flow when `id` is missing on a
+      // finetune_conversation_examples entry — same schema requirement
+      // as finetune_transition_examples. Pin it.
+      expect(typeof ex.id === "string" && ex.id.length > 0).toBe(true);
       expect(Array.isArray(ex.transcript)).toBe(true);
       // Each example has a user turn and a non-empty agent reply
       // (this is the style-training signal — not the FAQ classifier).

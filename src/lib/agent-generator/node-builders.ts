@@ -784,12 +784,15 @@ export function buildFaqNode(
   // In-node response training (style — short, declarative, no
   // follow-ups). Same additive merge against the hardcoded
   // FAQ_CONVERSATION_FINETUNE_EXAMPLES baseline. Strip the `type`
-  // field on emit since Retell stores conversation fine-tunes as
-  // plain `{ transcript }` objects.
+  // field on emit; each entry needs an `id` (Retell rejects the flow
+  // otherwise — same schema requirement as finetune_transition_examples).
   const conversationFts = mergeAdditiveFinetunes(
     FAQ_CONVERSATION_FINETUNE_EXAMPLES,
     conversationExamples,
-  ).map((ex) => ({ transcript: ex.transcript }));
+  ).map((ex) => ({
+    transcript: ex.transcript,
+    id: ex.id || `fe-${f.nextTs()}`,
+  }));
 
   return {
     instruction: {
