@@ -3,7 +3,6 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { config } from "../config.js";
 import { sendSmsForCall } from "../lib/send-sms-service.js";
-import { getDb } from "../lib/db.js";
 
 // MCP (Model Context Protocol) server for this app's tool ecosystem. Speaks
 // JSON-RPC 2.0 over HTTP. Currently exposes a single tool — send_sms — for
@@ -212,33 +211,42 @@ async function dispatch(req: JsonRpcRequest, rawBody: any): Promise<JsonRpcSucce
 // ── HTTP handler ───────────────────────────────────────────────────────────
 
 // ── TEMP diagnostic capture — remove after MCP transport debugging ─────────
-// Mirrors every /mcp exchange (request headers + raw body, our response)
-// into the `_mcp_debug` MongoDB collection so we can see exactly what
-// Retell's MCP client sends and what we return. Best-effort + fire-and-
-// forget: it can never throw into or delay the request path.
+// Keeps the last few /mcp exchanges (request headers + raw body, our
+// response) in memory; GET /mcp/_debug returns them (API-key auth). Lets us
+// see exactly what Retell's MCP client sends and what we return, without
+// needing DB access from outside Railway. Best-effort: never throws into
+// the request path.
+interface McpExchange {
+  ts: string;
+  method: string;
+  url: string;
+  headers: Record<string, unknown>;
+  rawBody: string | null;
+  parsedBody: unknown;
+  response: { status: number; contentType: string; body: string };
+}
+const MCP_DEBUG_LOG: McpExchange[] = [];
+
 function captureExchange(
   req: Request,
   status: number,
   contentType: string,
   responseBody: string,
 ): void {
-  void (async () => {
-    try {
-      await getDb()
-        .collection("_mcp_debug")
-        .insertOne({
-          ts: new Date(),
-          method: req.method,
-          url: req.originalUrl,
-          headers: req.headers,
-          rawBody: (req as Request & { rawBody?: string }).rawBody ?? null,
-          parsedBody: req.body ?? null,
-          response: { status, contentType, body: responseBody },
-        });
-    } catch {
-      /* diagnostic only — swallow */
-    }
-  })();
+  try {
+    MCP_DEBUG_LOG.push({
+      ts: new Date().toISOString(),
+      method: req.method,
+      url: req.originalUrl,
+      headers: req.headers as Record<string, unknown>,
+      rawBody: (req as Request & { rawBody?: string }).rawBody ?? null,
+      parsedBody: req.body ?? null,
+      response: { status, contentType, body: responseBody },
+    });
+    while (MCP_DEBUG_LOG.length > 25) MCP_DEBUG_LOG.shift();
+  } catch {
+    /* diagnostic only — swallow */
+  }
 }
 
 /**
@@ -324,6 +332,16 @@ mcpRouter.get("/", (req, res) => {
   };
   res.json(payload);
   captureExchange(req, 200, "application/json", JSON.stringify(payload));
+});
+
+// TEMP — dump the recently captured /mcp exchanges. API-key auth.
+// Removed together with the captureExchange instrumentation.
+mcpRouter.get("/_debug", (req, res) => {
+  if (!isAuthorized(req)) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  res.json({ count: MCP_DEBUG_LOG.length, exchanges: MCP_DEBUG_LOG });
 });
 
 // Capture + cleanly answer body-parse failures (express.json throwing on a
