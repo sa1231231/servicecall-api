@@ -415,15 +415,11 @@ formRouter.post("/drafts", async (req, res) => {
 
 formRouter.put("/drafts/:id", async (req, res) => {
   try {
-    const { name, formData, exportConfig, is_template } = req.body;
+    const { name, formData, exportConfig } = req.body;
     const updates: any = { updatedAt: new Date() };
     if (name) updates.name = name;
     if (formData) updates.formData = formData;
     if (exportConfig) updates.exportConfig = exportConfig;
-    // Marks this draft as a reusable template — agents created from it
-    // auto-inherit transcript_review_enabled. Boolean-typed and explicit so
-    // `false` clears the flag.
-    if (typeof is_template === "boolean") updates.is_template = is_template;
     const result = await draftsCollection().findOneAndUpdate(
       { _id: new ObjectId(req.params.id) },
       { $set: updates },

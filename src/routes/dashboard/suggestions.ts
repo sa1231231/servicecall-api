@@ -101,9 +101,6 @@ async function computeBubbleUpEligibility(slug: string): Promise<{
   if (!draft) {
     return { eligible: false, source_draft: doc.source_draft, reason: "draft_missing" };
   }
-  if (!draft.is_template) {
-    return { eligible: false, source_draft: doc.source_draft, reason: "not_template" };
-  }
   if (!draft.exportConfig) {
     return {
       eligible: false,
@@ -306,13 +303,6 @@ async function tryBubbleUpToDraft(
   const draft = await loadDraft(sourceDraftName);
   if (!draft) {
     return { ok: false, draftName: sourceDraftName, reason: `Source draft "${sourceDraftName}" not found.` };
-  }
-  if (!draft.is_template) {
-    return {
-      ok: false,
-      draftName: sourceDraftName,
-      reason: `Source draft "${sourceDraftName}" is not flagged as a template — bubble-up disabled.`,
-    };
   }
   if (!draft.exportConfig) {
     return {

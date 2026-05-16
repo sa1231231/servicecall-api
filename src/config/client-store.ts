@@ -88,13 +88,13 @@ export interface JsonClientEntry {
   folder_id?: string | null;
   // Per-client opt-in: when true, every completed call enqueues an
   // Anthropic-driven transcript review that surfaces approval-gated
-  // suggestions in the dashboard. Default off (cost guard). Inherited
-  // automatically from the source draft when that draft is `is_template`.
+  // suggestions in the dashboard. The from-draft route defaults this on for
+  // every draft-sourced agent; standalone agents are off unless set.
   transcript_review_enabled?: boolean;
   // Name of the draft this agent was created from (via /agents/from-draft).
   // Used by the transcript-review system to scope suggestions back to a
-  // shared template — when set AND the draft is `is_template`, an approval
-  // can propagate to the draft and its sibling agents (Phase 3).
+  // shared draft — when set, an approval can propagate to the draft and its
+  // sibling agents (Phase 3).
   source_draft?: string;
   // Soft-delete timestamp set by listAllClients's deletion path. Absence
   // means the client is live; presence means it's been soft-deleted and

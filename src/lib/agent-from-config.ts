@@ -73,8 +73,8 @@ export interface CreateAgentBody {
     contact_timezone?: string | null;
     contact_notes?: string | null;
     /** Lineage + per-client opt-in for the transcript-review system.
-     *  Set by the from-draft route when the source draft is `is_template`,
-     *  but operators can also set them directly via the agent edit endpoint. */
+     *  The from-draft route defaults transcript_review_enabled on for every
+     *  draft-sourced agent; operators can override via the agent edit endpoint. */
     transcript_review_enabled?: boolean;
     source_draft?: string;
   };

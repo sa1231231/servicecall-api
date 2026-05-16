@@ -52,12 +52,12 @@ export async function createFromDraftHandler(
   // Stamp lineage onto the new client doc:
   //   - source_draft: always — lets transcript-review and Phase 3 propagation
   //     find sibling agents built from the same draft.
-  //   - transcript_review_enabled: only when the draft is `is_template` AND
-  //     the caller didn't explicitly pass a value. Operator-set value wins.
+  //   - transcript_review_enabled: defaults on for every draft-sourced agent
+  //     unless the caller explicitly passed a value. Operator-set value wins.
   const lineageOverrides: Partial<CreateAgentBody["client"]> = {
     source_draft: draft.name,
   };
-  if (draft.is_template && body.client?.transcript_review_enabled === undefined) {
+  if (body.client?.transcript_review_enabled === undefined) {
     lineageOverrides.transcript_review_enabled = true;
   }
 

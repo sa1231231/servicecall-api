@@ -240,12 +240,11 @@ beforeEach(() => {
 // ── GET /agents/:slug/suggestions (list with bubble_up envelope) ────────────
 
 describe("GET /agents/:slug/suggestions", () => {
-  it("returns suggestions with bubble_up={eligible:true} when draft is template + has exportConfig", async () => {
+  it("returns suggestions with bubble_up={eligible:true} when draft has exportConfig", async () => {
     mockListSuggestions.mockResolvedValue([suggestionDoc()]);
     mockGetClientDocument.mockResolvedValue(clientDoc());
     mockLoadDraft.mockResolvedValue({
       name: "HVAC",
-      is_template: true,
       exportConfig: { business: { businessName: "x" }, client: { slug: "x", dispatch_text_numbers: [] } },
     });
 
@@ -258,27 +257,10 @@ describe("GET /agents/:slug/suggestions", () => {
     expect(res._json.bubble_up).toEqual({ eligible: true, source_draft: "HVAC" });
   });
 
-  it("returns bubble_up={eligible:false, reason:not_template} when draft isn't a template", async () => {
+  it("returns reason=draft_lacks_export_config when draft has no exportConfig", async () => {
     mockListSuggestions.mockResolvedValue([]);
     mockGetClientDocument.mockResolvedValue(clientDoc());
-    mockLoadDraft.mockResolvedValue({
-      name: "HVAC",
-      is_template: false,
-      exportConfig: {},
-    });
-
-    const req = makeReq({ user: userWith("read"), params: { slug: "acme" } });
-    const res = makeRes();
-    await runRoute("get", "/agents/:slug/suggestions", req, res);
-
-    expect(res._json.bubble_up.eligible).toBe(false);
-    expect(res._json.bubble_up.reason).toBe("not_template");
-  });
-
-  it("returns reason=draft_lacks_export_config when template draft has no exportConfig", async () => {
-    mockListSuggestions.mockResolvedValue([]);
-    mockGetClientDocument.mockResolvedValue(clientDoc());
-    mockLoadDraft.mockResolvedValue({ name: "HVAC", is_template: true });
+    mockLoadDraft.mockResolvedValue({ name: "HVAC" });
 
     const req = makeReq({ user: userWith("read"), params: { slug: "acme" } });
     const res = makeRes();
@@ -461,7 +443,6 @@ describe("POST /suggestions/:id/approve", () => {
     });
     mockLoadDraft.mockResolvedValue({
       name: "HVAC",
-      is_template: true,
       exportConfig: { business: { businessName: "x" }, client: { slug: "x", dispatch_text_numbers: [] } },
     });
     mockApplyToDraft.mockReturnValue({ ok: true, next: { /* mutated */ }, description: "Append FAQ to draft" });
@@ -511,7 +492,6 @@ describe("POST /suggestions/:id/approve", () => {
     });
     mockLoadDraft.mockResolvedValue({
       name: "HVAC",
-      is_template: true,
       exportConfig: { business: { businessName: "x" } },
     });
     mockApplyToDraft.mockReturnValue({

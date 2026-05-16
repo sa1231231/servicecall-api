@@ -390,10 +390,9 @@ export const FEATURES: Feature[] = [
         ],
       },
       manage: {
-        ui: ["Per-agent transcript_review_enabled toggle", "Per-draft is_template toggle"],
+        ui: ["Per-agent transcript_review_enabled toggle"],
         routes: [
           "PATCH /dashboard/api/agents/:slug (transcript_review_enabled field)",
-          "PUT /form/drafts/:id (is_template field)",
         ],
       },
     },

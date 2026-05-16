@@ -8,11 +8,6 @@ export interface DraftDoc {
   exportConfig?: CreateAgentBody;
   createdAt?: Date;
   updatedAt?: Date;
-  // When true, agents created from this draft auto-inherit
-  // transcript_review_enabled. Used to mark drafts that double as reusable
-  // templates (e.g. the HVAC draft) so every agent built from one is
-  // analyzed for failure patterns out of the box.
-  is_template?: boolean;
 }
 
 export interface FromDraftOverrides {
