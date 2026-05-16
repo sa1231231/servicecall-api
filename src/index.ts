@@ -76,6 +76,20 @@ const webhookLimiter = rateLimit({
   message: { error: "Too many requests, please try again later." },
 });
 
+// Dedicated limiter for the MCP server. /mcp must NOT share the 60/min
+// webhookLimiter bucket: Retell's MCP client makes several requests per
+// voice call (handshake + tool calls), and a 429 there is rejected before
+// the router even sees it — surfacing to Retell as an opaque
+// "error parsing json response from mcp server". /mcp is API-key
+// authenticated, so a generous ceiling is safe; this stays a flood guard.
+const mcpLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
+
 const app = express();
 app.set("trust proxy", 1);
 app.use(globalLimiter);
@@ -132,7 +146,8 @@ app.use("/retell", webhookLimiter, retellRouter);
 // MCP (Model Context Protocol) server — JSON-RPC over HTTP. Currently
 // surfaces send_sms for mid-call Retell conversation-flow McpNode
 // invocations; designed to grow as we add more tools. Bearer-token auth.
-app.use("/mcp", webhookLimiter, mcpRouter);
+// Uses its own generous limiter — see mcpLimiter above.
+app.use("/mcp", mcpLimiter, mcpRouter);
 app.use("/portal", portalLimiter, portalRouter);
 
 // ── Public static assets (CSS, JS, images) ──────────────────────────────────
