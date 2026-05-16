@@ -3563,4 +3563,106 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       expect(secondBody.deduped).toBe(true);
     });
   });
+
+  describe("MCP server", () => {
+    // POST /mcp is a JSON-RPC 2.0 endpoint exposing the send_sms tool to
+    // Retell conversation-flow McpNodes. These tests pin the wire contract —
+    // bearer auth, the JSON-RPC method surface, and the send_sms tool's
+    // dispatch + validation path — without delivering a real SMS.
+    function mcpPost(body: unknown, headers: Record<string, string> = {}) {
+      return fetch(url("/mcp"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify(body),
+      });
+    }
+    const bearer = { Authorization: `Bearer ${API_KEY}` };
+    const rpc = (method: string, params?: unknown, id: number | string = 1) => ({
+      jsonrpc: "2.0",
+      id,
+      method,
+      ...(params !== undefined ? { params } : {}),
+    });
+
+    describe("auth", () => {
+      it("rejects a request with no Authorization (401)", async () => {
+        const resp = await mcpPost(rpc("initialize"));
+        expect(resp.status).toBe(401);
+      });
+
+      it("rejects a wrong bearer token (401)", async () => {
+        const resp = await mcpPost(rpc("initialize"), { Authorization: "Bearer not-the-key" });
+        expect(resp.status).toBe(401);
+      });
+    });
+
+    describe("JSON-RPC surface", () => {
+      it("initialize reports the servicecall-mcp server", async () => {
+        const resp = await mcpPost(rpc("initialize"), bearer);
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.result.serverInfo.name).toBe("servicecall-mcp");
+        expect(typeof body.result.protocolVersion).toBe("string");
+      });
+
+      it("tools/list advertises send_sms with its input schema", async () => {
+        const resp = await mcpPost(rpc("tools/list"), bearer);
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        const sendSms = body.result.tools.find((t: any) => t.name === "send_sms");
+        expect(sendSms).toBeDefined();
+        expect(sendSms.inputSchema.required).toContain("message");
+      });
+
+      it("an unknown method returns JSON-RPC error -32601", async () => {
+        const resp = await mcpPost(rpc("does/not/exist"), bearer);
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.error.code).toBe(-32601);
+      });
+
+      it("a non-JSON-RPC body is rejected with 400", async () => {
+        const resp = await mcpPost({ not: "json-rpc" }, bearer);
+        expect(resp.status).toBe(400);
+      });
+
+      it("a notification (no id) returns 204 with no body", async () => {
+        const resp = await mcpPost(
+          { jsonrpc: "2.0", method: "notifications/initialized" },
+          bearer,
+        );
+        expect(resp.status).toBe(204);
+      });
+    });
+
+    describe("send_sms tool", () => {
+      it("tools/call with an unknown tool returns -32601", async () => {
+        const resp = await mcpPost(
+          rpc("tools/call", { name: "no_such_tool", arguments: {} }),
+          bearer,
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.error.code).toBe(-32601);
+      });
+
+      it("send_sms with no call context returns an isError result (no SMS sent)", async () => {
+        // No `call` context and no `to` → the send-SMS service can't resolve a
+        // client or recipient, so the handler returns an isError result. This
+        // exercises tools/call dispatch + the send_sms handler end to end
+        // without delivering a text message.
+        const resp = await mcpPost(
+          rpc("tools/call", {
+            name: "send_sms",
+            arguments: { message: "system test — must not be delivered" },
+          }),
+          bearer,
+        );
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.result.isError).toBe(true);
+        expect(body.result.content[0].text).toBeTruthy();
+      });
+    });
+  });
 });
