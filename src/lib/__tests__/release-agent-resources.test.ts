@@ -11,6 +11,7 @@ const {
   mockTwilioTrunkRemove,
   mockTwilioIncomingRemove,
   mockTwilioIncomingUpdate,
+  mockTwilioIncomingFetch,
   mockLogPhoneEvent,
   mockHistoryFindArray,
 } = vi.hoisted(() => ({
@@ -22,6 +23,7 @@ const {
   mockTwilioTrunkRemove: vi.fn(),
   mockTwilioIncomingRemove: vi.fn(),
   mockTwilioIncomingUpdate: vi.fn(),
+  mockTwilioIncomingFetch: vi.fn(),
   mockLogPhoneEvent: vi.fn(),
   mockHistoryFindArray: vi.fn(),
 }));
@@ -49,6 +51,7 @@ vi.mock("twilio", () => ({
     incomingPhoneNumbers: (sid: string) => ({
       remove: () => mockTwilioIncomingRemove(sid),
       update: (params: any) => mockTwilioIncomingUpdate(sid, params),
+      fetch: () => mockTwilioIncomingFetch(sid),
     }),
     trunking: {
       v1: {
@@ -91,8 +94,8 @@ beforeEach(() => {
   for (const m of [
     mockRetellPhoneList, mockRetellPhoneDelete, mockRetellAgentDelete,
     mockRetellFlowDelete, mockTwilioMsgRemove, mockTwilioTrunkRemove,
-    mockTwilioIncomingRemove, mockTwilioIncomingUpdate, mockLogPhoneEvent,
-    mockHistoryFindArray,
+    mockTwilioIncomingRemove, mockTwilioIncomingUpdate, mockTwilioIncomingFetch,
+    mockLogPhoneEvent, mockHistoryFindArray,
   ]) m.mockReset();
   // Sensible defaults: every external call resolves OK; no Retell numbers,
   // no SID history.
@@ -104,6 +107,9 @@ beforeEach(() => {
   mockTwilioTrunkRemove.mockResolvedValue(true);
   mockTwilioIncomingRemove.mockResolvedValue(true);
   mockTwilioIncomingUpdate.mockResolvedValue(true);
+  // Default: emergency address already settled — the status poll returns
+  // on its first fetch so non-emergency tests don't spin.
+  mockTwilioIncomingFetch.mockResolvedValue({ emergencyAddressStatus: "unregistered" });
   mockLogPhoneEvent.mockResolvedValue(undefined);
   mockHistoryFindArray.mockResolvedValue([]);
 });
@@ -350,35 +356,65 @@ describe("releaseAgentResources — Retell-live source of truth", () => {
     expect(result.errors.some((e: string) => /twilio release/.test(e))).toBe(false);
   });
 
-  it("retries the Twilio release on 21631 (emergency address still attached)", async () => {
-    // The emergency-address unbind is async — Twilio holds the number
-    // in `pending-unregistration` for ~30s before settling at
-    // `unregistered`. .remove() during that window returns 21631.
-    // We retry with backoff so operator-clicked deletes succeed on the
-    // first try (instead of leaving the number billing in Twilio).
+  it("waits for the emergency-address unbind to settle before releasing", async () => {
+    // Clearing the emergency address is async — Twilio holds the number
+    // in `pending-unregistration` for ~30-60s before it settles at
+    // `unregistered`, and .remove() is rejected for that whole window.
+    // releaseAgentResources polls emergency_address_status and only
+    // calls .remove() once the unbind has settled. (Real Twilio errors
+    // carry no message text we can match on — the numeric code is on
+    // err.code — so a status poll is the reliable gate.)
     vi.useFakeTimers();
     mockRetellPhoneList.mockResolvedValue([
       inboundBinding("+15550001111", "agent_x"),
     ]);
     mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_a" }]);
-    // First two .remove() attempts return 21631; third succeeds.
-    let removeCalls = 0;
-    mockTwilioIncomingRemove.mockImplementation(async () => {
-      removeCalls += 1;
-      if (removeCalls < 3) {
-        throw new Error("Code 21631: Please remove the emergency address");
-      }
-      return true;
+    // Status poll: pending for the first two fetches, then settled.
+    let fetchCalls = 0;
+    mockTwilioIncomingFetch.mockImplementation(async () => {
+      fetchCalls += 1;
+      return {
+        emergencyAddressStatus:
+          fetchCalls < 3 ? "pending-unregistration" : "unregistered",
+      };
     });
 
     const promise = releaseAgentResources("acme", { agent_id: "agent_x" });
-    // Drain the backoff timers (5s + 10s = 15s of waiting).
+    // Drain the 5s poll intervals (two waits before the status settles).
     await vi.advanceTimersByTimeAsync(20_000);
     const result = await promise;
 
-    expect(mockTwilioIncomingRemove).toHaveBeenCalledTimes(3);
+    // .remove() fired exactly once, only after the poll saw "unregistered".
+    expect(mockTwilioIncomingRemove).toHaveBeenCalledTimes(1);
+    expect(fetchCalls).toBeGreaterThanOrEqual(3);
+    const lastFetchOrder = Math.max(...mockTwilioIncomingFetch.mock.invocationCallOrder);
+    const removeOrder = mockTwilioIncomingRemove.mock.invocationCallOrder[0];
+    expect(lastFetchOrder).toBeLessThan(removeOrder);
     expect(result.released).toHaveLength(1);
     expect(result.errors).toEqual([]);
+    vi.useRealTimers();
+  });
+
+  it("releases anyway if the emergency-status poll never settles (timeout)", async () => {
+    // A stuck `pending-unregistration` must not hang the whole delete.
+    // After the poll's 120s cap, releaseAgentResources releases anyway —
+    // the .remove() then surfaces any genuine remaining blocker.
+    vi.useFakeTimers();
+    mockRetellPhoneList.mockResolvedValue([
+      inboundBinding("+15550001111", "agent_x"),
+    ]);
+    mockHistoryFindArray.mockResolvedValue([{ phone_number_sid: "PN_a" }]);
+    mockTwilioIncomingFetch.mockResolvedValue({
+      emergencyAddressStatus: "pending-unregistration",
+    });
+
+    const promise = releaseAgentResources("acme", { agent_id: "agent_x" });
+    // Advance past the 120s poll cap.
+    await vi.advanceTimersByTimeAsync(130_000);
+    const result = await promise;
+
+    expect(mockTwilioIncomingRemove).toHaveBeenCalledWith("PN_a");
+    expect(result.released).toHaveLength(1);
     vi.useRealTimers();
   });
 });

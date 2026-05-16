@@ -122,23 +122,14 @@ export async function releaseAgentResources(
       }
     }
 
-    // Clear emergency address before release — Twilio blocks .remove()
-    // on numbers that have one attached ("Please remove the emergency
-    // address on this number before deleting it."). Best-effort; the
-    // .remove() block below surfaces any real remaining blocker.
-    //
-    // Important: Twilio rejects updates that modify both EmergencyStatus
-    // and EmergencyAddressSid in the same request ("Cannot modify both
-    // emergency address SID and emergency status in the same request").
-    // Empirically, only clearing EmergencyAddressSid is needed — the
-    // delete gate is the address itself, not the status flag.
-    //
-    // The unbind is also async: emergency_address_status drops to
-    // "pending-unregistration" immediately, then settles at
-    // "unregistered" after ~30s of Twilio backend work. Trying .remove()
-    // during the pending window returns the same 21631 error as before,
-    // so we retry the release on 21631 with backoff to bridge that
-    // window without the operator hitting "delete" again.
+    // Clear the emergency address before release — Twilio blocks
+    // .remove() on a number that still has one attached ("Please remove
+    // the emergency address on this number before performing this
+    // action."). Twilio also rejects updates that modify both
+    // EmergencyStatus and EmergencyAddressSid in one request, so we send
+    // only the address field — the delete gate is the address itself,
+    // not the status flag. Best-effort: a failure here is logged, and
+    // the status poll + .remove() below surface any real blocker.
     try {
       await twilioClient.incomingPhoneNumbers(phone_number_sid).update({
         emergencyAddressSid: "",
@@ -150,19 +141,23 @@ export async function releaseAgentResources(
       }
     }
 
+    // The address-unbind is async: emergency_address_status flips to
+    // "pending-unregistration" at once, then settles at "unregistered"
+    // after ~30-60s of Twilio backend work, and .remove() is rejected
+    // for the whole pending window. Poll the number's status until the
+    // unbind settles before releasing. (We can't gate on the release
+    // error itself — its numeric code lives on err.code, not in the
+    // message text, so a substring match is unreliable.)
+    await waitForEmergencyUnregistered(twilioClient, phone_number_sid, logTag);
+
     // Twilio incoming-number release — STOPS THE RECURRING CHARGE.
-    // 404 here means the number was already released; silence it.
-    // 21631 (emergency address still attached) gets retried with
-    // backoff to bridge Twilio's async pending-unregistration window
-    // (the address-clear above flips emergency_address_status to
-    // "pending-unregistration" first, then settles at "unregistered"
-    // after ~30s of Twilio backend work). Linear backoff 5s/10s/15s/20s/25s
-    // — total ~75s max wait — empirically enough that operator-clicked
-    // deletes succeed on the first try.
+    // 404 means the number was already released; silence it. A couple of
+    // retries bridge any residual eventual-consistency lag between the
+    // status endpoint and the delete endpoint.
     let releasedOk = false;
     let lastErrMsg = "";
     let alreadyGone = false;
-    for (let attempt = 1; attempt <= 6; attempt++) {
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         await twilioClient.incomingPhoneNumbers(phone_number_sid).remove();
         releasedOk = true;
@@ -174,10 +169,8 @@ export async function releaseAgentResources(
           alreadyGone = true;
           break;
         }
-        // Retry only on 21631 (emergency address still attached) — any
-        // other failure is bubbled up immediately.
-        if (!/21631/.test(msg) || attempt === 6) break;
-        await new Promise((r) => setTimeout(r, attempt * 5000));
+        if (attempt === 3) break;
+        await new Promise((r) => setTimeout(r, 5000));
       }
     }
     if (releasedOk) {
@@ -212,6 +205,47 @@ export async function releaseAgentResources(
   }
 
   return { released, errors };
+}
+
+/**
+ * Block until a number's emergency-address unbind settles. Clearing the
+ * emergency address is async — Twilio reports "pending-unregistration"
+ * until the unbind completes (~30-60s), and .remove() is rejected for that
+ * whole window. Poll emergency_address_status and return once it leaves a
+ * pending state. Best-effort: on a 404 (already gone), a fetch error, or
+ * the timeout, we return anyway and let the caller's .remove() proceed.
+ */
+async function waitForEmergencyUnregistered(
+  twilioClient: ReturnType<typeof Twilio>,
+  phone_number_sid: string,
+  logTag: string,
+  timeoutMs = 120_000,
+  pollMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    let status: string | undefined;
+    try {
+      const number = await twilioClient.incomingPhoneNumbers(phone_number_sid).fetch();
+      status = (number as { emergencyAddressStatus?: string }).emergencyAddressStatus;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/20404|404/.test(msg)) {
+        console.warn(`[${logTag}] emergency-status poll (${phone_number_sid}): ${msg}`);
+      }
+      return;
+    }
+    if (status !== "pending-unregistration" && status !== "pending-registration") {
+      return;
+    }
+    if (Date.now() + pollMs >= deadline) {
+      console.warn(
+        `[${logTag}] emergency-address still "${status}" after ${timeoutMs}ms for ${phone_number_sid} — attempting release anyway`,
+      );
+      return;
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
 }
 
 async function tryDeleteRetellAgent(
