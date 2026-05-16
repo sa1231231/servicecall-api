@@ -1,8 +1,9 @@
 import { Router } from "express";
 import express from "express";
-import type { Request, Response } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { config } from "../config.js";
 import { sendSmsForCall } from "../lib/send-sms-service.js";
+import { getDb } from "../lib/db.js";
 
 // MCP (Model Context Protocol) server for this app's tool ecosystem. Speaks
 // JSON-RPC 2.0 over HTTP. Currently exposes a single tool — send_sms — for
@@ -21,7 +22,20 @@ import { sendSmsForCall } from "../lib/send-sms-service.js";
 
 export const mcpRouter = Router();
 
-mcpRouter.use(express.json({ limit: "10mb" }));
+mcpRouter.use(
+  express.json({
+    limit: "10mb",
+    // Parse the body as JSON regardless of Content-Type — some MCP clients
+    // POST JSON-RPC without an `application/json` content type, which the
+    // default express.json() silently skips (leaving req.body empty → a
+    // fast 400). `verify` stashes the raw bytes for the _mcp_debug capture
+    // even when JSON.parse then fails.
+    type: () => true,
+    verify: (req, _res, buf) => {
+      (req as Request & { rawBody?: string }).rawBody = buf.toString("utf8");
+    },
+  }),
+);
 
 // ── JSON-RPC types ─────────────────────────────────────────────────────────
 
@@ -197,41 +211,81 @@ async function dispatch(req: JsonRpcRequest, rawBody: any): Promise<JsonRpcSucce
 
 // ── HTTP handler ───────────────────────────────────────────────────────────
 
+// ── TEMP diagnostic capture — remove after MCP transport debugging ─────────
+// Mirrors every /mcp exchange (request headers + raw body, our response)
+// into the `_mcp_debug` MongoDB collection so we can see exactly what
+// Retell's MCP client sends and what we return. Best-effort + fire-and-
+// forget: it can never throw into or delay the request path.
+function captureExchange(
+  req: Request,
+  status: number,
+  contentType: string,
+  responseBody: string,
+): void {
+  void (async () => {
+    try {
+      await getDb()
+        .collection("_mcp_debug")
+        .insertOne({
+          ts: new Date(),
+          method: req.method,
+          url: req.originalUrl,
+          headers: req.headers,
+          rawBody: (req as Request & { rawBody?: string }).rawBody ?? null,
+          parsedBody: req.body ?? null,
+          response: { status, contentType, body: responseBody },
+        });
+    } catch {
+      /* diagnostic only — swallow */
+    }
+  })();
+}
+
 /**
  * Sends a JSON-RPC response honoring MCP Streamable HTTP content
- * negotiation. MCP clients send `Accept: application/json, text/event-stream`;
- * many — Retell's call-time MCP client included — require the response
- * framed as a single Server-Sent Events `message` event and choke on a
- * plain application/json body ("error parsing json response from mcp
- * server"). When the client offers text/event-stream we reply with a
- * one-shot SSE stream; otherwise plain JSON (curl, JSON-only callers).
+ * negotiation: when the client's Accept offers text/event-stream a 200
+ * response is framed as a one-shot Server-Sent Events `message` event,
+ * otherwise plain JSON. Error statuses (401/400) and notifications (204)
+ * always go as-is. Every exit is mirrored into the _mcp_debug capture.
  */
-function sendRpcResult(
+function deliver(
   req: Request,
   res: Response,
-  payload: JsonRpcSuccessResponse | JsonRpcErrorResponse,
+  status: number,
+  payload: JsonRpcSuccessResponse | JsonRpcErrorResponse | null,
 ): void {
-  const accepts = String(req.headers["accept"] ?? "");
-  if (accepts.includes("text/event-stream")) {
+  if (payload === null) {
+    res.status(status).end();
+    captureExchange(req, status, "", "");
+    return;
+  }
+  const bodyStr = JSON.stringify(payload);
+  const wantsSse =
+    status === 200 &&
+    String(req.headers["accept"] ?? "").includes("text/event-stream");
+  if (wantsSse) {
     res.status(200);
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.write(`event: message\ndata: ${JSON.stringify(payload)}\n\n`);
+    const frame = `event: message\ndata: ${bodyStr}\n\n`;
+    res.write(frame);
     res.end();
+    captureExchange(req, 200, "text/event-stream", frame);
     return;
   }
-  res.status(200).json(payload);
+  res.status(status).json(payload);
+  captureExchange(req, status, "application/json", bodyStr);
 }
 
 export async function mcpPostHandler(req: Request, res: Response) {
   if (!isAuthorized(req)) {
-    res.status(401).json(error(null, ERR_INVALID_REQUEST, "Unauthorized. Configure Authorization: Bearer <API_KEY>."));
+    deliver(req, res, 401, error(null, ERR_INVALID_REQUEST, "Unauthorized. Configure Authorization: Bearer <API_KEY>."));
     return;
   }
 
   const body = req.body;
   if (!body || typeof body !== "object") {
-    res.status(400).json(error(null, ERR_PARSE, "Invalid JSON body."));
+    deliver(req, res, 400, error(null, ERR_PARSE, "Invalid JSON body."));
     return;
   }
 
@@ -239,33 +293,45 @@ export async function mcpPostHandler(req: Request, res: Response) {
   // them. Accept a single request only; reject arrays explicitly so clients
   // see a clear error instead of malformed behavior.
   if (Array.isArray(body)) {
-    res.status(400).json(error(null, ERR_INVALID_REQUEST, "Batched requests not supported."));
+    deliver(req, res, 400, error(null, ERR_INVALID_REQUEST, "Batched requests not supported."));
     return;
   }
 
   if (body.jsonrpc !== "2.0" || typeof body.method !== "string") {
-    res.status(400).json(error(body.id ?? null, ERR_INVALID_REQUEST, "Not a JSON-RPC 2.0 request."));
+    deliver(req, res, 400, error(body.id ?? null, ERR_INVALID_REQUEST, "Not a JSON-RPC 2.0 request."));
     return;
   }
 
   const result = await dispatch(body as JsonRpcRequest, body);
   if (result === null) {
-    // Notification — return 204 with no body.
-    res.status(204).end();
+    // Notification — no response payload.
+    deliver(req, res, 204, null);
     return;
   }
-  sendRpcResult(req, res, result);
+  deliver(req, res, 200, result);
 }
 
 mcpRouter.post("/", mcpPostHandler);
 
 // Health check / discovery convenience for humans pointing browsers at /mcp.
-mcpRouter.get("/", (_req, res) => {
-  res.json({
+mcpRouter.get("/", (req, res) => {
+  const payload = {
     server: "servicecall-mcp",
     protocol: "json-rpc-2.0",
     transport: "http",
     tools: Object.keys(TOOLS),
     note: "POST JSON-RPC 2.0 requests here. Auth via Authorization: Bearer <API_KEY>.",
-  });
+  };
+  res.json(payload);
+  captureExchange(req, 200, "application/json", JSON.stringify(payload));
+});
+
+// Capture + cleanly answer body-parse failures (express.json throwing on a
+// malformed body) instead of letting Express fall through to an HTML error
+// page — itself a candidate cause of "error parsing json response".
+mcpRouter.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  const payload = error(null, ERR_PARSE, `Invalid request body: ${msg}`);
+  res.status(400).json(payload);
+  captureExchange(req, 400, "application/json", JSON.stringify(payload));
 });
