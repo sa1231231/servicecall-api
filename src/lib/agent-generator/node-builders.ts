@@ -7,10 +7,10 @@ import {
 } from "./data-point-registry.js";
 import { renderTemplate } from "../build-notification.js";
 
-// Name of the MCP server entry that the generator drops into
-// `conversationFlow.mcps[]` when any path contains an SMS action. Also used
-// as the `mcp_id` field on every McpNode so the node links to its server
-// entry (Retell pairs them by this name — there's no separate id).
+// Identifier for the MCP server entry the generator drops into
+// `conversationFlow.mcps[]` when any path contains an SMS action. Used as
+// the entry's `id` and `name`, and as the `mcp_id` on every McpNode —
+// Retell binds a node to its server by matching mcp_id to the entry id.
 export const MCP_SERVER_NAME = "servicecall-mcp";
 
 // Tool name on the MCP server. McpNodes set this on `mcp_tool_name`.
@@ -1359,11 +1359,15 @@ function toVarDefs(rdp: DataPoint) {
  * McpNode invocation; the bearer header authenticates against our `/mcp`
  * endpoint (see src/routes/mcp.ts).
  *
- * `name` is the logical id Retell uses to pair McpNodes (`mcp_id`) to their
- * server entry — there's no separate server-side id assigned at registration.
+ * Retell requires a non-empty `id` on every mcps[] entry and pairs each
+ * McpNode to its server by matching the node's `mcp_id` to the entry `id`
+ * (omitting it fails flow creation with "MCP id cannot be empty or null").
+ * We use MCP_SERVER_NAME for both `id` and `name`, and as every McpNode's
+ * `mcp_id`, so the binding is one stable constant.
  */
 export function buildMcpServerEntry(apiKey: string) {
   return {
+    id: MCP_SERVER_NAME,
     name: MCP_SERVER_NAME,
     url: MCP_SERVER_URL,
     headers: { Authorization: `Bearer ${apiKey}` },

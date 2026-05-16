@@ -58,8 +58,48 @@ describe("SMS action in path", () => {
     expect(flow.mcps[0].name).toBe(MCP_SERVER_NAME);
     expect(flow.mcps[0].url).toBe(MCP_SERVER_URL);
     expect(flow.mcps[0].headers.Authorization).toMatch(/^Bearer /);
+    // Retell rejects flow creation ("MCP id cannot be empty or null") if the
+    // entry carries no id — it's required, and is what McpNodes bind to.
+    expect(flow.mcps[0].id).toBe(MCP_SERVER_NAME);
     // CustomTool registration path is gone — flow.tools[] stays empty.
     expect(flow.tools).toEqual([]);
+  });
+
+  it("every McpNode's mcp_id binds to an mcps[] entry id", () => {
+    // Retell pairs each McpNode to its server by mcp_id → mcps[].id, and
+    // rejects the whole flow with "MCP id cannot be empty or null" when an
+    // entry has no id. Guard the binding end to end so a regenerated or
+    // generated flow can't ship an unbindable McpNode again.
+    const paths = [
+      {
+        name: "Default",
+        transitionCondition: "Always",
+        dataPoints: [
+          "phone_number",
+          { _action: "sendSms" as const, template: "Hi", name: "Send link" },
+          "address",
+        ],
+      },
+    ];
+    const { agent } = generateAgent(baseConfig, [], paths, TEST_DEFAULTS);
+    const flow = agent.conversationFlow as any;
+    const mcps: any[] = flow.mcps;
+    const nodes: any[] = flow.nodes;
+
+    expect(mcps.length).toBeGreaterThan(0);
+    for (const entry of mcps) {
+      expect(typeof entry.id, "mcps[] entry id must be a string").toBe("string");
+      expect(entry.id.length).toBeGreaterThan(0);
+    }
+    const entryIds = new Set(mcps.map((m) => m.id));
+    const mcpNodes = nodes.filter((n) => n.type === "mcp");
+    expect(mcpNodes.length).toBeGreaterThan(0);
+    for (const node of mcpNodes) {
+      expect(
+        entryIds.has(node.mcp_id),
+        `McpNode "${node.name}" mcp_id="${node.mcp_id}" has no matching mcps[] entry id`,
+      ).toBe(true);
+    }
   });
 
   it("emits empty mcps[] when no path uses sendSms", () => {
