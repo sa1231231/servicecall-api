@@ -3566,23 +3566,42 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
 
   describe("MCP server", () => {
     // POST /mcp is a JSON-RPC 2.0 endpoint exposing the send_sms tool to
-    // Retell conversation-flow McpNodes. These tests pin the wire contract —
-    // bearer auth, the JSON-RPC method surface, and the send_sms tool's
-    // dispatch + validation path — without delivering a real SMS.
-    function mcpPost(body: unknown, headers: Record<string, string> = {}) {
-      return fetch(url("/mcp"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...headers },
-        body: JSON.stringify(body),
-      });
+    // Retell conversation-flow McpNodes. Retell's MCP client speaks
+    // Streamable HTTP: it sends `Accept: ...text/event-stream` and needs the
+    // response framed as an SSE event — a plain JSON body fails it with
+    // "error parsing json response from mcp server". These tests use that
+    // realistic Accept header and pin auth, the SSE framing, the JSON-RPC
+    // method surface, and the send_sms validation path — without delivering
+    // a real SMS.
+    const SSE_ACCEPT = "application/json, text/event-stream";
+
+    function mcpPost(body: unknown, opts: { accept?: string; auth?: string } = {}) {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: opts.accept ?? SSE_ACCEPT,
+      };
+      if (opts.auth !== undefined) headers.Authorization = opts.auth;
+      return fetch(url("/mcp"), { method: "POST", headers, body: JSON.stringify(body) });
     }
-    const bearer = { Authorization: `Bearer ${API_KEY}` };
+
+    // Read the JSON-RPC payload from either an SSE or a plain-JSON response.
+    async function mcpResult(resp: Response): Promise<any> {
+      const text = await resp.text();
+      if ((resp.headers.get("content-type") ?? "").includes("text/event-stream")) {
+        const line = text.split("\n").find((l) => l.startsWith("data:"));
+        if (!line) throw new Error("no SSE data line: " + text);
+        return JSON.parse(line.slice("data:".length).trim());
+      }
+      return JSON.parse(text);
+    }
+
     const rpc = (method: string, params?: unknown, id: number | string = 1) => ({
       jsonrpc: "2.0",
       id,
       method,
       ...(params !== undefined ? { params } : {}),
     });
+    const goodAuth = `Bearer ${API_KEY}`;
 
     describe("auth", () => {
       it("rejects a request with no Authorization (401)", async () => {
@@ -3591,45 +3610,64 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       });
 
       it("rejects a wrong bearer token (401)", async () => {
-        const resp = await mcpPost(rpc("initialize"), { Authorization: "Bearer not-the-key" });
+        const resp = await mcpPost(rpc("initialize"), { auth: "Bearer not-the-key" });
         expect(resp.status).toBe(401);
+      });
+    });
+
+    describe("Streamable HTTP transport", () => {
+      it("frames the response as SSE when the client accepts text/event-stream", async () => {
+        // Regression guard for "error parsing json response from mcp server":
+        // Retell's MCP client requires the SSE framing, not a plain JSON body.
+        const resp = await mcpPost(rpc("tools/list"), { auth: goodAuth });
+        expect(resp.status).toBe(200);
+        expect(resp.headers.get("content-type")).toMatch(/text\/event-stream/);
+        const payload = await mcpResult(resp);
+        expect(payload.result.tools.some((t: any) => t.name === "send_sms")).toBe(true);
+      });
+
+      it("returns plain JSON when the client does not accept SSE", async () => {
+        const resp = await mcpPost(rpc("tools/list"), { auth: goodAuth, accept: "application/json" });
+        expect(resp.status).toBe(200);
+        expect(resp.headers.get("content-type")).toMatch(/application\/json/);
+        const payload = await mcpResult(resp);
+        expect(payload.result.tools.some((t: any) => t.name === "send_sms")).toBe(true);
       });
     });
 
     describe("JSON-RPC surface", () => {
       it("initialize reports the servicecall-mcp server", async () => {
-        const resp = await mcpPost(rpc("initialize"), bearer);
+        const resp = await mcpPost(rpc("initialize"), { auth: goodAuth });
         expect(resp.status).toBe(200);
-        const body = await json(resp);
-        expect(body.result.serverInfo.name).toBe("servicecall-mcp");
-        expect(typeof body.result.protocolVersion).toBe("string");
+        const payload = await mcpResult(resp);
+        expect(payload.result.serverInfo.name).toBe("servicecall-mcp");
+        expect(typeof payload.result.protocolVersion).toBe("string");
       });
 
       it("tools/list advertises send_sms with its input schema", async () => {
-        const resp = await mcpPost(rpc("tools/list"), bearer);
-        expect(resp.status).toBe(200);
-        const body = await json(resp);
-        const sendSms = body.result.tools.find((t: any) => t.name === "send_sms");
+        const resp = await mcpPost(rpc("tools/list"), { auth: goodAuth });
+        const payload = await mcpResult(resp);
+        const sendSms = payload.result.tools.find((t: any) => t.name === "send_sms");
         expect(sendSms).toBeDefined();
         expect(sendSms.inputSchema.required).toContain("message");
       });
 
       it("an unknown method returns JSON-RPC error -32601", async () => {
-        const resp = await mcpPost(rpc("does/not/exist"), bearer);
+        const resp = await mcpPost(rpc("does/not/exist"), { auth: goodAuth });
         expect(resp.status).toBe(200);
-        const body = await json(resp);
-        expect(body.error.code).toBe(-32601);
+        const payload = await mcpResult(resp);
+        expect(payload.error.code).toBe(-32601);
       });
 
       it("a non-JSON-RPC body is rejected with 400", async () => {
-        const resp = await mcpPost({ not: "json-rpc" }, bearer);
+        const resp = await mcpPost({ not: "json-rpc" }, { auth: goodAuth });
         expect(resp.status).toBe(400);
       });
 
       it("a notification (no id) returns 204 with no body", async () => {
         const resp = await mcpPost(
           { jsonrpc: "2.0", method: "notifications/initialized" },
-          bearer,
+          { auth: goodAuth },
         );
         expect(resp.status).toBe(204);
       });
@@ -3639,11 +3677,11 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       it("tools/call with an unknown tool returns -32601", async () => {
         const resp = await mcpPost(
           rpc("tools/call", { name: "no_such_tool", arguments: {} }),
-          bearer,
+          { auth: goodAuth },
         );
         expect(resp.status).toBe(200);
-        const body = await json(resp);
-        expect(body.error.code).toBe(-32601);
+        const payload = await mcpResult(resp);
+        expect(payload.error.code).toBe(-32601);
       });
 
       it("send_sms with no call context returns an isError result (no SMS sent)", async () => {
@@ -3656,12 +3694,12 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
             name: "send_sms",
             arguments: { message: "system test — must not be delivered" },
           }),
-          bearer,
+          { auth: goodAuth },
         );
         expect(resp.status).toBe(200);
-        const body = await json(resp);
-        expect(body.result.isError).toBe(true);
-        expect(body.result.content[0].text).toBeTruthy();
+        const payload = await mcpResult(resp);
+        expect(payload.result.isError).toBe(true);
+        expect(payload.result.content[0].text).toBeTruthy();
       });
     });
   });

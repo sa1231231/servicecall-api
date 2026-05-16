@@ -12,6 +12,12 @@ import { sendSmsForCall } from "../lib/send-sms-service.js";
 // Auth: bearer token matching config.API_KEY. Retell forwards whatever headers
 // are configured on the per-flow Mcp entry (flow.mcps[]); we register the
 // servicecall-mcp entry with Authorization: Bearer <API_KEY>.
+//
+// Transport: MCP Streamable HTTP. The client POSTs a JSON-RPC request and,
+// per its Accept header, gets the response as plain JSON or as a one-shot
+// Server-Sent Events stream. Retell's MCP client requires the SSE framing —
+// a plain application/json body fails it with "error parsing json response".
+// See sendRpcResult() below.
 
 export const mcpRouter = Router();
 
@@ -191,6 +197,32 @@ async function dispatch(req: JsonRpcRequest, rawBody: any): Promise<JsonRpcSucce
 
 // ── HTTP handler ───────────────────────────────────────────────────────────
 
+/**
+ * Sends a JSON-RPC response honoring MCP Streamable HTTP content
+ * negotiation. MCP clients send `Accept: application/json, text/event-stream`;
+ * many — Retell's call-time MCP client included — require the response
+ * framed as a single Server-Sent Events `message` event and choke on a
+ * plain application/json body ("error parsing json response from mcp
+ * server"). When the client offers text/event-stream we reply with a
+ * one-shot SSE stream; otherwise plain JSON (curl, JSON-only callers).
+ */
+function sendRpcResult(
+  req: Request,
+  res: Response,
+  payload: JsonRpcSuccessResponse | JsonRpcErrorResponse,
+): void {
+  const accepts = String(req.headers["accept"] ?? "");
+  if (accepts.includes("text/event-stream")) {
+    res.status(200);
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.write(`event: message\ndata: ${JSON.stringify(payload)}\n\n`);
+    res.end();
+    return;
+  }
+  res.status(200).json(payload);
+}
+
 export async function mcpPostHandler(req: Request, res: Response) {
   if (!isAuthorized(req)) {
     res.status(401).json(error(null, ERR_INVALID_REQUEST, "Unauthorized. Configure Authorization: Bearer <API_KEY>."));
@@ -222,7 +254,7 @@ export async function mcpPostHandler(req: Request, res: Response) {
     res.status(204).end();
     return;
   }
-  res.status(200).json(result);
+  sendRpcResult(req, res, result);
 }
 
 mcpRouter.post("/", mcpPostHandler);

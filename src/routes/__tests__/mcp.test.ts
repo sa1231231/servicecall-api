@@ -42,8 +42,13 @@ function makeReq(body: any, headers: Record<string, string> = {}): Request {
   } as any;
 }
 
-function makeRes(): Response & { _status: number; _json: any } {
-  const res: any = { _status: 200, _json: null };
+function makeRes(): Response & {
+  _status: number;
+  _json: any;
+  _headers: Record<string, string>;
+  _sse: string;
+} {
+  const res: any = { _status: 200, _json: null, _headers: {}, _sse: "" };
   res.status = (code: number) => {
     res._status = code;
     return res;
@@ -52,8 +57,23 @@ function makeRes(): Response & { _status: number; _json: any } {
     res._json = data;
     return res;
   };
+  res.setHeader = (key: string, value: string) => {
+    res._headers[key.toLowerCase()] = value;
+    return res;
+  };
+  res.write = (chunk: string) => {
+    res._sse += chunk;
+    return true;
+  };
   res.end = () => res;
   return res;
+}
+
+// Pull the JSON-RPC payload out of a one-shot SSE response body.
+function parseSse(raw: string): any {
+  const line = raw.split("\n").find((l) => l.startsWith("data:"));
+  if (!line) throw new Error("no SSE data line in: " + JSON.stringify(raw));
+  return JSON.parse(line.slice("data:".length).trim());
 }
 
 beforeEach(() => {
@@ -205,5 +225,58 @@ describe("MCP server — tools/call send_sms", () => {
     expect(res._status).toBe(200);
     expect(res._json.error.code).toBe(-32601);
     expect(res._json.error.message).toMatch(/Unknown tool/);
+  });
+});
+
+describe("MCP server — Streamable HTTP / SSE", () => {
+  // Retell's MCP client speaks Streamable HTTP: it sends
+  // `Accept: ...text/event-stream` and requires the JSON-RPC response framed
+  // as an SSE `message` event. A plain application/json body fails it with
+  // "error parsing json response from mcp server". These pin that framing.
+  const sseHeaders = { accept: "application/json, text/event-stream" };
+
+  it("frames the response as an SSE message event when the client accepts SSE", async () => {
+    const req = makeReq({ jsonrpc: "2.0", id: 1, method: "tools/list" }, sseHeaders);
+    const res = makeRes();
+    await mcpPostHandler(req, res);
+    expect(res._status).toBe(200);
+    expect(res._headers["content-type"]).toBe("text/event-stream");
+    // The payload rides the SSE stream, not res.json().
+    expect(res._json).toBeNull();
+    expect(res._sse.startsWith("event: message\ndata: ")).toBe(true);
+    expect(res._sse.endsWith("\n\n")).toBe(true);
+    const payload = parseSse(res._sse);
+    expect(payload.jsonrpc).toBe("2.0");
+    expect(payload.result.tools[0].name).toBe("send_sms");
+  });
+
+  it("delivers tools/call results over SSE too", async () => {
+    mockAgentIdToClient["agent_x"] = { name: "Acme", outbound_from_number: "+15550001111" };
+    mockAgentIdToSlug["agent_x"] = "acme";
+    const req = makeReq(
+      {
+        jsonrpc: "2.0",
+        id: 7,
+        method: "tools/call",
+        params: { name: "send_sms", arguments: { message: "Hi" } },
+        call: { agent_id: "agent_x", call_id: "c", from_number: "+18005551234" },
+      },
+      sseHeaders,
+    );
+    const res = makeRes();
+    await mcpPostHandler(req, res);
+    expect(res._headers["content-type"]).toBe("text/event-stream");
+    const payload = parseSse(res._sse);
+    expect(payload.id).toBe(7);
+    expect(payload.result.content[0].text).toMatch(/Text message sent/);
+  });
+
+  it("still returns plain JSON when the client does not accept SSE", async () => {
+    const req = makeReq({ jsonrpc: "2.0", id: 1, method: "tools/list" }, { accept: "application/json" });
+    const res = makeRes();
+    await mcpPostHandler(req, res);
+    expect(res._headers["content-type"]).toBeUndefined();
+    expect(res._sse).toBe("");
+    expect(res._json.result.tools[0].name).toBe("send_sms");
   });
 });
