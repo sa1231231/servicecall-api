@@ -218,6 +218,9 @@ async function dispatch(req: JsonRpcRequest, rawBody: any): Promise<JsonRpcSucce
 // the request path.
 interface McpExchange {
   ts: string;
+  // "edge" = recorded before any limiter/router (every /mcp hit + its final
+  // HTTP status). "router" = recorded inside the handler (full detail).
+  phase: "edge" | "router";
   method: string;
   url: string;
   headers: Record<string, unknown>;
@@ -227,6 +230,35 @@ interface McpExchange {
 }
 const MCP_DEBUG_LOG: McpExchange[] = [];
 
+function pushDebug(entry: McpExchange): void {
+  MCP_DEBUG_LOG.push(entry);
+  while (MCP_DEBUG_LOG.length > 40) MCP_DEBUG_LOG.shift();
+}
+
+/**
+ * Edge capture — mounted on /mcp BEFORE the rate limiter and router, so it
+ * records every hit even when something upstream (a 429) rejects it. The
+ * final HTTP status is filled in on response `finish`.
+ */
+export function mcpEdgeCapture(req: Request, res: Response, next: NextFunction): void {
+  const entry: McpExchange = {
+    ts: new Date().toISOString(),
+    phase: "edge",
+    method: req.method,
+    url: req.originalUrl,
+    headers: req.headers as Record<string, unknown>,
+    rawBody: null,
+    parsedBody: null,
+    response: { status: 0, contentType: "", body: "" },
+  };
+  pushDebug(entry);
+  res.on("finish", () => {
+    entry.response.status = res.statusCode;
+    entry.response.contentType = String(res.getHeader("content-type") ?? "");
+  });
+  next();
+}
+
 function captureExchange(
   req: Request,
   status: number,
@@ -234,8 +266,9 @@ function captureExchange(
   responseBody: string,
 ): void {
   try {
-    MCP_DEBUG_LOG.push({
+    pushDebug({
       ts: new Date().toISOString(),
+      phase: "router",
       method: req.method,
       url: req.originalUrl,
       headers: req.headers as Record<string, unknown>,
@@ -243,7 +276,6 @@ function captureExchange(
       parsedBody: req.body ?? null,
       response: { status, contentType, body: responseBody },
     });
-    while (MCP_DEBUG_LOG.length > 25) MCP_DEBUG_LOG.shift();
   } catch {
     /* diagnostic only — swallow */
   }
