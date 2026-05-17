@@ -30,10 +30,13 @@ export TWILIO_AUTH_TOKEN=<production Twilio auth token>
 export RETELL_API_KEY=<production Retell key>
 # Optional — only needed for the leads test:
 export LEAD_INTAKE_TOKEN=<production lead-intake bearer token>
+# Optional — only needed for the sheet-sync e2e test:
+export GOOGLE_SERVICE_ACCOUNT_JSON=<service-account key, raw JSON or base64>
+export LEADS_SHEET_SYNC=<the LEADS_SHEET_SYNC config JSON>
 ```
 
 If any are missing, the suite **skips silently** (each `describe` is
-gated on `hasFullEnv`).
+gated on `hasFullEnv`, or `hasSheetSyncEnv` for the sheet-sync test).
 
 ## Running
 
@@ -51,7 +54,11 @@ npm run test:live-api:cleanup      # sweep stragglers (anything e2e-* > 1h old)
 | `send-comms.test.ts` | `send_comms:write` × 4 (review/payment/portal/instructions) | ✅ ($1) |
 | `sms-blast.test.ts` | `sms_blast:read` (preview only — see note below) | ❌ |
 | `leads.test.ts` | `pending_leads:write` (intake + bearer auth + dismiss) | ❌ |
+| `leads-sheet-sync.test.ts` | Google Sheet poll job — sheet row → deployed poll → API ingest | ❌ |
 | `node-editor.test.ts` | `node_editor:write` + `:manage` (publish + rollback) | ✅ ($1) |
+
+`leads-sheet-sync.test.ts` appends one row to the live sheet and deletes it
+again in `afterAll` (~3 min run — it waits for the deployed 2-min poll cycle).
 
 ### Why `sms_blast` is preview-only
 
@@ -68,7 +75,7 @@ be catastrophic. The full send path is covered by mocked unit tests at
   full run.
 - SMS: $0.0079 each. ~10 sends per run. Total: **<$0.10**.
 - Retell agents/flows: free to create + delete.
-- Anthropic enrichment (leads test): ~$0.05 per run.
+- Anthropic enrichment (leads + sheet-sync tests): ~$0.05 each per run.
 
 **Estimated full run cost: $3-5.**
 

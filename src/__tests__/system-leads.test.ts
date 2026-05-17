@@ -113,6 +113,70 @@ describe.skipIf(!hasConfig)("System tests — Lead lifecycle", { timeout: 120_00
     );
   });
 
+  describe("Idempotent intake (externalId dedup)", () => {
+    // This is the safety contract the Google Sheet poll job
+    // (src/lib/leads-sheet-sync.ts) depends on: it re-ingests every sheet
+    // row on every 2-min poll, relying on externalId dedup to make repeats
+    // a no-op. If the deployed API ever stopped deduping, every poll would
+    // create duplicate leads — so guard it here against the live API.
+
+    it("re-POSTing the same externalId returns the existing lead (200 + deduped)", async () => {
+      const externalId =
+        "sys-test-" + Date.now() + "-" + Math.random().toString(16).slice(2, 8);
+      const payload = {
+        name: TEST_NAME_PREFIX + "dedup-" + Date.now(),
+        source: "system_test",
+        externalId,
+      };
+
+      const first = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: intakeHeaders(),
+        body: JSON.stringify(payload),
+      });
+      expect(first.status).toBe(201);
+      const firstBody = await json(first);
+      expect(typeof firstBody._id).toBe("string");
+      createdLeadIds.push(firstBody._id);
+
+      // Same externalId again → no new doc, returns the original.
+      const second = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: intakeHeaders(),
+        body: JSON.stringify(payload),
+      });
+      expect(second.status).toBe(200);
+      const secondBody = await json(second);
+      expect(secondBody._id).toBe(firstBody._id);
+      expect(secondBody.deduped).toBe(true);
+    });
+
+    it("a distinct externalId creates a separate lead", async () => {
+      const mk = () => ({
+        name: TEST_NAME_PREFIX + "dedup-distinct-" + Date.now(),
+        source: "system_test",
+        externalId:
+          "sys-test-" + Date.now() + "-" + Math.random().toString(16).slice(2, 8),
+      });
+      const a = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: intakeHeaders(),
+        body: JSON.stringify(mk()),
+      });
+      const b = await fetch(url("/api/leads/intake"), {
+        method: "POST",
+        headers: intakeHeaders(),
+        body: JSON.stringify(mk()),
+      });
+      expect(a.status).toBe(201);
+      expect(b.status).toBe(201);
+      const aBody = await json(a);
+      const bBody = await json(b);
+      createdLeadIds.push(aBody._id, bBody._id);
+      expect(aBody._id).not.toBe(bBody._id);
+    });
+  });
+
   describe("Operator actions on a lead", () => {
     let leadId: string;
 
