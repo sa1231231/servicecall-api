@@ -192,6 +192,65 @@ async function storeCanonical(
 
 // ── GET /:agentId — View Node Structure ──────────────────────────────────────
 
+// ── GET /:agentId read helpers ───────────────────────────────────────────────
+// Pure parsing helpers used to build the node-editor read response. Kept at
+// module scope (rather than nested in the GET handler) so they're directly
+// unit-testable — see node-editor-read-helpers.test.ts.
+
+/**
+ * Read fine-tune examples from a node's finetune_transition_examples array,
+ * normalizing back to the FinetuneExample shape: `type` is derived from the
+ * presence of destination_node_id — Retell stores a node id for positives
+ * and omits the field for negatives.
+ */
+export function readNodeFinetunes(
+  node: Record<string, unknown> | undefined,
+): FinetuneExample[] {
+  const arr = (node?.finetune_transition_examples as Array<Record<string, unknown>>) ?? [];
+  return arr.map((ex) => {
+    const out: FinetuneExample = {
+      type: ex.destination_node_id ? "positive" : "negative",
+      transcript: ex.transcript as FinetuneExample["transcript"],
+    };
+    if (ex.id) out.id = ex.id as string;
+    if (ex.destination_node_id) out.destination = ex.destination_node_id as string;
+    return out;
+  });
+}
+
+/**
+ * Extract branch-condition equations for a data point from the router edges
+ * that target its Collect node. Skips the standard "is missing" checks for
+ * the variable itself, phone_number_collected, and composite sub-variables —
+ * only genuine branch conditions remain. Returns undefined when there's none.
+ */
+export function extractBranchConditions(dp: ParsedDataPoint, paths: ParsedPath[]) {
+  const routerEdges = paths.flatMap((p) => {
+    const re = p.routerNode.raw.edges as Array<Record<string, unknown>> | undefined;
+    return (re ?? []).filter((e) => e.destination_node_id === dp.collectNode.id);
+  });
+  if (routerEdges.length === 0) return undefined;
+  const edge = routerEdges[0];
+  const tc = edge.transition_condition as Record<string, unknown> | undefined;
+  if (tc?.type !== "equation") return undefined;
+  const eqs = tc.equations as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(eqs)) return undefined;
+  const branchEqs = eqs.filter((eq) => {
+    const left = eq.left as string;
+    if (left === `{{${dp.variableName}}}`) return false;
+    if (left === `{{phone_number_collected}}`) return false;
+    const isComposite = dp.variableDefs.some((v) => left === `{{${v.name}}}`);
+    if (isComposite) return false;
+    return true;
+  });
+  if (branchEqs.length === 0) return undefined;
+  return branchEqs.map((eq) => ({
+    variable: (eq.left as string).replace(/^\{\{|\}\}$/g, ""),
+    operator: eq.operator as string,
+    value: eq.right as string | undefined,
+  }));
+}
+
 nodeEditorRouter.get("/:agentId", async (req, res) => {
   const p = req.params as Record<string, string>;
   const slug = p.slug;
@@ -244,68 +303,6 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       faqKnowledgeBase = fullText.startsWith(faqPrefix)
         ? fullText.slice(faqPrefix.length)
         : fullText;
-    }
-
-    // Read fine-tune examples from a node's finetune_transition_examples
-    // array, normalizing back to the FinetuneExample shape (where `type` is
-    // derived from the presence of destination_node_id — Retell stores a
-    // node id for positives and omits the field for negatives).
-    function readNodeFinetunes(node: Record<string, unknown> | undefined): FinetuneExample[] {
-      const arr = (node?.finetune_transition_examples as Array<Record<string, unknown>>) ?? [];
-      return arr.map((ex) => {
-        const out: FinetuneExample = {
-          type: ex.destination_node_id ? "positive" : "negative",
-          transcript: ex.transcript as FinetuneExample["transcript"],
-        };
-        if (ex.id) out.id = ex.id as string;
-        if (ex.destination_node_id) out.destination = ex.destination_node_id as string;
-        return out;
-      });
-    }
-    // Per-path transition examples live on the intro node, distinguished by
-    // destination_node_id. Agent-level (no-destination) examples are pulled
-    // out separately so the UI can treat them as the agent's "fallback"
-    // negatives independent of any specific path.
-    function readIntroFinetunesForPath(transitionNodeId: string): FinetuneExample[] {
-      return readNodeFinetunes(parsed.introNode.raw).filter(
-        (ex) => ex.destination === transitionNodeId,
-      );
-    }
-    function readIntroAgentLevelFinetunes(): FinetuneExample[] {
-      return readNodeFinetunes(parsed.introNode.raw).filter((ex) => !ex.destination);
-    }
-
-    // Extract branch conditions from data points
-    function extractBranchConditions(dp: typeof parsed.paths[0]["dataChain"][0]) {
-      // Check the router edge for this data point's branch conditions
-      const routerEdges = parsed.paths
-        .flatMap((p) => {
-          const re = p.routerNode.raw.edges as Array<Record<string, unknown>> | undefined;
-          return (re ?? []).filter((e) => e.destination_node_id === dp.collectNode.id);
-        });
-      if (routerEdges.length === 0) return undefined;
-      const edge = routerEdges[0];
-      const tc = edge.transition_condition as Record<string, unknown> | undefined;
-      if (tc?.type !== "equation") return undefined;
-      const eqs = tc.equations as Array<Record<string, unknown>> | undefined;
-      if (!Array.isArray(eqs)) return undefined;
-      // Find branch condition equations (not the "is missing" checks)
-      const branchEqs = eqs.filter((eq) => {
-        const left = eq.left as string;
-        // Skip the standard "is missing" equations for this variable
-        if (left === `{{${dp.variableName}}}`) return false;
-        if (left === `{{phone_number_collected}}`) return false;
-        // Skip composite variable checks
-        const isComposite = dp.variableDefs.some((v) => left === `{{${v.name}}}`);
-        if (isComposite) return false;
-        return true;
-      });
-      if (branchEqs.length === 0) return undefined;
-      return branchEqs.map((eq) => ({
-        variable: (eq.left as string).replace(/^\{\{|\}\}$/g, ""),
-        operator: eq.operator as string,
-        value: eq.right as string | undefined,
-      }));
     }
 
     // Detect human request mode
@@ -370,7 +367,9 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
       humanRequestMode,
       humanRequestNodeId: humanReqNode?.id,
       transitionConditions,
-      introFinetuneExamples: readIntroAgentLevelFinetunes(),
+      introFinetuneExamples: readNodeFinetunes(parsed.introNode.raw).filter(
+        (ex) => !ex.destination,
+      ),
       paths: parsed.paths.map((p) => ({
         name: p.name,
         transitionNodeId: p.transitionNode.id,
@@ -385,7 +384,9 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
         closeNodeId: p.closeNode?.id,
         // Path-scoped positive examples that route the caller to this
         // path. Stored on the intro node, filtered here by destination.
-        transitionFinetuneExamples: readIntroFinetunesForPath(p.transitionNode.id),
+        transitionFinetuneExamples: readNodeFinetunes(parsed.introNode.raw).filter(
+          (ex) => ex.destination === p.transitionNode.id,
+        ),
         // Interleave DPs and SMS actions in router-edge (authoring) order.
         // SMS items carry _action: "sendSms" so the client can render them
         // distinctly and the save serializer can round-trip them as
@@ -412,7 +413,7 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
             conversationPrompt: dp.conversationPrompt,
             forwardCondition: dp.forwardCondition,
             variableDefs: dp.variableDefs,
-            branchConditions: extractBranchConditions(dp),
+            branchConditions: extractBranchConditions(dp, parsed.paths),
             finetuneExamples: readNodeFinetunes(dp.collectNode.raw),
           };
         }),
@@ -1305,7 +1306,7 @@ nodeEditorRouter.post("/:agentId/reorder-data-points", async (req, res) => {
 
 // ── Shared Helpers for Structural Editing ────────────────────────────────────
 
-import type { ParsedPath, ParsedFlow } from "../../lib/node-parser.js";
+import type { ParsedPath, ParsedFlow, ParsedDataPoint } from "../../lib/node-parser.js";
 
 function findPath(
   paths: ParsedPath[],
