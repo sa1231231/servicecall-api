@@ -10743,16 +10743,14 @@
       return;
     }
     let html = chipsHtml + '<table><thead><tr>' +
-      '<th>Name</th><th>Phone</th><th>Website</th><th>Type</th><th>Status</th><th>Updated</th><th></th>' +
+      '<th>Name</th><th>Company</th><th>Phone</th><th>Website</th><th>Type</th><th>Status</th><th>Updated</th><th></th>' +
       '</tr></thead><tbody>';
     for (const l of filtered) {
-      const enrichedName = l.enriched?.business_name;
-      const displayName = enrichedName || l.input?.name || '(no name)';
-      const subtitle = enrichedName && l.input?.name && enrichedName !== l.input.name
-        ? '<div style="font-size:0.7rem;color:#888;">↳ from "' + esc(l.input.name) + '"</div>'
-        : '';
+      const personName = l.input?.name || '(no name)';
+      const companyName = l.enriched?.business_name || '';
       html += '<tr class="clickable-row" onclick="openLeadDetail(\'' + esc(l._id) + '\')">' +
-        '<td><strong>' + esc(displayName) + '</strong>' + subtitle + '</td>' +
+        '<td><strong>' + esc(personName) + '</strong></td>' +
+        '<td>' + esc(companyName) + '</td>' +
         '<td style="font-variant-numeric:tabular-nums;">' + esc(l.input?.phone || '') + '</td>' +
         '<td style="word-break:break-word;">' + esc(l.input?.website || '') + '</td>' +
         '<td style="color:#555;font-size:0.78rem;">' + esc(l.input?.business_type || '') + '</td>' +
