@@ -3,12 +3,18 @@ import { JWT } from "google-auth-library";
 import { hasSheetSyncEnv, getLiveEnv } from "./lib/env.js";
 import { apiFetch, apiGet } from "./lib/api-client.js";
 
-// End-to-end test for the Google Sheet poll job (src/lib/leads-sheet-sync.ts):
-// append a row to the live sheet → wait for the DEPLOYED poll job to ingest
-// it → verify the lead via the dashboard API → delete the row + dismiss the
-// lead. This is the only test that exercises the real Sheets read + 2-min
-// poll loop; the pure mapping logic is unit-tested in
+// End-to-end test for the Google Sheet → Pending Leads pipeline: append a row
+// to the live sheet → wait for the DEPLOYED service to ingest it → verify the
+// lead via the dashboard API → delete the row + dismiss the lead. This is the
+// only test that exercises the real Sheets read against a live row; the poll
+// job's pure mapping logic is unit-tested in
 // src/lib/__tests__/leads-sheet-sync.test.ts.
+//
+// Dual-run note: during cutover the hardened Apps Script still watches this
+// sheet, and its instant on-change trigger almost always ingests a new row
+// before the 2-min poll job does. So the ingester is whichever won the race
+// ("sheet" = poll job, "google_sheet" = Apps Script). Once the Apps Script is
+// retired this deterministically exercises the poll job.
 //
 // Requires GOOGLE_SERVICE_ACCOUNT_JSON + LEADS_SHEET_SYNC in the env (the
 // same two vars set on the deployed service). Skips silently without them.
@@ -157,7 +163,7 @@ describe.skipIf(!hasSheetSyncEnv)(
     });
 
     it(
-      "a new sheet row is ingested by the deployed poll job within one cycle",
+      "a new sheet row is ingested and reaches the API within one poll cycle",
       { timeout: INGEST_TIMEOUT_MS + 60_000 },
       async () => {
         const env = getLiveEnv();
@@ -200,12 +206,21 @@ describe.skipIf(!hasSheetSyncEnv)(
         expect(lead, "poll job did not ingest the appended row within timeout").toBeTruthy();
         createdLeadId = lead!._id;
 
-        // Verify the row mapped through correctly.
-        expect(lead!.source).toBe("sheet");
+        // Core assertion: the appended row reached the API as a lead.
         expect(lead!.externalId).toBe(externalId);
         expect(lead!.input.name).toBe(testName);
-        if (cols.phone) expect(lead!.input.phone).toBe("+15555550123"); // "p:" stripped
-        if (cols.businessType) expect(lead!.input.business_type).toBe("hvac");
+
+        // Whichever ingester won the race (see dual-run note above).
+        expect(["sheet", "google_sheet"]).toContain(lead!.source);
+
+        // Poll-job-specific mapping — the Apps Script does NOT strip the
+        // Meta "p:" phone prefix, so only assert it when the poll job
+        // ("sheet") was the ingester. After the Apps Script is retired this
+        // branch always runs.
+        if (lead!.source === "sheet") {
+          if (cols.phone) expect(lead!.input.phone).toBe("+15555550123");
+          if (cols.businessType) expect(lead!.input.business_type).toBe("hvac");
+        }
       },
     );
   },
