@@ -694,6 +694,10 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
     let createdAgentId: string | undefined;
     let createdSlug: string | undefined;
 
+    // Generous hook timeout: permanent-delete runs releaseAgentResources,
+    // which polls Twilio for the async emergency-address unbind before
+    // releasing the number — up to ~120s. The describe's 30s test timeout
+    // is far too short for this cleanup.
     afterAll(async () => {
       if (!createdSlug) return;
       // Soft-delete then permanent-delete so Retell + Twilio resources get
@@ -708,7 +712,7 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
       } catch (err) {
         console.warn(`[HVAC round-trip cleanup] failed for ${createdSlug}:`, err);
       }
-    });
+    }, 180_000);
 
     it("POST /agents/from-draft with HVAC Default creates an agent", async () => {
       const resp = await fetch(url("/agents/from-draft"), {
@@ -3632,6 +3636,14 @@ describe.skipIf(!hasConfig)("System tests (Railway)", { timeout: 30_000 }, () =>
         expect(resp.headers.get("content-type")).toMatch(/application\/json/);
         const payload = await mcpResult(resp);
         expect(payload.result.tools.some((t: any) => t.name === "send_sms")).toBe(true);
+      });
+
+      it("GET /mcp returns the discovery document", async () => {
+        const resp = await fetch(url("/mcp"));
+        expect(resp.status).toBe(200);
+        const body = await json(resp);
+        expect(body.server).toBe("servicecall-mcp");
+        expect(body.tools).toContain("send_sms");
       });
     });
 

@@ -33,7 +33,7 @@ vi.mock("../../_cache/clients.js", () => ({
   agentIdToSlug: mockAgentIdToSlug,
 }));
 
-const { mcpPostHandler } = await import("../mcp.js");
+const { mcpPostHandler, mcpDiscoveryHandler, mcpBodyErrorHandler } = await import("../mcp.js");
 
 function makeReq(body: any, headers: Record<string, string> = {}): Request {
   return {
@@ -278,5 +278,70 @@ describe("MCP server — Streamable HTTP / SSE", () => {
     expect(res._headers["content-type"]).toBeUndefined();
     expect(res._sse).toBe("");
     expect(res._json.result.tools[0].name).toBe("send_sms");
+  });
+});
+
+describe("MCP server — discovery + body-parse errors", () => {
+  it("the GET / discovery handler reports the server name + tool list", () => {
+    const res = makeRes();
+    mcpDiscoveryHandler(makeReq({}), res);
+    expect(res._json.server).toBe("servicecall-mcp");
+    expect(res._json.tools).toContain("send_sms");
+  });
+
+  it("the body-error handler answers a parse failure with a JSON-RPC error, not HTML", () => {
+    // express.json() throws on a malformed body; the router error handler
+    // must convert that to a clean JSON-RPC error rather than an HTML page.
+    const res = makeRes();
+    mcpBodyErrorHandler(
+      new SyntaxError("Unexpected token < in JSON at position 0"),
+      makeReq({}),
+      res,
+      () => {},
+    );
+    expect(res._status).toBe(400);
+    expect(res._json.error.code).toBe(-32700); // ERR_PARSE
+    expect(res._json.error.message).toMatch(/Invalid request body/);
+  });
+});
+
+describe("MCP server — call-context extraction", () => {
+  beforeEach(() => {
+    mockAgentIdToClient["agent_x"] = { name: "Acme", outbound_from_number: "+15550001111" };
+    mockAgentIdToSlug["agent_x"] = "acme";
+  });
+
+  it("reads the call context from params._meta.call", async () => {
+    const req = makeReq({
+      jsonrpc: "2.0",
+      id: 20,
+      method: "tools/call",
+      params: {
+        name: "send_sms",
+        arguments: { message: "Hi" },
+        _meta: { call: { agent_id: "agent_x", call_id: "c20", from_number: "+18005551234" } },
+      },
+    });
+    const res = makeRes();
+    await mcpPostHandler(req, res);
+    expect(res._status).toBe(200);
+    expect(mockSendSmsFrom).toHaveBeenCalledWith("+15550001111", "+18005551234", "Hi");
+  });
+
+  it("reads the call context from params.call", async () => {
+    const req = makeReq({
+      jsonrpc: "2.0",
+      id: 21,
+      method: "tools/call",
+      params: {
+        name: "send_sms",
+        arguments: { message: "Hi" },
+        call: { agent_id: "agent_x", call_id: "c21", from_number: "+18005551234" },
+      },
+    });
+    const res = makeRes();
+    await mcpPostHandler(req, res);
+    expect(res._status).toBe(200);
+    expect(mockSendSmsFrom).toHaveBeenCalledWith("+15550001111", "+18005551234", "Hi");
   });
 });
