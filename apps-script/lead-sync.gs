@@ -40,13 +40,20 @@
  *      You must set at least one of EXTERNAL_ID_COL or STATUS_COL — both is fine and gives
  *      you sheet-side fast-skip plus API-side safety net.
  *
- *   2. Triggers → Add trigger → syncNewLeads → on change   (or time-based every 5 min).
+ *   2. Run `installSyncTriggers` once from the Apps Script editor (function
+ *      dropdown → Run). It installs both an `on change` trigger (near-instant
+ *      sync) and a time-based trigger every 5 min (safety-net re-scan).
  *
  * Behavior: rows whose STATUS_COL is empty (or every non-header row, when STATUS_COL
  * isn't configured) get POSTed. On 201 (created) or 200 (already known via externalId
  * dedup) we treat the row as synced and write the lead id back to STATUS_COL when it's
  * configured. On 423 (paused via dashboard toggle) we stop early — next run picks up
  * from where we paused.
+ *
+ * Resilience: transient network failures ("Address unavailable", DNS, timeout) and
+ * 5xx responses are retried with exponential backoff. If the API is still
+ * unreachable after retries, the run stops cleanly (no thrown exception, no Apps
+ * Script failure email) — the unsynced rows are picked up by the next trigger.
  */
 
 const REQUIRED_PROPS = ['API_BASE_URL', 'LEAD_INTAKE_TOKEN', 'NAME_COL'];
@@ -141,6 +148,13 @@ function syncNewLeadsImpl() {
       Logger.log('Intake paused — stopping at row ' + sheetRow);
       return; // leave this and remaining rows unsynced
     }
+    if (result.code === 0) {
+      // API unreachable after retries — stop rather than burn the 6-min
+      // execution budget retrying every remaining row. STATUS_COL stays empty,
+      // so the next run (on change / time-based) resyncs from here.
+      Logger.log('API unreachable — stopping at row ' + sheetRow + '; will resync next run.');
+      return;
+    }
     // 200 = already known via externalId dedup; 201 = freshly created. Both
     // mean "synced, don't retry," so write the lead id back if STATUS_COL
     // is configured.
@@ -157,19 +171,88 @@ function syncNewLeadsImpl() {
   }
 }
 
+const POST_MAX_ATTEMPTS = 4; // 1 try + 3 retries
+
+// Exponential backoff with jitter: ~2s, 4s, 8s between attempts.
+function backoffMs(attempt) {
+  return Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 500);
+}
+
 function postLead(baseUrl, token, payload) {
   const url = baseUrl.replace(/\/$/, '') + '/api/leads/intake';
-  const res = UrlFetchApp.fetch(url, {
+  const options = {
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + token },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true,
+  };
+
+  let lastNetworkError = null;
+  for (let attempt = 1; attempt <= POST_MAX_ATTEMPTS; attempt++) {
+    let res;
+    try {
+      res = UrlFetchApp.fetch(url, options);
+    } catch (e) {
+      // Connection-level failure ("Address unavailable", DNS, timeout). This
+      // throws even with muteHttpExceptions. Transient — retry with backoff.
+      lastNetworkError = e;
+      if (attempt < POST_MAX_ATTEMPTS) { Utilities.sleep(backoffMs(attempt)); continue; }
+      break;
+    }
+
+    const code = res.getResponseCode();
+    let body = null;
+    try { body = JSON.parse(res.getContentText()); } catch (_) { body = res.getContentText(); }
+
+    // 5xx: server reached but erroring (e.g. a mid-deploy restart). Retry.
+    // 2xx/4xx: settled — return now (4xx is a client error; retrying won't fix it).
+    if (code >= 500 && attempt < POST_MAX_ATTEMPTS) { Utilities.sleep(backoffMs(attempt)); continue; }
+    return { code: code, body: body };
+  }
+
+  // Retries exhausted on a connection failure — the API is unreachable. Return
+  // a sentinel instead of throwing so the run ends cleanly (no failure email).
+  const msg = lastNetworkError && lastNetworkError.message ? lastNetworkError.message : 'unknown';
+  Logger.log('postLead: API unreachable after ' + POST_MAX_ATTEMPTS + ' attempts: ' + msg);
+  return { code: 0, body: 'unreachable: ' + msg };
+}
+
+/**
+ * One-shot setup: install the triggers that drive syncNewLeads. Idempotent —
+ * safe to re-run; existing syncNewLeads triggers are cleared first so it never
+ * stacks duplicates.
+ *
+ * Run from the Apps Script editor: select `installSyncTriggers` in the function
+ * dropdown → Run (approve the trigger-management permission prompt the first time).
+ *
+ * Installs two triggers:
+ *   - on change   — near-instant sync when the sheet is edited.
+ *   - every 5 min — safety-net re-scan, so a missed or failed on-change run (or a
+ *                   transient API outage) self-heals: any row with an empty
+ *                   STATUS_COL gets re-POSTed on the next tick.
+ */
+const SYNC_HANDLER = 'syncNewLeads';
+const RESYNC_INTERVAL_MIN = 5;
+
+function installSyncTriggers() {
+  // Drop any existing syncNewLeads triggers so re-running stays idempotent.
+  let removed = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === SYNC_HANDLER) {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    }
   });
-  const code = res.getResponseCode();
-  let body = null;
-  try { body = JSON.parse(res.getContentText()); } catch (_) { body = res.getContentText(); }
-  return { code: code, body: body };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ScriptApp.newTrigger(SYNC_HANDLER).forSpreadsheet(ss).onChange().create();
+  ScriptApp.newTrigger(SYNC_HANDLER).timeBased().everyMinutes(RESYNC_INTERVAL_MIN).create();
+
+  const msg = 'Sync triggers installed: on change + every ' + RESYNC_INTERVAL_MIN +
+    ' min' + (removed ? ' (replaced ' + removed + ' existing).' : '.');
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (_) {}
 }
 
 /**
