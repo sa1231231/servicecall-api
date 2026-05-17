@@ -155,6 +155,14 @@ describe("buildLeadFromRow", () => {
     });
   });
 
+  it("strips the Meta 'p:' prefix from the phone number", () => {
+    const row = ["Ramon", "p:+12062713262", "", "", "", "l:833856", ""];
+    expect(buildLeadFromRow(row, cols)).toEqual({
+      input: { name: "Ramon", phone: "+12062713262" },
+      externalId: "l:833856",
+    });
+  });
+
   it("builds without externalId when that column is not configured", () => {
     const noExtCols: SheetSyncCols = { ...cols, externalId: 0 };
     const row = ["Acme HVAC", "555-1234", "", "", "", "", ""];

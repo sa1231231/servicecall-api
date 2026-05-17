@@ -128,7 +128,9 @@ export function buildLeadFromRow(
   if (cols.externalId && !externalId) return null;
 
   const input: PendingLeadInput = { name };
-  const phone = cellAt(row, cols.phone);
+  // Meta Lead Ads exports the phone with a "p:" column-value prefix
+  // (e.g. "p:+12062713262") — strip it so downstream gets a clean number.
+  const phone = cellAt(row, cols.phone).replace(/^p:/, "");
   if (phone) input.phone = phone;
   const website = cellAt(row, cols.website);
   if (website) input.website = website;
