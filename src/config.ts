@@ -95,4 +95,15 @@ export const config = {
   // the integration is effectively off. Rotate by changing this and
   // the matching Script Property in the Sheet's Apps Script project.
   LEAD_INTAKE_TOKEN: process.env.LEAD_INTAKE_TOKEN ?? "",
+
+  // Google Sheet lead poll job (src/lib/leads-sheet-sync.ts) — pulls lead
+  // rows from a Google Sheet via the Sheets API instead of relying on the
+  // Apps Script to push them. Both optional; the job self-disables when
+  // either is unset.
+  //   GOOGLE_SERVICE_ACCOUNT_JSON — service-account key, raw JSON or base64.
+  //     Share the sheet with the service account's email (Editor).
+  //   LEADS_SHEET_SYNC — JSON: { spreadsheetId, tab?, headerRows?, cols }
+  //     where cols maps fields to 1-indexed column numbers.
+  GOOGLE_SERVICE_ACCOUNT_JSON: process.env.GOOGLE_SERVICE_ACCOUNT_JSON ?? "",
+  LEADS_SHEET_SYNC: process.env.LEADS_SHEET_SYNC ?? "",
 };

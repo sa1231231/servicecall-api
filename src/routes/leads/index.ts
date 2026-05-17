@@ -3,18 +3,16 @@ import express from "express";
 import { requireFeature } from "../../middleware/require-role.js";
 import { requireServiceToken } from "../../middleware/require-service-token.js";
 import {
-  createPendingLead,
   listPendingLeads,
   getPendingLead,
   updatePendingLead,
   markPromoted,
   markDismissed,
-  findPendingLeadByExternalId,
   type PendingLead,
   type PendingLeadStatus,
   type PendingLeadInput,
 } from "../../lib/pending-leads.js";
-import { enrichLead } from "../../lib/enrich-lead.js";
+import { runEnrichment, ingestLead } from "../../lib/lead-intake.js";
 import { loadDraft, applyOverrides } from "../../lib/agent-from-draft.js";
 import { createAgentFromConfig, type CreateAgentBody } from "../../lib/agent-from-config.js";
 import { extractAreaCode } from "../../lib/provision-number.js";
@@ -36,65 +34,6 @@ leadsIntakeRouter.use(express.json());
 leadsIntakeRouter.use(requireServiceToken);
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Run the Anthropic enrichment for a lead, then patch its status + enriched
- * fields (or its enrichmentError on failure). Best-effort — caller doesn't
- * await this so the intake POST returns immediately. Errors are surfaced to
- * the operator via the lead's `enrichmentError` field, not thrown.
- */
-async function runEnrichment(leadId: string, input: PendingLeadInput): Promise<void> {
-  // Clear the prior error when we restart so the UI doesn't show a stale
-  // failure while the new attempt is in flight.
-  await updatePendingLead(leadId, { status: "enriching", enrichmentError: undefined });
-  const result = await enrichLead(input);
-  // Re-check the lead's status before patching back: enrichLead is a
-  // multi-second LLM round-trip, and the operator (or an automated
-  // teardown) may have dismissed or promoted the lead while we were
-  // waiting. Overwriting a dismissed/promoted status with `ready`/`failed`
-  // would resurrect a closed lead.
-  const current = await getPendingLead(leadId);
-  if (!current || current.status === "dismissed" || current.status === "promoted") {
-    console.log(`[leads] enrichment finished for ${leadId} but lead is ${current?.status ?? "missing"}; skipping patch.`);
-    return;
-  }
-  // Both branches stash the AI conversation under enriched.extra so the
-  // dashboard's AI Feed panel can render what we sent and what came back,
-  // regardless of parse outcome. The success branch overwrites with fresh
-  // structured data; the failure branch merges into prior enriched fields
-  // so a failed re-enrich doesn't wipe operator edits.
-  const aiTrace = {
-    _systemPrompt: result.systemPrompt,
-    _userMessage: result.userMessage,
-    _rawResponse: result.rawResponse,
-    _rawContentBlocks: result.rawContentBlocks,
-  };
-  if (result.ok) {
-    await updatePendingLead(leadId, {
-      status: "ready",
-      enriched: {
-        business_name: result.business_name,
-        faqKnowledgeBase: result.faqKnowledgeBase,
-        templateName: result.templateName,
-        extra: { ...result.extra, ...aiTrace },
-      },
-      enrichmentError: undefined,
-    });
-  } else {
-    const merged = {
-      ...(current.enriched ?? {}),
-      extra: {
-        ...(current.enriched?.extra ?? {}),
-        ...aiTrace,
-      },
-    };
-    await updatePendingLead(leadId, {
-      status: "failed",
-      enrichmentError: result.error,
-      enriched: merged,
-    });
-  }
-}
 
 /**
  * Merge a lead's self-reported business_type into the agent's contact_notes
@@ -158,22 +97,14 @@ leadsIntakeRouter.post("/", async (req, res) => {
   const externalId = typeof req.body?.externalId === "string" && req.body.externalId.trim()
     ? req.body.externalId.trim()
     : undefined;
-  // Idempotent intake: when the source sheet has no STATUS column to write
-  // the lead id back into, Apps Script re-POSTs every row on every run.
-  // Short-circuit by returning the existing lead instead of creating a
-  // duplicate. 200 (vs 201) tells the script "already known, don't retry."
-  if (externalId) {
-    const existing = await findPendingLeadByExternalId(externalId);
-    if (existing) {
-      res.status(200).json({ _id: existing._id, status: existing.status, deduped: true });
-      return;
-    }
-  }
-  const lead = await createPendingLead({ source, input, externalId });
-  runEnrichment(lead._id, input).catch((err) => {
-    console.error(`[leads] enrichment crashed for ${lead._id}:`, err);
-  });
-  res.status(201).json({ _id: lead._id, status: lead.status });
+  // Idempotent on externalId: when the source sheet has no STATUS column to
+  // write the lead id back into, the client re-POSTs every row on every run.
+  // ingestLead returns the existing lead instead of creating a duplicate;
+  // 200 (vs 201) tells the client "already known, don't retry."
+  const { lead, deduped } = await ingestLead({ source, input, externalId });
+  res
+    .status(deduped ? 200 : 201)
+    .json({ _id: lead._id, status: lead.status, ...(deduped ? { deduped: true } : {}) });
 });
 
 // ── Routes ──────────────────────────────────────────────────────────────────
@@ -186,11 +117,8 @@ leadsRouter.post("/", requireFeature("pending_leads", "write"), async (req, res)
     return;
   }
   const source = typeof req.body?.source === "string" ? req.body.source : "manual";
-  const lead = await createPendingLead({ source, input });
-  // Fire-and-forget — operator polls /api/leads/:id to see the status flip.
-  runEnrichment(lead._id, input).catch((err) => {
-    console.error(`[leads] enrichment crashed for ${lead._id}:`, err);
-  });
+  const { lead } = await ingestLead({ source, input });
+  // Operator polls /api/leads/:id to see the status flip.
   res.status(201).json(lead);
 });
 

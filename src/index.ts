@@ -18,6 +18,7 @@ import { leadsRouter, leadsIntakeRouter } from "./routes/leads/index.js";
 import { portalRouter } from "./routes/portal/index.js";
 import { startAutoSync } from "./lib/retell-auto-sync.js";
 import { startWeeklyReportScheduler } from "./lib/weekly-report.js";
+import { startLeadsSheetSync } from "./lib/leads-sheet-sync.js";
 import { reportsRouter } from "./routes/reports/index.js";
 import { refreshOwnerConfig } from "./lib/settings.js";
 import { loadRoleDefaultsCache } from "./lib/role-defaults.js";
@@ -538,6 +539,7 @@ app.listen(Number(config.PORT), () => {
   console.log(`ServiceCall API listening on port ${config.PORT}`);
   startAutoSync();
   startWeeklyReportScheduler();
+  startLeadsSheetSync();
 
   // One-time: promote sam_admin to super_admin
   (async () => {
