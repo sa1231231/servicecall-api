@@ -367,7 +367,14 @@ export function resolveFinetuneExamples(
   return (examples || []).map((ex) => {
     const out: Record<string, unknown> = {
       transcript: ex.transcript,
-      id: ex.id || `fe-${f.nextTs()}`,
+      // Always mint a fresh, random-suffixed id — never reuse ex.id. The
+      // same source example (e.g. one finetune example on a workspace
+      // data-point-default) is emitted onto every path that uses the data
+      // point; reusing its id made Retell reject the whole flow with
+      // "Duplicate example id". The random suffix guarantees uniqueness
+      // even across the separate per-path id factories the regenerator
+      // uses — a bare counter alone could still collide between paths.
+      id: `fe-${f.nextTs()}-${randomSuffix(9)}`,
     };
     if (ex.type === "positive") {
       const dest =

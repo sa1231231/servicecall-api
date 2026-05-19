@@ -400,5 +400,40 @@ describe("applyRegeneratedChain", () => {
       expect(ftes).toHaveLength(1);
       expect(ftes[0].destination_node_id).toBe(confirmNode!.id);
     });
+
+    it("emits unique finetune ids when one data-point-default example regenerates onto multiple paths", () => {
+      // Repro of the Retell "400 Duplicate example id" rejection: a
+      // workspace data-point-default carries one finetune example with a
+      // fixed id; the data point is used on multiple paths, so its Collect
+      // node is regenerated once per path. Each path's copy must get a
+      // distinct id and must never reuse the source example's id.
+      const sharedDp = dp({
+        variableName: "first_name",
+        label: "First Name",
+        finetuneExamples: [
+          { type: "negative", id: "fe-shared-1779206577800", transcript: [{ role: "user", content: "skip" }] },
+        ],
+      });
+      const a = regenerateDataChain(
+        pathFor(buildFlow([{ id: "1", name: "first_name" }])),
+        [sharedDp],
+        "close",
+        "close-q",
+        "pathA",
+      );
+      const b = regenerateDataChain(
+        pathFor(buildFlow([{ id: "1", name: "first_name" }])),
+        [sharedDp],
+        "close",
+        "close-q",
+        "pathB",
+      );
+      const ids = [...a.newNodes, ...b.newNodes]
+        .filter((n) => String(n.name).startsWith("Collect "))
+        .flatMap((n) => fteOf(n).map((e) => e.id as string));
+      expect(ids).toHaveLength(2);
+      expect(new Set(ids).size).toBe(2); // no duplicate ids across the paths
+      expect(ids).not.toContain("fe-shared-1779206577800"); // source id never reused
+    });
   });
 });
