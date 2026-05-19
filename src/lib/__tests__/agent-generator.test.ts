@@ -1717,3 +1717,73 @@ describe("Human Request global fine-tunes", () => {
     expect(utterancesOf(findHumanRequest(callback))).toContain("can I talk to the supervisor?");
   });
 });
+
+describe("intro & transition prompt overrides", () => {
+  const introNodeText = (agent: any): string =>
+    (agent.conversationFlow.nodes.find((n: any) => n.name === "Intro")
+      ?.instruction as any)?.text ?? "";
+  const transitionNodeText = (agent: any, name: string): string =>
+    (agent.conversationFlow.nodes.find((n: any) => n.name === name)
+      ?.instruction as any)?.text ?? "";
+
+  it("uses the built-in default intro prompt when introPrompt is unset", () => {
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    expect(introNodeText(agent)).toContain("Determine the reason for the caller's call.");
+  });
+
+  it("uses a custom introPrompt override, substituting {{business_name}}", () => {
+    const { agent } = generateAgent(
+      { ...baseConfig, introPrompt: "Greet warmly for {{business_name}} and listen." },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    expect(introNodeText(agent)).toBe("Greet warmly for Test Co and listen.");
+  });
+
+  it("falls back to the default intro prompt when introPrompt is blank", () => {
+    const { agent } = generateAgent(
+      { ...baseConfig, introPrompt: "   " },
+      ["full_name"],
+      undefined,
+      TEST_DEFAULTS,
+    );
+    expect(introNodeText(agent)).toContain("Determine the reason for the caller's call.");
+  });
+
+  it("uses the built-in default transition prompt when none is set", () => {
+    const { agent } = generateAgent(baseConfig, ["full_name"], undefined, TEST_DEFAULTS);
+    // Single-path agents name the transition node "Conversation".
+    expect(transitionNodeText(agent, "Conversation")).toContain(
+      "Empathetically acknowledge the caller's situation",
+    );
+  });
+
+  it("uses a per-path transitionPrompt override when provided", () => {
+    const { agent } = generateAgent(
+      baseConfig,
+      [],
+      [
+        {
+          name: "Sales",
+          transitionCondition: "wants to buy",
+          dataPoints: ["full_name"],
+          transitionPrompt: "Say: one moment while I pull that up.",
+        },
+        {
+          name: "Support",
+          transitionCondition: "needs help",
+          dataPoints: ["full_name"],
+        },
+      ],
+      TEST_DEFAULTS,
+    );
+    // Overridden path uses the custom text; the other keeps the default.
+    expect(transitionNodeText(agent, "Transition (Sales)")).toBe(
+      "Say: one moment while I pull that up.",
+    );
+    expect(transitionNodeText(agent, "Transition (Support)")).toContain(
+      "Empathetically acknowledge the caller's situation",
+    );
+  });
+});

@@ -767,6 +767,10 @@
     <textarea id="faqKnowledgeBase" required maxlength="50000" placeholder="Paste the business FAQ or knowledge base content here..."></textarea>
     <div class="field-hint">The agent uses this to answer caller questions (hours, pricing, service areas, etc.). Pasted into a dedicated FAQ node in the conversation flow — if a caller asks something off-topic from data collection, the agent checks here first.</div>
 
+    <label for="introPrompt">Intro Prompt</label>
+    <textarea id="introPrompt" maxlength="4000" rows="6"></textarea>
+    <div class="field-hint">Instruction for the Intro node — how the agent greets the caller and figures out why they called. Pre-filled with the default; edit to fine-tune. You can use <code>{{business_name}}</code> — it's replaced with the business name on save.</div>
+
     <label>When caller requests a human:</label>
     <div class="toggle-row">
       <input type="radio" name="humanRequestMode" id="humanRequestCallback" value="callback" checked onchange="toggleLiveTransferRecovery()">
@@ -1042,12 +1046,26 @@
     }
   }, true);
 
-  // Default templates for the closing prompts (must match DEFAULT_* in src/lib/agent-generator/node-builders.ts).
+  // Default prompt templates (must match DEFAULT_* in src/lib/agent-generator/node-builders.ts).
   const DEFAULT_CLOSE_PROMPT = 'Thank the caller for all the information, and let them know our team at {{business_name}} will reach out to get them set up as soon as possible.';
   const DEFAULT_CLOSE_QUESTION_PROMPT = 'Ask the caller exactly: "Is there anything else I can help you with?"';
   const DEFAULT_CLOSING_REMARKS_PROMPT = 'You are about to end the call. Do not ask any questions.\n\nThank them and tell them to have a wonderful day. ';
   const DEFAULT_CLOSING_STATEMENT_TEXT = 'Alright, bye now!';
   const DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT = "Sorry about that. It looks like our staff members are on the floor helping customers. Let us give you a call back. We'll call you back as soon as possible.";
+  const DEFAULT_INTRO_PROMPT = `Determine the reason for the caller's call.
+
+Welcome the caller: "Thank you for calling {{business_name}}, this is Anthony. How may I help you?"
+
+If the caller greets you, reciprocate the sentiment and then ask how you can help them.
+
+Do not assume their name until they tell you explicitly.
+
+Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ global node handle those and return here.`;
+  const DEFAULT_TRANSITION_PROMPT = `Empathetically acknowledge the caller's situation, then say something like
+
+"let me grab the information"
+
+Do not ask any questions here.`;
 
   // Pre-fill closing prompts on initial load (will be overwritten by
   // auto-save / draft / template restoration if present).
@@ -1056,6 +1074,7 @@
   document.getElementById('closingRemarksPrompt').value = DEFAULT_CLOSING_REMARKS_PROMPT;
   document.getElementById('closingStatementText').value = DEFAULT_CLOSING_STATEMENT_TEXT;
   document.getElementById('liveTransferRecoveryPrompt').value = DEFAULT_LIVE_TRANSFER_RECOVERY_PROMPT;
+  document.getElementById('introPrompt').value = DEFAULT_INTRO_PROMPT;
 
   // Show/hide the Live Transfer Recovery textarea based on humanRequestMode radio.
   function toggleLiveTransferRecovery() {
@@ -1941,6 +1960,9 @@
             <label>Transition Condition <span style="color:#dc2626">*</span></label>
             <input type="text" class="path-condition" placeholder="e.g. The caller confirms forward intent with service" value="${defaultCond}">
             <div class="field-hint">The condition the AI evaluates after the intro to route into this path.</div>
+            <label style="margin-top:0.5rem;">Transition Prompt</label>
+            <textarea class="path-transition-prompt" rows="5">${DEFAULT_TRANSITION_PROMPT.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+            <div class="field-hint">Instruction for this path's Transition node — how the agent acknowledges the caller before collecting data. Pre-filled with the default; edit to fine-tune.</div>
             <label style="margin-top:0.5rem;">Data Collection Chain</label>
             <div class="field-hint" style="margin-top:-0.25rem;">Add data points in the order the agent should ask them. Use branches for conditional logic.</div>
             <div class="chain-list" data-chain-root="${id}"></div>
@@ -2002,6 +2024,7 @@
     const endModeRadio = card.querySelector('.path-end-mode:checked');
     const endMode = endModeRadio ? endModeRadio.value : 'callback';
     const closePromptVal = card.querySelector('.path-close-prompt')?.value || '';
+    const transitionPromptVal = card.querySelector('.path-transition-prompt')?.value || '';
 
     // Create new card with copied name
     addPathCard(name ? name + ' (Copy)' : '');
@@ -2016,6 +2039,8 @@
     if (newEndRadio) newEndRadio.checked = true;
     const newClose = newCard.querySelector('.path-close-prompt');
     if (newClose) newClose.value = closePromptVal;
+    const newTransition = newCard.querySelector('.path-transition-prompt');
+    if (newTransition) newTransition.value = transitionPromptVal;
 
     // Restore the chain data into the new card
     const newChainRoot = newCard.querySelector('.chain-list[data-chain-root]');
@@ -2175,7 +2200,9 @@
         const endModeRadio = card.querySelector('.path-end-mode:checked');
         const endMode = endModeRadio ? endModeRadio.value : 'callback';
 
+        const transitionPrompt = (card.querySelector('.path-transition-prompt')?.value || '').trim();
         const pathEntry = { name, transitionCondition: condition, dataPoints, end_mode: endMode };
+        if (transitionPrompt) pathEntry.transitionPrompt = transitionPrompt;
         if (pathSms.length || pathEmail.length || pathCall) {
           pathEntry.dispatchOverride = {};
           if (pathSms.length) pathEntry.dispatchOverride.dispatch_text_numbers = pathSms;
@@ -2236,6 +2263,7 @@
       business: {
         businessName: val('businessName'),
         faqKnowledgeBase: val('faqKnowledgeBase'),
+        introPrompt: val('introPrompt'),
         introFinetuneExamples: [],
         human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked').value,
         // Per-path Close prompts collected from each routing-path card. Only
@@ -2499,6 +2527,7 @@
     const state = {
       businessName: val('businessName'),
       faqKnowledgeBase: val('faqKnowledgeBase'),
+      introPrompt: val('introPrompt'),
       routingPaths: [],
       dispatchTextNumbers: getFormChipValues('chip-dispatch-text').join(', '),
       dispatchCallNumber: val('dispatchCallNumber'),
@@ -2519,6 +2548,7 @@
       state.routingPaths.push({
         name: card.querySelector('.path-name').value,
         condition: card.querySelector('.path-condition').value,
+        transitionPrompt: card.querySelector('.path-transition-prompt')?.value || '',
         chain: chainRoot ? serializeChain(chainRoot) : [],
         dispatchSms: getChipValues(card.querySelector('.path-dispatch-sms')).join(', '),
         dispatchEmail: getChipValues(card.querySelector('.path-dispatch-email')).join(', '),
@@ -2540,6 +2570,7 @@
       dataPoints: p.dataPoints,
       end_mode: p.end_mode || 'callback',
       ...(p.transitionFinetuneExamples ? { transitionFinetuneExamples: p.transitionFinetuneExamples } : {}),
+      ...(p.transitionPrompt ? { transitionPrompt: p.transitionPrompt } : {}),
     }));
 
     return {
@@ -2549,6 +2580,7 @@
       business: {
         businessName: val('businessName'),
         faqKnowledgeBase: val('faqKnowledgeBase'),
+        introPrompt: val('introPrompt'),
         introFinetuneExamples: [],
         human_request_mode: document.querySelector('input[name="humanRequestMode"]:checked')?.value || 'callback',
         // Close Prompt is per-path; export the map so a load → export cycle preserves it.
@@ -2621,6 +2653,7 @@
         const state = {
           businessName: config.business?.businessName || '',
           faqKnowledgeBase: config.business?.faqKnowledgeBase || '',
+          introPrompt: config.business?.introPrompt || '',
           humanRequestMode: config.business?.human_request_mode || 'callback',
           closePrompt: legacyClose, // kept on state so loadFormState can fall back per-path
           closeQuestionPrompt: config.business?.closeQuestionPrompt || '',
@@ -2695,6 +2728,7 @@
             return {
               name: p.name,
               condition: p.transitionCondition || '',
+              transitionPrompt: p.transitionPrompt || '',
               chain,
               dispatchSms: (pathDbt.dispatch_text_numbers || []).join(', '),
               dispatchEmail: (pathDbt.dispatch_email || []).join(', '),
@@ -2720,6 +2754,7 @@
   function loadFormState(state) {
     document.getElementById('businessName').value = state.businessName || '';
     document.getElementById('faqKnowledgeBase').value = state.faqKnowledgeBase || '';
+    document.getElementById('introPrompt').value = state.introPrompt || DEFAULT_INTRO_PROMPT;
     setClosingPrompt('closeQuestionPrompt', state.closeQuestionPrompt || DEFAULT_CLOSE_QUESTION_PROMPT);
     setClosingPrompt('closingRemarksPrompt', state.closingRemarksPrompt || DEFAULT_CLOSING_REMARKS_PROMPT);
     setClosingPrompt('closingStatementText', state.closingStatementText || DEFAULT_CLOSING_STATEMENT_TEXT);
@@ -2743,6 +2778,10 @@
       const card = pathsContainer.lastElementChild;
       card.querySelector('.path-name').value = p.name || '';
       card.querySelector('.path-condition').value = p.condition || '';
+      // Only override the addPathCard default when the draft carries a
+      // transition prompt — old drafts (no field) keep the default.
+      const transEl = card.querySelector('.path-transition-prompt');
+      if (transEl && p.transitionPrompt) transEl.value = p.transitionPrompt;
       setChipValues(card.querySelector('.path-dispatch-sms'), csvToArray(p.dispatchSms || ''));
       setChipValues(card.querySelector('.path-dispatch-email'), csvToArray(p.dispatchEmail || ''));
       card.querySelector('.path-dispatch-call').value = p.dispatchCall || '';

@@ -39,6 +39,9 @@ export interface CreateAgentBody {
      *  to PathConfig.transitionFinetuneExamples; merged into the intro
      *  node's finetune_transition_examples at generation time. */
     transitionFinetuneExamples?: FinetuneExample[];
+    /** Optional override for this path's Transition node instruction text.
+     *  Blank/undefined → the generator's DEFAULT_TRANSITION_PROMPT. */
+    transitionPrompt?: string;
   }>;
   client: {
     slug: string;
@@ -225,6 +228,7 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
     const agentConfig: AgentConfig = {
       ...body.business,
       humanRequestMode: humanMode,
+      introPrompt: body.business.introPrompt?.trim() || undefined,
       closePrompt: body.business.closePrompt?.trim() || undefined,
       closeQuestionPrompt: body.business.closeQuestionPrompt?.trim() || undefined,
       closingRemarksPrompt: body.business.closingRemarksPrompt?.trim() || undefined,
@@ -261,6 +265,7 @@ export async function createAgentFromConfig(body: CreateAgentBody): Promise<Crea
             endMode,
             transferDestination: transferDestination ?? undefined,
             transitionFinetuneExamples: p.transitionFinetuneExamples,
+            transitionPrompt: p.transitionPrompt,
           };
         })
       : undefined;

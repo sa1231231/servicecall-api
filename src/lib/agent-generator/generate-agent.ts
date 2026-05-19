@@ -55,6 +55,9 @@ export interface PathConfig {
    *  into the intro node's finetune_transition_examples at generation time
    *  with destination_node_id set to this path's transition node. */
   transitionFinetuneExamples?: FinetuneExample[];
+  /** Optional override for this path's Transition node instruction text.
+   *  Blank/undefined → DEFAULT_TRANSITION_PROMPT. */
+  transitionPrompt?: string;
 }
 
 /** The flattened, in-order sequence a path compiles into: data points and
@@ -365,13 +368,14 @@ When listing anything — services, time slots, examples, options — never list
           ? pIds.closeId
           : ids.closeId;
 
+    const transitionPrompt = paths[pathIdx]?.transitionPrompt;
     if (rp.resolved.length === 0) {
       // Empty data chain: transition skips the entire collection scaffold and
       // jumps straight to the terminal (Close for callback, Pre-Transfer for
       // transfer). No Extract / Router / collect / confirm nodes generated.
-      allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel, terminalId));
+      allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel, terminalId, transitionPrompt));
     } else {
-      allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel));
+      allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel, undefined, transitionPrompt));
       allNodes.push(
         ...buildDataChain(rp.resolved, pIds, pPos, terminalId, ids.closeQuestionId, f, pathLabel),
       );

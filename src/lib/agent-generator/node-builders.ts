@@ -283,6 +283,10 @@ export interface AgentConfig {
    *  `destination` are ignored because the global node has a fixed target. */
   humanRequestFinetuneExamples?: FinetuneExample[];
   humanRequestMode?: HumanRequestMode;
+  // Optional override for the Intro node's instruction text. When unset (or
+  // blank), the generator uses DEFAULT_INTRO_PROMPT. {{business_name}} is
+  // substituted at build time, so overrides stay reusable across drafts.
+  introPrompt?: string;
   closePrompt?: string;
   // Per-path overrides for the Close prompt (multi-path agents only).
   // Map keys are path names. Paths missing from the map fall back to
@@ -628,6 +632,14 @@ export function buildEndNode(ids: Ids, pos: Positions) {
   };
 }
 
+/** Default instruction text for a path's Transition node — used when the
+ *  path config supplies no transitionPrompt override. */
+export const DEFAULT_TRANSITION_PROMPT = `Empathetically acknowledge the caller's situation, then say something like
+
+"let me grab the information"
+
+Do not ask any questions here.`;
+
 export function buildTransitionNode(
   pathIds: PathIds,
   pathPos: PathPositions,
@@ -637,15 +649,14 @@ export function buildTransitionNode(
   // path has no data points — the caller passes the terminal node id (close
   // or pre-transfer) so the transition skips straight there.
   targetId?: string,
+  // Optional override for the node's instruction text. Empty/undefined →
+  // DEFAULT_TRANSITION_PROMPT. Lets the create form / drafts tune the prompt.
+  transitionPrompt?: string,
 ) {
   return {
     instruction: {
       type: "prompt",
-      text: `Empathetically acknowledge the caller's situation, then say something like
-
-"let me grab the information"
-
-Do not ask any questions here.`,
+      text: transitionPrompt?.trim() || DEFAULT_TRANSITION_PROMPT,
     },
     name: pathName ? `Transition (${pathName})` : "Conversation",
     edges: [],
@@ -662,6 +673,19 @@ Do not ask any questions here.`,
     },
   };
 }
+
+/** Default instruction text for the Intro node — used when AgentConfig
+ *  supplies no introPrompt override. {{business_name}} is substituted at
+ *  build time (see renderTemplate call in buildIntroNode). */
+export const DEFAULT_INTRO_PROMPT = `Determine the reason for the caller's call.
+
+Welcome the caller: "Thank you for calling {{business_name}}, this is Anthony. How may I help you?"
+
+If the caller greets you, reciprocate the sentiment and then ask how you can help them.
+
+Do not assume their name until they tell you explicitly.
+
+Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ global node handle those and return here.`;
 
 export function buildIntroNode(
   config: AgentConfig,
@@ -705,23 +729,14 @@ export function buildIntroNode(
     finetune_conversation_examples: [],
     instruction: {
       type: "prompt",
-      // Use the {{business_name}} placeholder + renderTemplate so the intro
-      // matches the same convention as Close / Pre-Transfer / Live-Transfer
-      // Recovery prompts. Keeps the substitution path uniform and lets the
-      // rename-business endpoint (replaceBusinessName) scrub the value
-      // consistently across every prompt site.
-      text: renderTemplate(
-        `Determine the reason for the caller's call.
-
-Welcome the caller: "Thank you for calling {{business_name}}, this is Anthony. How may I help you?"
-
-If the caller greets you, reciprocate the sentiment and then ask how you can help them.
-
-Do not assume their name until they tell you explicitly.
-
-Do NOT leave this node if the caller is only asking questions. Let the Admin/FAQ global node handle those and return here.`,
-        { business_name: config.businessName },
-      ),
+      // {{business_name}} + renderTemplate keeps the intro on the same
+      // substitution convention as Close / Pre-Transfer / Live-Transfer
+      // Recovery prompts (and lets replaceBusinessName scrub it on rename).
+      // config.introPrompt, when set, overrides DEFAULT_INTRO_PROMPT — it's
+      // rendered the same way so an override may still use {{business_name}}.
+      text: renderTemplate(config.introPrompt?.trim() || DEFAULT_INTRO_PROMPT, {
+        business_name: config.businessName,
+      }),
     },
     name: "Intro",
     edges,
