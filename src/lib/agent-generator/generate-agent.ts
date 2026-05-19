@@ -373,9 +373,13 @@ When listing anything — services, time slots, examples, options — never list
       // Empty data chain: transition skips the entire collection scaffold and
       // jumps straight to the terminal (Close for callback, Pre-Transfer for
       // transfer). No Extract / Router / collect / confirm nodes generated.
-      allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel, terminalId, transitionPrompt));
+      allNodes.push(
+        buildTransitionNode(pIds, pPos, f, pathLabel, terminalId, transitionPrompt, businessName),
+      );
     } else {
-      allNodes.push(buildTransitionNode(pIds, pPos, f, pathLabel, undefined, transitionPrompt));
+      allNodes.push(
+        buildTransitionNode(pIds, pPos, f, pathLabel, undefined, transitionPrompt, businessName),
+      );
       allNodes.push(
         ...buildDataChain(rp.resolved, pIds, pPos, terminalId, ids.closeQuestionId, f, pathLabel),
       );

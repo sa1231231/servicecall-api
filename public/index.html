@@ -3276,6 +3276,7 @@ Do not ask any questions here.`;
     const endMode = card.querySelector('.path-end-mode:checked')?.value || 'callback';
     const dispatchCall = card.querySelector('.path-dispatch-call')?.value || '';
     const closePrompt = card.querySelector('.path-close-prompt')?.value || '';
+    const transitionPrompt = card.querySelector('.path-transition-prompt')?.value || '';
     const transFt = getFtFromEl(card, 'transitionFinetunes');
     detail.innerHTML = `
       <h4>Path <span class="detail-type-badge">routing</span></h4>
@@ -3290,6 +3291,10 @@ Do not ask any questions here.`;
         </button>
         <span class="ft-hint">Examples that route the caller to this path.</span>
       </div>
+
+      <label style="margin-top:0.75rem;">Transition Prompt</label>
+      <textarea id="detailPathTransitionPrompt" rows="5" placeholder="How the agent acknowledges the caller right after routing to this path.">${esc(transitionPrompt)}</textarea>
+      <div class="field-hint">Instruction for this path's Transition node — spoken right after the intro routes the caller here. Type <code>{{business_name}}</code> to substitute the business name. Leave blank to use the default.</div>
 
       <label style="margin-top:0.75rem;">Close Prompt</label>
       <textarea id="detailPathClosePrompt" rows="3" placeholder="Spoken right after data collection wraps up — specific to this path.">${esc(closePrompt)}</textarea>
@@ -3320,6 +3325,11 @@ Do not ask any questions here.`;
     });
     document.getElementById('detailPathCond').addEventListener('input', (e) => {
       card.querySelector('.path-condition').value = e.target.value;
+      onTreeFormChange();
+    });
+    document.getElementById('detailPathTransitionPrompt').addEventListener('input', (e) => {
+      const transEl = card.querySelector('.path-transition-prompt');
+      if (transEl) transEl.value = e.target.value;
       onTreeFormChange();
     });
     document.getElementById('detailPathClosePrompt').addEventListener('input', (e) => {

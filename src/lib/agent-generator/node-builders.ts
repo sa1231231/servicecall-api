@@ -652,11 +652,15 @@ export function buildTransitionNode(
   // Optional override for the node's instruction text. Empty/undefined →
   // DEFAULT_TRANSITION_PROMPT. Lets the create form / drafts tune the prompt.
   transitionPrompt?: string,
+  // Business name for {{business_name}} substitution in the prompt text.
+  businessName?: string,
 ) {
   return {
     instruction: {
       type: "prompt",
-      text: transitionPrompt?.trim() || DEFAULT_TRANSITION_PROMPT,
+      text: renderTemplate(transitionPrompt?.trim() || DEFAULT_TRANSITION_PROMPT, {
+        business_name: businessName ?? "",
+      }),
     },
     name: pathName ? `Transition (${pathName})` : "Conversation",
     edges: [],
