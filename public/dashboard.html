@@ -10639,7 +10639,7 @@
       pendingLeadsCache = await leadsRes.json();
       pendingLeadDrafts = draftsRes.ok ? await draftsRes.json() : [];
       updateLeadsBadge();
-      renderPendingLeadsBody();
+      renderPendingLeadsBody(silent);
       // Restore scroll on silent polls — renderPendingLeadDetail rebuilds
       // the detail innerHTML, which would otherwise scroll the page back
       // to the top on each poll tick. requestAnimationFrame waits one
@@ -10715,11 +10715,11 @@
     }
   }
 
-  function renderPendingLeadsBody() {
+  function renderPendingLeadsBody(silent) {
     if (pendingLeadActiveId) {
       const lead = pendingLeadsCache.find((l) => l._id === pendingLeadActiveId);
       if (lead) {
-        renderPendingLeadDetail(lead);
+        renderPendingLeadDetail(lead, silent);
         return;
       }
       // Lead not in cache (e.g. just promoted/dismissed) — fall back to list.
@@ -10763,8 +10763,38 @@
     body.innerHTML = html;
   }
 
-  function renderPendingLeadDetail(lead) {
+  // True when the operator has typed into an editable lead-detail field but
+  // not yet Saved — i.e. a DOM input differs from the lead's persisted value.
+  // A background poll checks this before rebuilding the panel so it never
+  // wipes in-progress edits (e.g. a website typed but not yet saved).
+  function pendingLeadDetailHasUnsavedEdits(lead) {
+    if (!lead) return false;
+    const input = lead.input || {};
+    const enriched = lead.enriched || {};
+    const pairs = [
+      ['leadInputName', input.name],
+      ['leadInputPhone', input.phone],
+      ['leadInputWebsite', input.website],
+      ['leadInputBusinessType', input.business_type],
+      ['leadInputNotes', input.notes],
+      ['leadBizName', enriched.business_name],
+      ['leadFaq', enriched.faqKnowledgeBase],
+    ];
+    for (const [domId, savedVal] of pairs) {
+      const el = document.getElementById(domId);
+      if (!el) continue; // panel not rendered yet
+      if ((el.value || '').trim() !== String(savedVal || '').trim()) return true;
+    }
+    return false;
+  }
+
+  function renderPendingLeadDetail(lead, silent) {
     const body = document.getElementById('pendingLeadsBody');
+    // A background (silent) poll must not rebuild the panel while the
+    // operator has unsaved edits — innerHTML replacement would wipe whatever
+    // they've typed. Skip this tick; the panel refreshes on the next poll
+    // once edits are Saved, or immediately on any explicit action.
+    if (silent && pendingLeadDetailHasUnsavedEdits(lead)) return;
     const enriched = lead.enriched || {};
     const suggestedTemplate = (enriched.templateName || '').trim();
     const draftOptions = ['<option value="">— Pick a draft template —</option>']
