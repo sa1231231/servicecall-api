@@ -407,7 +407,11 @@ nodeEditorRouter.get("/:agentId", async (req, res) => {
           const dp = step.dp;
           return {
             variableName: dp.variableName,
-            label: dp.label,
+            // Display name derived from the variable — consistent with the
+            // SMS/email notification labels. NOT the baked "Collect <X>"
+            // node name, which freezes whatever the data-point default's
+            // label happened to be at generation time (stale typos and all).
+            label: toLabel(dp.variableName),
             collectNodeId: dp.collectNode.id,
             confirmNodeId: dp.confirmNode.id,
             conversationPrompt: dp.conversationPrompt,
@@ -504,7 +508,7 @@ nodeEditorRouter.get("/:agentId/versions/:versionId", async (req, res) => {
         name: p.name,
         dataPoints: p.dataChain.map((dp) => ({
           variableName: dp.variableName,
-          label: dp.label,
+          label: toLabel(dp.variableName),
           conversationPrompt: dp.conversationPrompt,
         })),
       })),
