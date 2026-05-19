@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import type { YelpPhoneSearchResult } from "./yelp-search.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -193,4 +194,36 @@ export function formatPlacesPreSearch(result: PlacesPreSearchResult): string {
     lines.push("");
   }
   return lines.join("\n");
+}
+
+/**
+ * Second-stage Places lookup keyed by the business name Yelp's phone-match
+ * resolved. Places `searchText` does NOT resolve a bare phone number, and a
+ * lead's `name` is often a person — so the first-pass queries (phone, then
+ * lead name) routinely miss the business entirely. Yelp's phone-match
+ * reliably yields the canonical business name; feeding that back into Places
+ * by name is what surfaces the GBP `websiteUri` (+ hours) that Yelp Fusion
+ * itself never returns.
+ *
+ * `alreadyQueried` are the first-pass query strings — skip any name already
+ * covered so we don't pay for a duplicate call. Caps at 2 extra Places
+ * queries; blank/duplicate Yelp names don't consume the cap.
+ * `searchFn` is injectable for tests; production uses `placesSearchText`.
+ */
+export async function placesLookupByYelpHits(
+  yelp: YelpPhoneSearchResult | undefined,
+  alreadyQueried: string[],
+  searchFn: (query: string) => Promise<PlacesSearchResult> = placesSearchText,
+): Promise<PlacesSearchResult[]> {
+  if (!yelp || !yelp.ok || yelp.hits.length === 0) return [];
+  const seen = new Set(alreadyQueried.map((q) => q.trim().toLowerCase()));
+  const results: PlacesSearchResult[] = [];
+  for (const hit of yelp.hits) {
+    if (results.length >= 2) break;
+    const name = (hit.name ?? "").trim();
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    results.push(await searchFn(name));
+  }
+  return results;
 }

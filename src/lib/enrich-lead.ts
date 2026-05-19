@@ -10,6 +10,7 @@ import {
 } from "./brave-search.js";
 import {
   preSearchLeadPlaces,
+  placesLookupByYelpHits,
   formatPlacesPreSearch,
   type PlacesPreSearchResult,
 } from "./google-places.js";
@@ -229,6 +230,16 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
       input.phone ? lookupCallerName(input.phone) : Promise.resolve(undefined),
       input.phone ? yelpPhoneSearch(input.phone) : Promise.resolve(undefined),
     ]);
+    // Second-stage Places lookup: Places searchText can't resolve a bare
+    // phone, and the lead `name` is often a person — so the first pass
+    // routinely misses the business. Re-query Places by the name Yelp's
+    // phone-match resolved; that is what surfaces the GBP website + hours.
+    placesSearch.searches.push(
+      ...(await placesLookupByYelpHits(
+        yelpSearch,
+        placesSearch.searches.map((s) => s.query),
+      )),
+    );
   } catch (err) {
     console.warn(
       `[enrich-lead] pre-search failed for ${input.name}: ${err instanceof Error ? err.message : err}`,
@@ -282,7 +293,7 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
     // listing/website to fill the FAQ. `max_uses` caps blast radius.
     // Tool blocks are captured by `summarizeContentBlocks` so the AI
     // Feed shows every search and fetch the model ran.
-    // 120s ceiling: web_search (max 4) + web_fetch (max 3) plus model
+    // 120s ceiling: web_search (max 8) + web_fetch (max 4) plus model
     // thinking time should land in 30–60s typical, 90s worst case. The
     // ceiling guarantees we *fail* the lead instead of leaving it stuck
     // in "enriching" forever if the SDK hangs or the model gets into a
@@ -304,7 +315,9 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
             // hits "Server tool use limit exceeded" before the obvious
             // query gets tried. 8 is still ~$0.08/lead worst case.
             { type: "web_search_20260209", name: "web_search", max_uses: 8 },
-            { type: "web_fetch_20260309", name: "web_fetch", max_uses: 3 },
+            // 4 fetches: the official website (primary FAQ source) + the
+            // Facebook page + the Yelp listing + one fallback page.
+            { type: "web_fetch_20260309", name: "web_fetch", max_uses: 4 },
           ],
         },
         { timeout: 120_000 },

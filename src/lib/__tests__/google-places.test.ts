@@ -9,6 +9,7 @@ const {
   formatPlacesPreSearch,
   placesSearchText,
   preSearchLeadPlaces,
+  placesLookupByYelpHits,
 } = await import("../google-places.js");
 
 // ── buildPlacesQueries — pure ────────────────────────────────────────────────
@@ -166,5 +167,62 @@ describe("preSearchLeadPlaces", () => {
     const out = await preSearchLeadPlaces({ phone: "+19739781542", name: "Mario Mina" });
     expect(out.searches).toHaveLength(2);
     expect((global.fetch as any).mock.calls).toHaveLength(2);
+  });
+});
+
+describe("placesLookupByYelpHits", () => {
+  // Injectable stub search fn — records the queries it received.
+  function stubSearch() {
+    const calls: string[] = [];
+    const fn = async (query: string) => {
+      calls.push(query);
+      return { ok: true, query, hits: [] };
+    };
+    return { fn, calls };
+  }
+
+  const yelp = (names: string[]) => ({
+    ok: true,
+    phone: "+15551234567",
+    hits: names.map((name) => ({ name, categories: [] as string[] })),
+  });
+
+  it("re-queries Places for each Yelp hit name (capped at 2)", async () => {
+    const { fn, calls } = stubSearch();
+    const out = await placesLookupByYelpHits(
+      yelp(["Arctic Blast Heating & Air", "Second Biz", "Third Biz"]),
+      [],
+      fn,
+    );
+    expect(calls).toEqual(["Arctic Blast Heating & Air", "Second Biz"]);
+    expect(out).toHaveLength(2);
+  });
+
+  it("skips a name already covered by a first-pass query (case-insensitive)", async () => {
+    const { fn, calls } = stubSearch();
+    await placesLookupByYelpHits(
+      yelp(["Arctic Blast Heating & Air"]),
+      ["arctic blast heating & air"],
+      fn,
+    );
+    expect(calls).toEqual([]);
+  });
+
+  it("skips blank hit names", async () => {
+    const { fn, calls } = stubSearch();
+    await placesLookupByYelpHits(yelp(["", "  ", "Real Biz"]), [], fn);
+    expect(calls).toEqual(["Real Biz"]);
+  });
+
+  it("no-ops when Yelp is undefined, errored, or has no hits", async () => {
+    const { fn, calls } = stubSearch();
+    expect(await placesLookupByYelpHits(undefined, [], fn)).toEqual([]);
+    expect(
+      await placesLookupByYelpHits({ ok: false, phone: "x", hits: [] }, [], fn),
+    ).toEqual([]);
+    expect(
+      await placesLookupByYelpHits({ ok: true, phone: "x", hits: [] }, [], fn),
+    ).toEqual([]);
+    expect(calls).toEqual([]);
   });
 });
