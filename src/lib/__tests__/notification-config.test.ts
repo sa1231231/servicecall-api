@@ -450,6 +450,43 @@ describe("deriveMultiPathNotificationConfig", () => {
     expect(Object.keys(result.message_types)).toEqual(["whos_paying"]);
   });
 
+  // Regression: a path name with a spaced separator (" / ") slugifies to a
+  // DOUBLE underscore — pathNameToKey turns the surrounding spaces into "_"
+  // then strips the "/", leaving them adjacent. Pinned intentionally: do not
+  // change this without migrating stored agent docs. See the long note on
+  // pathNameToKey in notification-config.ts.
+  it("path names with a spaced separator slugify to a double underscore", () => {
+    const pathVars: PathVariables[] = [
+      { name: "New Project / Bid Request", variables: [{ key: "full_name", label: "Name" }] },
+      { name: "Exiting Project / Active Job", variables: [{ key: "full_name", label: "Name" }] },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    expect(Object.keys(result.message_types)).toEqual([
+      "new_project__bid_request",
+      "exiting_project__active_job",
+    ]);
+  });
+
+  // The invariant that keeps runtime dispatch correct: every resolve rule's
+  // `then` (and default_message_type) must be a key that exists in
+  // message_types. If a future slug change desyncs them, post-hook.ts silently
+  // falls back to the default template and every call is misrouted.
+  it("resolve rule targets and default_message_type all exist in message_types", () => {
+    const pathVars: PathVariables[] = [
+      { name: "New Project / Bid Request", variables: [{ key: "full_name", label: "Name" }] },
+      { name: "Exiting Project / Active Job", variables: [{ key: "full_name", label: "Name" }] },
+    ];
+
+    const result = deriveMultiPathNotificationConfig(pathVars, baseClient, "agent_123");
+    const mtKeys = Object.keys(result.message_types);
+    expect(result.resolve_rules?.length).toBe(2);
+    for (const rule of result.resolve_rules ?? []) {
+      expect(mtKeys).toContain(rule.then);
+    }
+    expect(mtKeys).toContain(result.default_message_type);
+  });
+
   it("no resolve_rule is set (uses resolve_rules instead)", () => {
     const pathVars: PathVariables[] = [
       { name: "A", variables: [{ key: "full_name", label: "Name" }] },

@@ -221,6 +221,24 @@ export function deriveNotificationConfig(
 
 // ── Derive Notification Config (multi-path) ─────────────────────────────────
 
+// Slugify a conversation-flow path name into a message_types key.
+//
+// NOTE — load-bearing quirk: a path name with a spaced separator yields a
+// DOUBLE underscore, e.g. "New Project / Bid Request" → "new_project__bid_request".
+// The spaces around the "/" become "_" first, then the "/" is stripped,
+// leaving the two underscores adjacent. This is fine and intentional: the
+// message_types key, every resolve_rules[].then, and default_message_type are
+// ALL produced by this one function, so they agree at dispatch time
+// (post-hook.ts resolves message_types[resolve_type(vars)]).
+//
+// Two consequences before you "tidy" this:
+//   1. The node editor's findMtKey() in public/dashboard.html must stay
+//      collapse-tolerant ("_" and "__" treated as equal) to bind to these keys.
+//   2. Changing this slug rewrites the keys, but retell-auto-sync only updates
+//      message_types when the new key set exactly matches the stored one — so a
+//      naive change silently freezes every existing multi-path agent. Migrate
+//      message_types keys + resolve_rules[].then + default_message_type
+//      atomically, or not at all. Behavior is pinned in notification-config.test.ts.
 function pathNameToKey(name: string): string {
   return name
     .toLowerCase()
