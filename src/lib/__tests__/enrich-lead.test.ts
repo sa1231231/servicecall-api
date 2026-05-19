@@ -76,6 +76,8 @@ const {
   formatLeadAsUserMessage,
   buildSystemPrompt,
   enrichLead,
+  isTransientAnthropicError,
+  withAnthropicRetry,
 } = await import("../enrich-lead.js");
 
 beforeEach(() => {
@@ -495,5 +497,68 @@ describe("enrichLead — orchestrator", () => {
     expect(arg.messages[0].role).toBe("user");
     expect(arg.messages[0].content).toContain("Acme HVAC");
     expect(arg.messages[0].content).toContain("acme.com");
+  });
+});
+
+describe("isTransientAnthropicError", () => {
+  it("treats 429 / 529 / 5xx statuses as transient", () => {
+    expect(isTransientAnthropicError({ status: 429 })).toBe(true);
+    expect(isTransientAnthropicError({ status: 529 })).toBe(true);
+    expect(isTransientAnthropicError({ status: 500 })).toBe(true);
+    expect(isTransientAnthropicError({ status: 503 })).toBe(true);
+  });
+
+  it("treats 4xx misuse statuses (other than 429) as non-transient", () => {
+    expect(isTransientAnthropicError({ status: 400 })).toBe(false);
+    expect(isTransientAnthropicError({ status: 401 })).toBe(false);
+    expect(isTransientAnthropicError({ status: 404 })).toBe(false);
+  });
+
+  it("falls back to message matching when there's no numeric status", () => {
+    expect(isTransientAnthropicError(new Error('529 {"type":"overloaded_error"}'))).toBe(true);
+    expect(isTransientAnthropicError(new Error("Overloaded"))).toBe(true);
+    expect(isTransientAnthropicError(new Error("503 Service Unavailable"))).toBe(true);
+    expect(isTransientAnthropicError(new Error("invalid_request_error: bad model"))).toBe(false);
+  });
+});
+
+describe("withAnthropicRetry", () => {
+  it("returns the result without retrying when the call succeeds", async () => {
+    const fn = vi.fn().mockResolvedValue("ok");
+    expect(await withAnthropicRetry(fn)).toBe("ok");
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a transient failure with backoff, then succeeds", async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const fn = vi.fn().mockImplementation(async () => {
+      calls += 1;
+      if (calls < 3) throw { status: 529, message: "Overloaded" };
+      return "recovered";
+    });
+    const promise = withAnthropicRetry(fn);
+    await vi.advanceTimersByTimeAsync(100_000); // drain 30s + 60s backoff
+    expect(await promise).toBe("recovered");
+    expect(fn).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
+
+  it("gives up after maxAttempts and throws the last transient error", async () => {
+    vi.useFakeTimers();
+    const fn = vi.fn().mockRejectedValue({ status: 529, message: "Overloaded" });
+    const promise = withAnthropicRetry(fn);
+    const settled = promise.catch((e) => e);
+    await vi.advanceTimersByTimeAsync(100_000);
+    const err = await settled;
+    expect((err as { status: number }).status).toBe(529);
+    expect(fn).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+  });
+
+  it("does not retry a non-transient error — throws on the first attempt", async () => {
+    const fn = vi.fn().mockRejectedValue({ status: 400, message: "bad request" });
+    await expect(withAnthropicRetry(fn)).rejects.toMatchObject({ status: 400 });
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 });

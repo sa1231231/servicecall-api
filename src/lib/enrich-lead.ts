@@ -148,6 +148,49 @@ export function buildSystemPrompt(skill: LoadedSkill): string {
 const SKILL_NAME = "onboarding-to-config";
 
 /**
+ * Transient Anthropic API failures worth retrying: rate limits (429),
+ * "overloaded" (529), and any 5xx. Everything else (4xx misuse, timeouts)
+ * is non-transient — retrying won't help. The SDK error carries a numeric
+ * `status`; we fall back to matching the message for shapes without it.
+ */
+export function isTransientAnthropicError(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  if (typeof status === "number") {
+    return status === 429 || status >= 500;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return /(^|\D)(429|5\d\d)(\D|$)|overloaded/i.test(msg);
+}
+
+/**
+ * Runs an Anthropic call, retrying transient overload/rate-limit failures
+ * with backoff. The SDK retries fast blips internally; this rides out a
+ * *sustained* overload spike (e.g. a 529 storm) so a transient Anthropic
+ * outage doesn't permanently fail an otherwise-fine lead. 3 attempts total,
+ * 30s then 60s backoff.
+ */
+export async function withAnthropicRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts = 3,
+  backoffMs = (attempt: number) => attempt * 30_000,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= maxAttempts || !isTransientAnthropicError(err)) throw err;
+      const waitMs = backoffMs(attempt);
+      const status = (err as { status?: number } | null)?.status ?? "?";
+      console.warn(
+        `[enrich-lead] Anthropic transient error (status ${status}), ` +
+          `attempt ${attempt}/${maxAttempts} — retrying in ${waitMs / 1000}s`,
+      );
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+}
+
+/**
  * Call the user's Claude skill (loaded from `skills/onboarding-to-config/`)
  * to enrich a raw lead into a business name + FAQ + suggested template.
  * Best-effort: any failure returns `{ ok: false }` with a human-readable
@@ -246,24 +289,26 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
     // tool-calling loop. The route's catch path will then patch the
     // lead to status="failed" with the timeout error so the operator
     // can re-enrich.
-    const result = await client.messages.create(
-      {
-        model: "claude-sonnet-4-6",
-        max_tokens: 4096,
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }],
-        tools: [
-          // 8 (not 4) because the model spends 2–3 web_search calls
-          // exploring query variants before landing on the bare-phone
-          // query that surfaces Nextdoor/Facebook long-tail listings.
-          // With code_execution wrapping each search, a tight budget
-          // hits "Server tool use limit exceeded" before the obvious
-          // query gets tried. 8 is still ~$0.08/lead worst case.
-          { type: "web_search_20260209", name: "web_search", max_uses: 8 },
-          { type: "web_fetch_20260309", name: "web_fetch", max_uses: 3 },
-        ],
-      },
-      { timeout: 120_000 },
+    const result = await withAnthropicRetry(() =>
+      client.messages.create(
+        {
+          model: "claude-sonnet-4-6",
+          max_tokens: 4096,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userMessage }],
+          tools: [
+            // 8 (not 4) because the model spends 2–3 web_search calls
+            // exploring query variants before landing on the bare-phone
+            // query that surfaces Nextdoor/Facebook long-tail listings.
+            // With code_execution wrapping each search, a tight budget
+            // hits "Server tool use limit exceeded" before the obvious
+            // query gets tried. 8 is still ~$0.08/lead worst case.
+            { type: "web_search_20260209", name: "web_search", max_uses: 8 },
+            { type: "web_fetch_20260309", name: "web_fetch", max_uses: 3 },
+          ],
+        },
+        { timeout: 120_000 },
+      ),
     );
 
     const rawResponse = extractText(result);
