@@ -150,11 +150,21 @@ If pre-search blocks are missing entirely (rare — usually means the deployment
 {
   "businessName": "string",
   "faqKnowledgeBase": "string (multi-line markdown)",
-  "templateName": "string (must match an existing template, or empty if unsure)"
+  "templateName": "string (must match an existing template, or empty if unsure)",
+  "website": "string — the business's own website URL, or \"\" if not confirmed",
+  "city": "string — city the business is based in, or \"\"",
+  "state": "string — 2-letter state code, or \"\"",
+  "email": "string — business contact email if found on the site/Facebook, or \"\""
 }
 ```
 
-That's it.
+That's it. `website`, `city`, `state`, and `email` are **structured copies of
+facts you already resolved while writing the FAQ** — emit them as their own
+fields here (in addition to the `Website:` line inside the FAQ). They are
+carried onto the promoted agent's contact/billing record, so accuracy matters.
+Use `""` for any value you could not confirm — **never guess one**. `email` is
+genuinely optional: most service businesses don't publish one, so `""` is the
+common and correct answer.
 
 ## Worked Example (gold standard)
 
@@ -178,6 +188,10 @@ business_type: hvac
 {
   "businessName": "Home Heating & Cooling",
   "templateName": "hvac",
+  "website": "homeheatingbend.com",
+  "city": "Bend",
+  "state": "OR",
+  "email": "",
   "faqKnowledgeBase": "## Company Info\nHome Heating & Cooling, Inc. is a locally owned and operated HVAC company based in Bend, OR. They have been serving the Central Oregon area for 16+ years. All field personnel are background checked, drug-screened, and certified.\n\nWebsite: homeheatingbend.com\n\n## Service Area\nBend, Redmond, La Pine, Powell Butte, Sisters, and Sunriver, OR.\n\n## Hours\nService and Sales: 7 AM to 7 PM, 7 days a week.\nOffice: 7 AM to 6 PM, Monday through Friday.\n\n## Services Offered\nCooling:\n- AC repair, maintenance, and installation\n- Heat pumps\n- Ductless HVAC / mini-splits\n- VRF systems\n- WiFi thermostat installation\n\nHeating:\n- Heating repair, maintenance, and installation\n- Heat pumps\n- Ductless HVAC / mini-splits\n- VRF systems\n- WiFi thermostat installation\n\nDuctwork:\n- Duct cleaning\n- Duct repair and maintenance\n- Aeroseal duct sealing (they operate their own dedicated Aeroseal truck)\n- Dryer vent cleaning\n\nIndoor air quality services also available.\n\nSeasonal maintenance plans offered to keep AC and heating equipment running year-round.\n\n## Pricing & Payment\nDo not quote prices on the phone. Tell the caller a technician will provide pricing during the visit or via the online instant quote tool.\n\nFinancing options are available which a technician at our office can go into detail with them.\n\n## Maintenance Plans\nHome Heating & Cooling offers seasonal maintenance plans covering both spring AC and fall heating tune-ups."
 }
 ```
@@ -244,11 +258,15 @@ In chat, output ONLY the JSON envelope:
 {
   "businessName": "[name]",
   "faqKnowledgeBase": "[markdown string with \\n line breaks]",
-  "templateName": "[template]"
+  "templateName": "[template]",
+  "website": "[url or \"\"]",
+  "city": "[city or \"\"]",
+  "state": "[2-letter state or \"\"]",
+  "email": "[email or \"\"]"
 }
 ```
 
-No prose, no markdown fencing, no extra commentary — just the JSON. The dashboard parses this directly.
+No prose, no markdown fencing, no extra commentary — just the JSON. The dashboard parses this directly. See **Output Shape** above for what `website`/`city`/`state`/`email` mean — emit `""` for anything unconfirmed.
 
 ### Step 6: Flag gaps inside the FAQ
 

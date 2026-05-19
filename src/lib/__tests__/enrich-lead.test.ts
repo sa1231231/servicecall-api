@@ -244,6 +244,42 @@ describe("parseEnrichmentResponse", () => {
     );
     expect(r.ok).toBe(true);
   });
+
+  it("extracts structured website/city/state/email and keeps them out of extra", () => {
+    const r = parseEnrichmentResponse(
+      JSON.stringify({
+        businessName: "Arctic Blast Heating & Air",
+        faqKnowledgeBase: "Q?",
+        templateName: "hvac",
+        website: "arcticblasthvac.com",
+        city: "Norcross",
+        state: "GA",
+        email: "info@arcticblasthvac.com",
+        services: ["ac"], // an unknown key — should still land in extra
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.website).toBe("arcticblasthvac.com");
+      expect(r.city).toBe("Norcross");
+      expect(r.state).toBe("GA");
+      expect(r.email).toBe("info@arcticblasthvac.com");
+      expect(r.extra).toEqual({ services: ["ac"] });
+    }
+  });
+
+  it("leaves website/city/state/email undefined when the skill emits \"\" or omits them", () => {
+    const r = parseEnrichmentResponse(
+      JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "Q?", website: "", city: "" }),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.website).toBeUndefined();
+      expect(r.city).toBeUndefined();
+      expect(r.state).toBeUndefined();
+      expect(r.email).toBeUndefined();
+    }
+  });
 });
 
 describe("formatLeadAsUserMessage", () => {

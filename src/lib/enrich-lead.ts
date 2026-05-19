@@ -63,7 +63,14 @@ export interface EnrichmentSuccess extends EnrichmentTranscript {
   faqKnowledgeBase: string;
   /** Skill output: a draft/template name the operator should pre-select. */
   templateName?: string;
-  /** Pass-through bag for any keys the skill returns beyond the known three. */
+  /** Structured business facts the skill resolved while writing the FAQ.
+   *  Carried onto the promoted agent's contact/billing fields. Any may be
+   *  absent when the skill couldn't confirm them. */
+  website?: string;
+  city?: string;
+  state?: string;
+  email?: string;
+  /** Pass-through bag for any keys the skill returns beyond the known fields. */
   extra: Record<string, unknown>;
 }
 
@@ -534,6 +541,12 @@ export function parseEnrichmentResponse(
     pickString(o, "faqKnowledgeBase") || pickString(o, "faq_knowledge_base");
   const templateName =
     pickString(o, "templateName") || pickString(o, "template_name") || undefined;
+  // Structured business facts — carried onto the promoted agent. Each is
+  // optional; the skill emits "" (or omits) when it couldn't confirm one.
+  const website = pickString(o, "website") || undefined;
+  const city = pickString(o, "city") || undefined;
+  const state = pickString(o, "state") || undefined;
+  const email = pickString(o, "email") || undefined;
   if (!business_name && !faqKnowledgeBase) {
     return {
       ok: false,
@@ -552,6 +565,10 @@ export function parseEnrichmentResponse(
     "faq_knowledge_base",
     "templateName",
     "template_name",
+    "website",
+    "city",
+    "state",
+    "email",
   ]);
   const extra: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(o)) {
@@ -562,6 +579,10 @@ export function parseEnrichmentResponse(
     business_name,
     faqKnowledgeBase,
     templateName,
+    website,
+    city,
+    state,
+    email,
     extra,
     systemPrompt,
     userMessage,

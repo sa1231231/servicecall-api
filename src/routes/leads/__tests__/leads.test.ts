@@ -169,6 +169,37 @@ describe("mergeContactNotesForPromote", () => {
       mergeContactNotesForPromote({ businessType: "  HVAC  ", operatorOverrideNotes: "  VIP\n" }),
     ).toBe("Business type: HVAC\n\nVIP");
   });
+
+  it("stacks business type, website, and location facts in order", () => {
+    expect(
+      mergeContactNotesForPromote({
+        businessType: "HVAC",
+        website: "arcticblasthvac.com",
+        city: "Norcross",
+        state: "GA",
+      }),
+    ).toBe("Business type: HVAC\nWebsite: arcticblasthvac.com\nLocation: Norcross, GA");
+  });
+
+  it("emits Location with city or state alone", () => {
+    expect(mergeContactNotesForPromote({ city: "Norcross" })).toBe("Location: Norcross");
+    expect(mergeContactNotesForPromote({ state: "GA" })).toBe("Location: GA");
+  });
+
+  it("merges the fact block with the operator note", () => {
+    expect(
+      mergeContactNotesForPromote({
+        website: "arcticblasthvac.com",
+        operatorOverrideNotes: "Wants demo Friday",
+      }),
+    ).toBe("Website: arcticblasthvac.com\n\nWants demo Friday");
+  });
+
+  it("treats blank website/city/state as not set", () => {
+    expect(
+      mergeContactNotesForPromote({ businessType: "HVAC", website: "  ", city: "", state: "  " }),
+    ).toBe("Business type: HVAC");
+  });
 });
 
 describe("POST /api/leads — intake", () => {

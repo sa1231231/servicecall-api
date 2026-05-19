@@ -30,6 +30,13 @@ export interface PendingLeadEnriched {
   /** Suggested draft/template name from the skill (e.g. "hvac"). When set,
    *  the dashboard pre-selects the matching draft on the promote step. */
   templateName?: string;
+  /** Structured business facts the skill resolved. Carried onto the promoted
+   *  agent's contact/billing fields (website/city/state → contact_notes,
+   *  email → contact_email). Any may be absent when unconfirmed. */
+  website?: string;
+  city?: string;
+  state?: string;
+  email?: string;
   /** Forward-compat bag for fields the skill might add later
    *  (business_type, services, location, etc.). v0 doesn't surface these. */
   extra?: Record<string, unknown>;

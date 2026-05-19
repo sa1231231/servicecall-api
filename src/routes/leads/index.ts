@@ -36,28 +36,36 @@ leadsIntakeRouter.use(requireServiceToken);
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Merge a lead's self-reported business_type into the agent's contact_notes
- * during promotion. Returns the value to set on `client.contact_notes`, or
- * `undefined` when neither input has anything to contribute.
+ * Build the promoted agent's `contact_notes` from a lead: the self-reported
+ * business type plus enrichment-resolved website and location, then the
+ * operator's own note. Returns `undefined` when there's nothing to set.
  *
- * Cases:
- *  - no business_type, no operator note → undefined (don't set the field)
- *  - no business_type, operator note    → operator note (passthrough)
- *  - business_type, no operator note    → "Business type: <X>"
- *  - business_type, operator note       → "Business type: <X>\n\n<operator>"
- *
- * Empty strings (after trim) are treated as "not set" so operator-clears
- * don't accidentally include the business_type prefix on its own.
+ * Emits a fact block — one line per non-empty value:
+ *   Business type: <X>
+ *   Website: <X>
+ *   Location: <city, state>
+ * followed by a blank line + the operator note when both are present. Empty
+ * strings (after trim) are treated as "not set" so an operator-cleared note
+ * doesn't drag along a stray fact block, and vice versa.
  */
 export function mergeContactNotesForPromote(opts: {
   businessType?: string;
+  website?: string;
+  city?: string;
+  state?: string;
   operatorOverrideNotes?: string;
 }): string | undefined {
-  const bt = opts.businessType?.trim();
   const operator = opts.operatorOverrideNotes?.trim();
-  if (!bt) return operator || undefined;
-  const typeNote = `Business type: ${bt}`;
-  return operator ? `${typeNote}\n\n${operator}` : typeNote;
+  const facts: string[] = [];
+  const bt = opts.businessType?.trim();
+  if (bt) facts.push(`Business type: ${bt}`);
+  const website = opts.website?.trim();
+  if (website) facts.push(`Website: ${website}`);
+  const loc = [opts.city?.trim(), opts.state?.trim()].filter(Boolean).join(", ");
+  if (loc) facts.push(`Location: ${loc}`);
+  const factBlock = facts.join("\n");
+  if (!factBlock) return operator || undefined;
+  return operator ? `${factBlock}\n\n${operator}` : factBlock;
 }
 
 function sanitizeInput(body: unknown): PendingLeadInput | null {
@@ -283,6 +291,10 @@ leadsRouter.post("/:id/promote", requireFeature("pending_leads", "write"), async
     const tz = areaCodeToTimezone(extractAreaCode(lead.input.phone));
     if (tz) leadContact.contact_timezone = tz;
   }
+  // Email isn't collected on the lead form — it only exists when enrichment
+  // resolved one from the business's website/Facebook page. Often absent.
+  const enrichedEmail = lead.enriched?.email?.trim();
+  if (enrichedEmail) leadContact.contact_email = enrichedEmail;
   const operatorOverrides = (req.body?.client as Partial<CreateAgentBody["client"]> | undefined) ?? {};
 
   // Carry the lead's self-reported business type onto contact_notes so the
@@ -291,6 +303,10 @@ leadsRouter.post("/:id/promote", requireFeature("pending_leads", "write"), async
   // business type so neither is lost.
   const mergedNotes = mergeContactNotesForPromote({
     businessType: lead.input?.business_type,
+    // Enrichment-resolved website wins; fall back to an operator-typed one.
+    website: lead.enriched?.website || lead.input?.website,
+    city: lead.enriched?.city,
+    state: lead.enriched?.state,
     operatorOverrideNotes:
       typeof operatorOverrides.contact_notes === "string" ? operatorOverrides.contact_notes : undefined,
   });
