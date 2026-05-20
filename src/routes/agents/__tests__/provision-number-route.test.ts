@@ -97,6 +97,32 @@ describe("provisionNumberHandler", () => {
     expect(mockProvisionPhoneNumber.mock.calls[0][0].dispatchCallNumber).toBe("+12125550000");
   });
 
+  it("forwards an explicit areaCode override to provisionPhoneNumber", async () => {
+    mockGetClientDocument.mockResolvedValue({
+      name: "Grit Services",
+      agent_id: "agent_grit",
+      dispatch_call_number: null,
+    });
+    mockProvisionPhoneNumber.mockResolvedValue({
+      phoneNumber: "+12485550199", phoneNumberSid: "sidGrit",
+    });
+    const res = makeRes();
+    await provisionNumberHandler(makeReq({ slug: "grit-services", areaCode: 248 }), res);
+    expect(res._status).toBe(200);
+    expect(mockProvisionPhoneNumber.mock.calls[0][0].areaCode).toBe(248);
+    expect(mockUpdateClientField).toHaveBeenCalledWith("grit-services", "outbound_from_number", "+12485550199");
+  });
+
+  it("returns 400 when areaCode is not a 3-digit number", async () => {
+    const res = makeRes();
+    await provisionNumberHandler(makeReq({ slug: "x", areaCode: 99 }), res);
+    expect(res._status).toBe(400);
+    expect(res._json.error).toMatch(/areaCode/);
+    // Ensure we short-circuited before touching Mongo / Twilio
+    expect(mockGetClientDocument).not.toHaveBeenCalled();
+    expect(mockProvisionPhoneNumber).not.toHaveBeenCalled();
+  });
+
   it("returns 502 when provisioning throws", async () => {
     mockGetClientDocument.mockResolvedValue({ agent_id: "agent_1", name: "A" });
     mockProvisionPhoneNumber.mockRejectedValue(new Error("twilio rejected"));
