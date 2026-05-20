@@ -48,6 +48,14 @@ export const config = {
   R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY ?? "",
   R2_BUCKET: process.env.R2_BUCKET ?? "scs-mongo-backup",
 
+  // GitHub source-code backup (optional). When set, a daily job mirrors the
+  // repo via `git clone --mirror`, writes a `git bundle --all` to R2 under
+  // `repo-backups/YYYY-MM-DD.bundle`, and prunes bundles older than 90 days.
+  // Use a fine-grained PAT with read-only Contents permission on this repo.
+  GITHUB_TOKEN: process.env.GITHUB_TOKEN ?? "",
+  GITHUB_OWNER: process.env.GITHUB_OWNER ?? "",
+  GITHUB_REPO: process.env.GITHUB_REPO ?? "servicecall-api",
+
   // Root account password (break-glass access)
   ROOT_PASSWORD: requireEnv("ROOT_PASSWORD"),
 

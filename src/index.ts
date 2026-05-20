@@ -26,6 +26,7 @@ import { getDataPointDefaultsWithCategory, CATEGORY_ORDER, CATEGORY_LABELS } fro
 import { ObjectId } from "mongodb";
 import { getDb } from "./lib/db.js";
 import { runBackup, isR2Configured } from "./lib/backup.js";
+import { startGitBundleBackup } from "./lib/git-bundle-backup.js";
 import { getUser, verifyPassword, resolvePermissions, resolveUserFeaturePermissions, DEFAULT_PERMISSIONS } from "./lib/users.js";
 import { SEED_FEATURE_DEFAULTS } from "./lib/feature-permissions.js";
 import { ensureAuditIndex } from "./lib/audit.js";
@@ -540,6 +541,7 @@ app.listen(Number(config.PORT), () => {
   startAutoSync();
   startWeeklyReportScheduler();
   startLeadsSheetSync();
+  startGitBundleBackup();
 
   // One-time: promote sam_admin to super_admin
   (async () => {
