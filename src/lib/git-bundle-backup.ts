@@ -8,6 +8,7 @@ import {
   PutObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { config } from "../config.js";
 
@@ -123,11 +124,33 @@ async function cleanupOldRepoBackups(r2: S3Client): Promise<void> {
   }
 }
 
+async function todayBundleExists(r2: S3Client): Promise<boolean> {
+  const date = new Date().toISOString().slice(0, 10);
+  const key = `${REPO_BACKUP_PREFIX}${date}.bundle`;
+  try {
+    await r2.send(new HeadObjectCommand({ Bucket: config.R2_BUCKET, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function startGitBundleBackup(): void {
   if (!isGitBundleBackupConfigured()) {
     console.log("[repo-backup] skipped — env vars not configured");
     return;
   }
+
+  // Catch-up on boot: if today's bundle is missing (first deploy after the
+  // feature lands, or a multi-day outage straddling 03:00 UTC), fire now.
+  // Same-day re-boots no-op because today's key already exists.
+  (async () => {
+    const r2 = getR2Client();
+    if (r2 && !(await todayBundleExists(r2))) {
+      console.log("[repo-backup] today's bundle missing — running catch-up now");
+      await runGitBundleBackup();
+    }
+  })().catch(() => {});
 
   // Daily, aligned to 03:00 UTC (off-peak; well clear of the hourly DB backup
   // and the weekly report scheduler).
