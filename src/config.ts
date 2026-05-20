@@ -53,8 +53,6 @@ export const config = {
   // `repo-backups/YYYY-MM-DD.bundle`, and prunes bundles older than 90 days.
   // Use a fine-grained PAT with read-only Contents permission on this repo.
   GITHUB_TOKEN: process.env.GITHUB_TOKEN ?? "",
-  GITHUB_OWNER: process.env.GITHUB_OWNER ?? "",
-  GITHUB_REPO: process.env.GITHUB_REPO ?? "servicecall-api",
 
   // Root account password (break-glass access)
   ROOT_PASSWORD: requireEnv("ROOT_PASSWORD"),

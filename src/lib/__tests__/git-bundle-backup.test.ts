@@ -14,8 +14,6 @@ const {
     R2_SECRET_ACCESS_KEY: "secret",
     R2_BUCKET: "test-bucket",
     GITHUB_TOKEN: "ghp_fake_token",
-    GITHUB_OWNER: "sa1231231",
-    GITHUB_REPO: "servicecall-api",
   } as Record<string, string>,
 }));
 
@@ -64,8 +62,6 @@ beforeEach(() => {
   mockConfig.R2_SECRET_ACCESS_KEY = "secret";
   mockConfig.R2_BUCKET = "test-bucket";
   mockConfig.GITHUB_TOKEN = "ghp_fake_token";
-  mockConfig.GITHUB_OWNER = "sa1231231";
-  mockConfig.GITHUB_REPO = "servicecall-api";
   mockS3Send.mockResolvedValue({});
   mockExecFile.mockResolvedValue({ stdout: "", stderr: "" });
   mockMkdtemp.mockResolvedValue("/tmp/repo-backup-abc");
@@ -80,11 +76,6 @@ describe("isGitBundleBackupConfigured", () => {
 
   it("returns false when GITHUB_TOKEN is empty", () => {
     mockConfig.GITHUB_TOKEN = "";
-    expect(isGitBundleBackupConfigured()).toBe(false);
-  });
-
-  it("returns false when GITHUB_OWNER is empty", () => {
-    mockConfig.GITHUB_OWNER = "";
     expect(isGitBundleBackupConfigured()).toBe(false);
   });
 

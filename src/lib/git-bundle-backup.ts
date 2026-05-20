@@ -13,6 +13,8 @@ import { config } from "../config.js";
 
 const REPO_BACKUP_PREFIX = "repo-backups/";
 const REPO_RETENTION_DAYS = 90;
+const GITHUB_OWNER = "sa1231231";
+const GITHUB_REPO = "servicecall-api";
 
 const execFileP = promisify(execFile);
 
@@ -35,15 +37,13 @@ export function isGitBundleBackupConfigured(): boolean {
     config.R2_ENDPOINT &&
     config.R2_ACCESS_KEY_ID &&
     config.R2_SECRET_ACCESS_KEY &&
-    config.GITHUB_TOKEN &&
-    config.GITHUB_OWNER &&
-    config.GITHUB_REPO
+    config.GITHUB_TOKEN
   );
 }
 
 export async function runGitBundleBackup(): Promise<{ success: boolean; key?: string; error?: string }> {
   if (!isGitBundleBackupConfigured()) {
-    console.log("[repo-backup] skipped — env vars not configured (need R2_* and GITHUB_TOKEN/OWNER/REPO)");
+    console.log("[repo-backup] skipped — env vars not configured (need R2_* and GITHUB_TOKEN)");
     return { success: false, error: "not configured" };
   }
   const r2 = getR2Client()!;
@@ -61,7 +61,7 @@ export async function runGitBundleBackup(): Promise<{ success: boolean; key?: st
     // The token is embedded in the URL only for this single clone; it never
     // touches argv logs because execFile doesn't go through a shell, and we
     // don't log the URL ourselves.
-    const cloneUrl = `https://x-access-token:${config.GITHUB_TOKEN}@github.com/${config.GITHUB_OWNER}/${config.GITHUB_REPO}.git`;
+    const cloneUrl = `https://x-access-token:${config.GITHUB_TOKEN}@github.com/${GITHUB_OWNER}/${GITHUB_REPO}.git`;
     await execFileP("git", ["clone", "--mirror", cloneUrl, repoDir], { maxBuffer: 64 * 1024 * 1024 });
     await execFileP("git", ["-C", repoDir, "bundle", "create", bundlePath, "--all"], { maxBuffer: 64 * 1024 * 1024 });
 
