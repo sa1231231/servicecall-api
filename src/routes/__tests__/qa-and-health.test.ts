@@ -91,6 +91,24 @@ describe("GET /health", () => {
     expect(res._json.checks.mongo.ok).toBe(false);
     expect(res._json.checks.mongo.error).toMatch(/connection/);
   });
+
+  it("returns 503 with a timeout error when the mongo ping hangs past the deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      // Ping never resolves — simulates a driver wedged on an EAI_AGAIN /
+      // network blip, the exact scenario that caused the 2026-05-20 outage.
+      mockMongoPing.mockReturnValue(new Promise(() => {}));
+      const res = makeRes();
+      const p = runRoute(healthRouter, "get", "/", makeReq({}), res);
+      await vi.advanceTimersByTimeAsync(2_500);
+      await p;
+      expect(res._status).toBe(503);
+      expect(res._json.checks.mongo.ok).toBe(false);
+      expect(res._json.checks.mongo.error).toMatch(/timeout/i);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // ── qaRouter ──────────────────────────────────────────────────────────────
