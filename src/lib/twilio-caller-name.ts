@@ -113,7 +113,7 @@ export function formatCallerName(result?: CallerNameResult): string {
   if (!result) return "";
   const lines: string[] = [
     "## Twilio caller-name (CNAM)",
-    "Carrier-registered name for the phone number. For B2B landlines this is often the actual business name; for cell/consumer lines it's typically the subscriber's personal name. The `caller_type` flag is unreliable — read the name itself. Treat this as one signal alongside Places/Yelp/web_search, not authoritative. **It can match an owner's personal name and miss the business**, so always cross-check with the other channels.",
+    "Carrier-registered name for the phone number. For B2B landlines this is often the actual business name; for cell/consumer lines it's typically the subscriber's personal name. The `caller_type` flag is unreliable — read the name itself. Treat this as one signal alongside Places/Brave/web_search, not authoritative. **It can match an owner's personal name and miss the business**, so always cross-check with the other channels.",
     "",
   ];
   if (!result.ok) {

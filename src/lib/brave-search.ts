@@ -116,7 +116,7 @@ export function formatBravePreSearch(result: BravePreSearchResult): string {
   if (result.searches.length === 0) return "";
   const lines: string[] = [
     "## Brave Search results",
-    "Long-tail web hits (Nextdoor, Facebook, Yelp, BBB, the business's own site) from Brave's index. Treat as supplementary to Places + Yelp above — useful when those channels are thin or for filling in concrete FAQ facts (hours, services, service area).",
+    "Long-tail web hits (Nextdoor, Facebook, Yelp, BBB, the business's own site) from Brave's index. Treat as supplementary to Places above — useful when Places is thin or for filling in concrete FAQ facts (hours, services, service area). Yelp pages still get indexed by Brave; we just no longer have a dedicated Yelp pre-search.",
     "",
   ];
   for (const search of result.searches) {

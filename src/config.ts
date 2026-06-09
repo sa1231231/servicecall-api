@@ -87,15 +87,6 @@ export const config = {
   // deterministic pre-search prefetch.
   BRAVE_API_KEY: process.env.BRAVE_API_KEY ?? "",
 
-  // Yelp Fusion API — optional pre-search channel for B2B service
-  // businesses. The /businesses/search/phone endpoint reverse-resolves a
-  // US phone number to a Yelp listing (name, categories, address,
-  // rating). Strong signal when it hits — small service businesses are
-  // commonly Yelp-listed even when they have weak GBP. Sign up at
-  // https://www.yelp.com/developers. When unset, the Yelp pre-search
-  // short-circuits and the bundle continues without it.
-  YELP_API_KEY: process.env.YELP_API_KEY ?? "",
-
   // Shared secret for the Google Apps Script lead sync. Optional —
   // when unset, POST /api/leads/intake returns 401 for everyone, so
   // the integration is effectively off. Rotate by changing this and

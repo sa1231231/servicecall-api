@@ -9,7 +9,8 @@ const {
   formatPlacesPreSearch,
   placesSearchText,
   preSearchLeadPlaces,
-  placesLookupByYelpHits,
+  placesGetById,
+  placesPhoneLookup,
 } = await import("../google-places.js");
 
 // ── buildPlacesQueries — pure ────────────────────────────────────────────────
@@ -170,59 +171,178 @@ describe("preSearchLeadPlaces", () => {
   });
 });
 
-describe("placesLookupByYelpHits", () => {
-  // Injectable stub search fn — records the queries it received.
-  function stubSearch() {
-    const calls: string[] = [];
-    const fn = async (query: string) => {
-      calls.push(query);
-      return { ok: true, query, hits: [] };
-    };
-    return { fn, calls };
+// ── placesGetById — mocked fetch ─────────────────────────────────────────────
+
+describe("placesGetById", () => {
+  const realFetch = global.fetch;
+  beforeEach(() => { global.fetch = vi.fn() as any; });
+  afterEach(() => { global.fetch = realFetch; });
+
+  it("GETs the v1 single-place endpoint with a root-level FieldMask", async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        displayName: { text: "Super Mario Auto" },
+        formattedAddress: "123 Main St",
+        websiteUri: "https://supermarioauto.com",
+        regularOpeningHours: { weekdayDescriptions: ["Mon: 8am-6pm"] },
+      }),
+    });
+
+    const out = await placesGetById("ChIJ_test_place_id");
+    expect(out.ok).toBe(true);
+    expect(out.hits).toHaveLength(1);
+    expect(out.hits[0].name).toBe("Super Mario Auto");
+    expect(out.hits[0].website).toBe("https://supermarioauto.com");
+    expect(out.hits[0].hours).toEqual(["Mon: 8am-6pm"]);
+
+    const [url, init] = (global.fetch as any).mock.calls[0];
+    expect(url).toContain("places.googleapis.com/v1/places/ChIJ_test_place_id");
+    expect(init.method).toBe("GET");
+    expect(init.headers["X-Goog-Api-Key"]).toBe("test-token");
+    // Single-place endpoint uses root-level field names (no `places.` prefix).
+    expect(init.headers["X-Goog-FieldMask"]).toContain("displayName");
+    expect(init.headers["X-Goog-FieldMask"]).not.toContain("places.displayName");
+  });
+
+  it("returns ok=false on non-2xx", async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: async () => "place not found",
+    });
+    const out = await placesGetById("ChIJ_missing");
+    expect(out.ok).toBe(false);
+    expect(out.error).toContain("404");
+  });
+});
+
+// ── placesPhoneLookup — mocked legacy + injected hydration ──────────────────
+
+describe("placesPhoneLookup", () => {
+  const realFetch = global.fetch;
+  beforeEach(() => { global.fetch = vi.fn() as any; });
+  afterEach(() => { global.fetch = realFetch; });
+
+  // Mock the legacy Find Place response. Real legacy responses also have
+  // `status: "OK"` or `"ZERO_RESULTS"` — include it so the wrapper's
+  // status check works.
+  function mockLegacy(candidates: Array<{ place_id?: string; name?: string; formatted_address?: string }>) {
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: candidates.length > 0 ? "OK" : "ZERO_RESULTS",
+        candidates,
+      }),
+    });
   }
 
-  const yelp = (names: string[]) => ({
-    ok: true,
-    phone: "+15551234567",
-    hits: names.map((name) => ({ name, categories: [] as string[] })),
+  it("hits the legacy endpoint with inputtype=phonenumber and the E.164 phone", async () => {
+    mockLegacy([]);
+    await placesPhoneLookup("(973) 978-1542");
+    const [url] = (global.fetch as any).mock.calls[0];
+    expect(url).toContain("maps.googleapis.com/maps/api/place/findplacefromtext/json");
+    expect(url).toContain("inputtype=phonenumber");
+    // E.164 with `+` URL-encoded to `%2B`.
+    expect(url).toContain("input=%2B19739781542");
+    expect(url).toContain("fields=place_id");
   });
 
-  it("re-queries Places for each Yelp hit name (capped at 2)", async () => {
-    const { fn, calls } = stubSearch();
-    const out = await placesLookupByYelpHits(
-      yelp(["Arctic Blast Heating & Air", "Second Biz", "Third Biz"]),
-      [],
-      fn,
-    );
-    expect(calls).toEqual(["Arctic Blast Heating & Air", "Second Biz"]);
-    expect(out).toHaveLength(2);
+  it("happy path: legacy returns 1 candidate → hydrates via place_id → rich hit", async () => {
+    mockLegacy([{ place_id: "ChIJ_arctic", name: "Arctic Blast Heating & Air" }]);
+    const getById = vi.fn(async (id: string) => ({
+      ok: true,
+      query: `placeId:${id}`,
+      hits: [{
+        name: "Arctic Blast Heating & Air",
+        website: "https://arcticblast.example",
+        hours: ["Mon: 7am-7pm"],
+      }],
+    }));
+    const text = vi.fn(async () => ({ ok: true, query: "x", hits: [] }));
+    const out = await placesPhoneLookup("+19739781542", getById, text);
+    expect(out.ok).toBe(true);
+    expect(out.hits[0].name).toBe("Arctic Blast Heating & Air");
+    expect(out.hits[0].website).toBe("https://arcticblast.example");
+    expect(getById).toHaveBeenCalledWith("ChIJ_arctic");
+    // Hydration was rich → textQuery fallback never fires.
+    expect(text).not.toHaveBeenCalled();
+    // Result re-stamps query to the phone, not "placeId:..." — keeps the
+    // formatted Places block readable.
+    expect(out.query).toBe("phone:+19739781542");
   });
 
-  it("skips a name already covered by a first-pass query (case-insensitive)", async () => {
-    const { fn, calls } = stubSearch();
-    await placesLookupByYelpHits(
-      yelp(["Arctic Blast Heating & Air"]),
-      ["arctic blast heating & air"],
-      fn,
-    );
-    expect(calls).toEqual([]);
+  it("cascade: hydration returns a thin hit → falls back to textQuery by name", async () => {
+    mockLegacy([{ place_id: "ChIJ_thin", name: "Acme Plumbing" }]);
+    // Thin = no website AND no hours.
+    const getById = vi.fn(async (id: string) => ({
+      ok: true,
+      query: `placeId:${id}`,
+      hits: [{ name: "Acme Plumbing", address: "1 Main St" }],
+    }));
+    const text = vi.fn(async (q: string) => ({
+      ok: true,
+      query: q,
+      hits: [{ name: "Acme Plumbing", website: "https://acmeplumbing.example", hours: ["Mon: 8am-5pm"] }],
+    }));
+    const out = await placesPhoneLookup("+12125550000", getById, text);
+    expect(text).toHaveBeenCalledWith("Acme Plumbing");
+    expect(out.ok).toBe(true);
+    expect(out.hits[0].website).toBe("https://acmeplumbing.example");
   });
 
-  it("skips blank hit names", async () => {
-    const { fn, calls } = stubSearch();
-    await placesLookupByYelpHits(yelp(["", "  ", "Real Biz"]), [], fn);
-    expect(calls).toEqual(["Real Biz"]);
+  it("cascade: hydration errors → still falls back to textQuery", async () => {
+    mockLegacy([{ place_id: "ChIJ_err", name: "Bob's HVAC" }]);
+    const getById = vi.fn(async () => ({ ok: false, query: "x", hits: [], error: "404" }));
+    const text = vi.fn(async (q: string) => ({
+      ok: true,
+      query: q,
+      hits: [{ name: "Bob's HVAC", website: "https://bobs.example" }],
+    }));
+    const out = await placesPhoneLookup("+13105550000", getById, text);
+    expect(text).toHaveBeenCalledWith("Bob's HVAC");
+    expect(out.ok).toBe(true);
   });
 
-  it("no-ops when Yelp is undefined, errored, or has no hits", async () => {
-    const { fn, calls } = stubSearch();
-    expect(await placesLookupByYelpHits(undefined, [], fn)).toEqual([]);
-    expect(
-      await placesLookupByYelpHits({ ok: false, phone: "x", hits: [] }, [], fn),
-    ).toEqual([]);
-    expect(
-      await placesLookupByYelpHits({ ok: true, phone: "x", hits: [] }, [], fn),
-    ).toEqual([]);
-    expect(calls).toEqual([]);
+  it("no match: legacy returns 0 candidates → ok=false with descriptive error", async () => {
+    mockLegacy([]);
+    const getById = vi.fn();
+    const text = vi.fn();
+    const out = await placesPhoneLookup("+15555550000", getById, text);
+    expect(out.ok).toBe(false);
+    expect(out.error).toContain("no Places phone match");
+    expect(getById).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+  });
+
+  it("fail-soft on legacy 403 — returns ok=false without throwing", async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: false,
+      status: 403,
+      text: async () => "API key restricted",
+    });
+    const out = await placesPhoneLookup("+12485551234");
+    expect(out.ok).toBe(false);
+    expect(out.error).toContain("403");
+  });
+
+  it("fail-soft on legacy REQUEST_DENIED status", async () => {
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "REQUEST_DENIED", error_message: "legacy endpoint sunset" }),
+    });
+    const out = await placesPhoneLookup("+12485551234");
+    expect(out.ok).toBe(false);
+    expect(out.error).toContain("REQUEST_DENIED");
+    expect(out.error).toContain("legacy endpoint sunset");
+  });
+
+  it("rejects non-US phone numbers without hitting the network", async () => {
+    const fetchSpy = vi.fn();
+    (global.fetch as any) = fetchSpy;
+    const out = await placesPhoneLookup("not a phone");
+    expect(out.ok).toBe(false);
+    expect(out.error).toContain("E.164");
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

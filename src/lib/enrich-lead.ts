@@ -10,7 +10,7 @@ import {
 } from "./brave-search.js";
 import {
   preSearchLeadPlaces,
-  placesLookupByYelpHits,
+  placesPhoneLookup,
   formatPlacesPreSearch,
   type PlacesPreSearchResult,
 } from "./google-places.js";
@@ -19,11 +19,6 @@ import {
   formatCallerName,
   type CallerNameResult,
 } from "./twilio-caller-name.js";
-import {
-  yelpPhoneSearch,
-  formatYelpPhoneSearch,
-  type YelpPhoneSearchResult,
-} from "./yelp-search.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -209,44 +204,47 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
   // different sweet spot, so we hit them all and let the model pick the
   // strongest signal:
   //
-  //   1. Google Places (New)     — phone-match against Google Business
-  //                                 Profile. Authoritative when it hits.
-  //   2. Yelp Fusion              — phone-match against Yelp listings.
-  //                                 Strong on B2B service businesses
-  //                                 with thin GBP presence.
+  //   1. Google Places stage-1    — textQuery against the New v1 endpoint
+  //                                 with phone-formatted + name queries.
+  //                                 Authoritative when it hits.
+  //   2. Google Places phone      — legacy Find Place by phonenumber +
+  //      lookup                    cascade to v1 places/{id}. Replaces the
+  //                                 Yelp Fusion phone-match channel; same
+  //                                 Google billing, no new vendor. Stage-1
+  //                                 textQuery can't resolve a bare phone,
+  //                                 so this fills that gap.
   //   3. Twilio caller-name       — carrier CNAM lookup. Sometimes the
   //                                 business name; otherwise the owner's
   //                                 personal name (still useful for
   //                                 cross-referencing the lead form).
   //   4. Brave Search             — long-tail web hits (Nextdoor, Facebook,
-  //                                 Yelp, BBB) for businesses that don't
-  //                                 surface in Places/Yelp. Disabled when
+  //                                 Yelp pages, BBB) for businesses that
+  //                                 don't surface in Places. Disabled when
   //                                 BRAVE_API_KEY unset.
   //
   // If every channel misses, the skill falls back on its `web_search`
-  // tool — see SKILL.md. Twilio + Yelp gate on `input.phone` so they
-  // don't fire on phone-less leads.
+  // tool — see SKILL.md. Twilio + Places-phone gate on `input.phone` so
+  // they don't fire on phone-less leads.
   let placesSearch: PlacesPreSearchResult = { searches: [] };
   let braveSearch: BravePreSearchResult = { searches: [] };
   let callerName: CallerNameResult | undefined;
-  let yelpSearch: YelpPhoneSearchResult | undefined;
+  let placesPhoneResult: Awaited<ReturnType<typeof placesPhoneLookup>> | undefined;
   try {
-    [placesSearch, braveSearch, callerName, yelpSearch] = await Promise.all([
+    [placesSearch, braveSearch, callerName, placesPhoneResult] = await Promise.all([
       preSearchLeadPlaces(input),
       preSearchLeadBrave(input),
       input.phone ? lookupCallerName(input.phone) : Promise.resolve(undefined),
-      input.phone ? yelpPhoneSearch(input.phone) : Promise.resolve(undefined),
+      input.phone ? placesPhoneLookup(input.phone) : Promise.resolve(undefined),
     ]);
-    // Second-stage Places lookup: Places searchText can't resolve a bare
-    // phone, and the lead `name` is often a person — so the first pass
-    // routinely misses the business. Re-query Places by the name Yelp's
-    // phone-match resolved; that is what surfaces the GBP website + hours.
-    placesSearch.searches.push(
-      ...(await placesLookupByYelpHits(
-        yelpSearch,
-        placesSearch.searches.map((s) => s.query),
-      )),
-    );
+    // Fold the phone-lookup result into placesSearch.searches[] — same
+    // shape as a stage-1 hit, so the formatter and downstream consumers
+    // see one unified Places block. Skip the push if the lookup failed
+    // hard (missing key, non-US phone): a `no Places phone match` result
+    // still gets rendered as "no results" so the operator can see we
+    // tried.
+    if (placesPhoneResult) {
+      placesSearch.searches.push(placesPhoneResult);
+    }
   } catch (err) {
     console.warn(
       `[enrich-lead] pre-search failed for ${input.name}: ${err instanceof Error ? err.message : err}`,
@@ -256,7 +254,6 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
     input,
     placesSearch,
     callerName,
-    yelpSearch,
     braveSearch,
   );
 
@@ -322,8 +319,8 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
             // hits "Server tool use limit exceeded" before the obvious
             // query gets tried. 8 is still ~$0.08/lead worst case.
             { type: "web_search_20260209", name: "web_search", max_uses: 8 },
-            // 4 fetches: the official website (primary FAQ source) + the
-            // Facebook page + the Yelp listing + one fallback page.
+            // 4 fetches: the official website (primary FAQ source) + a
+            // Facebook page + a Yelp/Nextdoor listing + one fallback page.
             { type: "web_fetch_20260309", name: "web_fetch", max_uses: 4 },
           ],
         },
@@ -333,10 +330,10 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
 
     const rawResponse = extractText(result);
     const rawContentBlocks = summarizeContentBlocks(result);
-    const yelpHits = yelpSearch?.ok ? yelpSearch.hits.length : "n/a";
+    const placesPhone = placesPhoneResult?.ok ? placesPhoneResult.hits.length : "n/a";
     const cnam = callerName?.ok ? callerName.lookup?.callerName ?? "(empty)" : "n/a";
     console.log(
-      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, places=${placesSearch.searches.length}, yelp=${yelpHits}, cnam=${cnam}, brave=${braveSearch.searches.length}`,
+      `[enrich-lead] ${input.name} — input ${userMessage.length}b, response ${rawResponse.length}b, places=${placesSearch.searches.length}, places_phone=${placesPhone}, cnam=${cnam}, brave=${braveSearch.searches.length}`,
     );
     return parseEnrichmentResponse(rawResponse, userMessage, systemPrompt, rawContentBlocks);
   } catch (err) {
@@ -352,16 +349,15 @@ export async function enrichLead(input: EnrichmentInput): Promise<EnrichmentResu
 }
 
 /** Hand-shaped user message that matches the skill's trigger phrasing.
- *  Bakes in every pre-search channel that returned data: Places, Yelp,
- *  Twilio CNAM, Brave. Order in the prompt matches strength of signal —
- *  Places first (authoritative when it hits), then Yelp (also strong
- *  for B2B services), then CNAM (sometimes the business name), then
- *  Brave (broadest long-tail web context, weakest individual hits). */
+ *  Bakes in every pre-search channel that returned data: Places (stage-1
+ *  textQuery + phone-lookup folded together), Twilio CNAM, Brave. Order
+ *  in the prompt matches strength of signal — Places first (authoritative
+ *  when it hits), then CNAM (sometimes the business name), then Brave
+ *  (broadest long-tail web context, weakest individual hits). */
 export function formatLeadAsUserMessage(
   input: EnrichmentInput,
   placesSearch?: PlacesPreSearchResult,
   callerName?: CallerNameResult,
-  yelpSearch?: YelpPhoneSearchResult,
   braveSearch?: BravePreSearchResult,
 ): string {
   const lines = [
@@ -378,9 +374,6 @@ export function formatLeadAsUserMessage(
   if (placesSearch && placesSearch.searches.length > 0) {
     lines.push("", formatPlacesPreSearch(placesSearch));
   }
-  if (yelpSearch) {
-    lines.push("", formatYelpPhoneSearch(yelpSearch));
-  }
   if (callerName) {
     lines.push("", formatCallerName(callerName));
   }
@@ -391,12 +384,11 @@ export function formatLeadAsUserMessage(
   lines.push(
     "",
     "This is incoming lead-form data — there is NO transcript and the operator wants a starter config they can edit. Use the pre-search context above as the primary source of truth, in this order of authority:",
-    "1. **Google Places phone-match** — strongest signal; use the listing's name verbatim.",
-    "2. **Yelp phone-match** — also strong for B2B service businesses; categories map directly to a template.",
-    "3. **Twilio CNAM** — sometimes the registered business name, sometimes the owner's personal name. When the name looks like a person, treat it as identity-confirming for the lead, not as the business name.",
-    "4. **Brave Search** — supplementary web context (hours, services, long-tail listings on Nextdoor / Facebook / BBB).",
+    "1. **Google Places** — strongest signal; use the listing's name verbatim. Includes both the textQuery pass and the phone-number lookup (legacy Find Place by phone → hydrated via Place ID). When both surface the same business, treat it as confirmed.",
+    "2. **Twilio CNAM** — sometimes the registered business name, sometimes the owner's personal name. When the name looks like a person, treat it as identity-confirming for the lead, not as the business name.",
+    "3. **Brave Search** — supplementary web context (hours, services, long-tail listings on Nextdoor / Facebook / Yelp / BBB).",
     "",
-    "The lead-form `name` is often the owner or a partial business name; trust Places/Yelp-derived names when they conflict. If all pre-search blocks are empty or inconclusive, **call `web_search`** with the phone number (multiple formats) before resorting to DRAFT. Once a business is resolved, **call `web_fetch`** on the strongest listing or website to extract concrete FAQ facts. Reserve DRAFT for when every pre-search channel AND web_search all came back empty.",
+    "The lead-form `name` is often the owner or a partial business name; trust Places-derived names when they conflict. If all pre-search blocks are empty or inconclusive, **call `web_search`** with the phone number (multiple formats) — this is the primary fallback and catches small service businesses on Nextdoor / Facebook / Yelp pages / BBB that don't surface in Places. Once a business is resolved, **call `web_fetch`** on the strongest listing or website to extract concrete FAQ facts. Reserve DRAFT for when every pre-search channel AND web_search all came back empty.",
     "",
     "Return ONLY the JSON config (businessName, faqKnowledgeBase, templateName) — no prose, no markdown fencing.",
   );

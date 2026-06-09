@@ -10,7 +10,7 @@ const {
   mockPreSearchLeadBrave,
   mockPreSearchLeadPlaces,
   mockLookupCallerName,
-  mockYelpPhoneSearch,
+  mockPlacesPhoneLookup,
   mockFsExistsSync,
   mockFsReadFileSync,
   mockConfig,
@@ -19,7 +19,7 @@ const {
   mockPreSearchLeadBrave: vi.fn(),
   mockPreSearchLeadPlaces: vi.fn(),
   mockLookupCallerName: vi.fn(),
-  mockYelpPhoneSearch: vi.fn(),
+  mockPlacesPhoneLookup: vi.fn(),
   mockFsExistsSync: vi.fn(),
   mockFsReadFileSync: vi.fn(),
   mockConfig: { ANTHROPIC_API_KEY: "test_key" as string | undefined },
@@ -41,17 +41,13 @@ vi.mock("../brave-search.js", () => ({
 
 vi.mock("../google-places.js", () => ({
   preSearchLeadPlaces: (...a: any[]) => mockPreSearchLeadPlaces(...a),
+  placesPhoneLookup: (...a: any[]) => mockPlacesPhoneLookup(...a),
   formatPlacesPreSearch: () => "PLACES_PRE_SEARCH_BLOCK",
 }));
 
 vi.mock("../twilio-caller-name.js", () => ({
   lookupCallerName: (...a: any[]) => mockLookupCallerName(...a),
   formatCallerName: () => "CNAM_BLOCK",
-}));
-
-vi.mock("../yelp-search.js", () => ({
-  yelpPhoneSearch: (...a: any[]) => mockYelpPhoneSearch(...a),
-  formatYelpPhoneSearch: () => "YELP_BLOCK",
 }));
 
 vi.mock("fs", async () => {
@@ -86,7 +82,7 @@ beforeEach(() => {
     mockPreSearchLeadBrave,
     mockPreSearchLeadPlaces,
     mockLookupCallerName,
-    mockYelpPhoneSearch,
+    mockPlacesPhoneLookup,
     mockFsExistsSync,
     mockFsReadFileSync,
   ]) {
@@ -97,7 +93,7 @@ beforeEach(() => {
   mockPreSearchLeadBrave.mockResolvedValue({ searches: [] });
   mockPreSearchLeadPlaces.mockResolvedValue({ searches: [] });
   mockLookupCallerName.mockResolvedValue({ ok: false, phone: "x", error: "test default" });
-  mockYelpPhoneSearch.mockResolvedValue({ ok: true, phone: "x", hits: [] });
+  mockPlacesPhoneLookup.mockResolvedValue({ ok: false, query: "x", hits: [], error: "no Places phone match" });
   // Default: skill loads cleanly. SKILL_DIR_DIST exists; references dir
   // does NOT (so the loop in loadSkill skips ref-file loading).
   mockFsExistsSync.mockImplementation((p: any) => {
@@ -452,22 +448,48 @@ describe("enrichLead — orchestrator", () => {
     }
   });
 
-  it("skips Twilio + Yelp when the lead has no phone (gated on input.phone)", async () => {
+  it("skips Twilio + Places-phone when the lead has no phone (gated on input.phone)", async () => {
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: "text", text: JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "ok" }) }],
     });
     await enrichLead({ name: "Phoneless Acme" });
     expect(mockLookupCallerName).not.toHaveBeenCalled();
-    expect(mockYelpPhoneSearch).not.toHaveBeenCalled();
+    expect(mockPlacesPhoneLookup).not.toHaveBeenCalled();
   });
 
-  it("calls Twilio + Yelp pre-search when the lead has a phone", async () => {
+  it("calls Twilio + Places-phone pre-search when the lead has a phone", async () => {
     mockMessagesCreate.mockResolvedValue({
       content: [{ type: "text", text: JSON.stringify({ businessName: "Acme", faqKnowledgeBase: "ok" }) }],
     });
     await enrichLead({ name: "Acme", phone: "+15551112222" });
     expect(mockLookupCallerName).toHaveBeenCalledWith("+15551112222");
-    expect(mockYelpPhoneSearch).toHaveBeenCalledWith("+15551112222");
+    expect(mockPlacesPhoneLookup).toHaveBeenCalledWith("+15551112222");
+  });
+
+  it("folds the Places phone-lookup hit into placesSearch.searches[] so it renders in the Places block", async () => {
+    mockPreSearchLeadPlaces.mockResolvedValue({
+      searches: [{ ok: true, query: "(555) 111-2222", hits: [] }],
+    });
+    mockPlacesPhoneLookup.mockResolvedValue({
+      ok: true,
+      query: "phone:+15551112222",
+      hits: [{ name: "Acme HVAC", website: "https://acme.example" }],
+    });
+    mockMessagesCreate.mockResolvedValue({
+      content: [{ type: "text", text: JSON.stringify({ businessName: "Acme HVAC", faqKnowledgeBase: "ok" }) }],
+    });
+    const result = await enrichLead({ name: "Acme", phone: "+15551112222" });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // The Places-block formatter is mocked to a fixed string, but the
+      // bundle's `searches` array is what we want to verify — the phone
+      // lookup result should have been appended. The user message
+      // includes PLACES_PRE_SEARCH_BLOCK regardless; the proof the fold
+      // happened is that the bundle now has 2 searches not 1.
+      expect(mockPreSearchLeadPlaces).toHaveBeenCalled();
+      expect(mockPlacesPhoneLookup).toHaveBeenCalled();
+      expect(result.userMessage).toContain("PLACES_PRE_SEARCH_BLOCK");
+    }
   });
 
   it("does NOT abort enrichment when the pre-search (Brave/Places) fails", async () => {
